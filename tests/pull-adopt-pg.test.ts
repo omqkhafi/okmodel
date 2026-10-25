@@ -206,6 +206,51 @@ postgresTest(
   90_000,
 );
 
+postgresTest(
+  gate,
+  "pull does not emit a foreign key to an identity column it did not pull",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = mkdtempSync(join(tmpdir(), "okm-pull-adopt-"));
+    try {
+      writeConfig(cwd, database.url);
+      linkOkmodel(cwd);
+      await seed(
+        database.url,
+        `create table owners (
+           id integer generated always as identity primary key,
+           name text not null
+         );
+         create table pets (
+           id integer primary key,
+           owner_id integer not null references owners (id)
+         );
+         create table accounts (
+           id bigint generated always as identity primary key
+         );
+         create table sessions (
+           id integer primary key,
+           account_id bigint not null references accounts (id)
+         )`,
+      );
+      const pulled = await cli(cwd, ["pull"]);
+      expect(pulled).toContain("owners.id");
+      expect(pulled).toContain("references a column that was not pulled");
+      expect(pulled).toContain("pets_owner_id_fkey");
+      const pets = readFileSync(join(cwd, "tables", "pets.ts"), "utf8");
+      expect(pets).not.toContain(".references(");
+      const sessions = readFileSync(join(cwd, "tables", "sessions.ts"), "utf8");
+      expect(sessions).toContain(".references(");
+      const built = await cli(cwd, ["build"]);
+      expect(built.length).toBeGreaterThan(0);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  90_000,
+);
+
 function crossSchemaSql(): string {
   return `create table users (
             id integer primary key,

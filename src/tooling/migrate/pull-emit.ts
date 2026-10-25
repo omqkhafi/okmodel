@@ -185,6 +185,7 @@ export function emitPull(source: Catalog, layout: PullLayout, review?: PullRevie
     tableExports.set(table.identity.name, exportName);
   }
 
+  const pulledColumns = pulledColumnNames(tables, byParent, enums, domains);
   for (const table of tables) {
     if (table.definition.partition !== undefined) {
       skipped.push(
@@ -210,6 +211,7 @@ export function emitPull(source: Catalog, layout: PullLayout, review?: PullRevie
       skipped,
       exportName,
       tableExports,
+      pulledColumns,
     );
     if (planned === undefined) continue;
     if (planned.identitySequence !== undefined) identitySequences.add(planned.identitySequence);
@@ -373,9 +375,11 @@ export function formatPullReport(
   }
   for (const kind of [...groups.keys()].sort()) {
     const rows = groups.get(kind) ?? [];
-    lines.push(`  ${kindLabel(kind)}: ${String(rows.length)} — ${rows[0]?.reason ?? ""}`);
+    const header = rows[0]?.reason ?? "";
+    lines.push(`  ${kindLabel(kind)}: ${String(rows.length)} — ${header}`);
     for (const row of rows) {
-      lines.push(`    ${row.label}`);
+      const note = row.reason === header ? "" : ` — ${row.reason}`;
+      lines.push(`    ${row.label}${note}`);
       if (row.sql.length > 0) lines.push(`      ${row.sql}`);
     }
   }
@@ -411,6 +415,7 @@ function planTable(
   skipped: PullSkip[],
   exportName: string,
   tableExports: ReadonlyMap<string, string>,
+  pulledColumns: ReadonlyMap<string, ReadonlySet<string>>,
 ): PlannedTable | undefined {
   const bag = byParent.get(table.identity.name) ?? {
     columns: [],
@@ -424,14 +429,7 @@ function planTable(
   const emitted = new Set<string>();
   const primary = bag.constraints.find((item) => item.definition.constraintKind === "primaryKey");
   const primaryColumns = primary?.definition.columns ?? [];
-  const identityColumn = bag.columns.find(
-    (column) =>
-      column.definition.identity?.always === true &&
-      !column.definition.nullable &&
-      primaryColumns.length === 1 &&
-      primaryColumns[0] === column.identity.name &&
-      column.definition.dataType === "bigint",
-  );
+  const identityColumn = identityPrimary(bag.columns, primaryColumns);
 
   for (const column of [...bag.columns].sort((left, right) =>
     compare(left.identity.name, right.identity.name),
@@ -569,7 +567,18 @@ function planTable(
         );
         continue;
       }
-      if (field === undefined) continue;
+      if (field === undefined || !referencedColumnsPulled(references, pulledColumns)) {
+        skipped.push(
+          skip(
+            constraint,
+            "constraint",
+            label,
+            "references a column that was not pulled",
+            statementFor(statements, constraint.identity.name),
+          ),
+        );
+        continue;
+      }
       foreign.set(field, referenceCall(references, tableExports));
       continue;
     }
@@ -685,6 +694,65 @@ ${columnText.join("\n")}
       ? {}
       : { identitySequence: identitySequence(table.identity.name, identityColumn.identity.name) }),
   };
+}
+
+function identityPrimary(
+  columns: readonly ColumnObject[],
+  primaryColumns: readonly string[],
+): ColumnObject | undefined {
+  return columns.find(
+    (column) =>
+      column.definition.identity?.always === true &&
+      !column.definition.nullable &&
+      primaryColumns.length === 1 &&
+      primaryColumns[0] === column.identity.name &&
+      column.definition.dataType === "bigint",
+  );
+}
+
+/**
+ * SQL column names `planTable` will write, keyed by table name.
+ *
+ * A foreign key to a name outside this set is not emitted. `t.identity()` is
+ * only the bigint generated-always primary key, so an integer identity key
+ * is absent and the key that points at it is listed instead of built.
+ */
+function pulledColumnNames(
+  tables: readonly TableObject[],
+  byParent: ReadonlyMap<string, ParentBag>,
+  enums: ReadonlyMap<string, readonly string[]>,
+  domains: ReadonlyMap<string, { readonly base: string; readonly check: string }>,
+): ReadonlyMap<string, ReadonlySet<string>> {
+  const pulled = new Map<string, ReadonlySet<string>>();
+  for (const table of tables) {
+    const bag = byParent.get(table.identity.name);
+    const columns = bag?.columns ?? [];
+    const primary = bag?.constraints.find(
+      (item) => item.definition.constraintKind === "primaryKey",
+    );
+    const identityColumn = identityPrimary(columns, primary?.definition.columns ?? []);
+    const names = new Set<string>();
+    for (const column of columns) {
+      if (column === identityColumn) {
+        names.add(column.identity.name);
+        continue;
+      }
+      if (columnSource(column, column.identity.name, enums, domains) !== undefined) {
+        names.add(column.identity.name);
+      }
+    }
+    pulled.set(table.identity.name, names);
+  }
+  return pulled;
+}
+
+function referencedColumnsPulled(
+  references: NonNullable<ConstraintObject["definition"]["references"]>,
+  pulled: ReadonlyMap<string, ReadonlySet<string>>,
+): boolean {
+  const columns = pulled.get(references.parent.name);
+  if (columns === undefined) return false;
+  return references.columns.every((name) => columns.has(name));
 }
 
 function columnSource(
