@@ -9,7 +9,7 @@
 import { expect } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 import { OkmError } from "../src/contracts/error.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
@@ -251,6 +251,44 @@ postgresTest(
   90_000,
 );
 
+postgresTest(
+  gate,
+  "pull writes a partial index with the builder and no unused imports",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = mkdtempSync(join(tmpdir(), "okm-pull-adopt-"));
+    try {
+      writeConfig(cwd, database.url);
+      linkOkmodel(cwd);
+      await seed(
+        database.url,
+        `create table tasks (
+           id integer primary key,
+           title text not null
+         );
+         create index open_title on tasks (title) where title <> '';
+         create index folded_title on tasks (title, (lower(title)))`,
+      );
+      await cli(cwd, ["pull"]);
+      const source = readFileSync(join(cwd, "tables", "tasks.ts"), "utf8");
+      expect(source).not.toContain("unique() { return this; }");
+      expect(source).toContain('index(columns.title).name("open_title")');
+      expect(source).toContain("predicate:");
+      expect(source).toContain("expression:");
+      expect(source).toContain('index(columns.title).name("folded_title")');
+      expect(source).not.toMatch(/import \{[^}]*\bsql\b/);
+      expect(source).toMatch(/import \{[^}]*\bindex\b/);
+      await typecheckPulled(cwd);
+      const built = await cli(cwd, ["build"]);
+      expect(built.length).toBeGreaterThan(0);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  90_000,
+);
+
 function crossSchemaSql(): string {
   return `create table users (
             id integer primary key,
@@ -293,6 +331,42 @@ function writeConfig(cwd: string, url: string): void {
       "",
     ].join("\n"),
   );
+}
+
+async function typecheckPulled(cwd: string): Promise<void> {
+  const pg = relative(cwd, join(root, "src/dialects/pg/index.ts")).replaceAll("\\", "/");
+  const spec = pg.startsWith(".") ? pg : `./${pg}`;
+  writeFileSync(
+    join(cwd, "tsconfig.json"),
+    JSON.stringify(
+      {
+        compilerOptions: {
+          paths: { "okmodel/pg": [spec] },
+          strict: true,
+          noUnusedLocals: true,
+          noEmit: true,
+          module: "ESNext",
+          moduleResolution: "bundler",
+          target: "ESNext",
+          allowImportingTsExtensions: true,
+          skipLibCheck: true,
+        },
+        include: ["schema.ts", "tables/**/*.ts"],
+      },
+      null,
+      2,
+    ),
+  );
+  const ran = Bun.spawnSync({
+    cmd: ["bunx", "tsc", "-p", join(cwd, "tsconfig.json"), "--pretty", "false"],
+    cwd: root,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const text = `${ran.stdout.toString()}\n${ran.stderr.toString()}`;
+  if (ran.exitCode !== 0) {
+    throw new Error(text);
+  }
 }
 
 async function cli(cwd: string, argv: readonly string[]): Promise<string> {

@@ -42,7 +42,9 @@ postgresTest(
       expect(source).toContain("index(columns.id)");
       expect(source).not.toContain('.name("tasks_id_idx")');
       expect(source).toContain('index(columns.title).name("lookup_title")');
-      expect(source).toContain('sqlName: "open_title"');
+      expect(source).toContain('index(columns.title).name("open_title")');
+      expect(source).toContain("predicate:");
+      expect(source).not.toContain("unique() { return this; }");
       await cli(cwd, ["generate", "init"]);
       const text = await cli(cwd, ["migrate", "baseline"]);
       expect(text).toContain("baselined baselined@0001_init");

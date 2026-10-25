@@ -637,9 +637,6 @@ function planTable(
     }
     indexLines.push(`      ${indexCall(index, fields)},`);
     needsIndex = true;
-    if (index.definition.predicate !== undefined || index.definition.expression !== undefined) {
-      needsSql = true;
-    }
   }
   if (indexLines.length > 0) {
     options.push("    indexes: (columns) => [");
@@ -943,23 +940,19 @@ function indexCall(index: IndexObject, fields: ReadonlyMap<string, string>): str
   const columns = index.definition.columns
     .map((name) => `columns.${fields.get(name) ?? name}`)
     .join(", ");
-  const predicate = index.definition.predicate;
-  const expression = index.definition.expression;
+  let call = `index(${columns})`;
+  if (index.definition.unique) call += ".unique()";
   const sqlName = customIndexName(index);
-  if (predicate === undefined && expression === undefined) {
-    let call = `index(${columns})`;
-    if (index.definition.unique) call += ".unique()";
-    if (sqlName !== undefined) call += `.name(${JSON.stringify(sqlName)})`;
-    return call;
+  if (sqlName !== undefined) call += `.name(${JSON.stringify(sqlName)})`;
+  const extra: string[] = [];
+  if (index.definition.predicate !== undefined) {
+    extra.push(`predicate: ${JSON.stringify(index.definition.predicate)}`);
   }
-  const fieldsText = [
-    `columns: [${index.definition.columns.map((name) => `columns.${fields.get(name) ?? name}.name`).join(", ")}]`,
-    `isUnique: ${index.definition.unique ? "true" : "false"}`,
-  ];
-  if (predicate !== undefined) fieldsText.push(`predicate: ${JSON.stringify(predicate)}`);
-  if (expression !== undefined) fieldsText.push(`expression: ${JSON.stringify(expression)}`);
-  if (sqlName !== undefined) fieldsText.push(`sqlName: ${JSON.stringify(sqlName)}`);
-  return `{ ${fieldsText.join(", ")}, unique() { return this; } }`;
+  if (index.definition.expression !== undefined) {
+    extra.push(`expression: ${JSON.stringify(index.definition.expression)}`);
+  }
+  if (extra.length === 0) return call;
+  return `{ ...${call}, ${extra.join(", ")} }`;
 }
 
 /**
