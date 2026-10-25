@@ -109,10 +109,10 @@ import { timestamps } from "okmodel/traits";
 import { citext } from "okmodel/pg/citext";
 import { pgTrgm } from "okmodel/pg/pg_trgm";
 import { vector } from "okmodel/pg/vector";
-import { users } from "./tables/users";
-import { lists } from "./tables/lists";
-import { tasks } from "./tables/tasks";
-import { countries } from "./tables/countries";
+import { users } from "./tables/users.ts";
+import { lists } from "./tables/lists.ts";
+import { tasks } from "./tables/tasks.ts";
+import { countries } from "./tables/countries.ts";
 
 export const appSchema = schema({
   minPostgres: 17,                   // oldest major; omitted means 15
@@ -132,6 +132,8 @@ declare module "okmodel" {
   interface Register { schema: typeof appSchema }
 }
 ```
+
+Relative imports here end in `.ts`, which is what `okm pull` writes. `tsc` with `moduleResolution: bundler` needs `allowImportingTsExtensions` and `noEmit`, or `rewriteRelativeImportExtensions`, which rewrites those specifiers to `.js` in the emit. `okm pull --import-ext js` writes `.js` specifiers for `nodenext`. `--import-ext none` writes no extension. The default is `ts`.
 
 ### 3.3 `db/client.ts`
 
@@ -1434,7 +1436,7 @@ The startup compatibility check allows the database to be ahead of the app by `e
 | `okm migrate baseline` | adopt an existing database that already matches the head snapshot (D299, section 19.6). Introspects, refuses a managed mismatch (OKM1858) with the plan that would reconcile it, reports unmanaged objects without altering them, and writes only `okm_meta` and `okm_history` as `baselined@<migration id>`. A target that already has OKModel history is OKM1857. Idempotent when that mark and hash are already present. History repair: a protected target needs `--allow-protected`. Flags: `--target`, `--allow-protected`, `--allow-pooler`, `--dry-run`, `--json`. The programmatic entry is `baseline(target)` from `okmodel/migrate` |
 | `okm generate` | produce migration SQL from the schema, including extension lifecycle; no TS is generated |
 | `okm push` | prototype sync; blocked on a `protected` target (section 19.7). A target named `production` is not blocked unless that entry sets `protected` |
-| `okm pull` | read one database and write one table file per table, plus the schema file (D275, D278). Written: tables, columns (type, default, nullability, identity, stored generated), primary and composite keys, unique constraints, checks, single-column foreign keys, indexes (partial and expression when the index has a column), identity sequences, enums, domains, extensions, functions, triggers, views, and materialized views. A view is the SQL-string form. Views and `BEGIN ATOMIC` bodies take edges from `pg_depend`. A plpgsql or SQL-string body gets lexical `dependsOn` candidates. A scratch replay with `check_function_bodies` on marks each function `verified` or `candidate-only`. Printed under `not pulled yet`, with a count: policies, enable and force row level security, roles, grants, aggregates, procedures, event triggers, rules, and anything `table()` cannot say (a partition, a composite foreign key, a standalone sequence, an expression index with no column, a column type with no builder, a foreign key to a column that was not pulled). A binding that matches an okmodel import (`t`, `table`, `columns`, `sql`, `index`, `schema`, `extension`, `fn`, `trigger`, `view`, `materializedView`) is written with `Name` appended, and `sqlName` keeps the database name. A foreign key to an unselected schema is listed and not written. The same table name in two selected schemas is OKM1023. An existing file is OKM1855. The selected namespaces are read-only, including on a protected target |
+| `okm pull` | read one database and write one table file per table, plus the schema file (D275, D278). Written: tables, columns (type, default, nullability, identity, stored generated), primary and composite keys, unique constraints, checks, single-column foreign keys, indexes (partial and expression when the index has a column), identity sequences, enums, domains, extensions, functions, triggers, views, and materialized views. A view is the SQL-string form. Views and `BEGIN ATOMIC` bodies take edges from `pg_depend`. A plpgsql or SQL-string body gets lexical `dependsOn` candidates. A scratch replay with `check_function_bodies` on marks each function `verified` or `candidate-only`. Printed under `not pulled yet`, with a count: policies, enable and force row level security, roles, grants, aggregates, procedures, event triggers, rules, and anything `table()` cannot say (a partition, a composite foreign key, a standalone sequence, an expression index with no column, a column type with no builder, a foreign key to a column that was not pulled). A binding that matches an okmodel import (`t`, `table`, `columns`, `sql`, `index`, `schema`, `extension`, `fn`, `trigger`, `view`, `materializedView`) is written with `Name` appended, and `sqlName` keeps the database name. A foreign key to an unselected schema is listed and not written. The same table name in two selected schemas is OKM1023. An existing file is OKM1855. `--import-ext` is `ts` (the default), `js`, or `none` and changes only the relative import specifier. The selected namespaces are read-only, including on a protected target |
 | `okm ext list\|check\|scaffold <name>\|test <file>` | list the extensions the connected server can install and the version that is installed; check those versions against the schema; print a starting `extension()` definition from the server catalog; check a definition file's types, operators, functions, and index methods against that server. All four are read-only, including on a protected target. `scaffold` writes a file only with `--out` and never overwrites |
 | `okm seed <file>` | seeds with factories |
 | `okm import drizzle <path>` | convert a Drizzle schema into table files with the same emitter as `okm pull` (D280). The file is imported with the project's own `drizzle-orm`, which runs that code. okmodel does not depend on it. A missing `drizzle-orm` is OKM1856. An existing file is OKM1855. Needs no database. Composite foreign keys, `relations()`, custom types, views, and sequences `table()` cannot map are printed under `not imported` |

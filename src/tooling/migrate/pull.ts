@@ -34,6 +34,7 @@ import {
   tableExportNames,
   type PullCount,
   type PullFile,
+  type PullImportExt,
   type PullLayout,
   type PullSkip,
 } from "./pull-emit.js";
@@ -84,7 +85,12 @@ export async function pullProject(
     const plan = planRoutines(read.catalog, tableExportNames(read.catalog));
     const verdicts = await verifyPulled(query, read.catalog, plan);
     const unexpressed = await countUnexpressed(query, read.schemas);
-    const emitted = emitPull(read.catalog, layout, { plan, verdicts, unexpressed });
+    const emitted = emitPull(
+      read.catalog,
+      layout,
+      { plan, verdicts, unexpressed },
+      { importExt: flags.importExt },
+    );
     const tables = emitted.files.filter((file) => file.path !== layout.schemaFile);
     if (tables.length === 0) {
       const name = read.schemas.join(", ");
@@ -124,10 +130,12 @@ export function parsePullArgs(argv: readonly string[]): {
   readonly allowProtected: boolean;
   readonly out: string | undefined;
   readonly schemas: readonly string[];
+  readonly importExt: PullImportExt;
 } {
   let target: string | undefined;
   let out: string | undefined;
   let allowProtected = false;
+  let importExt: PullImportExt = "ts";
   const schemas: string[] = [];
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index] ?? "";
@@ -135,7 +143,7 @@ export function parsePullArgs(argv: readonly string[]): {
       allowProtected = true;
       continue;
     }
-    if (arg === "--target" || arg === "--schema" || arg === "--out") {
+    if (arg === "--target" || arg === "--schema" || arg === "--out" || arg === "--import-ext") {
       const value = argv[index + 1];
       if (value === undefined || value.startsWith("--")) {
         throw new OkmError("invalid", `${arg} needs a value.`, {
@@ -144,6 +152,7 @@ export function parsePullArgs(argv: readonly string[]): {
       }
       if (arg === "--target") target = value;
       else if (arg === "--out") out = value;
+      else if (arg === "--import-ext") importExt = importExtValue(value);
       else schemas.push(...splitSchemas(value));
       index += 1;
       continue;
@@ -160,11 +169,22 @@ export function parsePullArgs(argv: readonly string[]): {
       schemas.push(...splitSchemas(arg.slice("--schema=".length)));
       continue;
     }
+    if (arg.startsWith("--import-ext=")) {
+      importExt = importExtValue(arg.slice("--import-ext=".length));
+      continue;
+    }
     throw new OkmError("invalid", `Unknown flag ${arg}.`, {
-      fix: { summary: "okm pull accepts --target, --schema, and --out." },
+      fix: { summary: "okm pull accepts --target, --schema, --out, and --import-ext." },
     });
   }
-  return { target, allowProtected, out, schemas };
+  return { target, allowProtected, out, schemas, importExt };
+}
+
+function importExtValue(value: string): PullImportExt {
+  if (value === "ts" || value === "js" || value === "none") return value;
+  throw new OkmError("invalid", "--import-ext accepts ts, js, or none.", {
+    fix: { summary: "Pass --import-ext ts, --import-ext js, or --import-ext none." },
+  });
 }
 
 async function readCatalog(

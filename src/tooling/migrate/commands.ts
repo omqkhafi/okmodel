@@ -836,6 +836,7 @@ async function pull(
   if (parsed.allowProtected) args.push("--allow-protected");
   if (parsed.out !== undefined) args.push("--out", parsed.out);
   for (const name of parsed.schemas) args.push("--schema", name);
+  if (parsed.importExt !== "ts") args.push("--import-ext", parsed.importExt);
   const text = (await pullProject(project, args)).text;
   human(text);
   return textData(text);

@@ -51,6 +51,9 @@ export type PullSkip = {
   readonly sql: string;
 };
 
+/** Extension written on relative imports. Files on disk stay `.ts`. */
+export type PullImportExt = "ts" | "js" | "none";
+
 /** Where the schema file and the table files go. */
 export type PullLayout = {
   /** Absolute path of the schema module. */
@@ -158,9 +161,16 @@ const RESERVED = new Set([
  * @param source - Catalog from introspection, logical namespace `public`
  * @param layout - Schema file and tables directory
  * @param review - Scratch verdicts. Omitted marks every function candidate-only
+ * @param options - `importExt` defaults to `ts`
  * @returns The files and the objects they do not declare
  */
-export function emitPull(source: Catalog, layout: PullLayout, review?: PullReview): PullEmission {
+export function emitPull(
+  source: Catalog,
+  layout: PullLayout,
+  review?: PullReview,
+  options?: { readonly importExt?: PullImportExt },
+): PullEmission {
+  const importExt = options?.importExt ?? "ts";
   const statements = rendered(source);
   const skipped: PullSkip[] = [];
   const enums = enumLabels(source);
@@ -279,7 +289,7 @@ export function emitPull(source: Catalog, layout: PullLayout, review?: PullRevie
   const routines = renderRoutines(plan, new Map(verdictList.map((item) => [item.key, item])));
   files.push({
     path: layout.schemaFile,
-    text: schemaText(layout.schemaFile, imports, extensionCalls(source), routines),
+    text: schemaText(layout.schemaFile, imports, extensionCalls(source), routines, importExt),
   });
   files.sort((left, right) => compare(left.path, right.path));
   skipped.sort((left, right) =>
@@ -1048,6 +1058,7 @@ function schemaText(
     readonly triggers: readonly string[];
     readonly views: readonly string[];
   },
+  importExt: PullImportExt,
 ): string {
   const lines = ['import { schema } from "okmodel/pg";'];
   if (extensions.length > 0) lines.push('import { extension } from "okmodel/ext";');
@@ -1055,7 +1066,7 @@ function schemaText(
   const sorted = [...imports].sort((left, right) => compare(left.name, right.name));
   for (const item of sorted) {
     lines.push(
-      `import { ${item.name} } from ${JSON.stringify(importSpecifier(schemaFile, item.file))};`,
+      `import { ${item.name} } from ${JSON.stringify(importSpecifier(schemaFile, item.file, importExt))};`,
     );
   }
   const tables = sorted.map((item) => item.name).join(", ");
@@ -1120,11 +1131,14 @@ function importLine(needsTable: boolean, needsIndex: boolean, needsSql: boolean)
  *
  * @param fromFile - Absolute path of the importing file
  * @param toFile - Absolute path of the imported file
- * @returns A relative specifier that starts with `.` and ends with `.ts`
+ * @param importExt - `ts` keeps `.ts`. `js` rewrites it to `.js`. `none` drops it
+ * @returns A relative specifier that starts with `.`
  */
-function importSpecifier(fromFile: string, toFile: string): string {
+function importSpecifier(fromFile: string, toFile: string, importExt: PullImportExt): string {
   let spec = relative(dirname(fromFile), toFile).replaceAll("\\", "/");
   if (!spec.startsWith(".")) spec = `./${spec}`;
+  if (importExt === "js") return spec.slice(0, -".ts".length) + ".js";
+  if (importExt === "none") return spec.slice(0, -".ts".length);
   return spec;
 }
 

@@ -7,7 +7,15 @@
  */
 
 import { expect } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
@@ -288,6 +296,122 @@ postgresTest(
   },
   90_000,
 );
+
+postgresTest(
+  gate,
+  "pull --import-ext keeps .ts by default and can write .js or no extension",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = mkdtempSync(join(tmpdir(), "okm-pull-adopt-"));
+    try {
+      writeConfig(cwd, database.url);
+      linkOkmodel(cwd);
+      await seed(database.url, `create table notes (id integer primary key, body text not null)`);
+      await cli(cwd, ["pull", "--out", "default-ext"]);
+      const tsSchema = readFileSync(join(cwd, "default-ext", "schema.ts"), "utf8");
+      expect(tsSchema).toContain('from "./tables/notes.ts"');
+      const bareBundler = tscResult(join(cwd, "default-ext"), {
+        module: "ESNext",
+        moduleResolution: "bundler",
+        noEmit: true,
+        strict: true,
+      });
+      expect(bareBundler.exitCode).not.toBe(0);
+      expect(bareBundler.text).toContain("allowImportingTsExtensions");
+      const rewritten = tscResult(join(cwd, "default-ext"), {
+        module: "ESNext",
+        moduleResolution: "bundler",
+        rewriteRelativeImportExtensions: true,
+        outDir: "emit",
+        strict: true,
+      });
+      expect(rewritten.exitCode, rewritten.text).toBe(0);
+      const emitted = readFileSync(join(cwd, "default-ext", "emit", "schema.js"), "utf8");
+      expect(emitted).toContain('from "./tables/notes.js"');
+      await cli(cwd, ["pull", "--import-ext", "none", "--out", "none-ext"]);
+      const noneSchema = readFileSync(join(cwd, "none-ext", "schema.ts"), "utf8");
+      expect(noneSchema).toContain('from "./tables/notes"');
+      expect(noneSchema).not.toContain('from "./tables/notes.ts"');
+      const noneChecked = tscResult(join(cwd, "none-ext"), {
+        module: "ESNext",
+        moduleResolution: "bundler",
+        noEmit: true,
+        strict: true,
+      });
+      expect(noneChecked.exitCode, noneChecked.text).toBe(0);
+      await cli(cwd, ["pull", "--import-ext", "js", "--out", "js-ext"]);
+      const jsSchema = readFileSync(join(cwd, "js-ext", "schema.ts"), "utf8");
+      expect(jsSchema).toContain('from "./tables/notes.js"');
+      const jsChecked = tscResult(join(cwd, "js-ext"), {
+        module: "NodeNext",
+        moduleResolution: "nodenext",
+        noEmit: true,
+        strict: true,
+      });
+      expect(jsChecked.exitCode, jsChecked.text).toBe(0);
+      let rejected: unknown;
+      try {
+        await cli(cwd, ["pull", "--import-ext", "mjs"]);
+      } catch (error) {
+        rejected = error;
+      }
+      expect(rejected).toBeInstanceOf(OkmError);
+      expect((rejected as OkmError).message).toContain("--import-ext accepts ts, js, or none.");
+      const jsDir = join(cwd, "js-ext");
+      unlinkSync(join(jsDir, "tsconfig.json"));
+      unlinkSync(join(jsDir, "pg-stub.ts"));
+      writeConfig(jsDir, database.url);
+      linkOkmodel(jsDir);
+      const built = await cli(join(cwd, "js-ext"), ["build"]);
+      expect(built.length).toBeGreaterThan(0);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  90_000,
+);
+
+function tscResult(
+  cwd: string,
+  options: Record<string, unknown>,
+): { readonly exitCode: number; readonly text: string } {
+  writeFileSync(
+    join(cwd, "pg-stub.ts"),
+    [
+      "export const t: any = {};",
+      "export function table(..._args: any[]): any {",
+      "  return {};",
+      "}",
+      "export function schema(..._args: any[]): any {",
+      "  return {};",
+      "}",
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(
+    join(cwd, "tsconfig.json"),
+    `${JSON.stringify({
+      compilerOptions: {
+        target: "ESNext",
+        skipLibCheck: true,
+        paths: { "okmodel/pg": ["./pg-stub.ts"] },
+        ...options,
+      },
+      include: ["schema.ts", "tables/**/*.ts", "pg-stub.ts"],
+    })}\n`,
+  );
+  const ran = Bun.spawnSync({
+    cmd: ["bunx", "tsc", "-p", join(cwd, "tsconfig.json"), "--pretty", "false"],
+    cwd: root,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  return {
+    exitCode: ran.exitCode ?? 1,
+    text: `${ran.stdout.toString()}\n${ran.stderr.toString()}`,
+  };
+}
 
 function crossSchemaSql(): string {
   return `create table users (
