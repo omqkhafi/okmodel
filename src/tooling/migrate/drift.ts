@@ -4,7 +4,8 @@
  * A database that has never been pushed has no `okm_meta` and is left alone.
  * After push, the introspected catalog is planned back to the schema. Each
  * view is reprinted on this server first, so a `pg_get_viewdef` spelling is
- * not drift. Any remaining statement is OKM1520. `okm_meta`, `okm_history`,
+ * not drift. A btree index expression is reprinted the same way. Any remaining
+ * statement is OKM1520. `okm_meta`, `okm_history`,
  * and `okm_backfill` are omitted by the planner.
  */
 
@@ -21,6 +22,7 @@ import {
   reprintCheck,
   reprintDomainCheck,
   reprintGenerated,
+  reprintIndex,
   reprintTriggerWhen,
   type CatalogQuery,
   type IntrospectOptions,
@@ -206,22 +208,95 @@ export async function sealDomainChecks(runner: CatalogQuery, source: Catalog): P
 }
 
 /**
- * Reprints table and domain checks to the text Postgres stores.
+ * Reprints table and domain checks, generated columns, and btree index
+ * expressions to the text Postgres stores.
  *
  * Author and live catalogs both go through this before they are planned
- * against each other. A check or generated expression applied from author SQL
- * and the same text applied from an earlier reprint then compare equal. The
- * catalog hash still uses the author text.
+ * against each other. A check, generated expression, or index expression
+ * applied from author SQL and the same text applied from an earlier reprint
+ * then compare equal. The catalog hash still uses the author text.
  *
  * @param runner - Database connection
  * @param source - Catalog whose checks may still be author SQL or one reprint
- * @returns A catalog whose check expressions carry the stable server text
+ * @returns A catalog whose stored expressions carry the stable server text
  */
 export async function sealStoredChecks(runner: CatalogQuery, source: Catalog): Promise<Catalog> {
-  return sealGeneratedColumns(
+  return sealIndexExpressions(
     runner,
-    await sealTableChecks(runner, await sealDomainChecks(runner, source)),
+    await sealGeneratedColumns(
+      runner,
+      await sealTableChecks(runner, await sealDomainChecks(runner, source)),
+    ),
   );
+}
+
+/**
+ * Reprints each btree index expression the way this server stores it.
+ *
+ * `lower( email )` becomes `lower(email)`, and a pure expression keeps no key
+ * column: introspection reads `indkey` above 0, which is empty. A `using`
+ * tail is left as written, because that text is rebuilt from the index method
+ * rather than `pg_get_expr`. The catalog hash still uses the author text.
+ *
+ * @param runner - Database connection
+ * @param source - Catalog whose index expressions may still be author SQL
+ * @returns A catalog whose btree index expressions carry the server reprint
+ */
+export async function sealIndexExpressions(
+  runner: CatalogQuery,
+  source: Catalog,
+): Promise<Catalog> {
+  const columnsByParent = indexParentColumns(source);
+  const types = reprintTypes(source);
+  const objects: CatalogObject[] = [];
+  let changed = false;
+  for (const object of source.objects) {
+    if (object.kind !== "index" || object.definition.expression === undefined) {
+      objects.push(object);
+      continue;
+    }
+    if (/^using\s/i.test(object.definition.expression)) {
+      objects.push(object);
+      continue;
+    }
+    const reprinted = await reprintIndex(
+      runner,
+      object.definition.expression,
+      columnsByParent.get(object.identity.parent.name) ?? [],
+      types,
+      {
+        unique: object.definition.unique,
+        ...(object.definition.predicate !== undefined
+          ? { predicate: object.definition.predicate }
+          : {}),
+      },
+    );
+    const predicate =
+      object.definition.predicate === undefined
+        ? undefined
+        : reprinted.predicate.length > 0
+          ? reprinted.predicate
+          : object.definition.predicate;
+    if (
+      reprinted.expression === object.definition.expression &&
+      sameColumnNames(reprinted.columns, object.definition.columns) &&
+      predicate === object.definition.predicate
+    ) {
+      objects.push(object);
+      continue;
+    }
+    changed = true;
+    objects.push({
+      ...object,
+      definition: {
+        ...object.definition,
+        expression: reprinted.expression,
+        columns: reprinted.columns,
+        ...(predicate !== undefined ? { predicate } : {}),
+      },
+    });
+  }
+  return changed ? { version: source.version, objects } : source;
 }
 
 /**
@@ -371,6 +446,35 @@ function reprintTypes(source: Catalog): readonly ReprintType[] {
     );
   }
   return types;
+}
+
+function sameColumnNames(left: readonly string[], right: readonly string[]): boolean {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+}
+
+/**
+ * Columns a scratch index can name.
+ *
+ * Table columns are catalog objects. A materialized view's output columns
+ * live on the view, so an expression index on one still resolves.
+ */
+function indexParentColumns(source: Catalog): ReadonlyMap<string, readonly ReprintCheckColumn[]> {
+  const grouped = new Map<string, ReprintCheckColumn[]>(tableColumns(source));
+  for (const object of source.objects) {
+    if (object.kind !== "materializedView" || grouped.has(object.identity.name)) continue;
+    grouped.set(
+      object.identity.name,
+      object.definition.columns.map((column) => ({
+        name: column.name,
+        dataType: column.dataType,
+      })),
+    );
+  }
+  return grouped;
 }
 
 function tableColumns(source: Catalog): ReadonlyMap<string, readonly ReprintCheckColumn[]> {

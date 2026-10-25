@@ -125,10 +125,10 @@ export async function replayCheckHistory(
       for (const item of lintReprints(migration.catalog, live, migration.steps)) {
         reprints.push({ ...item, place: `${migration.id} ${item.place}` });
       }
-      // Seal views, domain checks, and table checks the way this server stores
-      // them so a non-canonical author spelling is not OKM1547 when generate is
-      // empty (B-37, D128). The live catalog is sealed too: author SQL stores
-      // the first printer pass, and that pass is not always stable.
+      // Seal views, checks, and btree index expressions the way this server
+      // stores them so a non-canonical author spelling is not OKM1547 when
+      // generate is empty (B-37, D128). The live catalog is sealed too: author
+      // SQL stores the first printer pass, and that pass is not always stable.
       const sealed = await sealTriggerWhens(
         runner,
         await sealStoredChecks(runner, await sealViews(runner, migration.catalog)),
