@@ -274,7 +274,7 @@ export type ColumnState<TValue> = {
    * Absent otherwise. Not part of the catalog or its hash.
    */
   readonly filterable?: true;
-  /** Redacted in logs, errors, and `inspect()`. Not part of the catalog hash. */
+  /** Redacted in logs, errors, `inspect()`, and `explain()`. Not part of the catalog hash. */
   readonly sensitive: boolean;
   readonly omitWrite: boolean;
   readonly omitUpdate: boolean;
@@ -611,7 +611,7 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
   }
 
   /**
-   * Redacts the value in logs, errors, and `inspect()`.
+   * Redacts the value in logs, errors, `inspect()`, and `explain()`.
    *
    * The stored value is unchanged. A read that selects the column still
    * returns it. The catalog hash does not include this flag.

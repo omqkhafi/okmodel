@@ -1016,7 +1016,7 @@ A raw write on a scoped tenant table sends nothing. A raw read must select the p
 
 ### Explain
 
-`explain` describes a query you already built. Outside production it returns the `EXPLAIN` lines with the statement text and parameters. In production it does not send the statement: `plan` is null and `params` is empty.
+`explain` describes a query you already built. Outside production it returns the `EXPLAIN` lines with the statement text and parameters. A hidden or sensitive parameter is `[redacted]` in `params` and in the plan text. Postgres still receives the real parameter, so the plan and its costs stay the ones it chose. An ordinary column stays in both. In production it does not send the statement: `plan` is null and `params` is empty.
 
 ```ts title="explain-notes.ts"
 import { connect } from "okmodel/pg/postgresjs";

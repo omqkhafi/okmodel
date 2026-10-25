@@ -5,8 +5,8 @@
  */
 
 import { OkmError } from "../contracts/error.js";
-import type { QuerySchema, TableModel } from "../dialects/pg/model.js";
-import { isOperator, operatorValue } from "../dialects/pg/operators.js";
+import type { ColumnModel, QuerySchema, TableModel } from "../dialects/pg/model.js";
+import { isOperator, operatorName, operatorValue } from "../dialects/pg/operators.js";
 import type { ReadCall } from "./plan.js";
 import { runSafety, safetyInstalled } from "./safety-hook.js";
 import type { Inspection } from "./types.js";
@@ -26,9 +26,6 @@ const namesOf = new WeakMap<object, ReadonlySet<string>>();
  */
 export function redactView(schema: QuerySchema, view: Inspection, call: ReadCall): Inspection {
   const names = concealedNames(schema);
-  const secrets = new Set<string>();
-  harvest(schema, call.where, names, undefined, secrets);
-  harvest(schema, call.include, names, undefined, secrets);
   const model = schema.model[call.table];
   const rules = model === undefined ? view.rules : [...view.rules, ...exposureRules(model, call)];
   if (safetyInstalled()) runSafety(rules, undefined);
@@ -42,11 +39,43 @@ export function redactView(schema: QuerySchema, view: Inspection, call: ReadCall
     rules,
     sql: {
       ...view.sql,
-      params: view.sql.params.map((value) =>
-        value !== null && secrets.has(value) ? REDACTED : value,
-      ),
+      params: redactParams(schema, { where: call.where, include: call.include }, view.sql.params),
     },
   };
+}
+
+/**
+ * Replaces concealed bound parameters with `[redacted]`.
+ *
+ * `source` is the read (`where`, `include`) or the write input. A parameter is
+ * replaced when it equals a concealed value encoded the way the statement
+ * binds it.
+ *
+ * @param schema - Connected schema
+ * @param source - Caller input that may hold hidden or sensitive values
+ * @param params - Bound parameters
+ * @returns The same array when nothing was concealed, otherwise a copy
+ */
+export function redactParams(
+  schema: QuerySchema,
+  source: unknown,
+  params: readonly (string | null)[],
+): readonly (string | null)[] {
+  if (params.length === 0) return params;
+  const names = concealedNames(schema);
+  if (names.size === 0) return params;
+  const secrets = new Set<string>();
+  harvest(schema, source, names, undefined, secrets);
+  if (secrets.size === 0) return params;
+  let changed = false;
+  const next = params.map((value) => {
+    if (value !== null && secrets.has(value)) {
+      changed = true;
+      return REDACTED;
+    }
+    return value;
+  });
+  return changed ? next : params;
 }
 
 /**
@@ -131,38 +160,63 @@ function harvest(
   key: string | undefined,
   into: Set<string>,
 ): void {
+  if (isOperator(value)) {
+    const inner = operatorValue(value);
+    if (
+      operatorName(value) === "json.set" &&
+      isRecord(inner) &&
+      "value" in inner &&
+      key !== undefined
+    ) {
+      addEncoded(schema, key, inner.value, into);
+    }
+    harvest(schema, inner, names, key, into);
+    return;
+  }
   if (Array.isArray(value)) {
+    if (key !== undefined && names.has(key)) addEncoded(schema, key, value, into);
     for (const item of value) harvest(schema, item, names, key, into);
     return;
   }
-  if (isOperator(value)) {
-    harvest(schema, operatorValue(value), names, key, into);
-    return;
-  }
   if (typeof value === "object" && value !== null) {
+    if (key !== undefined && names.has(key)) addEncoded(schema, key, value, into);
     const record = value as Record<string, unknown>;
     for (const child of Object.keys(record)) harvest(schema, record[child], names, child, into);
     return;
   }
   if (key === undefined || !names.has(key)) return;
-  const encode = encodeOf(schema, key);
-  if (encode === undefined) return;
-  try {
-    into.add(encode(value));
-  } catch {
-    // The codec already refused the value.
+  addEncoded(schema, key, value, into);
+}
+
+function addEncoded(schema: QuerySchema, key: string, value: unknown, into: Set<string>): void {
+  const column = columnFor(schema, key);
+  if (column === undefined) return;
+  pushEncoded(column.encode, value, into);
+  if (column.elementEncode !== undefined && column.elementEncode !== column.encode) {
+    pushEncoded(column.elementEncode, value, into);
   }
 }
 
-function encodeOf(schema: QuerySchema, field: string): ((value: unknown) => string) | undefined {
+function pushEncoded(encode: (value: unknown) => string, value: unknown, into: Set<string>): void {
+  try {
+    const encoded = encode(value);
+    if (typeof encoded === "string") into.add(encoded);
+  } catch {
+    // The codec refused this shape. Another encoder may still match the parameter.
+  }
+}
+
+function columnFor(schema: QuerySchema, field: string): ColumnModel | undefined {
   for (const model of Object.values(schema.model)) {
     for (const column of model.columns) {
-      if (column.field === field && (column.hidden || column.sensitive)) {
-        return column.encode as (value: unknown) => string;
-      }
+      if (column.field === field && (column.hidden || column.sensitive)) return column;
     }
   }
   return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function walk(value: unknown, names: ReadonlySet<string>, key?: string): unknown {

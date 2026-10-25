@@ -31,7 +31,7 @@ export type ColumnModel = {
    */
   readonly hidden: boolean | "filter";
   /**
-   * Redacted in logs, errors, and `inspect()`.
+   * Redacted in logs, errors, `inspect()`, and `explain()`.
    *
    * A selected read still returns the value.
    */
