@@ -463,7 +463,7 @@ function sameColumnNames(left: readonly string[], right: readonly string[]): boo
  * live on the view, so an expression index on one still resolves.
  */
 function indexParentColumns(source: Catalog): ReadonlyMap<string, readonly ReprintCheckColumn[]> {
-  const grouped = new Map<string, ReprintCheckColumn[]>(tableColumns(source));
+  const grouped = new Map(tableColumns(source));
   for (const object of source.objects) {
     if (object.kind !== "materializedView" || grouped.has(object.identity.name)) continue;
     grouped.set(
