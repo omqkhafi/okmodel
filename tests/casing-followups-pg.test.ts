@@ -193,6 +193,45 @@ postgresTest(
   30_000,
 );
 
+postgresTest(
+  gate,
+  "snake and camel store iOS, IPv6Address, and userId2FA as spelled",
+  async () => {
+    const declarations = [
+      'const notes = table("notes", { id: t.identity(), iOS: t.text(), IPv6Address: t.text(), userId2FA: t.text() });',
+    ];
+    const database = await createIsolatedDatabase();
+    const snake = project("casing-words-snake");
+    try {
+      writeConfig(snake, database.url);
+      writeSchema(snake, declarations, "notes", "snake");
+      await cli(snake, ["generate", "init"]);
+      await cli(snake, ["migrate", "apply"]);
+      expect([...(await columnNames(database.url))].sort()).toEqual(
+        ["id", "i_os", "i_pv6_address", "user_id2_fa"].sort(),
+      );
+    } finally {
+      rmSync(snake, { recursive: true, force: true });
+      await database.close();
+    }
+    const second = await createIsolatedDatabase();
+    const camel = project("casing-words-camel");
+    try {
+      writeConfig(camel, second.url);
+      writeSchema(camel, declarations, "notes", "camel");
+      await cli(camel, ["generate", "init"]);
+      await cli(camel, ["migrate", "apply"]);
+      expect([...(await columnNames(second.url))].sort()).toEqual(
+        ["id", "iOs", "iPv6Address", "userId2Fa"].sort(),
+      );
+    } finally {
+      rmSync(camel, { recursive: true, force: true });
+      await second.close();
+    }
+  },
+  120_000,
+);
+
 function thrown(fn: () => unknown): OkmError {
   try {
     fn();
@@ -261,6 +300,20 @@ async function identitySequence(url: string, table: string, column: string): Pro
     const seq = rows[0]?.seq ?? "";
     const dot = seq.lastIndexOf(".");
     return (dot === -1 ? seq : seq.slice(dot + 1)).replaceAll('"', "");
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
+async function columnNames(url: string): Promise<string[]> {
+  const sql = openPostgres(url);
+  try {
+    const rows = await sql<{ attname: string }[]>`
+      select attname from pg_attribute
+      where attrelid = 'notes'::regclass and attnum > 0 and not attisdropped
+      order by attnum
+    `;
+    return rows.map((row) => row.attname);
   } finally {
     await sql.end({ timeout: 5 });
   }

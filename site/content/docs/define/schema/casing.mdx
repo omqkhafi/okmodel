@@ -7,7 +7,7 @@ description: "The SQL name of a field you did not name."
 | Value | Result |
 | --- | --- |
 | omitted | The SQL name is the field name, and the table name. |
-| `"snake"` | Words are lowercased and joined with `_`. An acronym is one word. |
+| `"snake"` | Words are lowercased and joined with `_`. A run of two or more capitals is one word. A single capital is its own word. |
 | `"camel"` | The first word is lowercase and the others start with a capital. |
 | any other value | Refused. |
 
@@ -28,7 +28,7 @@ export default schema({ tables: [notes] });
 
 ### snake
 
-`"snake"` rewrites a table name and a field. A run of capitals is one word, so `userID` is `user_id`, `getURLs` is `get_urls`, and `HTMLParser` is `html_parser`. A digit stays with the word before it: `address2` is `address2` and `line1Text` is `line1_text`. An underscore at either end is kept, and a letter outside ASCII passes through unchanged.
+`"snake"` rewrites a table name and a field. A run of capitals is one word only when it has two or more letters, and a single capital is its own word. `userID` is `user_id`, `getURLs` is `get_urls`, and `HTMLParser` is `html_parser`. `iOS` is `i_os`, `IPv6Address` is `i_pv6_address`, and `userId2FA` is `user_id2_fa`. A digit stays with the word before it: `address2` is `address2` and `line1Text` is `line1_text`. An underscore at either end is kept, and a letter outside ASCII passes through unchanged.
 
 [sqlName](/docs/define/table/names#sql-name) and `renamedFrom` are stored as you wrote them. Indexes, checks, and foreign keys then use that SQL name.
 
@@ -53,7 +53,7 @@ The table is `published_notes`. `publishedAt` is `published_at`. `headline` is `
 
 ### camel
 
-`"camel"` splits a name into the same words and joins them as `camelCase`. `user_id` is `userId`, and `HTMLParser` is `htmlParser`. `publishedNotes` and `publishedAt` stay as written. Use it when the database already spells names that way.
+`"camel"` splits a name into the same words and joins them as `camelCase`. `user_id` is `userId`, and `HTMLParser` is `htmlParser`. `iOS` is `iOs`, `IPv6Address` is `iPv6Address`, and `userId2FA` is `userId2Fa`. `publishedNotes` and `publishedAt` stay as written. Use it when the database already spells names that way.
 
 ```ts title="schema.ts"
 import { schema, table, t } from "okmodel/pg";

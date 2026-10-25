@@ -12,6 +12,10 @@ const VECTORS: readonly (readonly [string, string, string])[] = [
   ["line1Text", "line1_text", "line1Text"],
   ["user_id", "user_id", "userId"],
   ["userId", "user_id", "userId"],
+  // A run of capitals is one word only when it has two or more letters.
+  ["iOS", "i_os", "iOs"],
+  ["IPv6Address", "i_pv6_address", "iPv6Address"],
+  ["userId2FA", "user_id2_fa", "userId2Fa"],
   // Plain words and single letters.
   ["id", "id", "id"],
   ["x", "x", "x"],
