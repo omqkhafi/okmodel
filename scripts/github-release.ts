@@ -2,8 +2,9 @@
  * Creates the GitHub Release for this version from the changelog section.
  *
  * The notes are the body of `## v` plus `package.json` version. The tag is
- * the same string. The workflow runs this after the npm smoke passes, then
- * closes the milestone for that version.
+ * the same string. The publish job runs this after `npm stage publish`,
+ * then closes the milestone for that version. It does not wait for the npm
+ * smoke. That smoke runs after a maintainer approves the staged version.
  */
 
 import { readFileSync, rmSync, writeFileSync } from "node:fs";

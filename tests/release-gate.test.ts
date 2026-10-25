@@ -3,7 +3,8 @@
  */
 
 import { expect, test } from "bun:test";
-import { readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { POSTGRES_VERSIONS } from "../packages/harness/src/version.js";
@@ -32,6 +33,7 @@ import { repoRoot } from "../scripts/root.js";
 import {
   NPM_FLOOR,
   NODE_FLOOR,
+  readPackedVersion,
   stagePublishCommand,
   versionBelow,
 } from "../scripts/stage-publish.js";
@@ -136,6 +138,37 @@ test("stage publish uses an explicit path and the next tag for a prerelease", ()
   expect(versionBelow("24.0.0", NODE_FLOOR)).toBe(false);
 });
 
+test("the next tag follows the tarball version, not the checkout", () => {
+  const dir = mkdtempSync(join(tmpdir(), "okm-stage-"));
+  try {
+    const pkg = join(dir, "package");
+    mkdirSync(pkg);
+    writeFileSync(
+      join(pkg, "package.json"),
+      `${JSON.stringify({ name: "okmodel", version: "0.10.0-next.4" })}\n`,
+    );
+    const tarball = join(dir, "okmodel.tgz");
+    const packed = Bun.spawnSync(["tar", "-czf", tarball, "-C", dir, "package"]);
+    expect(packed.exitCode).toBe(0);
+    expect(readPackedVersion(tarball)).toBe("0.10.0-next.4");
+    expect(stagePublishCommand("./packed/okmodel.tgz", readPackedVersion(tarball))).toContain(
+      "next",
+    );
+    writeFileSync(
+      join(pkg, "package.json"),
+      `${JSON.stringify({ name: "okmodel", version: "0.10.0" })}\n`,
+    );
+    const stable = join(dir, "stable.tgz");
+    const repacked = Bun.spawnSync(["tar", "-czf", stable, "-C", dir, "package"]);
+    expect(repacked.exitCode).toBe(0);
+    expect(stagePublishCommand("./packed/okmodel.tgz", readPackedVersion(stable))).not.toContain(
+      "--tag",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("the release workflow is SHA-pinned and scopes publish permissions", () => {
   const release = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
   expect(releaseWorkflowProblems(release)).toEqual([]);
@@ -152,9 +185,11 @@ test("npm smoke waits out registry processing and skips bun's manifest cache", (
     "okmodel@0.8.0",
     "postgres",
   ]);
-  expect(readFileSync(join(root, "docs/release.md"), "utf8")).toContain(
-    "at most 31 times, 30 seconds apart",
-  );
+  const releaseDoc = readFileSync(join(root, "docs/release.md"), "utf8");
+  expect(releaseDoc).toContain("at most 31 times, 30 seconds apart");
+  expect(releaseDoc).toContain("issues: write");
+  expect(releaseDoc).toContain("The snapshot does not pin the contents of those files.");
+  expect(releaseDoc).toContain("It does not wait for the npm smoke.");
 });
 
 test("published package problem names a missing version and missing provenance", () => {

@@ -1,16 +1,22 @@
 /**
- * Fails unless the packed file list and the `exports` map match a snapshot.
+ * Fails unless the packed file list and the manifest fields match a snapshot.
  *
- * `bunx npm pack --dry-run --json` is the file list. The snapshot is
- * committed, so a change to either list is a diff in the pull request.
+ * `bunx npm@11.15.0 pack --dry-run --json` is the file list. The npm
+ * version is pinned so `bunx` does not download whatever npm is current.
+ * npm 11 prints a JSON array. npm 12 prints an object keyed by package
+ * name. Both shapes are accepted. The snapshot is committed, so a change
+ * is a diff in the pull request. It records `exports`, `bin`, and `main`.
+ * `bin` and `main` are the paths in `package.json`. The snapshot does not
+ * pin the contents of those files.
  * Bun names split chunks `dist/shared/<hash>.js` and
  * `dist/tooling/shared/<hash>.js` (`--chunk-naming=shared/[hash].js`).
  * Those paths are stored as `dist/shared/*.js` and
  * `dist/tooling/shared/*.js`. The count of each name stays exact.
  * A different hash with the same count passes. A new or removed chunk fails.
  * `package.json` must have no `preinstall`, `install`, `postinstall`, or
- * `prepare` script, empty `dependencies`, a `files` allowlist, and optional
- * peer dependencies.
+ * `prepare` script, empty `dependencies`, `optionalDependencies`,
+ * `bundleDependencies`, and `bundledDependencies`, a `files` allowlist,
+ * and optional peer dependencies.
  *
  *   bun ./scripts/pack-contract.ts
  *   bun ./scripts/pack-contract.ts --update
@@ -30,15 +36,37 @@ import { restoreWorkspaces } from "./strip-workspaces.js";
 /** Install-time scripts the published manifest must not define. */
 export const FORBIDDEN_SCRIPTS = ["preinstall", "install", "postinstall", "prepare"] as const;
 
+/**
+ * npm used for `npm pack --dry-run --json`.
+ *
+ * `bunx npm` without a version downloads the latest npm when none is on
+ * `PATH`. npm 12 changed the JSON shape. This pin stays on the array shape,
+ * and {@link packedTarballFromJson} still accepts the npm 12 object.
+ */
+export const PACK_NPM_VERSION = "11.15.0";
+
 /** Snapshot path used for this repository. */
 export const DEFAULT_SNAPSHOT = "tests/fixtures/pack-contract.snap.json";
 
-/** Packed paths plus the `exports` map. */
+/**
+ * Arguments for one dry-run pack.
+ *
+ * @returns The argv, without a shell
+ */
+export function packNpmArgs(): readonly string[] {
+  return ["bunx", `npm@${PACK_NPM_VERSION}`, "pack", "--dry-run", "--json"];
+}
+
+/** Packed paths plus the manifest fields the snapshot records. */
 export type PackSnapshot = {
   /** Paths `npm pack --dry-run --json` lists, sorted. */
   readonly files: readonly string[];
   /** `package.json` `exports`, or null when the field is absent. */
   readonly exports: unknown;
+  /** `package.json` `bin`, or null when the field is absent. Paths, not file bytes. */
+  readonly bin: unknown;
+  /** `package.json` `main`, or null when the field is absent. A path, not file bytes. */
+  readonly main: unknown;
 };
 
 /**
@@ -52,6 +80,8 @@ export function manifestProblems(manifest: unknown): readonly string[] {
   return [
     ...scriptProblems(manifest),
     ...dependencyProblems(manifest),
+    ...optionalDependencyProblems(manifest),
+    ...bundleDependencyProblems(manifest),
     ...filesProblems(manifest),
     ...peerProblems(manifest),
   ];
@@ -150,9 +180,13 @@ if (import.meta.main) {
     throw error;
   });
   const exportsField = isRecord(manifest) && "exports" in manifest ? manifest.exports : null;
+  const binField = isRecord(manifest) && "bin" in manifest ? manifest.bin : null;
+  const mainField = isRecord(manifest) && "main" in manifest ? manifest.main : null;
   const next: PackSnapshot = {
     files: packed.files.map((path) => normalizePackedPath(path)).sort(),
     exports: exportsField ?? null,
+    bin: binField ?? null,
+    main: mainField ?? null,
   };
   const drift: string[] = values.update ? [] : [...compareSnapshot(snapshotPath, next)];
   // The size budget is the repository's. A fixture passed with --root has no baseline.
@@ -192,6 +226,16 @@ function compareSnapshot(snapshotPath: string, next: PackSnapshot): readonly str
       `pack-contract: exports differ from ${snapshotPath}. Run with --update and commit the snapshot.`,
     );
   }
+  if (canonical(next.bin) !== canonical(snapshot.bin)) {
+    problems.push(
+      `pack-contract: bin differs from ${snapshotPath}. Run with --update and commit the snapshot.`,
+    );
+  }
+  if (canonical(next.main) !== canonical(snapshot.main)) {
+    problems.push(
+      `pack-contract: main differs from ${snapshotPath}. Run with --update and commit the snapshot.`,
+    );
+  }
   const diff = packedFileDiff(next.files, snapshot.files);
   if (diff.extra.length > 0 || diff.missing.length > 0) {
     problems.push(`pack-contract: packed files differ from ${snapshotPath}`);
@@ -220,7 +264,7 @@ export type PackedTarball = {
  */
 export async function readPacked(root: string): Promise<PackedTarball> {
   try {
-    const proc = Bun.spawn(["bunx", "npm", "pack", "--dry-run", "--json"], {
+    const proc = Bun.spawn([...packNpmArgs()], {
       cwd: root,
       stdout: "pipe",
       stderr: "pipe",
@@ -232,7 +276,7 @@ export async function readPacked(root: string): Promise<PackedTarball> {
       throw new Error(stderr.trim() || `npm pack exited ${String(code)}`);
     }
     const payload = parsePack(stdout);
-    return { files: filePaths(payload), bytes: tarballBytes(payload) };
+    return packedTarballFromJson(payload);
   } finally {
     restorePackedDocs(root);
     restoreWorkspaces(root);
@@ -240,28 +284,65 @@ export async function readPacked(root: string): Promise<PackedTarball> {
 }
 
 /**
- * Reads and sorts the packed paths from npm's JSON.
+ * Files and size from either npm pack JSON shape.
+ *
+ * An array is npm 11 (numeric keys merged back into an array). An object
+ * keyed by package name is npm 12. A single entry object is accepted too.
  *
  * @param payload - Parsed `npm pack --dry-run --json` output
- * @returns Sorted relative paths
+ * @returns Sorted packed paths and the tarball size
  */
+export function packedTarballFromJson(payload: unknown): PackedTarball {
+  const entry = packEntry(payload);
+  return { files: filePaths(entry), bytes: tarballBytes(entry) };
+}
+
 /**
- * Tarball `size` from npm's JSON, in bytes.
+ * The one pack entry inside npm's JSON.
  *
  * @param payload - Parsed `npm pack --dry-run --json` output
+ * @returns The entry that lists `files`
+ */
+function packEntry(payload: unknown): Record<string, unknown> {
+  if (Array.isArray(payload)) {
+    const entry = payload[0];
+    if (!isRecord(entry)) throw new Error("npm pack JSON has no files array");
+    return entry;
+  }
+  if (!isRecord(payload)) throw new Error("npm pack JSON has no files array");
+  if (Array.isArray(payload.files)) return payload;
+  const entries: Record<string, unknown>[] = [];
+  for (const value of Object.values(payload)) {
+    if (isRecord(value) && Array.isArray(value.files)) {
+      entries.push(value);
+      continue;
+    }
+    if (!Array.isArray(value)) continue;
+    for (const item of value) {
+      if (isRecord(item) && Array.isArray(item.files)) entries.push(item);
+    }
+  }
+  const entry = entries[0];
+  if (entry === undefined) throw new Error("npm pack JSON has no files array");
+  if (entries.length > 1) throw new Error("npm pack JSON lists more than one package");
+  return entry;
+}
+
+/**
+ * Tarball `size` from one pack entry, in bytes.
+ *
+ * @param entry - One element of `npm pack --dry-run --json`
  * @returns The packed size
  */
-function tarballBytes(payload: unknown): number {
-  const entry = Array.isArray(payload) ? payload[0] : payload;
-  if (!isRecord(entry) || typeof entry.size !== "number" || !Number.isInteger(entry.size)) {
+function tarballBytes(entry: Record<string, unknown>): number {
+  if (typeof entry.size !== "number" || !Number.isInteger(entry.size)) {
     throw new Error("npm pack JSON has no integer size");
   }
   return entry.size;
 }
 
-function filePaths(payload: unknown): readonly string[] {
-  const entry = Array.isArray(payload) ? payload[0] : payload;
-  if (!isRecord(entry) || !Array.isArray(entry.files)) {
+function filePaths(entry: Record<string, unknown>): readonly string[] {
+  if (!Array.isArray(entry.files)) {
     throw new Error("npm pack JSON has no files array");
   }
   const paths: string[] = [];
@@ -321,7 +402,12 @@ function readSnapshot(path: string): PackSnapshot {
     if (typeof file !== "string") throw new Error(`snapshot is not a pack contract: ${path}`);
     files.push(file);
   }
-  return { files, exports: "exports" in parsed ? parsed.exports : null };
+  return {
+    files,
+    exports: "exports" in parsed ? parsed.exports : null,
+    bin: "bin" in parsed ? parsed.bin : null,
+    main: "main" in parsed ? parsed.main : null,
+  };
 }
 
 /**
@@ -390,6 +476,52 @@ function dependencyProblems(manifest: Record<string, unknown>): readonly string[
   const names = Object.keys(dependencies).sort();
   if (names.length === 0) return [];
   return [`pack-contract: dependencies is not empty (${names.join(", ")})`];
+}
+
+/**
+ * @param manifest - Parsed `package.json`
+ * @returns A problem when `optionalDependencies` is present and not empty
+ */
+function optionalDependencyProblems(manifest: Record<string, unknown>): readonly string[] {
+  const dependencies = manifest.optionalDependencies;
+  if (dependencies === undefined) return [];
+  if (!isRecord(dependencies)) return ["pack-contract: optionalDependencies is not an object"];
+  const names = Object.keys(dependencies).sort();
+  if (names.length === 0) return [];
+  return [`pack-contract: optionalDependencies is not empty (${names.join(", ")})`];
+}
+
+/**
+ * @param manifest - Parsed `package.json`
+ * @returns A problem when a bundled dependency list is present and not empty
+ */
+function bundleDependencyProblems(manifest: Record<string, unknown>): readonly string[] {
+  const problems: string[] = [];
+  for (const key of ["bundleDependencies", "bundledDependencies"] as const) {
+    if (!(key in manifest)) continue;
+    const names = bundleNames(manifest[key]);
+    if (names === undefined) {
+      problems.push(`pack-contract: ${key} is not an array of names`);
+      continue;
+    }
+    if (names.length === 0) continue;
+    problems.push(`pack-contract: ${key} is not empty (${[...names].sort().join(", ")})`);
+  }
+  return problems;
+}
+
+/**
+ * @param value - `bundleDependencies` or `bundledDependencies`
+ * @returns The names, or undefined when the field is not a list of names
+ */
+function bundleNames(value: unknown): readonly string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const names: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string" || item.length === 0) return undefined;
+    names.push(item);
+  }
+  return names;
 }
 
 /**
