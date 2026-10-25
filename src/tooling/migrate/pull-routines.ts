@@ -570,15 +570,40 @@ function skip(object: CatalogObject, label: string, reason: string, sql: string)
 }
 
 function freshBinding(sql: string, used: Set<string>): string {
-  let name = bindingIdent(sql);
-  if (name === "table" || name === "columns") name = `${name}Name`;
+  const base = avoidImportBinding(bindingIdent(sql));
+  let name = base;
   let salt = 2;
   while (used.has(name)) {
-    name = `${bindingIdent(sql)}_${String(salt)}`;
+    name = `${base}_${String(salt)}`;
     salt += 1;
   }
   used.add(name);
   return name;
+}
+
+/**
+ * Bindings that pulled files import from okmodel.
+ *
+ * A table, column, or routine with one of these names is written as
+ * `${name}Name`. The import stays, so `export const t = table(...)` cannot
+ * shadow `t` and throw before initialization.
+ */
+const PULL_IMPORTS = new Set([
+  "columns",
+  "extension",
+  "fn",
+  "index",
+  "materializedView",
+  "schema",
+  "sql",
+  "t",
+  "table",
+  "trigger",
+  "view",
+]);
+
+export function avoidImportBinding(name: string): string {
+  return PULL_IMPORTS.has(name) ? `${name}Name` : name;
 }
 
 function bindingIdent(sql: string): string {

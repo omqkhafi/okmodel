@@ -7,7 +7,7 @@
  */
 
 import { expect } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -51,6 +51,67 @@ postgresTest(
       expect(checked).toMatch(/^ok\b/m);
       expect(checked).not.toContain("disable row level security");
       expect(checked).not.toContain("drop policy");
+      const built = await cli(cwd, ["build"]);
+      expect(built.length).toBeGreaterThan(0);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  90_000,
+);
+
+postgresTest(
+  gate,
+  "pull renames every binding that collides with an okmodel import",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = mkdtempSync(join(tmpdir(), "okm-pull-adopt-"));
+    try {
+      writeConfig(cwd, database.url);
+      linkOkmodel(cwd);
+      await seed(
+        database.url,
+        `create table t (id integer primary key, body text not null);
+         create table schema (id integer primary key);
+         create table sql (
+           id integer primary key,
+           body text not null check (body <> '')
+         );
+         create table index (id integer primary key, body text not null);
+         create index index_body on index (body);
+         create table extension (id integer primary key);
+         create extension citext;
+         create table fn (id integer primary key);
+         create function fn() returns integer language sql as $$ select 1 $$;
+         create function touch_row() returns trigger language plpgsql as $$ begin return new; end $$;
+         create table trigger (id integer primary key);
+         create trigger touch_row before insert on trigger for each row execute function touch_row();
+         create table view (id integer primary key);
+         create view rows_view as select id from view;
+         create table "materializedView" (id integer primary key);
+         create materialized view mat_rows as select id from t with no data`,
+      );
+      await cli(cwd, ["pull"]);
+      const tableT = readFileSync(join(cwd, "tables", "tName.ts"), "utf8");
+      expect(tableT).toContain("export const tName");
+      expect(tableT).toContain('sqlName: "t"');
+      expect(tableT).toContain("t.integer()");
+      const schema = readFileSync(join(cwd, "schema.ts"), "utf8");
+      for (const binding of [
+        "tName",
+        "schemaName",
+        "sqlName",
+        "indexName",
+        "extensionName",
+        "fnName",
+        "triggerName",
+        "viewName",
+        "materializedViewName",
+      ]) {
+        expect(schema).toContain(binding);
+      }
+      expect(schema).not.toMatch(/import \{ schema \} from "\.\/tables\//);
       const built = await cli(cwd, ["build"]);
       expect(built.length).toBeGreaterThan(0);
     } finally {

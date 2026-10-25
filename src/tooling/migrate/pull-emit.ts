@@ -22,6 +22,7 @@ import type {
   TableObject,
 } from "../../contracts/catalog/types.js";
 import {
+  avoidImportBinding,
   planRoutines,
   renderRoutines,
   type RoutinePlan,
@@ -1346,9 +1347,8 @@ function prefixed(source: string, prefix: string): string | undefined {
 }
 
 function freshIdent(sql: string, used: Set<string>): string {
-  let name = jsIdent(sql);
-  if (name === "table" || name === "columns") name = `${name}Name`;
-  const base = name;
+  const base = avoidImportBinding(jsIdent(sql));
+  let name = base;
   let salt = 2;
   // Folded so `Tasks` and `tasks` cannot share a binding (row types collide).
   while (used.has(name.toLowerCase())) {
