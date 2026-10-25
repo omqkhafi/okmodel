@@ -292,11 +292,11 @@ Leaving `version` out is a TypeScript error on a versioned table, and OKM1120 at
 
 `version: "any"` skips the check and still stores `version + 1`. The call returns the claimed rows, including that new version. Nothing claimed is `[]`, not a conflict. The statement locks the primary key once and repeats your `where` on the update, so a row whose state changed is left alone and the claim never takes more than `limit` rows. Run it in `READ COMMITTED`. `REPEATABLE READ` and `SERIALIZABLE` can raise SQLSTATE 40001 instead of dropping that row.
 
-A queue claims, then fences the worker's own later writes on the version from that worker's last write. Heartbeat, complete, and fail pass that integer plus the id, the running status, and the attempt. Fail uses the same fence as complete and sets a failed status. Rescue is another `version: "any"` claim. Handlers run at least once, so they have to be idempotent. A hot queue that heartbeats on a short interval fits a table that is not `versioned()`.
+A queue claims, then fences the worker's own later writes on the version from that worker's last write. Heartbeat, complete, and fail pass that integer plus the id, the running status, and the attempt. Fail uses the same fence as complete and sets a failed status. Rescue is another `version: "any"` claim. A job that dies before its first heartbeat has `heartbeatAt` null, so rescue matches that only when `claimedAt` is already stale, and it writes a new `heartbeatAt` so a second rescuer does not claim the same row. Handlers run at least once, so they have to be idempotent. A hot queue that heartbeats on a short interval fits a table that is not `versioned()`.
 
 ```ts title="queue.ts"
 import { connect } from "okmodel/pg/postgresjs";
-import { inc, lt, schema, table, t } from "okmodel/pg";
+import { inc, lt, or, schema, table, t } from "okmodel/pg";
 import { versioned } from "okmodel/traits";
 
 const jobs = table(
@@ -343,9 +343,13 @@ export async function work(url: string, owner: string) {
 export async function rescue(url: string, owner: string) {
   await using db = connect(url, { schema: app });
   const now = Temporal.Now.instant();
+  const stale = now.subtract({ minutes: 5 });
   await db.jobs.update({
-    where: { status: "running", heartbeatAt: lt(now.subtract({ minutes: 5 })) },
-    set: { status: "running", attempt: inc(1), claimedAt: now, owner },
+    where: or([
+      { status: "running", heartbeatAt: null, claimedAt: lt(stale) },
+      { status: "running", heartbeatAt: lt(stale) },
+    ]),
+    set: { status: "running", attempt: inc(1), claimedAt: now, heartbeatAt: now, owner },
     limit: 1,
     lock: "skip",
     version: "any",
