@@ -280,6 +280,20 @@ test("describe({ catalog }) of a minPostgres 18 description keeps 18", () => {
   ).toBe(18);
 });
 
+test("describe({ catalog }) drops a declared floor the features do not imply", () => {
+  const declared = schema({
+    minPostgres: 17,
+    tables: [table("users", { id: t.id(), name: t.text() })],
+  });
+  const description = describe(declared);
+  expect(description.minPostgres).toBe(17);
+  expect(describe({ catalog: description.catalog }).minPostgres).toBe(15);
+  const uuidv7 = schema({
+    tables: [table("users", { id: t.id({ default: "uuidv7" }), name: t.text() })],
+  });
+  expect(describe({ catalog: describe(uuidv7).catalog }).minPostgres).toBe(18);
+});
+
 test("describe() lists citext from a column and the declaration", () => {
   const app = schema({
     tables: [table("people", { email: t.citext() })],
@@ -352,6 +366,7 @@ test("describe() refuses a value that has no catalog", () => {
 test("the handbook example round-trips", async () => {
   const example = await loadSchemaApiExample();
   expect(example.description.logical).toEqual({ format: 1, name: "public", namespace: "public" });
+  expect(example.description.minPostgres).toBe(15);
   expect(catalogHash(example.catalog)).toBe(catalogHash(example.app.catalog));
 });
 
