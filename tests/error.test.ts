@@ -417,6 +417,7 @@ test("the error registry lists every spec 21 code and stays off the runtime entr
 
 test("OKM1060 names a bad column, a unique gin or gist index, and a bad casing", () => {
   const doc = errorDoc("OKM1060");
+  if (doc === undefined) throw new Error("OKM1060 is not in the registry");
   expect(doc.summary).toContain("gin");
   expect(doc.summary).toContain("gist");
   expect(doc.summary).toContain("casing");

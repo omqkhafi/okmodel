@@ -954,7 +954,7 @@ function columnSequenceRenames(
   rename: { readonly table: string; readonly from: string; readonly to: string },
   schema: string,
   dialect: DdlDialect,
-): PlanStep[] {
+): readonly PlanStep[] {
   const owned = source.objects.some(
     (object) =>
       object.kind === "column" &&
