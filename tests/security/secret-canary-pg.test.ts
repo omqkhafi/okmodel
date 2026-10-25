@@ -18,12 +18,11 @@
  * `inspect()`, and `explain()` echo a parameter that is not hidden or
  * sensitive. Those ledger hits stay in `KNOWN_LEAKS` until that is confirmed.
  *
- * Two concealed-column gaps are locked in the same list:
- * - `explain()` returns the bound value in `params`, and the plan text
- *   Postgres sends back contains it too. The statement text stays `$1`.
- * - A write `inspect()` returns bound parameters. `archive` has `sql()` and
- *   no `inspect()`; that plan is recorded on the `inspect` channel. A read
- *   `inspect()` redacts the same values.
+ * One concealed-column gap stays in the same list. `archive` has `sql()` and
+ * no `inspect()`, so that plan is recorded on the `inspect` channel and still
+ * returns the bound token. Write `inspect()` and `explain()` redact hidden
+ * and sensitive values. `explain()` sends the real parameters, then replaces
+ * those values in `params` and in the plan text. An ordinary column stays.
  *
  * Returned rows may contain `token`. A root `select` that names `code` or
  * `seal` may contain those too. Page cursors, observer events, `onQuery`
@@ -117,30 +116,10 @@ type Leak = {
  *
  * Each line is one operation, one channel, and one column. A change fails
  * the test. Ledger rows are the non-sensitive `includeValues` echo described
- * above. The rest are concealed values in `explain()` or a write plan.
+ * above. `archive` is the remaining concealed value, on `sql()`.
  */
 const KNOWN_LEAKS: readonly Leak[] = [
-  { op: "aggregate", channel: "explain.params", column: "token" },
-  { op: "aggregate", channel: "explain.plan", column: "token" },
   { op: "archive", channel: "inspect", column: "token" },
-  { op: "atomic", channel: "inspect", column: "code" },
-  { op: "atomic", channel: "inspect", column: "seal" },
-  { op: "db.batch", channel: "inspect", column: "code" },
-  { op: "db.batch", channel: "inspect", column: "seal" },
-  { op: "db.batch", channel: "inspect", column: "token" },
-  { op: "delete", channel: "inspect", column: "seal" },
-  { op: "find", channel: "explain.params", column: "code" },
-  { op: "find", channel: "explain.params", column: "seal" },
-  { op: "find", channel: "explain.params", column: "token" },
-  { op: "find", channel: "explain.plan", column: "code" },
-  { op: "find", channel: "explain.plan", column: "seal" },
-  { op: "find", channel: "explain.plan", column: "token" },
-  { op: "first-or-create.again", channel: "inspect", column: "code" },
-  { op: "first-or-create.again", channel: "inspect", column: "seal" },
-  { op: "first-or-create.again", channel: "inspect", column: "token" },
-  { op: "first-or-create", channel: "inspect", column: "code" },
-  { op: "first-or-create", channel: "inspect", column: "seal" },
-  { op: "first-or-create", channel: "inspect", column: "token" },
   { op: "ledger.duplicate", channel: "error.cause", column: "plain" },
   { op: "ledger.duplicate", channel: "error.params", column: "plain" },
   { op: "ledger.duplicate", channel: "onQuery", column: "plain" },
@@ -149,22 +128,6 @@ const KNOWN_LEAKS: readonly Leak[] = [
   { op: "ledger.find", channel: "inspect", column: "plain" },
   { op: "ledger.find", channel: "onQuery", column: "plain" },
   { op: "ledger.insert", channel: "onQuery", column: "plain" },
-  { op: "one", channel: "explain.params", column: "token" },
-  { op: "one", channel: "explain.plan", column: "token" },
-  { op: "raw", channel: "explain.params", column: "token" },
-  { op: "raw", channel: "explain.plan", column: "token" },
-  { op: "search", channel: "explain.params", column: "seal" },
-  { op: "search", channel: "explain.plan", column: "seal" },
-  { op: "stream", channel: "explain.params", column: "code" },
-  { op: "stream", channel: "explain.plan", column: "code" },
-  { op: "tx.batch", channel: "inspect", column: "code" },
-  { op: "tx.batch", channel: "inspect", column: "seal" },
-  { op: "tx.batch", channel: "inspect", column: "token" },
-  { op: "tx", channel: "inspect", column: "token" },
-  { op: "update.filter", channel: "inspect", column: "code" },
-  { op: "update.id", channel: "inspect", column: "code" },
-  { op: "update.id", channel: "inspect", column: "seal" },
-  { op: "update.id", channel: "inspect", column: "token" },
 ];
 
 const slips = table("slips", {

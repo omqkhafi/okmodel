@@ -430,9 +430,43 @@ export function explainHandle(
     host.scope,
     observeKeyList(host.o?.w),
   ).then((plan) => {
-    if (kind === "inspect") return { statements: plan.statements, rules: plan.rules };
     if (kind === "describe") return { statements: plan.described };
-    return { statements: plan.statements };
+    if (kind !== "inspect") return { statements: plan.statements };
+    return redactStatements(host.schema, table, input, plan.statements).then((statements) => ({
+      statements,
+      rules: plan.rules,
+    }));
+  });
+}
+
+/**
+ * Redacts hidden and sensitive parameters on an `inspect()` plan.
+ *
+ * `sql()` keeps the bound values. The helper is the one a read `inspect()` uses.
+ *
+ * @param schema - Connected schema
+ * @param table - Table the write targets
+ * @param input - Caller input
+ * @param statements - Planned statements
+ * @returns The same statements when the table has nothing to conceal
+ */
+function redactStatements(
+  schema: QuerySchema,
+  table: string,
+  input: unknown,
+  statements: readonly Statement[],
+): Promise<readonly Statement[]> {
+  if (schema.model[table]?.conceal !== true) return Promise.resolve(statements);
+  return import("./exposure.js").then(({ redactParams }) => {
+    let changed = false;
+    const next = statements.map((statement) => {
+      if (statement.params === undefined) return statement;
+      const params = redactParams(schema, input, statement.params);
+      if (params === statement.params) return statement;
+      changed = true;
+      return { ...statement, params };
+    });
+    return changed ? next : statements;
   });
 }
 

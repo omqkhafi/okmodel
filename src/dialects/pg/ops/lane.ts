@@ -21,12 +21,14 @@ import type { TenantCall, TenancyText } from "../tenancy.js";
 /**
  * What `explain()` returns.
  *
- * `plan` is null in production, and `params` is empty there.
+ * `plan` is null in production, and `params` is empty there. Outside
+ * production, a hidden or sensitive parameter is `[redacted]` in `params`
+ * and in `plan`. The statement text keeps `$1`.
  */
 export type ExplainResult = {
   /** The statement `explain` describes. */
   readonly text: string;
-  /** Bound parameters. Empty in production. */
+  /** Bound parameters. Empty in production. Concealed values are `[redacted]`. */
   readonly params: readonly (string | null)[];
   /** `EXPLAIN` lines, or null when the statement was not sent. */
   readonly plan: readonly string[] | null;
@@ -248,10 +250,16 @@ async function rawClass<C extends new () => object>(
   }
 }
 
+/** Placeholder shared with read and write `inspect()`. */
+const REDACTED = "[redacted]";
+
 /**
  * Describes a query.
  *
- * Outside production this sends `EXPLAIN` and returns the lines. In production
+ * Outside production this sends `EXPLAIN` with the real parameters and returns
+ * the lines. A hidden or sensitive value is `[redacted]` in `params` and in
+ * those lines. The plan Postgres chose is unchanged: the text is edited after
+ * `EXPLAIN` returns, which works on Postgres 15 through 18. In production
  * (`NODE_ENV` is `"production"`) it does not send the statement. `plan` is
  * null and `params` is empty.
  *
@@ -263,6 +271,10 @@ export async function explain(handle: object, query: object): Promise<ExplainRes
   const lane = readLane(handle);
   const got = readPlanned(await readSql(query));
   if (production()) return { text: got.text, params: [], plan: null };
+  const shown =
+    lane.session.schema.model[lane.table]?.conceal === true
+      ? await concealedParams(query, got.params)
+      : got.params;
   await lane.session.connected;
   let rows: readonly (readonly (string | null)[])[];
   try {
@@ -276,7 +288,195 @@ export async function explain(handle: object, query: object): Promise<ExplainRes
     const line = row[0];
     if (typeof line === "string") plan.push(line);
   }
-  return { text: got.text, params: got.params, plan };
+  const secrets = concealedValues(got.params, shown);
+  return {
+    text: got.text,
+    params: shown,
+    plan: secrets.length === 0 ? plan : scrubPlan(plan, secrets),
+  };
+}
+
+/**
+ * Parameters `inspect()` would show.
+ *
+ * A table with nothing concealed skips this. The read helper has already
+ * replaced hidden and sensitive values.
+ *
+ * @param query - Query passed to `explain`
+ * @param params - Parameters `sql()` bound
+ * @returns Redacted parameters, or `params` when `inspect()` has another shape
+ */
+async function concealedParams(
+  query: object,
+  params: readonly (string | null)[],
+): Promise<readonly (string | null)[]> {
+  const inspect = Reflect.get(query, "inspect");
+  if (typeof inspect !== "function") return params;
+  const view: unknown = await (inspect as () => unknown).call(query);
+  if (typeof view !== "object" || view === null) return params;
+  const sql: unknown = Reflect.get(view, "sql");
+  if (typeof sql !== "object" || sql === null) return params;
+  const next: unknown = Reflect.get(sql, "params");
+  if (!Array.isArray(next) || next.length !== params.length) return params;
+  const shown: (string | null)[] = [];
+  for (const item of next) {
+    if (typeof item !== "string" && item !== null) return params;
+    shown.push(item);
+  }
+  return shown;
+}
+
+function concealedValues(
+  params: readonly (string | null)[],
+  shown: readonly (string | null)[],
+): string[] {
+  const found: string[] = [];
+  for (let index = 0; index < params.length; index += 1) {
+    const value = params[index];
+    if (
+      typeof value === "string" &&
+      value.length > 0 &&
+      value !== REDACTED &&
+      shown[index] === REDACTED
+    ) {
+      found.push(value);
+    }
+  }
+  return found;
+}
+
+/**
+ * Removes concealed values from `EXPLAIN` text.
+ *
+ * Quoted literals are replaced wherever they spell a concealed parameter,
+ * including a value Postgres pretty-prints. A bare number or boolean is
+ * replaced only on lines without `cost=`, so a row estimate stays.
+ *
+ * @param lines - `EXPLAIN` lines Postgres returned
+ * @param secrets - Parameter values `inspect()` redacted
+ * @returns Lines safe to print
+ */
+function scrubPlan(lines: readonly string[], secrets: readonly string[]): string[] {
+  const unique = [...new Set(secrets)];
+  const quoted = replaceLiterals(lines.join("\n"), unique).split("\n");
+  return quoted.map((line) => (line.includes("cost=") ? line : replaceBare(line, unique)));
+}
+
+function replaceLiterals(text: string, secrets: readonly string[]): string {
+  let out = "";
+  let index = 0;
+  while (index < text.length) {
+    const quote = text.indexOf("'", index);
+    if (quote < 0) {
+      out += text.slice(index);
+      break;
+    }
+    out += text.slice(index, quote);
+    const end = scanLiteral(text, quote);
+    if (end < 0) {
+      out += text.slice(quote);
+      break;
+    }
+    const body = unescapeLiteral(text.slice(quote + 1, end - 1));
+    out += holds(body, secrets) ? `'${REDACTED}'` : text.slice(quote, end);
+    index = end;
+  }
+  return out;
+}
+
+function scanLiteral(text: string, open: number): number {
+  let index = open + 1;
+  while (index < text.length) {
+    if (text.charCodeAt(index) !== 39) {
+      index += 1;
+      continue;
+    }
+    if (text.charCodeAt(index + 1) === 39) {
+      index += 2;
+      continue;
+    }
+    return index + 1;
+  }
+  return -1;
+}
+
+function unescapeLiteral(body: string): string {
+  let out = "";
+  for (let index = 0; index < body.length; index += 1) {
+    if (body.charCodeAt(index) === 39 && body.charCodeAt(index + 1) === 39) {
+      out += "'";
+      index += 1;
+      continue;
+    }
+    out += body[index];
+  }
+  return out;
+}
+
+function holds(literal: string, secrets: readonly string[]): boolean {
+  for (const secret of secrets) {
+    if (literal === secret) return true;
+    if (secret.length >= 4 && literal.includes(secret)) return true;
+    if (arraySpelling(literal, secret)) return true;
+    if (sameJson(literal, secret)) return true;
+  }
+  return false;
+}
+
+function arraySpelling(literal: string, secret: string): boolean {
+  if (!literal.startsWith("{") || literal.includes(":")) return false;
+  if (!secret.startsWith("{") || !secret.endsWith("}") || !secret.includes('"')) return false;
+  const bare = secret.replaceAll('"', "");
+  return literal === bare || (bare.length >= 4 && literal.includes(bare));
+}
+
+function sameJson(literal: string, secret: string): boolean {
+  if (!jsonText(literal) || !jsonText(secret)) return false;
+  try {
+    return stableJson(JSON.parse(literal)) === stableJson(JSON.parse(secret));
+  } catch {
+    return false;
+  }
+}
+
+function jsonText(value: string): boolean {
+  const lead = value.trimStart().charCodeAt(0);
+  return lead === 123 || lead === 91 || lead === 34;
+}
+
+function stableJson(value: unknown): string {
+  return JSON.stringify(orderJson(value));
+}
+
+function orderJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(orderJson);
+  if (typeof value !== "object" || value === null) return value;
+  const record = value as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(record).sort()) out[key] = orderJson(record[key]);
+  return out;
+}
+
+function replaceBare(line: string, secrets: readonly string[]): string {
+  let next = line;
+  for (const secret of secrets) {
+    if (!bareConst(secret)) continue;
+    const pattern = new RegExp(`(?<![\\w.])${escapeRegExp(secret)}(?![\\w.])`, "g");
+    next = next.replace(pattern, REDACTED);
+  }
+  return next;
+}
+
+function bareConst(secret: string): boolean {
+  return (
+    secret === "true" ||
+    secret === "false" ||
+    /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(secret)
+  );
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
 }
 
 async function raise(lane: Lane, error: unknown): Promise<never> {
