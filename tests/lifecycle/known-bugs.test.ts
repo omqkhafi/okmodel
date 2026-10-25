@@ -82,6 +82,29 @@ test("a rename records the SQL name the snapshot stored", () => {
   expect(next.tables[0]?.renamedFrom).toBe("note6");
 });
 
+test("a drop leaves a generated expression's source column", () => {
+  fc.assert(
+    fc.property(lifecycleCaseArb, (item) => {
+      let model = item.initial;
+      for (const step of item.evolutions) {
+        if (step.kind === "dropColumn") {
+          const table = model.tables.find((candidate) => candidate.key === step.tableKey);
+          const column = table?.columns.find((candidate) => candidate.key === step.columnKey);
+          if (table !== undefined && column !== undefined) {
+            const quoted = `"${column.name}"`;
+            for (const other of table.columns) {
+              if (other.generated === undefined) continue;
+              expect(other.generated.includes(quoted)).toBe(false);
+            }
+          }
+        }
+        model = applyEvolution(model, step);
+      }
+    }),
+    { numRuns: 400, seed: 20261024 },
+  );
+});
+
 test("an evolution does not add a second index on the same columns", () => {
   fc.assert(
     fc.property(lifecycleCaseArb, (item) => {

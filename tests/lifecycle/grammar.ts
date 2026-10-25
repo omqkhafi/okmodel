@@ -435,7 +435,11 @@ function buildEvolutions(initial: SchemaModel, kind: string): readonly Evolution
     }
     case "dropColumnAddIndex": {
       const droppable = table.columns.find(
-        (column) => !column.primaryKey && column.key !== "title" && column.generated === undefined,
+        (column) =>
+          !column.primaryKey &&
+          column.key !== "title" &&
+          column.generated === undefined &&
+          !generatedDependsOn(table, column),
       );
       if (droppable === undefined) return [];
       const remaining: TableModel = {
@@ -484,6 +488,22 @@ function buildEvolutions(initial: SchemaModel, kind: string): readonly Evolution
  * @param table - Table the evolution would change
  * @returns Column key, or undefined when every column is already indexed
  */
+/**
+ * Whether a generated column still quotes this column.
+ *
+ * Postgres refuses to drop the source while that expression remains.
+ *
+ * @param table - Table the drop would change
+ * @param column - Candidate source column
+ * @returns `true` when some generated expression quotes the column
+ */
+function generatedDependsOn(table: TableModel, column: ColumnModel): boolean {
+  const quoted = `"${column.name}"`;
+  return table.columns.some(
+    (other) => other.generated !== undefined && other.generated.includes(quoted),
+  );
+}
+
 function freeIndexColumn(table: TableModel): string | undefined {
   const taken = new Set(table.indexes.map((index) => index.columns.join("\0")));
   const candidates = table.columns.filter((column) => column.generated === undefined);
