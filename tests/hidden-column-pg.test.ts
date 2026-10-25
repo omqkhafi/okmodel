@@ -70,9 +70,9 @@ postgresTest(gate, "hidden columns stay out of where and orderBy unless filterab
       expect(inserted).toEqual({ id: ROW_A, title: "a", tenantId: TENANT_A });
       await b.notes.insert({ id: ROW_B, title: "b", secret: "b-secret", code: "shared" });
 
-      await expectHidden(a.notes.find({ where: { secret: "a-secret" }, limit: 5 }));
+      await expectHidden(a.notes.find({ where: { secret: "a-secret" }, limit: 5 } as never));
       await expectHidden(a.notes.find({ orderBy: { secret: "asc" } as never, limit: 5 }));
-      await expectHidden(a.notes.one({ where: { secret: "a-secret" } }));
+      await expectHidden(a.notes.one({ where: { secret: "a-secret" } } as never));
       await expectHidden(a.notes.one({ orderBy: { secret: "desc" } as never }));
       await expectHidden(a.notes.count({ where: { secret: "b-secret" } as never }));
       await expectHidden(a.notes.aggregate({ where: { secret: "a-secret" }, count: true }));
@@ -80,7 +80,11 @@ postgresTest(gate, "hidden columns stay out of where and orderBy unless filterab
         a.notes.aggregate({ count: true, orderBy: { secret: "asc" }, limit: 5 } as never),
       );
       await expectHidden(
-        a.notes.page({ where: { secret: "a-secret" }, orderBy: { title: "asc" }, limit: 2 }),
+        a.notes.page({
+          where: { secret: "a-secret" },
+          orderBy: { title: "asc" },
+          limit: 2,
+        } as never),
       );
       await expectHidden(a.notes.page({ orderBy: { secret: "asc" }, limit: 2 } as never));
       await expectHidden(
@@ -109,7 +113,7 @@ postgresTest(gate, "hidden columns stay out of where and orderBy unless filterab
       }
 
       await expectHidden(b.notes.count({ where: { secret: "a-secret" } as never }));
-      await expectHidden(b.notes.find({ where: { secret: "a-secret" }, limit: 5 }));
+      await expectHidden(b.notes.find({ where: { secret: "a-secret" }, limit: 5 } as never));
     } finally {
       await db.close();
     }

@@ -48,7 +48,7 @@ The column stays out of a reporting role's select unless [roles.columns](/docs/d
 
 #### filterable
 
-`{ filterable: true }` is the only value that changes the flag. Omit it and `where` and `orderBy` stay refused. `where`, `orderBy` (including `relevance()`), and search accept the column, in the type and at runtime. It stays off the row, so `select` still cannot name it. `filters()`, `groupBy`, `bucket`, `sum`, `avg`, `min`, and `max` still refuse it. The reporting role still omits it.
+`{ filterable: true }` is the only value that changes the flag. Omit it and `where` and `orderBy` stay refused. `where`, `orderBy` (including `relevance()` on `find` and `one`), and search accept the column, in the type and at runtime. `page()` refuses `relevance()` because the cursor cannot encode a rank. It stays off the row, so `select` still cannot name it. `filters()`, `groupBy`, `bucket`, `sum`, `avg`, `min`, and `max` still refuse it. The reporting role still omits it.
 
 `.nullable()` in the sample lets insert omit the field. `filterable` does not.
 

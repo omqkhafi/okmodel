@@ -20,6 +20,7 @@ import type {
   RelationFilter,
   Relevance,
   SearchMatch,
+  Untagged,
 } from "../dialects/pg/operators.js";
 import type { FieldWhere, IsJsonObject } from "../dialects/pg/where.js";
 import type { AppliedRule, Limits, ReadCall, ReadDone, ReadOp } from "./plan.js";
@@ -97,7 +98,16 @@ type FilterableOf<S extends QuerySchema, K extends keyof S["~byName"]> = S["~byN
   ? FilterBit<C[keyof C]> extends never
     ? RowOf<S, K>
     : RowOf<S, K> & {
-        readonly [P in keyof C as FilterBit<C[P]> extends never ? never : P]: unknown;
+        readonly [P in keyof C as FilterBit<C[P]> extends never ? never : P]: FilterBit<
+          C[P]
+        > extends {
+          readonly "~value": infer V;
+          readonly "~flags": infer F;
+        }
+          ? F extends { readonly nullable: true }
+            ? V | null
+            : V
+          : never;
       }
   : RowOf<S, K>;
 
@@ -117,12 +127,36 @@ type FilterFiltersOf<S extends QuerySchema, K extends keyof S["~byName"]> = Fiel
 type ExactConstraint<T, Shape> = Shape & Record<Exclude<keyof T, keyof Shape>, never>;
 
 /** `Fields`, plus `never` for a key `W` adds. A plain hidden column stays out. */
-type ClosedWhere<W, Fields> = Fields & Record<Exclude<keyof NonNullable<W>, keyof Fields>, never>;
+type ClosedWhere<W, Fields> = [ExtraKeys<NonNullable<W>, keyof Fields>] extends [never]
+  ? Fields
+  : Fields & Record<ExtraKeys<NonNullable<W>, keyof Fields>, never>;
 
-/** `where` for a later overload: filterable hidden columns, and no other extra key. */
-type FilterWhereOf<S extends QuerySchema, K extends keyof S["~byName"], W> =
-  | ClosedWhere<W, FilterFiltersOf<S, K>>
-  | Or<FilterFiltersOf<S, K>>;
+/** Keys of `T` outside `Keys`. Distributes, so one `or()` branch cannot hide a key. */
+type ExtraKeys<T, Keys extends PropertyKey> = T extends unknown ? Exclude<keyof T, Keys> : never;
+
+/** The `where` value on a fresh call object. */
+type WhereOfTarget<T> = T extends { readonly where: infer W } ? W : undefined;
+
+/**
+ * `where` for a later overload: filterable hidden columns, and no other extra key.
+ *
+ * An `or()` value seals each branch. A plain object seals its own keys.
+ */
+type FilterWhereOf<S extends QuerySchema, K extends keyof S["~byName"], W> = [
+  NonNullable<W>,
+] extends [Or<infer B>]
+  ? [ExtraKeys<NonNullable<B>, keyof FilterFiltersOf<S, K>>] extends [never]
+    ? Or<FilterFiltersOf<S, K>>
+    : {
+        readonly value: readonly Record<
+          ExtraKeys<NonNullable<B>, keyof FilterFiltersOf<S, K>>,
+          never
+        >[];
+      }
+  : ClosedWhere<W, FilterFiltersOf<S, K>>;
+
+/** The `orderBy` value on a fresh call object. */
+type OrderOfTarget<T> = T extends { readonly orderBy: infer O } ? O : undefined;
 
 /** `find` options whose `where` and `orderBy` include `hidden({ filterable: true })`. */
 type FindFilterOptions<S extends QuerySchema, K extends keyof S["~byName"], L> = Omit<
@@ -148,6 +182,19 @@ type ReadFilterOptions<S extends QuerySchema, K extends keyof S["~byName"]> = Om
 type CountFilterOptions<S extends QuerySchema, K extends keyof S["~byName"]> = CallOptions & {
   readonly where?: FilterFiltersOf<S, K> | Or<FilterFiltersOf<S, K>>;
   readonly search?: TextSearch<FilterableOf<S, K>>;
+};
+
+/** `count` options whose `where` has no key outside the filterable set. */
+type CountFilterTarget<S extends QuerySchema, K extends keyof S["~byName"], W> = Omit<
+  CountFilterOptions<S, K>,
+  "where"
+> & {
+  readonly where?: FilterWhereOf<S, K, W>;
+};
+
+/** `exists` options whose `where` has no key outside the filterable set. */
+type ExistsFilterTarget<S extends QuerySchema, K extends keyof S["~byName"], W> = CallOptions & {
+  readonly where?: FilterWhereOf<S, K, W>;
 };
 
 /** One `update` object whose `where` includes `hidden({ filterable: true })`. */
@@ -178,6 +225,7 @@ export type WhereOf<S extends QuerySchema, K extends keyof S["~byName"]> =
  *
  * A `hidden({ filterable: true })` column is a key, the same set `where` uses.
  * A plain `.hidden()` column is not. The row stays the select list.
+ * `page` refuses `relevance()` (OKM1120). The keyset cursor has no rank to encode.
  */
 export type OrderBy<Row> = {
   readonly [K in keyof Row]?:
@@ -490,8 +538,8 @@ export type Page<Row> = {
 /**
  * `page` options. `after` is the `next` of the page before.
  *
- * `page` refuses a window helper when the call runs (OKM1120). The keyset
- * cursor has no window value to encode.
+ * `page` refuses a window helper and `relevance()` when the call runs (OKM1120).
+ * The keyset cursor has no window value or rank to encode.
  */
 export type PageOptions<S extends QuerySchema, K extends keyof S["~byName"]> = ReadOptions<S, K> & {
   /** Rows in the page. At least 1. */
@@ -499,6 +547,19 @@ export type PageOptions<S extends QuerySchema, K extends keyof S["~byName"]> = R
   /** The `next` of the previous page, made for the same `orderBy`. */
   readonly after?: string | null;
 };
+
+/**
+ * `O`, or `never` when `orderBy` holds `relevance()`.
+ *
+ * One check on the call's values. It does not rebuild `orderBy` for every column.
+ */
+type NoRank<O> = [O] extends [{ readonly orderBy?: infer B }]
+  ? [B] extends [undefined]
+    ? O
+    : [Relevance] extends [NonNullable<B>[keyof NonNullable<B>]]
+      ? never
+      : O
+  : O;
 
 /**
  * Fields `sum` and `avg` take: those typed `number` or `string`.
@@ -588,6 +649,24 @@ type CallValue<Row, E> = E extends { readonly count: true }
           | { readonly max: infer N }
       ? NonNullable<Row[N & keyof Row]> | null
       : never;
+
+/** `descendants` and `ancestors` options whose `where` is not a union. */
+type TreePlainOptions<S extends QuerySchema, K extends keyof S["~byName"], W, Ord> = Omit<
+  TreeOptions<S, K>,
+  "where" | "orderBy"
+> & {
+  readonly where?: ClosedWhere<W, FiltersOf<S, K>>;
+  readonly orderBy?: ClosedWhere<Ord, OrderBy<RowOf<S, K>>>;
+};
+
+/** Those options when `where` or `orderBy` names `hidden({ filterable: true })`. */
+type TreeFilterOptions<S extends QuerySchema, K extends keyof S["~byName"], W, Ord> = Omit<
+  TreeOptions<S, K>,
+  "where" | "orderBy"
+> & {
+  readonly where?: FilterWhereOf<S, K, W>;
+  readonly orderBy?: ClosedWhere<Ord, OrderBy<FilterableOf<S, K>>>;
+};
 
 /** `aggregate` options. A hidden field is refused at runtime. */
 export type AggregateOptions<S extends QuerySchema, K extends keyof S["~byName"]> = CallOptions & {
@@ -974,6 +1053,42 @@ type UpdateTargetVersioned<S extends QuerySchema, K extends keyof S["~byName"]> 
       readonly version: number;
     }[];
 
+/** One object `update`. `where` is not a union, so a fresh object rejects an unknown key. */
+type UpdateObject<S extends QuerySchema, K extends keyof S["~byName"]> = S["~byName"][K] extends {
+  readonly "~versioned": true;
+}
+  ? {
+      readonly where?: Untagged<FiltersOf<S, K>>;
+      readonly set: UpdateSet<S, K>;
+      readonly limit?: number;
+      readonly lock?: "skip";
+      readonly version: number;
+    }
+  : {
+      readonly where?: Untagged<FiltersOf<S, K>>;
+      readonly set: UpdateSet<S, K>;
+      readonly limit?: number;
+      readonly lock?: "skip";
+      readonly version?: number;
+    };
+
+/** A list `update`. `where` includes a filterable hidden column. */
+type UpdateList<S extends QuerySchema, K extends keyof S["~byName"]> = S["~byName"][K] extends {
+  readonly "~versioned": true;
+}
+  ? readonly {
+      readonly id?: unknown;
+      readonly where?: FilterFiltersOf<S, K> | Or<FilterFiltersOf<S, K>>;
+      readonly set: UpdateSet<S, K>;
+      readonly version: number;
+    }[]
+  : readonly {
+      readonly id?: unknown;
+      readonly where?: FilterFiltersOf<S, K> | Or<FilterFiltersOf<S, K>>;
+      readonly set: UpdateSet<S, K>;
+      readonly version?: number;
+    }[];
+
 /** `update` target: required `version` on versioned tables, else {@link UpdateTarget}. */
 type UpdateArg<S extends QuerySchema, K extends keyof S["~byName"]> = S["~byName"][K] extends {
   readonly "~versioned": true;
@@ -1080,12 +1195,14 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
    * Keyset on `orderBy` plus the primary key, so a page is stable while rows
    * are inserted. Pass `next` back as `after` with the same `orderBy`.
    */
-  page<const O extends PageOptions<S, K>>(options: O): Query<Page<ResultRow<S, K, O>>>;
+  page<const O extends PageOptions<S, K>>(options: O & NoRank<O>): Query<Page<ResultRow<S, K, O>>>;
   page<const O extends Omit<PageOptions<S, K>, "where" | "orderBy"> & ReadFilterOptions<S, K>>(
-    options: O,
+    options: O & NoRank<O>,
   ): Query<Page<ResultRow<S, K, O>>>;
-  page<const O extends DefaultPage<S, K>>(options: O): Query<Page<ResultRow<S, K, O>>>;
-  page<const O extends DefaultPage<S, K, true>>(options: O): Query<Page<ResultRow<S, K, O>>>;
+  page<const O extends DefaultPage<S, K>>(options: O & NoRank<O>): Query<Page<ResultRow<S, K, O>>>;
+  page<const O extends DefaultPage<S, K, true>>(
+    options: O & NoRank<O>,
+  ): Query<Page<ResultRow<S, K, O>>>;
   /**
    * Counts, sums, averages, and finds extremes, per group.
    *
@@ -1124,12 +1241,17 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   ): Unbounded<S, "groupBy", Query<readonly AggregateRow<RowOf<S, K>, O>[]>>;
   count(
     options?: CallOptions & {
-      readonly where?: WhereOf<S, K>;
+      readonly where?: Untagged<FiltersOf<S, K>>;
       readonly search?: TextSearch<RowOf<S, K>>;
     },
   ): Read<number>;
-  count<const O extends CountFilterOptions<S, K>>(options?: O): Read<number>;
-  exists(options?: CallOptions & { readonly where?: WhereOf<S, K> }): Read<boolean>;
+  count<const O extends ExactConstraint<O, CountFilterTarget<S, K, WhereOfTarget<O>>>>(
+    options?: O,
+  ): Read<number>;
+  exists(options?: CallOptions & { readonly where?: Untagged<FiltersOf<S, K>> }): Read<boolean>;
+  exists<const O extends ExactConstraint<O, ExistsFilterTarget<S, K, WhereOfTarget<O>>>>(
+    options?: O,
+  ): Read<boolean>;
   /**
    * Inserts one row. An unknown key is OKM1120. `{ allow }` may set guarded fields.
    *
@@ -1188,18 +1310,23 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     options: Opt,
   ): [Opt["returning"]] extends [true] ? Write<readonly Show<RowOf<S, K>>[]> : Write<WriteCount>;
   update(
-    target: UpdateArg<S, K>,
+    target: UpdateObject<S, K>,
     options: WriteOptions<S, K> & { readonly returning: true },
   ): Write<readonly Show<RowOf<S, K>>[]>;
-  update(target: UpdateArg<S, K>, options?: WriteOptions<S, K>): Write<WriteCount>;
-  update<const T extends ExactConstraint<T, UpdateFilterTarget<S, K, T["where"]>>>(
+  update(target: UpdateObject<S, K>, options?: WriteOptions<S, K>): Write<WriteCount>;
+  update(
+    target: UpdateList<S, K>,
+    options: WriteOptions<S, K> & { readonly returning: true },
+  ): Write<readonly Show<RowOf<S, K>>[]>;
+  update(target: UpdateList<S, K>, options?: WriteOptions<S, K>): Write<WriteCount>;
+  update<const T extends ExactConstraint<T, UpdateFilterTarget<S, K, WhereOfTarget<T>>>>(
     target: T,
     options: WriteOptions<S, K> & { readonly returning: true },
   ): Write<readonly Show<RowOf<S, K>>[]>;
   update<
     const T extends ExactConstraint<
       T,
-      UpdateFilterTarget<S, K, T["where"]> | VersionAnyArg<S, K, T["where"]>
+      UpdateFilterTarget<S, K, WhereOfTarget<T>> | VersionAnyArg<S, K, WhereOfTarget<T>>
     >,
   >(
     target: T,
@@ -1210,11 +1337,15 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   /**
    * Last signature, so `Parameters` reads {@link UpdateArg}.
    *
+   * The third argument is required, so a call matches an earlier overload.
    * A generic exact constraint collapses to `Record<string, never>` there and
-   * a helper then rejects a valid update. This signature repeats the integer
-   * form. A call still matches an earlier overload, including `version: "any"`.
+   * a helper then rejects a valid update.
    */
-  update(target: UpdateArg<S, K>, options?: WriteOptions<S, K>): Write<WriteCount>;
+  update(
+    target: UpdateArg<S, K>,
+    options: WriteOptions<S, K> | undefined,
+    _parameters: 0,
+  ): Write<WriteCount>;
   /**
    * Deletes matching rows. `where` is required.
    *
@@ -1222,12 +1353,12 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
    * `returning` for `{ count }`.
    */
   delete(
-    target: { readonly where?: WhereOf<S, K> },
+    target: { readonly where?: Untagged<FiltersOf<S, K>> },
     options?: Omit<WriteOptions<S, K>, "returning"> & {
       readonly returning?: Exclude<WriteOptions<S, K>["returning"], true>;
     },
   ): Write<WriteCount>;
-  delete<const T extends ExactConstraint<T, DeleteFilterTarget<S, K, T["where"]>>>(
+  delete<const T extends ExactConstraint<T, DeleteFilterTarget<S, K, WhereOfTarget<T>>>>(
     target: T,
     options?: Omit<WriteOptions<S, K>, "returning"> & {
       readonly returning?: Exclude<WriteOptions<S, K>["returning"], true>;
@@ -1240,12 +1371,24 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
    * data returns. A missing id returns no rows. `where` and a preset filter
    * the rows that come back. Tenancy and the active set apply at every step.
    */
-  descendants<const O extends TreeOptions<S, K>>(
+  descendants<const O extends TreePlainOptions<S, K, WhereOfTarget<O>, OrderOfTarget<O>>>(
+    id: unknown,
+    options?: O,
+  ): Query<readonly ResultRow<S, K, O>[]>;
+  descendants<
+    const O extends ExactConstraint<O, TreeFilterOptions<S, K, WhereOfTarget<O>, OrderOfTarget<O>>>,
+  >(
     id: unknown,
     options?: O,
   ): Query<readonly ResultRow<S, K, O>[]>;
   /** Rows above `id`. The options match {@link TableApi.descendants}. */
-  ancestors<const O extends TreeOptions<S, K>>(
+  ancestors<const O extends TreePlainOptions<S, K, WhereOfTarget<O>, OrderOfTarget<O>>>(
+    id: unknown,
+    options?: O,
+  ): Query<readonly ResultRow<S, K, O>[]>;
+  ancestors<
+    const O extends ExactConstraint<O, TreeFilterOptions<S, K, WhereOfTarget<O>, OrderOfTarget<O>>>,
+  >(
     id: unknown,
     options?: O,
   ): Query<readonly ResultRow<S, K, O>[]>;
