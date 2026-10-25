@@ -326,7 +326,11 @@ async function scalar(url: string, statement: string): Promise<string> {
     const row = rows[0] as Record<string, unknown> | undefined;
     if (row === undefined) return "";
     const value = Object.values(row)[0];
-    return value === null || value === undefined ? "" : String(value);
+    if (typeof value === "string") return value;
+    if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+      return String(value);
+    }
+    return "";
   } finally {
     await sql.end({ timeout: 5 });
   }
