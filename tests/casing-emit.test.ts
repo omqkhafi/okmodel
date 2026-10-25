@@ -303,6 +303,7 @@ describe("refusals at schema build", () => {
 
   test("an unknown casing names both spellings", () => {
     const failure = capture(() => schema({ casing: "kebab" as never, tables: [] }));
+    expect(failure.code).toBe("OKM1060");
     expect(failure.message).toBe("schema() casing kebab must be snake or camel.");
   });
 });

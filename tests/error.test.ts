@@ -415,6 +415,16 @@ test("the error registry lists every spec 21 code and stays off the runtime entr
   expect(errorSource.includes("idempotency key")).toBe(true);
 });
 
+test("OKM1060 names a bad column, a unique gin or gist index, and a bad casing", () => {
+  const doc = errorDoc("OKM1060");
+  expect(doc.summary).toContain("gin");
+  expect(doc.summary).toContain("gist");
+  expect(doc.summary).toContain("casing");
+  expect(doc.summary).toContain("snake or camel");
+  expect(doc.fix).toContain("btree");
+  expect(doc.fix).toContain("snake or camel");
+});
+
 test("OKM1201 uses the registry sentence", () => {
   const doc = errorDoc("OKM1201");
   let failed: OkmError | undefined;

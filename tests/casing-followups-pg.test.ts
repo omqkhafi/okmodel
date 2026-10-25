@@ -9,6 +9,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { OkmError } from "../src/contracts/error.js";
+import { pgTrgm } from "../src/dialects/pg/ext/pg-trgm.js";
+import { schema, table, t } from "../src/dialects/pg/index.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
 import { repoRoot } from "../scripts/root.js";
@@ -163,6 +165,42 @@ postgresTest(
   },
   180_000,
 );
+
+postgresTest(
+  gate,
+  "OKM1060 covers a unique gin index and a casing other than snake or camel",
+  async () => {
+    const casing = thrown(() => schema({ casing: "kebab" as "snake", tables: [] }));
+    expect(casing.code).toBe("OKM1060");
+    expect(casing.message).toContain("snake or camel");
+    const trgm = pgTrgm();
+    const gin = thrown(() =>
+      schema({
+        extensions: [trgm],
+        tables: [
+          table(
+            "notes",
+            { id: t.integer().primaryKey(), title: t.text() },
+            { indexes: (columns) => [trgm.gin(columns.title.name).unique()] },
+          ),
+        ],
+      }),
+    );
+    expect(gin.code).toBe("OKM1060");
+    expect(gin.message).toContain("gin");
+    expect(gin.message).toContain("notes_title_idx");
+  },
+  30_000,
+);
+
+function thrown(fn: () => unknown): OkmError {
+  try {
+    fn();
+  } catch (error) {
+    return OkmError.from(error);
+  }
+  throw new Error("expected a rejection");
+}
 
 function project(name: string): string {
   return mkdtempSync(join(tmpdir(), `okm-${name}-`));

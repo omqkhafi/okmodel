@@ -156,8 +156,8 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1060",
     title: "Invalid column",
     summary:
-      "A column definition has a bad length, precision, scale, array rank, interval qualifier, or an empty or repeated picklist or enum.",
-    fix: "Use a value the error lists as accepted.",
+      "A column definition has a bad length, precision, scale, array rank, interval qualifier, or an empty or repeated picklist or enum. .unique() on a gin or gist index is this code too: Postgres builds unique indexes with btree only. A schema() casing other than snake or camel is this code too.",
+    fix: "Use a value the error lists as accepted. Remove .unique() from a gin or gist index, or use btree. Pass snake or camel for casing, or leave it out.",
   },
   {
     code: "OKM1061",
