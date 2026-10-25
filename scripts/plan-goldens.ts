@@ -34,12 +34,20 @@ const provenance = { origin: "file", name: "schema.ts" } as const;
 const namespace = staticNamespace("public");
 const parent = { namespace, name: "notes" };
 
+type SlimStep = {
+  readonly sql: string;
+  readonly class: DdlStep["class"];
+  readonly kind?: DdlStep["kind"];
+  readonly lock: string;
+  readonly transactional: boolean;
+};
+
 type Golden = {
   readonly source?: "parse";
   readonly request?: PlanRequest;
   readonly text: string;
   readonly json: string;
-  readonly steps: ReturnType<typeof slim>;
+  readonly steps: readonly SlimStep[];
 };
 
 const RAW_SQL = "-- name: hand\n\nselect 1;\n";
@@ -151,7 +159,7 @@ function jsonRequest(request: PlanRequest): Json {
   return JSON.parse(JSON.stringify(request)) as Json;
 }
 
-function slim(steps: readonly DdlStep[]): Golden["steps"] {
+function slim(steps: readonly DdlStep[]): readonly SlimStep[] {
   return steps.map((step) => ({
     sql: step.sql,
     class: step.class,
