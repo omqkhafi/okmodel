@@ -101,6 +101,80 @@ test("describe() reports pg_trgm when a later opclass owns it", () => {
   ]);
 });
 
+test("describe() does not require btree_gin for btree int4_ops", () => {
+  const app = schema({
+    tables: [
+      table(
+        "docs",
+        { id: t.id(), n: t.integer() },
+        {
+          indexes: () => [
+            {
+              columns: ["n"],
+              isUnique: false,
+              expression: 'using btree ("n" int4_ops)',
+              unique() {
+                return this;
+              },
+            },
+          ],
+        },
+      ),
+    ],
+  });
+  expect(describe(app).extensions).toEqual([]);
+});
+
+test("describe() ignores an operator class named only inside a string", () => {
+  const app = schema({
+    tables: [
+      table(
+        "docs",
+        { id: t.id(), body: t.text() },
+        {
+          indexes: () => [
+            {
+              columns: ["body"],
+              isUnique: false,
+              expression: `using btree (("body" || 'gin_trgm_ops'))`,
+              unique() {
+                return this;
+              },
+            },
+          ],
+        },
+      ),
+    ],
+  });
+  expect(describe(app).extensions).toEqual([]);
+});
+
+test("describe() requires btree_gin for gin int4_ops", () => {
+  const app = schema({
+    tables: [
+      table(
+        "docs",
+        { id: t.id(), n: t.integer() },
+        {
+          indexes: () => [
+            {
+              columns: ["n"],
+              isUnique: false,
+              expression: 'using gin ("n" int4_ops)',
+              unique() {
+                return this;
+              },
+            },
+          ],
+        },
+      ),
+    ],
+  });
+  expect(describe(app).extensions).toEqual([
+    { name: "btree_gin", reason: "index docs.docs_n_idx uses btree_gin" },
+  ]);
+});
+
 test("describe() detects an uppercase GIN_TRGM_OPS opclass", () => {
   const app = schema({
     tables: [

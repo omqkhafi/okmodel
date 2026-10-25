@@ -121,35 +121,192 @@ function useReason(object: CatalogObject): string {
 function opclassExtensions(): ReadonlyMap<string, string> {
   const owners = new Map<string, string>([
     // Hand-written packs are not in EXT_PACKS (D281 keeps vector out too).
-    ["gin_trgm_ops", "pg_trgm"],
-    ["gist_trgm_ops", "pg_trgm"],
+    [opclassKey("gin", "gin_trgm_ops"), "pg_trgm"],
+    [opclassKey("gist", "gist_trgm_ops"), "pg_trgm"],
   ]);
   for (const pack of EXT_PACKS) {
     for (const signature of pack.signatures) {
-      if (signature.kind === "opclass") owners.set(signature.name, pack.name);
+      if (signature.kind === "opclass") {
+        owners.set(opclassKey(signature.method, signature.name), pack.name);
+      }
     }
   }
   return owners;
 }
 
+function opclassKey(method: string, name: string): string {
+  return `${method}\0${name}`;
+}
+
 /**
- * Every `*_ops` token in an index `using` tail, lowercased.
+ * Operator classes in index position, keyed by method and name.
  *
- * A multi-column index may list several operator classes. The first token
- * can be a built-in class (`text_pattern_ops`); later tokens still need a
- * pack. Matching is case-insensitive so `GIN_TRGM_OPS` is the same as
- * `gin_trgm_ops`.
+ * A `*_ops` word inside a column expression or a string is not a class.
+ * `int4_ops` on btree is built in; the same name on gin is `btree_gin`.
+ * An unquoted class is folded. The method is the `using` name.
  *
  * @param expression - Catalog index expression
- * @returns Operator class names in left-to-right order
+ * @returns `method` + class name, in left-to-right order
  */
 function opclassOf(expression: string): readonly string[] {
-  const names: string[] = [];
-  for (const match of expression.matchAll(/\b([a-z_][a-z0-9_]*_ops)\b/gi)) {
-    const name = match[1];
-    if (name !== undefined) names.push(name.toLowerCase());
+  const match = /^\s*using\s+([A-Za-z_][\w$]*)\s*\(/i.exec(expression);
+  const method = match?.[1]?.toLowerCase();
+  if (match === null || method === undefined) return [];
+  const open = match[0].length - 1;
+  const body = balanced(expression, open);
+  if (body === undefined) return [];
+  const keys: string[] = [];
+  for (const element of splitTop(body, ",")) {
+    const name = opclassAt(element);
+    if (name !== undefined) keys.push(opclassKey(method, name));
   }
-  return names;
+  return keys;
+}
+
+/** Operator class after the column or expression, and an optional COLLATE. */
+function opclassAt(element: string): string | undefined {
+  let index = skipSpace(element, 0);
+  index = skipTarget(element, index);
+  index = skipSpace(element, index);
+  if (wordAt(element, index, "collate")) {
+    index = skipSpace(element, index + "collate".length);
+    index = skipQualified(element, index);
+    index = skipSpace(element, index);
+  }
+  const read = readClass(element, index);
+  return read?.name;
+}
+
+function skipTarget(text: string, index: number): number {
+  const char = text[index];
+  if (char === "(") return skipGroup(text, index) ?? index;
+  if (char === '"') return skipQuoted(text, index, '"') ?? index;
+  const word = readBare(text, index);
+  return word === undefined ? index : index + word.length;
+}
+
+function readClass(
+  text: string,
+  index: number,
+): { readonly name: string; readonly end: number } | undefined {
+  if (text[index] === '"') {
+    const end = skipQuoted(text, index, '"');
+    if (end === undefined) return undefined;
+    const name = text.slice(index + 1, end - 1).replaceAll('""', '"');
+    return name.toLowerCase().endsWith("_ops") ? { name, end } : undefined;
+  }
+  const first = readBare(text, index);
+  if (first === undefined) return undefined;
+  let name = first;
+  let end = index + first.length;
+  if (text[end] === ".") {
+    const second = readBare(text, end + 1);
+    if (second !== undefined) {
+      name = second;
+      end += 1 + second.length;
+    }
+  }
+  if (!name.toLowerCase().endsWith("_ops")) return undefined;
+  return { name: name.toLowerCase(), end };
+}
+
+function skipQualified(text: string, index: number): number {
+  if (text[index] === '"') return skipQuoted(text, index, '"') ?? index;
+  const first = readBare(text, index);
+  if (first === undefined) return index;
+  let end = index + first.length;
+  if (text[end] === ".") {
+    if (text[end + 1] === '"') return skipQuoted(text, end + 1, '"') ?? end;
+    const second = readBare(text, end + 1);
+    if (second !== undefined) end += 1 + second.length;
+  }
+  return end;
+}
+
+function balanced(text: string, open: number): string | undefined {
+  const end = skipGroup(text, open);
+  if (end === undefined) return undefined;
+  return text.slice(open + 1, end - 1);
+}
+
+function splitTop(text: string, separator: string): readonly string[] {
+  const parts: string[] = [];
+  let start = 0;
+  let index = 0;
+  while (index < text.length) {
+    const char = text[index];
+    if (char === "'" || char === '"') {
+      const end = skipQuoted(text, index, char);
+      if (end === undefined) break;
+      index = end;
+      continue;
+    }
+    if (char === "(") {
+      const end = skipGroup(text, index);
+      if (end === undefined) break;
+      index = end;
+      continue;
+    }
+    if (text.startsWith(separator, index)) {
+      parts.push(text.slice(start, index));
+      index += separator.length;
+      start = index;
+      continue;
+    }
+    index += 1;
+  }
+  parts.push(text.slice(start));
+  return parts;
+}
+
+function skipGroup(text: string, open: number): number | undefined {
+  let depth = 0;
+  let index = open;
+  while (index < text.length) {
+    const char = text[index];
+    if (char === "'" || char === '"') {
+      const end = skipQuoted(text, index, char);
+      if (end === undefined) return undefined;
+      index = end;
+      continue;
+    }
+    if (char === "(") depth += 1;
+    if (char === ")") {
+      depth -= 1;
+      if (depth === 0) return index + 1;
+    }
+    index += 1;
+  }
+  return undefined;
+}
+
+function skipQuoted(text: string, open: number, quote: string): number | undefined {
+  let index = open + 1;
+  while (index < text.length) {
+    if (text.startsWith(quote + quote, index)) {
+      index += 2;
+      continue;
+    }
+    if (text[index] === quote) return index + 1;
+    index += 1;
+  }
+  return undefined;
+}
+
+function readBare(text: string, index: number): string | undefined {
+  const match = /^[A-Za-z_][\w$]*/.exec(text.slice(index));
+  return match?.[0];
+}
+
+function wordAt(text: string, index: number, word: string): boolean {
+  const found = readBare(text, index);
+  return found !== undefined && found.toLowerCase() === word && found.length === word.length;
+}
+
+function skipSpace(text: string, index: number): number {
+  let cursor = index;
+  while (cursor < text.length && /\s/.test(text[cursor] ?? "")) cursor += 1;
+  return cursor;
 }
 
 function pushReason(reasons: Map<string, string[]>, name: string, reason: string): void {

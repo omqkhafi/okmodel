@@ -179,6 +179,26 @@ postgresTest(
 
 postgresTest(
   gate,
+  "a btree int4_ops index does not require btree_gin",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = project(database.url, btreeInt4Schema());
+    try {
+      expect(await doctorProject(cwd, undefined)).toBe("no triggers\n");
+      expect((await checkProject(cwd)).findings).toEqual([]);
+      await cli(cwd, ["generate", "init"]);
+      const applied = await cli(cwd, ["migrate", "apply"]);
+      expect(applied).toContain("applied");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  90_000,
+);
+
+postgresTest(
+  gate,
   "doctor reports pg_trgm after an applied migration and a later drop",
   async () => {
     const database = await createIsolatedDatabase();
@@ -363,6 +383,26 @@ function trigramSchema(): string {
     "const trgm = pgTrgm();",
     'const docs = table("docs", { id: t.id(), body: t.text() }, { indexes: (c) => [trgm.gin(c.body.name)] });',
     "export const app = schema({ tables: [docs], extensions: [trgm] });",
+    "",
+  ].join("\n");
+}
+
+function btreeInt4Schema(): string {
+  return [
+    `import { schema, table, t } from ${JSON.stringify(join(root, "src/dialects/pg/index.ts"))};`,
+    "const docs = table(",
+    '  "docs",',
+    "  { id: t.id(), n: t.integer() },",
+    "  {",
+    "    indexes: () => [{",
+    '      columns: ["n"],',
+    "      isUnique: false,",
+    "      expression: 'using btree (\"n\" int4_ops)',",
+    "      unique() { return this; },",
+    "    }],",
+    "  },",
+    ");",
+    "export const app = schema({ tables: [docs] });",
     "",
   ].join("\n");
 }
