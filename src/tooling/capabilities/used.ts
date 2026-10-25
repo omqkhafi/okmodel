@@ -43,8 +43,8 @@ function note(used: Set<string>, object: CatalogObject): void {
   if (object.kind === "column") {
     const definition = object.definition;
     if (definition.identity !== undefined) used.add("schema.identity");
-    if (definition.dataType === "uuid") used.add("type.uuid");
-    if (definition.defaultExpression === "uuidv7()") used.add("type.uuidv7");
+    if (scalarType(definition.dataType) === "uuid") used.add("type.uuid");
+    if (isUuidV7Default(definition.defaultExpression)) used.add("type.uuidv7");
     if (definition.dataType === "jsonb") used.add("type.jsonb");
     if (definition.dataType.endsWith("[]")) used.add("type.array");
     if (RANGE_TYPES.has(definition.dataType) || definition.dataType.endsWith("multirange")) {
@@ -70,6 +70,23 @@ function note(used: Set<string>, object: CatalogObject): void {
   ) {
     used.add("namespace");
   }
+}
+
+/**
+ * `uuidv7()` with any letter case and surrounding space.
+ *
+ * `defaultSql("UUIDV7()")` stores the expression as written.
+ *
+ * @param expression - Column default, when the column has one
+ * @returns Whether the default is the Postgres 18 function
+ */
+export function isUuidV7Default(expression: string | undefined): boolean {
+  return expression !== undefined && expression.trim().toLowerCase() === "uuidv7()";
+}
+
+/** Element type of an array, or the type itself. `uuid[]` is `uuid`. */
+function scalarType(dataType: string): string {
+  return dataType.replace(/\[\]/g, "");
 }
 
 function moved(namespace: Namespace): boolean {

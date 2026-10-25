@@ -5,11 +5,13 @@
 import { expect, test } from "bun:test";
 
 import { catalogHash } from "../src/contracts/catalog/document.js";
+import { OkmError } from "../src/contracts/error.js";
 import { citext } from "../src/dialects/pg/ext/citext.js";
 import { extension } from "../src/dialects/pg/ext/index.js";
 import { pgTrgm } from "../src/dialects/pg/ext/pg-trgm.js";
 import { external, schema, t, table } from "../src/dialects/pg/index.js";
 import { stampOwnership } from "../src/dialects/pg/owner.js";
+import { columnTenancy } from "../src/runtime/tenancy/index.js";
 import { buildCatalog, describe } from "../src/tooling/migrate/index.js";
 import { placeCatalog } from "../src/tooling/migrate/place.js";
 import { app as archivable } from "../scripts/app-archivable.js";
@@ -361,6 +363,38 @@ test("placement changes the catalog hash and not the logical identity", () => {
 
 test("describe() refuses a value that has no catalog", () => {
   expect(() => describe({} as { catalog: never })).toThrow(/schema\(\)/);
+});
+
+test("describe() reports type.uuid for a uuid array and uuidv7() in any case", () => {
+  const arrays = schema({
+    tables: [table("tags", { id: t.id(), ids: t.uuid().array() })],
+  });
+  const listed = describe(arrays).requirements.features;
+  expect(listed).toContain("type.array");
+  expect(listed).toContain("type.uuid");
+
+  const raised = schema({
+    tables: [table("users", { id: t.uuid().defaultSql("UUIDV7()") })],
+  });
+  const description = describe(raised);
+  expect(description.minPostgres).toBe(18);
+  expect(description.requirements.features).toContain("type.uuidv7");
+});
+
+test("describe() reports tenancy.column and refuses an unsupported carried floor", () => {
+  const app = schema({
+    tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
+    tables: [table("notes", { id: t.id({ default: "none" }), title: t.text() })],
+  });
+  const description = describe(app);
+  expect(description.requirements.features).toContain("tenancy.column");
+  expect(describe(description).requirements.features).toContain("tenancy.column");
+  expect(describe({ catalog: description.catalog }).requirements.features).not.toContain(
+    "tenancy.column",
+  );
+  expect(catalogHash(buildCatalog(description))).toBe(catalogHash(app.catalog));
+  expect(() => describe({ catalog: app.catalog, minPostgres: 14 })).toThrow(/minPostgres: 15-18/);
+  expect(() => describe({ catalog: app.catalog, minPostgres: 19 })).toThrow(OkmError);
 });
 
 test("the handbook example round-trips", async () => {
