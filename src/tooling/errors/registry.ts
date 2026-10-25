@@ -790,8 +790,8 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1814",
     title: "Extension change refused",
     summary:
-      "The plan would downgrade an extension, move a non-relocatable one, or drop one that still has dependents.",
-    fix: "Drop or move the dependents first. Postgres cannot lower an extension version.",
+      "The plan would downgrade an extension, move a non-relocatable one, or drop one that still has dependents. A NOSUPERUSER migration role that does not own the extension hits the same code when a step would alter that extension or one of its types.",
+    fix: "Drop or move the dependents first. Postgres cannot lower an extension version. When the message says the role must be the owner, make the migration role the owner of the extension, or run the check as that owner.",
   },
   {
     code: "OKM1820",

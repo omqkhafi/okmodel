@@ -186,6 +186,41 @@ postgresTest(
 
 postgresTest(
   gate,
+  "a NOSUPERUSER that does not own citext is OKM1814",
+  async () => {
+    await withInstalledCitext(async (url, sql) => {
+      const role = "okm_n95_check";
+      await sql.unsafe(`drop role if exists ${role}`);
+      await sql.unsafe(`create role ${role} nosuperuser`);
+      await sql.unsafe(`grant usage, create on schema public to ${role}`);
+      try {
+        const error = await replayCheckHistory(
+          url,
+          schemaName(),
+          { schema: "schema.ts", roles: { migration: role, app: role } },
+          false,
+          [migration("alter type public.citext set schema public")],
+        ).then(
+          () => undefined,
+          (caught: unknown) => caught,
+        );
+        expect(error).toBeInstanceOf(OkmError);
+        const refused = error as OkmError;
+        expect(refused.code).toBe("OKM1814");
+        expect(refused.message).toContain("must be owner of type");
+        expect(refused.fix.summary).toContain("migration role");
+        expect(await citextHome(sql)).toEqual(["public"]);
+      } finally {
+        await sql.unsafe(`revoke all on schema public from ${role}`).catch(() => undefined);
+        await sql.unsafe(`drop role if exists ${role}`);
+      }
+    });
+  },
+  30_000,
+);
+
+postgresTest(
+  gate,
   "replaying an extension that is not installed creates it in the scratch schema only",
   async () => {
     const database = await createIsolatedDatabase();

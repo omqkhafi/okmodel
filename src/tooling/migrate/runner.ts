@@ -791,6 +791,12 @@ export function stepFailureFix(
   error: unknown,
   again: "apply" | "check",
 ): { readonly summary: string } {
+  if (isExtensionOwner(error)) {
+    return {
+      summary:
+        "The migration role does not own this extension. Make that role the owner, or run okm migrate check as the owner. A NOSUPERUSER role cannot alter an extension or type it does not own.",
+    };
+  }
   if (isLockTimeout(error)) {
     const command = again === "apply" ? "okm migrate apply" : "okm migrate check";
     const tail =
@@ -800,6 +806,11 @@ export function stepFailureFix(
     };
   }
   return { summary: "Fix the step and run apply again. Finished steps are not repeated." };
+}
+
+function isExtensionOwner(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : "";
+  return /must be owner of (extension|type)\b/i.test(message);
 }
 
 function isLockTimeout(error: unknown): boolean {

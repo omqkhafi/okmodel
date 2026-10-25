@@ -847,8 +847,9 @@ function failStep(id: string, index: number, error: unknown): OkmError {
   }
   if (error instanceof OkmError) return error;
   const message = error instanceof Error ? error.message : "The step failed.";
+  const owner = /must be owner of (extension|type)\b/i.test(message);
   return new OkmError(
-    "invalid",
+    owner ? "OKM1814" : "invalid",
     `Migration ${id} failed at step ${String(index + 1)}: ${message}`,
     {
       cause: error,
