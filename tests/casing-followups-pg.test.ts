@@ -94,6 +94,76 @@ postgresTest(
   180_000,
 );
 
+postgresTest(
+  gate,
+  "a rename recreates a function and a trigger whose body names the old column",
+  async () => {
+    const routines = { functions: "length, named, guard", triggers: "fired" };
+    const before = [
+      'const notes = table("notes", { id: t.identity(), title: t.text() });',
+      'const length = fn("title_len", { returns: "integer", language: "plpgsql", body: \'begin return (select length("title") from notes limit 1); end\', dependsOn: [{ table: notes, column: "title" }] });',
+      'const named = fn("notes_title_len", { returns: "integer", language: "plpgsql", body: \'begin return (select length("title") from notes limit 1); end\', dependsOn: [{ table: notes, column: "title" }] });',
+      'const guard = fn("guard", { returns: "trigger", language: "plpgsql", body: "begin return new; end", dependsOn: [notes] });',
+      'const fired = trigger("notes_guard", { on: notes, timing: "before", events: ["update"], level: "row", calls: guard, when: \'OLD."title" is not null\' });',
+    ];
+    const after = [
+      'const notes = table("notes", { id: t.identity(), heading: t.text().renamedFrom("title") });',
+      'const length = fn("title_len", { returns: "integer", language: "plpgsql", body: \'begin return (select length("heading") from notes limit 1); end\', dependsOn: [{ table: notes, column: "heading" }] });',
+      'const named = fn("notes_heading_len", { returns: "integer", language: "plpgsql", body: \'begin return (select length("heading") from notes limit 1); end\', dependsOn: [{ table: notes, column: "heading" }] });',
+      'const guard = fn("guard", { returns: "trigger", language: "plpgsql", body: "begin return new; end", dependsOn: [notes] });',
+      'const fired = trigger("notes_guard", { on: notes, timing: "before", events: ["update"], level: "row", calls: guard, when: \'OLD."heading" is not null\' });',
+    ];
+    const settled = after.map((line) => line.replace('.renamedFrom("title")', ""));
+    const database = await createIsolatedDatabase();
+    const migrations = project("routine-rename-migrate");
+    const pushed = project("routine-rename-push");
+    try {
+      writeConfig(migrations, database.url);
+      writeSchema(migrations, before, "notes", undefined, routines);
+      await cli(migrations, ["generate", "init"]);
+      await cli(migrations, ["migrate", "apply"]);
+      await exec(database.url, "insert into notes (title) values ('kept')");
+      expect(await scalar(database.url, "select title_len() as n")).toBe("4");
+      writeSchema(migrations, after, "notes", undefined, routines);
+      await generateAllowing(migrations);
+      await cli(migrations, ["migrate", "apply"]);
+      expect(await scalar(database.url, "select title_len() as n")).toBe("4");
+      expect(await scalar(database.url, "select notes_heading_len() as n")).toBe("4");
+      await exec(database.url, `update notes set "heading" = 'ab'`);
+      expect(await scalar(database.url, "select title_len() as n")).toBe("2");
+      const triggerDef = await scalar(
+        database.url,
+        "select pg_get_triggerdef(oid) as def from pg_trigger where tgname = 'notes_guard' and not tgisinternal",
+      );
+      expect(triggerDef).toContain("heading");
+      expect(triggerDef).not.toContain("title");
+      writeSchema(migrations, settled, "notes", undefined, routines);
+      expect(await cli(migrations, ["check"])).toContain("ok");
+      expect(await cli(migrations, ["generate"])).toBe("no changes\n");
+    } finally {
+      rmSync(migrations, { recursive: true, force: true });
+      await database.close();
+    }
+    const second = await createIsolatedDatabase();
+    try {
+      writeConfig(pushed, second.url);
+      writeSchema(pushed, before, "notes", undefined, routines);
+      await cli(pushed, ["push"]);
+      await exec(second.url, "insert into notes (title) values ('kept')");
+      writeSchema(pushed, after, "notes", undefined, routines);
+      expect(await cli(pushed, ["push"])).toMatch(/applied push-2/);
+      expect(await scalar(second.url, "select title_len() as n")).toBe("4");
+      expect(await scalar(second.url, "select notes_heading_len() as n")).toBe("4");
+      writeSchema(pushed, settled, "notes", undefined, routines);
+      expect(await cli(pushed, ["check"])).toContain("ok");
+    } finally {
+      rmSync(pushed, { recursive: true, force: true });
+      await second.close();
+    }
+  },
+  180_000,
+);
+
 function project(name: string): string {
   return mkdtempSync(join(tmpdir(), `okm-${name}-`));
 }
@@ -107,19 +177,24 @@ function writeSchema(
   declarations: readonly string[],
   tables: string,
   casing?: "snake" | "camel",
+  routines?: { readonly functions: string; readonly triggers: string },
 ): void {
-  const options =
-    casing === undefined
-      ? `tables: [${tables}]`
-      : `tables: [${tables}], casing: ${JSON.stringify(casing)}`;
+  const parts = [`tables: [${tables}]`];
+  if (casing !== undefined) parts.push(`casing: ${JSON.stringify(casing)}`);
+  if (routines !== undefined) {
+    parts.push(`functions: [${routines.functions}]`, `triggers: [${routines.triggers}]`);
+  }
+  const imports = [
+    ...(routines === undefined
+      ? []
+      : [`import { fn, trigger } from ${source("src/dialects/pg/fn/index.ts")};`]),
+    `import { schema, t, table } from ${source("src/dialects/pg/index.ts")};`,
+  ];
   writeFileSync(
     join(cwd, "schema.ts"),
-    [
-      `import { schema, t, table } from ${source("src/dialects/pg/index.ts")};`,
-      ...declarations,
-      `export const app = schema({ ${options} });`,
-      "",
-    ].join("\n"),
+    [...imports, ...declarations, `export const app = schema({ ${parts.join(", ")} });`, ""].join(
+      "\n",
+    ),
   );
 }
 
@@ -153,6 +228,28 @@ async function identitySequence(url: string, table: string, column: string): Pro
   }
 }
 
+async function scalar(url: string, statement: string): Promise<string> {
+  const sql = openPostgres(url);
+  try {
+    const rows = await sql.unsafe(statement);
+    const row = rows[0] as Record<string, unknown> | undefined;
+    if (row === undefined) return "";
+    const value = Object.values(row)[0];
+    return value === null || value === undefined ? "" : String(value);
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
+async function exec(url: string, statement: string): Promise<void> {
+  const sql = openPostgres(url);
+  try {
+    await sql.unsafe(statement);
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
 async function insertIdentity(url: string, table: string, column: string): Promise<void> {
   const sql = openPostgres(url);
   try {
@@ -181,10 +278,15 @@ async function generateAllowing(cwd: string): Promise<void> {
   const text = readFileSync(join(dir, name), "utf8");
   writeFileSync(
     join(dir, name),
-    text.replace(
-      /^(alter table .* rename column .*)$/gm,
-      "-- okm-allow OKM1519: the old column name is unused\n$1",
-    ),
+    text
+      .replace(
+        /^(alter table .* rename column .*)$/gm,
+        "-- okm-allow OKM1519: the old column name is unused\n$1",
+      )
+      .replace(
+        /^(drop function .*)$/gm,
+        "-- okm-allow OKM1515: the old function name is unused\n$1",
+      ),
   );
 }
 

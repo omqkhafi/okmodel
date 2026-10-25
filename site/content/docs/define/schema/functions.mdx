@@ -254,6 +254,10 @@ export default schema({
 });
 ```
 
+### Rename
+
+Postgres does not rewrite a function body, or a trigger `when`, when a table or a column is renamed. The plan recreates a function whose name or body mentions the old name: `create or replace` when the signature stays, and drop plus create when the name changes. A trigger whose name or `when` mentions the old name is dropped and created. A check, an index, and a policy are rewritten in place.
+
 ### Create your own
 
 There is no built-in function. `fn()` from `okmodel/fn` is the declaration. The sections above are its options.

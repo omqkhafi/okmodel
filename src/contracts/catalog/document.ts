@@ -110,7 +110,10 @@ export function renameColumn(
  *
  * Column, index, constraint, and trigger parents move to the new name, and
  * edges that pointed at those objects move with them. Expression text that
- * names the table is rewritten. Constraint and index names stay. A grant on
+ * names the table is rewritten on a check, an index, a policy, or a view.
+ * A function body and a trigger `when` stay as stored: Postgres does not
+ * rewrite that source, so the planner recreates the routine. Constraint and
+ * index names stay. A grant on
  * the table, or on an identity sequence named `{table}_{column}_seq`, follows
  * the name the schema will use. The planner emits the `RENAME` for a default
  * name; a custom name is left as it is.
@@ -354,10 +357,7 @@ function rewriteRenamed(
       return rewriteType(object, dependencies);
     case "extension":
       return retargeted(object, dependencies);
-    case "function": {
-      const local = object.dependencies.some(
-        (edge) => edge.target.kind === "column" && sameRef(edge.target.parent, change.parent),
-      );
+    case "function":
       return functionObject({
         namespace: object.identity.namespace,
         name: object.identity.name,
@@ -366,7 +366,7 @@ function rewriteRenamed(
         language: object.definition.language,
         volatility: object.definition.volatility,
         security: object.definition.security,
-        body: rewriteExpr(object.definition.body, change, local),
+        body: object.definition.body,
         owner: object.owner,
         provenance: object.provenance,
         dependencies,
@@ -375,7 +375,6 @@ function rewriteRenamed(
           : {}),
         ...(object.definition.atomic === true ? { atomic: true } : {}),
       });
-    }
     case "view":
     case "materializedView": {
       const local = object.dependencies.some(
@@ -390,28 +389,23 @@ function rewriteRenamed(
     case "policy":
       return rewritePolicyColumn(object, change, dependencies);
     case "trigger": {
+      // `triggerObject` reads `when` and adds a column edge for each name.
+      // The old text still names the column this rename removed, so the
+      // record is copied and only `updateOf` moves. Postgres rewrites that
+      // list itself. It does not rewrite `when`.
       const local = sameRef(object.identity.parent, change.parent);
-      return triggerObject({
-        parent: object.identity.parent,
-        name: object.identity.name,
-        timing: object.definition.timing,
-        events: object.definition.events,
-        level: object.definition.level,
-        calls: object.definition.calls,
-        owner: object.owner,
-        provenance: object.provenance,
-        dependencies,
-        ...(object.definition.updateOf !== undefined
-          ? {
-              updateOf: local
-                ? renameList(object.definition.updateOf, change.from, change.to)
-                : object.definition.updateOf,
-            }
-          : {}),
-        ...(object.definition.when !== undefined
-          ? { when: rewriteExpr(object.definition.when, change, local) }
-          : {}),
-      });
+      const updateOf = object.definition.updateOf;
+      return {
+        ...object,
+        definition:
+          updateOf === undefined
+            ? object.definition
+            : {
+                ...object.definition,
+                updateOf: local ? renameList(updateOf, change.from, change.to) : updateOf,
+              },
+        dependencies: dependencies.map((target) => ({ target })),
+      };
     }
     default:
       return assertNever(object);
@@ -766,12 +760,6 @@ function rewriteTableName(
     return { ...object, dependencies: dependencies.map((target) => ({ target })) };
   }
   if (object.kind === "function") {
-    const local = object.dependencies.some(
-      (edge) =>
-        edge.target.kind === "table" &&
-        edge.target.name === change.from &&
-        sameNamespace(edge.target.namespace, change.namespace),
-    );
     return functionObject({
       namespace: object.identity.namespace,
       name: object.identity.name,
@@ -780,7 +768,7 @@ function rewriteTableName(
       language: object.definition.language,
       volatility: object.definition.volatility,
       security: object.definition.security,
-      body: rewriteExpr(object.definition.body, { from: change.from, to: change.to }, local),
+      body: object.definition.body,
       owner: object.owner,
       provenance: object.provenance,
       dependencies,
@@ -826,7 +814,6 @@ function rewriteTableName(
   }
   if (object.kind === "trigger") {
     const parent = movedParent(object.identity.parent, change);
-    const local = parent.name !== object.identity.parent.name;
     return triggerObject({
       parent,
       name: object.identity.name,
@@ -838,9 +825,7 @@ function rewriteTableName(
       provenance: object.provenance,
       dependencies,
       ...(object.definition.updateOf !== undefined ? { updateOf: object.definition.updateOf } : {}),
-      ...(object.definition.when !== undefined
-        ? { when: rewriteExpr(object.definition.when, { from: change.from, to: change.to }, local) }
-        : {}),
+      ...(object.definition.when !== undefined ? { when: object.definition.when } : {}),
     });
   }
   if (object.kind === "policy") {
