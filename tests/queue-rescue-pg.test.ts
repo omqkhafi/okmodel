@@ -73,9 +73,13 @@ postgresTest(
   60_000,
 );
 
+function instant(minutesAgo: number): Temporal.Instant {
+  return Temporal.Instant.from(new Date(Date.now() - minutesAgo * 60_000).toISOString());
+}
+
 async function proveRescue(db: Db): Promise<void> {
-  const now = Temporal.Now.instant();
-  const old = now.subtract({ minutes: 10 });
+  const now = instant(0);
+  const old = instant(10);
   await db.jobs.insert([
     { id: "a", status: "running", claimedAt: old, heartbeatAt: null },
     { id: "b", status: "running", claimedAt: now, heartbeatAt: null },
@@ -101,8 +105,8 @@ async function proveRescue(db: Db): Promise<void> {
 }
 
 async function rescue(db: Db, owner: string) {
-  const now = Temporal.Now.instant();
-  const stale = now.subtract({ minutes: 5 });
+  const now = instant(0);
+  const stale = instant(5);
   const [job] = await db.jobs.update({
     where: or([
       { status: "running", heartbeatAt: null, claimedAt: lt(stale) },
