@@ -347,18 +347,18 @@ class PgliteSession implements BatchSession {
 }
 
 type NoticeBuffer = {
-  push(notice: {
+  push: (notice: {
     severity?: string | undefined;
     code?: string | undefined;
     message?: string | undefined;
-  }): void;
+  }) => void;
   take(): readonly Notice[];
 };
 
 function noticeBuffer(): NoticeBuffer {
   let notices: Notice[] | undefined;
   return {
-    push(notice) {
+    push: (notice) => {
       const severity = notice.severity ?? "";
       const message = notice.message ?? "";
       const code = notice.code !== undefined && notice.code.length > 0 ? notice.code : undefined;
