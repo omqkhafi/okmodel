@@ -4,9 +4,10 @@
  * A code prints `docs/errors/<code>.md`. With no code, the project is loaded and
  * each table's triggers are listed. When a target is configured, the command
  * also connects and checks `minPostgres` and required extensions from
- * `describe()` (D300). An extension an applied or pending migration creates
- * is not OKM1811 while the package is available, and neither is one the
- * initial migration will create when the database has no history yet (#400).
+ * `describe()` (D300). A pending migration that creates an extension is not
+ * OKM1811 while the package is available. An applied migration is not that
+ * exception: dropping the extension afterwards is OKM1811. The same skip
+ * applies when the database has no history and no migration files yet (#400).
  * When `roles` is set, it checks that those roles
  * exist, that a managed role can be created, and that the application role
  * can reach each managed object.

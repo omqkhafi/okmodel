@@ -179,6 +179,34 @@ postgresTest(
 
 postgresTest(
   gate,
+  "doctor reports pg_trgm after an applied migration and a later drop",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const sql = openPostgres(database.url);
+    try {
+      if (!(await extensionAvailable(sql, "pg_trgm"))) return;
+      const cwd = project(database.url, trigramSchema());
+      try {
+        await cli(cwd, ["generate", "init"]);
+        await cli(cwd, ["migrate", "apply"]);
+        await sql.unsafe("drop extension pg_trgm cascade");
+        const error = await refused(() => doctorProject(cwd, undefined));
+        expect(error.code).toBe("OKM1811");
+        expect(error.message).toContain("pg_trgm");
+        expect(error.message).toContain("not installed");
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+      }
+    } finally {
+      await sql.end({ timeout: 5 });
+      await database.close();
+    }
+  },
+  90_000,
+);
+
+postgresTest(
+  gate,
   "pending pg_trgm migration still reports OKM1520 drift before OKM1811",
   async () => {
     const database = await createIsolatedDatabase();

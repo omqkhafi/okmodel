@@ -2,10 +2,11 @@
  * Compares `describe()` requirements with a connected server.
  *
  * Doctor and `okm check` share this. Codes stay OKM1802 / OKM1803 for the
- * major and OKM1811 for a missing extension (D300). An extension an applied
- * or pending migration creates is not OKM1811 while the package is available.
- * The same is true when the database has no history and no migration files:
- * the initial migration will create every required extension (#400).
+ * major and OKM1811 for a missing extension (D300). A pending `CREATE
+ * EXTENSION` step is not OKM1811 while the package is available. An applied
+ * step is. The same skip applies when the database has no history and no
+ * migration files: the initial migration will create every required
+ * extension (#400).
  */
 
 import { open } from "../../adapters/pg/postgresjs.js";
@@ -22,6 +23,7 @@ import { createExtensionName } from "./extensions.js";
 import { loadMigrations } from "./files.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { describe } from "./schema-api.js";
+import { expandProvisioned } from "./snapshot.js";
 
 /**
  * Schema shape `describe` and the server check need.
@@ -48,44 +50,51 @@ export function serverChecksSkippedNotice(count: number): string {
 }
 
 /**
- * Extension names `CREATE EXTENSION` steps in the migrations directory create.
+ * Extension names a not-yet-applied `CREATE EXTENSION` step will install.
  *
- * Applied and pending files both count (#400). A directory with no files is
- * an empty set; the caller treats that as the initial migration when the
- * database also has no `okm_history`.
- *
- * @param directory - Migrations directory
- * @returns Extension names those files install
- */
-export function extensionsCreatedByMigrations(directory: string): ReadonlySet<string> {
-  const names = new Set<string>();
-  for (const migration of loadMigrations(directory)) {
-    for (const step of migration.steps) {
-      const name = createExtensionName(step.sql);
-      if (name !== undefined) names.add(name);
-    }
-  }
-  return names;
-}
-
-/**
- * True when the database has no migration files and no `okm_history`.
- *
- * The initial migration will create every required extension. A later apply
- * installs it, so a missing install is not OKM1811 while the package is
- * available.
+ * An applied step does not count, including a step covered by `provisioned@`
+ * or `baselined@`. When `okm_history` is absent, every file is pending.
+ * `initial` is true when there are no files and no history: the forthcoming
+ * initial migration creates every required extension.
  *
  * @param pool - Pool or connection
  * @param directory - Migrations directory
- * @returns Whether this database is still before its first migration
+ * @returns Pending names, and whether this database is before its first migration
  */
-export async function initialMigrationPending(
+async function pendingExtensionCreates(
   pool: StatementRunner,
   directory: string,
-): Promise<boolean> {
-  if (loadMigrations(directory).length > 0) return false;
-  const result = await pool.execute("select to_regclass('okm_history') is not null");
-  return !historyPresent(result.rows[0]?.[0]);
+): Promise<{ readonly names: ReadonlySet<string>; readonly initial: boolean }> {
+  const migrations = loadMigrations(directory);
+  const applied = await appliedSteps(pool, migrations);
+  const names = new Set<string>();
+  for (const migration of migrations) {
+    migration.steps.forEach((step, index) => {
+      if (applied.done.has(`${migration.id}:${String(index)}`)) return;
+      const name = createExtensionName(step.sql);
+      if (name !== undefined) names.add(name);
+    });
+  }
+  return { names, initial: migrations.length === 0 && !applied.present };
+}
+
+async function appliedSteps(
+  pool: StatementRunner,
+  migrations: readonly { readonly id: string; readonly steps: readonly unknown[] }[],
+): Promise<{ readonly present: boolean; readonly done: Set<string> }> {
+  const present = await pool.execute("select to_regclass('okm_history') is not null");
+  if (!historyPresent(present.rows[0]?.[0])) return { present: false, done: new Set() };
+  const rows = await pool.execute("select migration_id, step_index::text from okm_history");
+  const done = new Set<string>();
+  const ids: string[] = [];
+  for (const row of rows.rows) {
+    const id = row[0];
+    const step = row[1];
+    if (typeof id !== "string" || typeof step !== "string") continue;
+    done.add(`${id}:${step}`);
+    ids.push(id);
+  }
+  return { present: true, done: expandProvisioned(migrations, done, ids) };
 }
 
 function historyPresent(value: WireValue | undefined): boolean {
@@ -209,20 +218,20 @@ export async function assertExtensionsAgainstPool(
   if (description.requirements.extensions.length === 0) return;
   const names = description.requirements.extensions.map((item) => item.name);
   const installed = await installedExtensions(pool, names);
-  const createdByMigrations = extensionsCreatedByMigrations(migrationsDirectory);
-  const initial = await initialMigrationPending(pool, migrationsDirectory);
+  const pending = await pendingExtensionCreates(pool, migrationsDirectory);
   const forthcoming = names.filter(
-    (name) => !installed.has(name) && (createdByMigrations.has(name) || initial),
+    (name) => !installed.has(name) && (pending.names.has(name) || pending.initial),
   );
   const available =
     forthcoming.length === 0 ? new Set<string>() : await availableExtensions(pool, forthcoming);
   for (const item of description.requirements.extensions) {
     if (installed.has(item.name)) continue;
-    if (createdByMigrations.has(item.name) || initial) {
-      // Not installed yet. A migration creates it, or the initial migration
-      // will. Refuse only when the server cannot install that package.
+    if (pending.names.has(item.name) || pending.initial) {
+      // Not installed yet. A pending step creates it, or the initial
+      // migration will. An applied step does not hide a later drop. Refuse
+      // only when the server cannot install that package.
       if (available.has(item.name)) continue;
-      if (createdByMigrations.has(item.name)) {
+      if (pending.names.has(item.name)) {
         throw new OkmError("OKM1811", `Extension ${item.name} is not available on the server.`, {
           fix: {
             summary: `Run okm migrate apply after the extension package is on the server, or remove the declaration. Needed because ${item.reason}.`,
