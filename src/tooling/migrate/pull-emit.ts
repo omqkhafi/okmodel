@@ -11,7 +11,7 @@ import { relative, dirname } from "node:path";
 import { isDomain } from "../../contracts/catalog/enum.js";
 import { identityKey } from "../../contracts/catalog/identity.js";
 import { deterministicName } from "../../contracts/catalog/identifier.js";
-import { renderCatalog } from "../../dialects/pg/ddl.js";
+import { qualify, renderCatalog } from "../../dialects/pg/ddl.js";
 import type {
   Catalog,
   CatalogObject,
@@ -270,6 +270,7 @@ export function emitPull(source: Catalog, layout: PullLayout, review?: PullRevie
       ),
     );
   }
+  appendRowLevelSecurity(source, skipped);
 
   const verdictList = review?.verdicts ?? [];
   const routines = renderRoutines(plan, new Map(verdictList.map((item) => [item.key, item])));
@@ -1166,8 +1167,55 @@ function kindLabel(kind: string): string {
   if (kind === "defaultPrivilege") return "default privileges";
   if (kind === "eventTrigger") return "event triggers";
   if (kind === "policy") return "policies";
+  if (kind === "rowLevelSecurity") return "row level security";
   if (kind.endsWith("s")) return kind;
   return `${kind}s`;
+}
+
+const ROW_LEVEL_REASON = "pull does not write enable or force row level security";
+
+/**
+ * One enable line per table that has a policy, and a force line when any of
+ * those policies recorded `FORCE ROW LEVEL SECURITY`.
+ *
+ * Introspection stores both facts on the policy. The files do not, so check
+ * after baseline must not be the first place the operator hears about them.
+ * Keys are not catalog identities: `skippedKeys` must not treat a column as
+ * skipped because it shares a name with this note.
+ */
+function appendRowLevelSecurity(source: Catalog, skipped: PullSkip[]): void {
+  const tables = new Map<string, { schema: string; force: boolean }>();
+  for (const object of source.objects) {
+    if (object.kind !== "policy") continue;
+    const namespace = object.identity.parent.namespace;
+    const schema = namespace.form === "static" ? namespace.name : "public";
+    const name = object.identity.parent.name;
+    const current = tables.get(`${schema}\0${name}`);
+    if (current === undefined) {
+      tables.set(`${schema}\0${name}`, { schema, force: object.definition.force });
+    } else if (object.definition.force) {
+      current.force = true;
+    }
+  }
+  for (const [key, info] of tables) {
+    const name = key.slice(info.schema.length + 1);
+    const table = qualify(info.schema, name);
+    skipped.push({
+      key: `row-level-security\0${info.schema}\0${name}\0enable`,
+      kind: "rowLevelSecurity",
+      label: `${name} enable`,
+      reason: ROW_LEVEL_REASON,
+      sql: `alter table ${table} enable row level security`,
+    });
+    if (!info.force) continue;
+    skipped.push({
+      key: `row-level-security\0${info.schema}\0${name}\0force`,
+      kind: "rowLevelSecurity",
+      label: `${name} force`,
+      reason: ROW_LEVEL_REASON,
+      sql: `alter table ${table} force row level security`,
+    });
+  }
 }
 
 function counted(count: number, one: string, many: string): string {

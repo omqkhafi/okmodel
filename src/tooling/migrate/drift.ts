@@ -84,7 +84,16 @@ export async function assertAuthorDrift(
       await introspectSchema(runner, schema, schema, managedRoleOptions(roles)),
     );
     const invalid = await invalidIndexReport(runner, schema);
-    const plan = planMigration({ before: live, after: authorOnServer, name: "check", schema });
+    // Pull lists policies and does not write them. After baseline, okm_meta
+    // exists, so a full plan would drop that security. A schema with no
+    // policy leaves the live policies in place. rlsTenancy declares policies
+    // and still drifts when they differ.
+    const plan = planMigration({
+      before: withoutUnmanagedPolicies(live, authorOnServer),
+      after: authorOnServer,
+      name: "check",
+      schema,
+    });
     if (invalid.length === 0 && plan.steps.length === 0) return;
     const weaker = unvalidatedNotNull(live, authorOnServer);
     const sqlText = plan.steps.map((step) => step.sql).join("\n");
@@ -150,6 +159,22 @@ export async function invalidIndexReport(
  * Rows with NULL may exist, so the database is weaker than the schema even
  * though `attnotnull` is set. Empty when there is no such column.
  */
+/**
+ * Drops live policies when the schema declares none.
+ *
+ * Enable, force, and the policy itself are one plan (drop policy, then
+ * disable row level security). Omitting the policy objects omits that plan.
+ * The full live catalog stays available for the NOT NULL NOT VALID note.
+ */
+function withoutUnmanagedPolicies(live: Catalog, author: Catalog): Catalog {
+  if (author.objects.some((object) => object.kind === "policy")) return live;
+  if (!live.objects.some((object) => object.kind === "policy")) return live;
+  return {
+    version: live.version,
+    objects: live.objects.filter((object) => object.kind !== "policy"),
+  };
+}
+
 function unvalidatedNotNull(live: Catalog, author: Catalog): string {
   const required = new Set<string>();
   for (const object of author.objects) {
