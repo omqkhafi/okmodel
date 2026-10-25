@@ -45,14 +45,19 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Read pinned Bun
-        id: bun-pin
-        run: echo "version=$(tr -d '[:space:]' < .bun-version)" >> "$GITHUB_OUTPUT"
+      - name: Require pinned Bun
+        run: |
+          set -euo pipefail
+          pin="$(tr -d '[:space:]' < .bun-version)"
+          if [ -z "$pin" ]; then
+            echo ".bun-version is missing or empty" >&2
+            exit 1
+          fi
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: ${{ steps.bun-pin.outputs.version }}
+          bun-version-file: .bun-version
 
       - name: Require a stable release tag
         id: release

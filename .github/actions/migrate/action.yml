@@ -45,15 +45,25 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Read pinned Bun
-      id: bun-pin
+    # The pin is this action's, not the caller's checkout. setup-bun reads a
+    # file named .bun-version. An empty pin is a failure, not "latest".
+    - name: Require pinned Bun
       shell: bash
-      run: echo "version=$(tr -d '[:space:]' < "$GITHUB_ACTION_PATH/../../../.bun-version")" >> "$GITHUB_OUTPUT"
+      run: |
+        set -euo pipefail
+        src="$GITHUB_ACTION_PATH/../../../.bun-version"
+        pin="$(tr -d '[:space:]' < "$src")"
+        if [ -z "$pin" ]; then
+          echo ".bun-version is missing or empty" >&2
+          exit 1
+        fi
+        mkdir -p "$RUNNER_TEMP/bun-pin"
+        cp "$src" "$RUNNER_TEMP/bun-pin/.bun-version"
 
     - name: Setup Bun
       uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
       with:
-        bun-version: ${{ steps.bun-pin.outputs.version }}
+        bun-version-file: ${{ runner.temp }}/bun-pin/.bun-version
 
     - name: Migrate
       shell: bash

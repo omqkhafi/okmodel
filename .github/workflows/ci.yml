@@ -6,15 +6,19 @@ name: CI
 # The gate is format, lint, typecheck, the build, tests for files changed
 # since the merge base, the runtime-entry size ceiling, and the title lint.
 # Postgres 18 runs when the diff touches src/dialects, src/runtime, or
-# src/tooling/migrate. A label does not start it. Site tests run when the
-# diff touches src/tooling or src/dialects. The Site workflow is not required.
+# src/tooling/migrate. A label does not start it. A title edit starts this
+# workflow again, because the title lint is part of the gate. A body edit
+# does not replace that result: the gate repeats the last conclusion for
+# the commit. Site tests run when the diff touches src/tooling or
+# src/dialects. The Site workflow is not required.
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, edited]
 
 concurrency:
   group: ci-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  # A body edit waits, then mirrors. It must not cancel the run for this commit.
+  cancel-in-progress: ${{ github.event.action != 'edited' || github.event.changes.title }}
 
 permissions:
   contents: read
@@ -23,6 +27,7 @@ permissions:
 jobs:
   changes:
     name: changes / filter
+    if: github.event.action != 'edited' || github.event.changes.title
     runs-on: ubuntu-24.04
     outputs:
       postgres: ${{ steps.plan.outputs.postgres }}
@@ -34,14 +39,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Read pinned Bun
-        id: bun-pin
-        run: echo "version=$(tr -d '[:space:]' < .bun-version)" >> "$GITHUB_OUTPUT"
+      - name: Require pinned Bun
+        run: |
+          set -euo pipefail
+          pin="$(tr -d '[:space:]' < .bun-version)"
+          if [ -z "$pin" ]; then
+            echo ".bun-version is missing or empty" >&2
+            exit 1
+          fi
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: ${{ steps.bun-pin.outputs.version }}
+          bun-version-file: .bun-version
 
       - name: Plan
         id: plan
@@ -51,6 +61,7 @@ jobs:
 
   lint:
     name: lint / static
+    if: github.event.action != 'edited' || github.event.changes.title
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -93,6 +104,7 @@ jobs:
 
   types:
     name: types / compiler
+    if: github.event.action != 'edited' || github.event.changes.title
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -113,6 +125,7 @@ jobs:
 
   build:
     name: build / dist
+    if: github.event.action != 'edited' || github.event.changes.title
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -129,7 +142,7 @@ jobs:
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: dist
-          key: dist-${{ runner.os }}-${{ hashFiles('src/**', 'bun.lock', 'tsconfig.build.json', 'scripts/write-bin-wrappers.ts', 'packages/harness/src/driver-run.ts') }}
+          key: dist-${{ runner.os }}-${{ hashFiles('src/**', 'package.json', 'bun.lock', '.bun-version', 'tsconfig.build.json', 'scripts/write-bin-wrappers.ts', 'packages/harness/src/driver-run.ts') }}
 
       - name: Build
         if: steps.dist.outputs.cache-hit != 'true'
@@ -146,6 +159,7 @@ jobs:
   test:
     name: test / changed
     needs: build
+    if: github.event.action != 'edited' || github.event.changes.title
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -172,6 +186,7 @@ jobs:
 
   size:
     name: package / size
+    if: github.event.action != 'edited' || github.event.changes.title
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -185,7 +200,7 @@ jobs:
 
   paths:
     name: label / paths
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event.pull_request.head.repo.full_name == github.repository && (github.event.action != 'edited' || github.event.changes.title)
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -197,14 +212,23 @@ jobs:
       - name: Label by path
         uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
 
-      - name: Read pinned Bun
-        id: bun-pin
-        run: echo "version=$(tr -d '[:space:]' < .bun-version)" >> "$GITHUB_OUTPUT"
+      - name: Pin Bun from the base
+        run: |
+          set -euo pipefail
+          base="${{ github.event.pull_request.base.sha }}"
+          git fetch --no-tags --depth=1 origin "$base"
+          pin="$(git show "$base:.bun-version" | tr -d '[:space:]')"
+          if [ -z "$pin" ]; then
+            echo "base .bun-version is missing or empty" >&2
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/bun-pin"
+          printf '%s\n' "$pin" > "$RUNNER_TEMP/bun-pin/.bun-version"
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: ${{ steps.bun-pin.outputs.version }}
+          bun-version-file: ${{ runner.temp }}/bun-pin/.bun-version
 
       - name: Label by title
         env:
@@ -215,6 +239,7 @@ jobs:
 
   pull:
     name: lint / pull request
+    if: github.event.action != 'edited' || github.event.changes.title
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -223,8 +248,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup
-        uses: ./.github/actions/setup-bun
+      # The lint script is the pull request's. The Bun that runs it is the
+      # base pin, so a fork cannot choose the runtime for this token.
+      - name: Pin Bun from the base
+        run: |
+          set -euo pipefail
+          base="${{ github.event.pull_request.base.sha }}"
+          git fetch --no-tags --depth=1 origin "$base"
+          pin="$(git show "$base:.bun-version" | tr -d '[:space:]')"
+          if [ -z "$pin" ]; then
+            echo "base .bun-version is missing or empty" >&2
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/bun-pin"
+          printf '%s\n' "$pin" > "$RUNNER_TEMP/bun-pin/.bun-version"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: ${{ runner.temp }}/bun-pin/.bun-version
 
       - name: Lint pull request
         env:
@@ -236,7 +278,7 @@ jobs:
   suite:
     name: suite
     needs: [build, changes]
-    if: needs.changes.outputs.postgres == 'true'
+    if: (github.event.action != 'edited' || github.event.changes.title) && needs.changes.outputs.postgres == 'true'
     permissions:
       contents: read
       actions: read
@@ -248,7 +290,7 @@ jobs:
   lifecycle:
     name: lifecycle / 18
     needs: [changes]
-    if: needs.changes.outputs.lifecycle == 'true'
+    if: (github.event.action != 'edited' || github.event.changes.title) && needs.changes.outputs.lifecycle == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -287,7 +329,7 @@ jobs:
   site:
     name: site / tests
     needs: [changes]
-    if: needs.changes.outputs.site == 'true'
+    if: (github.event.action != 'edited' || github.event.changes.title) && needs.changes.outputs.site == 'true'
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -308,6 +350,9 @@ jobs:
     needs: [changes, lint, types, build, test, size, pull, paths, suite, lifecycle, site]
     if: always()
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -316,6 +361,7 @@ jobs:
         uses: ./.github/actions/setup-bun
 
       - name: Require the slices
+        if: github.event.action != 'edited' || github.event.changes.title
         run: >
           bun ./scripts/ci-gate.ts
           --postgres ${{ needs.changes.outputs.postgres == 'true' && '1' || '0' }}
@@ -332,3 +378,11 @@ jobs:
           suite=${{ needs.suite.result }}
           lifecycle=${{ needs.lifecycle.result }}
           site=${{ needs.site.result }}
+
+      - name: Mirror the last gate on a body edit
+        if: github.event.action == 'edited' && github.event.changes.title == null
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_ID: ${{ github.run_id }}
+        run: bun ./scripts/ci-gate-mirror.ts

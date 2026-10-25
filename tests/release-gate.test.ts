@@ -235,7 +235,9 @@ test("the site deploys only after a successful release of a stable tag", () => {
   expect(yaml).toContain("bun ./scripts/deploy-ref.ts --confirm");
   expect(readFileSync(join(root, ".bun-version"), "utf8").trim()).toBe("1.4.3");
   expect(yaml).toContain(".bun-version");
-  expect(yaml).toContain("bun-version: ${{ steps.bun-pin.outputs.version }}");
+  expect(yaml).toContain("bun-version-file: .bun-version");
+  expect(yaml).toContain(".bun-version is missing or empty");
+  expect(yaml).not.toContain("steps.bun-pin.outputs.version");
   expect(yaml).toContain("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1");
   expect(yaml).toContain("oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2");
   expect(yaml).not.toContain("type: choice");
@@ -327,8 +329,20 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(ci).not.toContain("tests/harness.test.ts");
   expect(ci).not.toMatch(/push:\n {4}branches:\n {6}- main\n/);
   expect(ci).toContain("pull_request:");
-  expect(ci).toContain("cancel-in-progress: true");
+  expect(ci).toContain("types: [opened, synchronize, reopened, edited]");
+  expect(ci).toContain(
+    "cancel-in-progress: ${{ github.event.action != 'edited' || github.event.changes.title }}",
+  );
   expect(ci).toContain("group: ci-${{ github.event.pull_request.number }}");
+  expect(ci).toContain("github.event.action != 'edited' || github.event.changes.title");
+  expect(ci).toContain("bun ./scripts/ci-gate-mirror.ts");
+  expect(ci).toContain(
+    "hashFiles('src/**', 'package.json', 'bun.lock', '.bun-version', 'tsconfig.build.json', 'scripts/write-bin-wrappers.ts', 'packages/harness/src/driver-run.ts')",
+  );
+  expect(ci).toContain('git show "$base:.bun-version"');
+  const pullJob = ci.slice(ci.indexOf("name: lint / pull request"));
+  expect(pullJob).toContain('git show "$base:.bun-version"');
+  expect(pullJob).toContain("base .bun-version is missing or empty");
   expect(ci).toMatch(/name: gate \/ check[\s\S]*?if: always\(\)/);
   expect(ci).toContain("bun ./scripts/ci-gate.ts");
   expect(ci).toContain("--site ${{ needs.changes.outputs.site == 'true' && '1' || '0' }}");
@@ -346,6 +360,10 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(prMeta).not.toContain("opened");
   expect(prMeta).not.toContain("milestoned");
   expect(prMeta).toContain("bun ./scripts/pr-labels.ts");
+  expect(prMeta).toContain("bun-version-file: .bun-version");
+  expect(prMeta).toContain(".bun-version is missing or empty");
+  expect(prMeta).not.toContain("head.sha");
+  expect(prMeta).not.toContain("steps.bun-pin.outputs.version");
   const gateNeeds = ci.slice(ci.indexOf("name: gate / check"));
   for (const slice of ["changes", "lint", "types", "build", "test", "size", "pull", "suite"]) {
     expect(gateNeeds).toContain(slice);

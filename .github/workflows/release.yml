@@ -14,7 +14,8 @@ name: Release
 # Publish stages the tested tarball with npm stage publish (npm >= 11.15.0,
 # Node >= 22.14). Bun builds and tests. bun publish has no OIDC, provenance,
 # or staging. No npm token is stored. The publish job is the release
-# Environment and is the only job with id-token: write and contents: write.
+# Environment and is the only job with id-token: write, contents: write,
+# and issues: write. issues: write closes the milestone.
 # The build job packs once. It records that tarball's sha256 and file list
 # in the job summary and the release-record artifact. Publish stages that
 # same tarball. The verify job compares the registry copy to the record.
@@ -50,14 +51,19 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Read pinned Bun
-        id: bun-pin
-        run: echo "version=$(tr -d '[:space:]' < .bun-version)" >> "$GITHUB_OUTPUT"
+      - name: Require pinned Bun
+        run: |
+          set -euo pipefail
+          pin="$(tr -d '[:space:]' < .bun-version)"
+          if [ -z "$pin" ]; then
+            echo ".bun-version is missing or empty" >&2
+            exit 1
+          fi
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: ${{ steps.bun-pin.outputs.version }}
+          bun-version-file: .bun-version
 
       - name: Require the tag on main
         run: |
