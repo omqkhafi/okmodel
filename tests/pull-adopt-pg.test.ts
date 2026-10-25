@@ -11,6 +11,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { OkmError } from "../src/contracts/error.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
 import { repoRoot } from "../scripts/root.js";
@@ -121,6 +122,101 @@ postgresTest(
   },
   90_000,
 );
+
+postgresTest(
+  gate,
+  "pull of one schema omits a foreign key to a table outside it and still builds",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = mkdtempSync(join(tmpdir(), "okm-pull-adopt-"));
+    try {
+      writeConfig(cwd, database.url);
+      linkOkmodel(cwd);
+      await seed(database.url, crossSchemaSql());
+      const pulled = await cli(cwd, ["pull", "--schema", "billing"]);
+      expect(pulled).toContain("references a table outside the selected schemas");
+      expect(pulled).toContain("invoices_user_id_fkey");
+      const source = readFileSync(join(cwd, "tables", "invoices.ts"), "utf8");
+      expect(source).not.toContain(".references(");
+      const built = await cli(cwd, ["build"]);
+      expect(built.length).toBeGreaterThan(0);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  90_000,
+);
+
+postgresTest(
+  gate,
+  "pull of both schemas keeps a foreign key and builds",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = mkdtempSync(join(tmpdir(), "okm-pull-adopt-"));
+    try {
+      writeConfig(cwd, database.url);
+      linkOkmodel(cwd);
+      await seed(database.url, crossSchemaSql());
+      await cli(cwd, ["pull", "--schema", "public", "--schema", "billing"]);
+      const source = readFileSync(join(cwd, "tables", "invoices.ts"), "utf8");
+      expect(source).toContain(".references(");
+      expect(source).toContain("users");
+      const built = await cli(cwd, ["build"]);
+      expect(built.length).toBeGreaterThan(0);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  90_000,
+);
+
+postgresTest(
+  gate,
+  "pull of two schemas with the same table name is OKM1023",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = mkdtempSync(join(tmpdir(), "okm-pull-adopt-"));
+    try {
+      writeConfig(cwd, database.url);
+      linkOkmodel(cwd);
+      await seed(
+        database.url,
+        `create table item (id integer primary key);
+         create schema billing;
+         create table billing.item (id integer primary key)`,
+      );
+      let caught: unknown;
+      try {
+        await cli(cwd, ["pull", "--schema", "public", "--schema", "billing"]);
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(OkmError);
+      const error = caught as OkmError;
+      expect(error.code).toBe("OKM1023");
+      expect(error.message).toContain("item");
+      expect(error.message).toContain("schema() has one namespace");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  90_000,
+);
+
+function crossSchemaSql(): string {
+  return `create table users (
+            id integer primary key,
+            email text not null
+          );
+          create schema billing;
+          create table billing.invoices (
+            id integer primary key,
+            user_id integer not null references public.users (id)
+          )`;
+}
 
 async function seed(url: string, statement: string): Promise<void> {
   const sql = openPostgres(url);
