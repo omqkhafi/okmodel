@@ -413,6 +413,46 @@ function tscResult(
   };
 }
 
+postgresTest(
+  gate,
+  "pull keeps a non-default btree operator class and check agrees",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = mkdtempSync(join(tmpdir(), "okm-pull-adopt-"));
+    try {
+      writeConfig(cwd, database.url);
+      linkOkmodel(cwd);
+      await seed(
+        database.url,
+        `create table people (
+           id integer primary key,
+           email text not null
+         );
+         create index people_id_idx on people (id);
+         create index people_email_pattern on people (email text_pattern_ops)`,
+      );
+      await cli(cwd, ["pull"]);
+      const source = readFileSync(join(cwd, "tables", "people.ts"), "utf8");
+      expect(source).toContain("index(columns.id)");
+      expect(source).toContain("text_pattern_ops");
+      expect(source).toMatch(/using btree \(("email"|\\"email\\") text_pattern_ops\)/);
+      expect(source).not.toMatch(/index\(columns\.id\)[^\n]*text_pattern_ops/);
+      await cli(cwd, ["generate", "init"]);
+      const baselined = await cli(cwd, ["migrate", "baseline"]);
+      expect(baselined).toContain("baselined");
+      const checked = await cli(cwd, ["check"]);
+      expect(checked).toMatch(/^ok\b/m);
+      expect(checked).not.toContain("text_pattern_ops");
+      const built = await cli(cwd, ["build"]);
+      expect(built.length).toBeGreaterThan(0);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  90_000,
+);
+
 function crossSchemaSql(): string {
   return `create table users (
             id integer primary key,
