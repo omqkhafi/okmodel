@@ -62,6 +62,30 @@ test("lifecycle must succeed when the path asked for it", () => {
   ).toEqual(["lifecycle"]);
 });
 
+test("composition must succeed when the path asked for it", () => {
+  expect(
+    gateFailures(
+      [...READY, { name: "suite", result: "skipped" }, { name: "composition", result: "success" }],
+      { postgres: false, lifecycle: false, site: false, composition: true },
+    ),
+  ).toEqual([]);
+  expect(
+    gateFailures(
+      [...READY, { name: "suite", result: "skipped" }, { name: "composition", result: "skipped" }],
+      { postgres: false, lifecycle: false, site: false, composition: true },
+    ).map((slice) => slice.name),
+  ).toEqual(["composition"]);
+});
+
+test("a pull request that does not touch composition paths allows a skipped composition job", () => {
+  expect(
+    gateFailures(
+      [...READY, { name: "suite", result: "skipped" }, { name: "composition", result: "skipped" }],
+      { postgres: false, lifecycle: false, site: false },
+    ),
+  ).toEqual([]);
+});
+
 test("a pull request that does not touch lifecycle paths allows a skipped lifecycle job", () => {
   expect(
     gateFailures(
