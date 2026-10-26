@@ -17,6 +17,10 @@ export type KnownBug = {
   readonly tags: readonly string[];
   /** Substrings of the failure message. One is enough, and one is required. */
   readonly messages: readonly string[];
+  /** Command that failed. */
+  readonly channel: string;
+  /** Copyable repro, at most 15 lines. */
+  readonly repro: string;
 };
 
 /**
@@ -29,7 +33,71 @@ export type KnownBug = {
  * real bugs this grammar does not generate. NEW-2 (quoted generated
  * expression) is reprinted on a scratch column, so it is not listed.
  */
-export const KNOWN_BUGS: readonly KnownBug[] = [];
+export const KNOWN_BUGS: readonly KnownBug[] = [
+  {
+    id: "NEW-3",
+    feature: "okm check on a hot standby reprints an expression onto a temporary table",
+    tags: ["role-replica"],
+    messages: ["OKM1896"],
+    channel: "okm check --target replica",
+    repro: [
+      "// channel: okm check --target replica",
+      'const tasks = table("tasks", { id: t.identity().primaryKey(), title: t.text() });',
+      'const touch = fn("touch", { returns: "trigger", language: "plpgsql", body: "begin return new; end", dependsOn: [tasks] });',
+      'const trig = trigger("tasks_when", { on: tasks, timing: "before", events: ["update"], level: "row", calls: touch, when: "OLD.title IS DISTINCT FROM NEW.title" });',
+      "export const app = schema({ tables: [tasks], functions: [touch], triggers: [trig] });",
+      "// OKM1896: hot standby cannot create the temporary table used to reprint WHEN",
+    ].join("\n"),
+  },
+  {
+    id: "NEW-4",
+    feature:
+      "a NOSUPERUSER with CREATE on the schema only cannot open the migrate-check scratch schema",
+    tags: ["role-creator"],
+    messages: ["permission denied for database"],
+    channel: "okm migrate check",
+    repro: [
+      "// channel: okm migrate check",
+      "// role: NOSUPERUSER, CREATE on schema public, no CREATE on the database",
+      'const tasks = table("tasks", { id: t.identity().primaryKey(), title: t.text() });',
+      "export const app = schema({ tables: [tasks] });",
+      "// driver: permission denied for database <name>",
+      "// migrate check creates okm_check_<uuid>, which needs CREATE on the database",
+    ].join("\n"),
+  },
+  {
+    id: "NEW-5",
+    feature: "apply does not get past an index that already uses the compiler's name",
+    tags: ["clash-index"],
+    messages: ["already exists"],
+    channel: "okm migrate apply",
+    repro: [
+      "// channel: okm migrate apply",
+      "// index tasks_code_idx already exists in the schema (here, on okm_steps)",
+      'const tasks = table("tasks", {',
+      "  id: t.identity().primaryKey(),",
+      "  code: t.text(),",
+      "}, { indexes: (columns) => [index(columns.code).unique()] });",
+      "export const app = schema({ tables: [tasks] });",
+      '// driver: relation "tasks_code_idx" already exists',
+    ].join("\n"),
+  },
+  {
+    id: "NEW-6",
+    feature: "okm check seals a view by creating okm_view_seal, which a hot standby rejects",
+    tags: ["role-replica", "view"],
+    messages: ["cannot execute CREATE SCHEMA in a read-only transaction"],
+    channel: "okm check --target replica",
+    repro: [
+      "// channel: okm check --target replica",
+      'const tasks = table("tasks", { id: t.identity().primaryKey(), title: t.text() });',
+      'const ids = view("task_ids", (q) => q.from(tasks, ["id"]));',
+      "export const app = schema({ tables: [tasks], views: [ids] });",
+      "// driver: cannot execute CREATE SCHEMA in a read-only transaction",
+      "// check creates schema okm_view_seal to seal the view",
+    ].join("\n"),
+  },
+];
 
 /**
  * The first known bug that matches a failed case, if any.

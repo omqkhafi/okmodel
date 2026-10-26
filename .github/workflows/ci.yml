@@ -32,6 +32,7 @@ jobs:
     outputs:
       postgres: ${{ steps.plan.outputs.postgres }}
       lifecycle: ${{ steps.plan.outputs.lifecycle }}
+      composition: ${{ steps.plan.outputs.composition }}
       site: ${{ steps.plan.outputs.site }}
     steps:
       - name: Checkout
@@ -311,7 +312,7 @@ jobs:
           POSTGRES_VERSION: "18"
 
       - name: Lifecycle property
-        run: bun test tests/lifecycle/lifecycle-pg.test.ts
+        run: bun test tests/lifecycle/lifecycle-pg.test.ts tests/lifecycle/creator-scratch-pg.test.ts
         env:
           REQUIRE_DOCKER: "1"
           POSTGRES_VERSION: "18"
@@ -345,9 +346,46 @@ jobs:
         working-directory: site
         run: bun run test
 
+  composition:
+    name: composition / 18
+    needs: [changes]
+    if: (github.event.action != 'edited' || github.event.changes.title) && needs.changes.outputs.composition == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup
+        uses: ./.github/actions/setup-bun
+
+      - name: Pull Postgres
+        run: docker pull "postgres:${POSTGRES_VERSION}"
+        env:
+          POSTGRES_VERSION: "18"
+
+      - name: Start Postgres
+        run: bun run db:up
+        env:
+          POSTGRES_VERSION: "18"
+
+      - name: Composition cases
+        run: bun test tests/composition/composition-pg.test.ts tests/composition/cover.test.ts
+        env:
+          REQUIRE_DOCKER: "1"
+          POSTGRES_VERSION: "18"
+          OKM_COMPOSITION: "1"
+
+      - name: Stop Postgres
+        if: always()
+        run: bun run db:down
+        env:
+          POSTGRES_VERSION: "18"
+
   check:
     name: gate / check
-    needs: [changes, lint, types, build, test, size, pull, paths, suite, lifecycle, site]
+    needs:
+      [changes, lint, types, build, test, size, pull, paths, suite, lifecycle, composition, site]
     if: always()
     runs-on: ubuntu-24.04
     permissions:
@@ -366,6 +404,7 @@ jobs:
           bun ./scripts/ci-gate.ts
           --postgres ${{ needs.changes.outputs.postgres == 'true' && '1' || '0' }}
           --lifecycle ${{ needs.changes.outputs.lifecycle == 'true' && '1' || '0' }}
+          --composition ${{ needs.changes.outputs.composition == 'true' && '1' || '0' }}
           --site ${{ needs.changes.outputs.site == 'true' && '1' || '0' }}
           changes=${{ needs.changes.result }}
           lint=${{ needs.lint.result }}
@@ -377,6 +416,7 @@ jobs:
           paths=${{ needs.paths.result }}
           suite=${{ needs.suite.result }}
           lifecycle=${{ needs.lifecycle.result }}
+          composition=${{ needs.composition.result }}
           site=${{ needs.site.result }}
 
       - name: Mirror the last gate on a body edit

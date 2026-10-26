@@ -68,6 +68,27 @@ export function postgres18Relevant(paths: readonly string[]): boolean {
 }
 
 /**
+ * Whether a pull request runs the composition cases on Postgres 18.
+ *
+ * The cases exercise runtime writes. A dialect or runtime change can move
+ * a row, a tenant predicate, or a concealed value.
+ *
+ * @param paths - Paths in the pull request
+ * @returns `true` when the composition job must succeed
+ */
+export function compositionRelevant(paths: readonly string[]): boolean {
+  return paths.some(
+    (path) =>
+      path === "src/dialects" ||
+      path.startsWith("src/dialects/") ||
+      path === "src/runtime" ||
+      path.startsWith("src/runtime/") ||
+      path === "tests/composition" ||
+      path.startsWith("tests/composition/"),
+  );
+}
+
+/**
  * Whether a pull request runs the migration lifecycle property on Postgres 18.
  *
  * The paths are `src/dialects`, `src/tooling/migrate`, and `tests/lifecycle`.
@@ -145,6 +166,7 @@ function writeOutputs(paths: readonly string[]): void {
     `workflows=${workflowsChanged(paths) ? "true" : "false"}\n` +
     `postgres=${postgres18Relevant(paths) ? "true" : "false"}\n` +
     `lifecycle=${lifecycleRelevant(paths) ? "true" : "false"}\n` +
+    `composition=${compositionRelevant(paths) ? "true" : "false"}\n` +
     `site=${siteTestsRelevant(paths) ? "true" : "false"}\n`;
   const output = process.env.GITHUB_OUTPUT;
   if (output !== undefined && output.length > 0) appendFileSync(output, text);

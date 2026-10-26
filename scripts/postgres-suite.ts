@@ -42,6 +42,11 @@ export const POSTGRES_EXCLUSIONS: readonly PostgresExclusion[] = [
     file: "tests/lifecycle/lifecycle-pg.test.ts",
     reason: "Heavy generate/apply/push property; dedicated OKM_LIFECYCLE job on PR and nightly",
   },
+  {
+    file: "tests/composition/composition-pg.test.ts",
+    reason:
+      "Pairwise composition; dedicated OKM_COMPOSITION job on PR (Postgres 18) and nightly (15–18)",
+  },
 ];
 
 /** A test file that fails on one or more majors, and why. */

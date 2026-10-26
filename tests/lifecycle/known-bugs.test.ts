@@ -12,6 +12,46 @@ import { matchKnownBug } from "./known-bugs.js";
 import { sqlName, type SchemaModel } from "./model.js";
 import { formatLifecycleReport, knownSkipExceedsBudget } from "./report.js";
 
+test("a replica expression reprint is skipped only on that channel", () => {
+  const bug = matchKnownBug(
+    ["role-replica", "trigger-when"],
+    "OKM1896: A check or picklist is reprinted on a temporary table",
+  );
+  expect(bug?.id).toBe("NEW-3");
+  expect(bug?.channel).toBe("okm check --target replica");
+  expect(bug?.repro.split("\n").length).toBeLessThanOrEqual(15);
+  expect(
+    matchKnownBug(["role-owner", "trigger-when"], "OKM1896: A check or picklist"),
+  ).toBeUndefined();
+  expect(matchKnownBug(["role-replica"], "OKM1851: Target default is not empty")).toBeUndefined();
+  const creator = matchKnownBug(
+    ["role-creator"],
+    "driver: permission denied for database okm_example",
+  );
+  expect(creator?.id).toBe("NEW-4");
+  expect(creator?.channel).toBe("okm migrate check");
+  expect(creator?.repro.split("\n").length).toBeLessThanOrEqual(15);
+  expect(
+    matchKnownBug(["role-owner"], "driver: permission denied for database okm_example"),
+  ).toBeUndefined();
+  const clash = matchKnownBug(
+    ["clash-index", "role-superuser"],
+    'driver: relation "tasks_code_idx" already exists',
+  );
+  expect(clash?.id).toBe("NEW-5");
+  expect(clash?.repro.split("\n").length).toBeLessThanOrEqual(15);
+  expect(matchKnownBug(["start-clash"], "relation already exists")).toBeUndefined();
+  const view = matchKnownBug(
+    ["role-replica", "view"],
+    "driver: cannot execute CREATE SCHEMA in a read-only transaction",
+  );
+  expect(view?.id).toBe("NEW-6");
+  expect(view?.repro.split("\n").length).toBeLessThanOrEqual(15);
+  expect(
+    matchKnownBug(["view"], "cannot execute CREATE SCHEMA in a read-only transaction"),
+  ).toBeUndefined();
+});
+
 test("a known bug needs the failure message and the feature", () => {
   expect(matchKnownBug(["generated"], "drift")).toBeUndefined();
   expect(

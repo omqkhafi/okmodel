@@ -3,13 +3,11 @@
  */
 
 import { openLifecycleProject } from "../../packages/harness/src/lifecycle-project.js";
-import {
-  createIsolatedDatabase,
-  giveDatabaseToOwner,
-  openPostgres,
-} from "../../packages/harness/src/postgres.js";
+import { createIsolatedDatabase, openPostgres } from "../../packages/harness/src/postgres.js";
+import { readInsertLsn, waitForReplayLsn } from "../../packages/harness/src/replication.js";
 import { OkmError } from "../../src/contracts/error.js";
 import { applyEvolution, settleRenames } from "./evolve.js";
+import { PLANTED_SCRATCH_SCHEMA, prepareDatabase, seedThousand } from "./hostile.js";
 import { matchKnownBug } from "./known-bugs.js";
 import { sqlName, type LifecycleCase, type SchemaModel } from "./model.js";
 import { formatRepro, renderSchema } from "./render.js";
@@ -53,23 +51,26 @@ export async function runLifecycleCase(
 
 async function runApplyPath(root: string, item: LifecycleCase): Promise<void> {
   const database = await createIsolatedDatabase();
-  const url = await giveDatabaseToOwner(database.url);
-  const project = openLifecycleProject(root, "lifecycle-apply");
+  const prepared = await prepareDatabase(database.url, item);
+  const project = openLifecycleProject(root, "lifecycle-apply", item.place);
   try {
-    project.writeConfig(url, item.initial.namespace);
+    project.writeConfig(prepared.writeUrl, item.initial.namespace, prepared.replicaUrl);
     let model = item.initial;
     project.writeSchema(renderSchema(model, root));
-    const init = await project.cli(["generate", "init"]);
+    const init = await project.cli(commandFor(item, ["generate", "init"]));
     if (!init.includes(".sql")) throw new Error(`generate init wrote nothing: ${init}`);
-    await expectOk(project, ["migrate", "check"]);
-    await project.cli(["migrate", "apply"]);
-    await expectOk(project, ["migrate", "check"]);
-    await expectOk(project, ["check"]);
-    await expectNoChanges(project);
-    await assertNoScratch(url);
-    if (item.withRows) await seedRows(url, model);
+    await expectOk(project, commandFor(item, ["migrate", "check"]));
+    await project.cli(commandFor(item, ["migrate", "apply"]));
+    await expectSettled(project, item, prepared.replicaUrl, database.url);
+    if (item.start === "rows" && item.evolutions.length === 0) {
+      await seedThousand(database.url, model);
+      await expectSettled(project, item, prepared.replicaUrl, database.url);
+    } else if (item.start !== "rows" && item.withRows) {
+      await seedRows(database.url, model);
+    }
 
     for (const step of item.evolutions) {
+      if (item.start === "rows") await seedThousand(database.url, model);
       model = applyEvolution(model, step);
       project.writeSchema(renderSchema(model, root));
       await project.generateAllowing();
@@ -77,12 +78,9 @@ async function runApplyPath(root: string, item: LifecycleCase): Promise<void> {
       // file as the previous catalog, so renamedFrom must be gone before it.
       model = settleRenames(model);
       project.writeSchema(renderSchema(model, root));
-      await expectOk(project, ["migrate", "check"]);
-      await project.cli(["migrate", "apply"]);
-      await expectOk(project, ["migrate", "check"]);
-      await expectOk(project, ["check"]);
-      await expectNoChanges(project);
-      await assertNoScratch(url);
+      await expectOk(project, commandFor(item, ["migrate", "check"]));
+      await project.cli(commandFor(item, ["migrate", "apply"]));
+      await expectSettled(project, item, prepared.replicaUrl, database.url);
     }
   } finally {
     project.close();
@@ -92,33 +90,92 @@ async function runApplyPath(root: string, item: LifecycleCase): Promise<void> {
 
 async function runPushPath(root: string, item: LifecycleCase): Promise<void> {
   const database = await createIsolatedDatabase();
-  const url = await giveDatabaseToOwner(database.url);
-  const project = openLifecycleProject(root, "lifecycle-push");
+  const prepared = await prepareDatabase(database.url, item);
+  const project = openLifecycleProject(root, "lifecycle-push", item.place);
   try {
-    project.writeConfig(url, item.initial.namespace);
+    project.writeConfig(prepared.writeUrl, item.initial.namespace, prepared.replicaUrl);
     let model = item.initial;
     project.writeSchema(renderSchema(model, root));
-    const first = await project.cli(["push"]);
+    const first = await project.cli(commandFor(item, ["push"]));
     if (!/applied push-/.test(first)) throw new Error(`push did not apply: ${first}`);
-    await expectOk(project, ["check"]);
-    const second = await project.cli(["push"]);
+    await expectCheck(project, item, prepared.replicaUrl);
+    const second = await project.cli(commandFor(item, ["push"]));
     if (/applied/.test(second)) throw new Error(`second push changed the database: ${second}`);
-    await assertNoScratch(url);
+    await assertNoScratch(database.url, prepared.plantedScratch);
+    if (item.start === "rows" && item.evolutions.length === 0) {
+      await seedThousand(database.url, model);
+      await expectCheck(project, item, prepared.replicaUrl);
+      await assertNoScratch(database.url, prepared.plantedScratch);
+    }
 
     for (const step of item.evolutions) {
+      if (item.start === "rows") await seedThousand(database.url, model);
       model = applyEvolution(model, step);
       project.writeSchema(renderSchema(model, root));
-      await project.cli(["push"]);
+      await project.cli(commandFor(item, ["push"]));
       model = settleRenames(model);
       project.writeSchema(renderSchema(model, root));
-      await expectOk(project, ["check"]);
-      const idle = await project.cli(["push"]);
+      await expectCheck(project, item, prepared.replicaUrl);
+      const idle = await project.cli(commandFor(item, ["push"]));
       if (/applied/.test(idle)) throw new Error(`idle push still applied: ${idle}`);
-      await assertNoScratch(url);
+      await assertNoScratch(database.url, prepared.plantedScratch);
     }
   } finally {
     project.close();
     await database.close();
+  }
+}
+
+/**
+ * Database commands on a replica case name a target.
+ *
+ * `generate` has no `--target`. `okm check` reads the standby. Apply, push,
+ * and `migrate check` stay on the primary.
+ *
+ * @param item - Case
+ * @param argv - Command words
+ * @returns Argv the CLI receives
+ */
+function commandFor(item: LifecycleCase, argv: readonly string[]): readonly string[] {
+  if (item.role !== "replica") return argv;
+  const [head] = argv;
+  if (head === "generate") return argv;
+  if (head === "check") return ["check", "--target", "replica"];
+  return [...argv, "--target", "primary"];
+}
+
+async function expectSettled(
+  project: ReturnType<typeof openLifecycleProject>,
+  item: LifecycleCase,
+  replicaUrl: string | undefined,
+  databaseUrl: string,
+): Promise<void> {
+  await expectOk(project, commandFor(item, ["migrate", "check"]));
+  await expectCheck(project, item, replicaUrl);
+  await expectNoChanges(project);
+  await assertNoScratch(databaseUrl, item.start === "clash" && item.clash === "scratch");
+}
+
+async function expectCheck(
+  project: ReturnType<typeof openLifecycleProject>,
+  item: LifecycleCase,
+  replicaUrl: string | undefined,
+): Promise<void> {
+  if (replicaUrl !== undefined) await assertReplicaReady(replicaUrl);
+  await expectOk(project, commandFor(item, ["check"]));
+}
+
+async function assertReplicaReady(replicaUrl: string): Promise<void> {
+  const lsn = await readInsertLsn();
+  await waitForReplayLsn("a", lsn);
+  const sql = openPostgres(replicaUrl);
+  try {
+    const rows = await sql<{ recovering: boolean }[]>`select pg_is_in_recovery() as recovering`;
+    if (rows[0]?.recovering !== true) {
+      throw new Error("okm check target is not in recovery");
+    }
+  } finally {
+    await sql.end({ timeout: 5 });
   }
 }
 
@@ -135,7 +192,7 @@ async function expectNoChanges(project: ReturnType<typeof openLifecycleProject>)
   if (out !== "no changes\n") throw new Error(`expected no changes, got ${JSON.stringify(out)}`);
 }
 
-async function assertNoScratch(url: string): Promise<void> {
+async function assertNoScratch(url: string, plantedScratch: boolean): Promise<void> {
   const sql = openPostgres(url);
   try {
     const rows = await sql<{ line: string }[]>`
@@ -145,6 +202,10 @@ async function assertNoScratch(url: string): Promise<void> {
         select 'type ' || t.typname from pg_type t where t.typname like 'okm\\_expr%'
         union all
         select 'con ' || k.conname from pg_constraint k where k.conname like 'okm\\_expr%'
+        union all
+        select 'schema ' || n.nspname from pg_namespace n
+        where n.nspname like 'okm\\_check\\_%'
+          and n.nspname is distinct from ${plantedScratch ? PLANTED_SCRATCH_SCHEMA : ""}
       ) s
       order by line
     `;
