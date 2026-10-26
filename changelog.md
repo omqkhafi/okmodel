@@ -17,6 +17,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 ### 💥 Breaking Changes
 
 - `DriverCapabilities` no longer includes `prepared` or `describe`. Prepared-statement mode stays a connect option. A driver that can describe a statement still exposes `pool.describe`.
+- A typed `hidden({ filterable: false })` is refused. Call `hidden()` with no argument. Passing `false` from JavaScript still leaves the column hidden and not filterable.
 - `okm migrate plan --json` finding `reason` is an untrusted object. `okm migrate baseline --json` unmanaged `name` is an untrusted object. `okm migrate status` JSON `id`, `kind`, and `state` are untrusted objects. A database error's text is `errors[].detail`. `summary` stays a registry sentence, or `A database error was returned (<kind>).` when the code has no page.
 
 ### behaviour changes
@@ -69,7 +70,6 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### tooling
 
-- Capability key `query.countDistinct` is native on Postgres (D309), `query.distinct` and `query.distinctOn` are native on Postgres (D310), `query.namedAggregates` is native on Postgres (D311), `query.having` is native on Postgres (D313), and `query.orderNulls` is native on Postgres (D314).
 - Capability keys `writeObserver.unit` (`transaction | batch`), `writeObserver.keys` (`returning`; closed profile `none`), and `writeObserver.rowCount` (`mixed`; closed profile `unknown`) are in the Postgres registry with proofs and closed-profile refusals.
 - `queryObserver.timing` is native on Postgres with cost `query|decode`. Pool-queue wait is not measured, so `queueMs` stays null. The closed profile cost is `none`.
 - OKM1890 refuses `writeObserver({ keys })` when a named table has no primary key or is not in the schema. OKM2200 warns when the write-observer pending-event buffer overflows.
@@ -151,10 +151,6 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `docs/guide.md` and the handbook page `define/connect/session-settings` cover `okmodel/session`. `docs/known-limits.md` says it does not authenticate: a role that can run SQL can set the same names. D312 records the decision.
 - The Limits handbook page, the OKM2011 error page, and the OKM1101 and OKM1105 pages describe `connect({ limits })`. [Observer events](docs/observer-events.md) and [Warnings](docs/warnings.md) cover the limit source and OKM2011. `okm doctor` does not report limits yet, and `filters().parse` takes no clamp from `limits.max`: both are follow-ups in the plan.
 
-### 💥 Breaking Changes
-
-- A typed `hidden({ filterable: false })` is refused. Call `hidden()` with no argument. Passing `false` from JavaScript still leaves the column hidden and not filterable.
-
 ### ♻️ Changed
 
 - CI reads Bun `1.4.3` from `.bun-version`. The kill-storm wedge in Bun.sql is still there on that version.
@@ -169,7 +165,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - Docs: `connect({ hookm })` is an array; a single observer object or a `hooks` key does not register observers.
 - `okm migrate check` prints, after `ok N migrations`, that an empty-table replay does not catch a step that fails only on real data: `NOT NULL` on a populated column, a unique index over duplicates, or a check over existing rows (Q4, #391).
 - The Release workflow runs on a `v*` tag. Before any build it requires the tagged commit to be an ancestor of `origin/main`, the tag to match `package.json`, and a `## v` changelog section. It then runs the Postgres suite, the pack contract, and `npm stage publish` with provenance (npm 11.15 or newer, Node 22.14 or newer). A dispatch with `publish` false checks `main` and refuses a tag that is not on `main`. The publish job is the only one with `id-token: write` and `contents: write`, and it uses the `release` environment. No npm token is stored.
-- OKM1601 now also covers a typed raw statement missing from the lock or a lock that does not parse. OKM1602 names the typed raw parameter count. OKM1702 covers typed raw on a `for()` client and the `trusted()` escape. The doctor text and `docs/errors/` pages are regenerated.
+- OKM1602 and OKM1702 changed meaning. OKM1602 is the typed raw parameter count (a statement the checker cannot classify, or two result columns that share a name, stays this code). OKM1702 is typed raw on a `for()` client, and `trusted()` is the escape (unverifiable tenant SQL stays this code). OKM1601 now also covers a typed raw statement missing from the lock or a lock that does not parse. The doctor text and `docs/errors/` pages are regenerated.
 
 #### runtime
 
