@@ -294,7 +294,7 @@ function stampValidation(error: unknown, index: number): unknown {
   if (!(error instanceof OkmError) || error.code !== "OKM1200" || error.batchIndex !== null) {
     return error;
   }
-  return new OkmError(error.code, error.message, {
+  const stamped = new OkmError(error.code, error.message, {
     kind: error.kind,
     retryable: error.retryable,
     fix: error.fix,
@@ -307,4 +307,6 @@ function stampValidation(error: unknown, index: number): unknown {
     ...(error.issues !== undefined ? { issues: error.issues } : {}),
     ...(error.cause !== undefined ? { cause: error.cause } : {}),
   });
+  if (typeof error.stack === "string") stamped.stack = error.stack;
+  return stamped;
 }

@@ -63,7 +63,7 @@ let unitSeq = 0;
  *
  * @param statements - The array passed to `runWrite`
  * @param schema - Connected schema
- * @param scope - Tenant scope, when the client has one
+ * @param scope - Tenant scope. Its values stay visible; sensitive and hidden values do not
  * @param bag - Caller input (`where`, insert row, update set)
  */
 export function rememberSecrets(
@@ -72,7 +72,8 @@ export function rememberSecrets(
   scope: CallScope | undefined,
   bag: unknown,
 ): void {
-  secretBags.set(statements, collectSecrets(schema, scope, bag));
+  secretBags.set(statements, collectSecrets(schema, bag));
+  void scope;
 }
 
 /**
@@ -839,7 +840,7 @@ function readSecrets(session: Session, call: ReadCall): ReadonlySet<string> {
   if ((session.q as { observeParams?: boolean } | undefined)?.observeParams !== true) {
     return EMPTY_SECRETS;
   }
-  return collectSecrets(session.schema, call.scope ?? session.scope, call.where);
+  return collectSecrets(session.schema, call.where);
 }
 
 function secretsFor(host: object, statements: object): ReadonlySet<string> {
@@ -847,14 +848,10 @@ function secretsFor(host: object, statements: object): ReadonlySet<string> {
   if (noted !== undefined) return noted;
   const facts = host as { readonly schema?: QuerySchema; readonly scope?: CallScope };
   if (facts.schema === undefined) return EMPTY_SECRETS;
-  return collectSecrets(facts.schema, facts.scope, undefined);
+  return collectSecrets(facts.schema, undefined);
 }
 
-function collectSecrets(
-  schema: QuerySchema,
-  scope: CallScope | undefined,
-  bag: unknown,
-): ReadonlySet<string> {
+function collectSecrets(schema: QuerySchema, bag: unknown): ReadonlySet<string> {
   const secrets = new Set<string>();
   const add = (value: unknown): void => {
     if (typeof value === "string") secrets.add(value);
@@ -862,27 +859,10 @@ function collectSecrets(
       secrets.add(String(value));
     }
   };
-  if (scope !== undefined && "value" in scope) {
-    add(scope.value);
-    if (scope.values !== undefined) {
-      for (const value of Object.values(scope.values)) add(value);
-    }
-  }
   const fields = new Map<string, ColumnModel["encode"][]>();
-  const tenant = new Set<string>();
-  if (schema.tenancy !== undefined) {
-    tenant.add(schema.tenancy.key);
-    const extra = schema.tenancy.keys;
-    if (extra !== undefined) for (const key of extra) tenant.add(key);
-  }
   for (const model of Object.values(schema.model)) {
     for (const column of model.columns.values()) {
-      if (
-        column.sensitive ||
-        column.hidden === true ||
-        column.hidden === "filter" ||
-        tenant.has(column.field)
-      ) {
+      if (column.sensitive || column.hidden === true || column.hidden === "filter") {
         const list = fields.get(column.field);
         if (list === undefined) fields.set(column.field, [column.encode]);
         else list.push(column.encode);

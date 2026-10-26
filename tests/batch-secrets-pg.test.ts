@@ -24,6 +24,7 @@ const vault = table("vault", {
   id: t.text().primaryKey(),
   label: t.text(),
   secret: t.text().sensitive().unique(),
+  code: t.text().hidden().nullable(),
 });
 
 const app = schema({ casing: "snake", tables: [vault] });
@@ -198,6 +199,33 @@ postgresTest(
       expect(seen.queries.length).toBeGreaterThan(1);
       expectQuiet(everything(seen));
       expect(seen.errors).toEqual([]);
+    });
+  },
+  60_000,
+);
+
+const HIDDEN = "hidden-batch-value-4c8e";
+
+postgresTest(
+  gate,
+  "db.batch and tx.batch redact a hidden value",
+  async () => {
+    await withDb(async (db, seen) => {
+      await db.batch([
+        db.vault.insert({ id: "h1", label: "shown-label", secret: SECRETS[0], code: HIDDEN }),
+      ]);
+      await seen.flush();
+      expect(shown(seen)).toContain("[redacted]");
+      expect(shown(seen)).toContain("shown-label");
+      expect(everything(seen)).not.toContain(HIDDEN);
+      seen.queries.length = 0;
+      seen.events.length = 0;
+      await db.tx(async (tx) => {
+        await tx.batch([tx.vault.update({ where: { id: "h1" }, set: { code: HIDDEN } })]);
+      });
+      await seen.flush();
+      expect(shown(seen)).toContain("[redacted]");
+      expect(everything(seen)).not.toContain(HIDDEN);
     });
   },
   60_000,

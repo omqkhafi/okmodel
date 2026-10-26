@@ -174,6 +174,59 @@ test("a Zod-like and a Valibot-like schema validate a field", async () => {
   ]);
 });
 
+test("a branded insert is only valid for the table that sealed it", async () => {
+  let posts = 0;
+  let drafts = 0;
+  const built = schema({
+    tables: [
+      table(
+        "drafts",
+        {
+          title: text().validate([
+            v.min(1, "draft_short"),
+            v.rule(
+              () => {
+                drafts += 1;
+                return true;
+              },
+              "title",
+              "draft_counted",
+            ),
+          ]),
+        },
+        { validation: true },
+      ),
+      table(
+        "posts",
+        {
+          title: text().validate([
+            v.min(8, "post_short"),
+            v.rule(
+              () => {
+                posts += 1;
+                return true;
+              },
+              "title",
+              "post_counted",
+            ),
+          ]),
+        },
+        { validation: true },
+      ),
+    ],
+    validation: true,
+  });
+  const db = client(built);
+  const branded = await checked(db.drafts).insert.validate({ title: "short" });
+  expect(drafts).toBe(1);
+  const error = await rejection(db.posts.insert(branded));
+  expect(error.code).toBe("OKM1200");
+  expect(error.message).toContain("post_short");
+  expect(posts).toBe(1);
+  await checked(db.drafts).insert.validate(branded);
+  expect(drafts).toBe(1);
+});
+
 test("transforms run before checks, and a branded value is not checked again", async () => {
   let seen = 0;
   const built = schema({

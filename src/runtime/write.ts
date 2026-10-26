@@ -64,7 +64,7 @@ function encodeColumn(column: ColumnModel, value: unknown): string {
   try {
     return column.encode(value);
   } catch (error) {
-    if (error instanceof OkmError) {
+    if (error instanceof OkmError && mentionsValue(error.message, value)) {
       throw new OkmError(error.code, `Field ${column.field} was rejected.`, {
         kind: error.kind,
         fix: error.fix,
@@ -72,6 +72,15 @@ function encodeColumn(column: ColumnModel, value: unknown): string {
     }
     throw error;
   }
+}
+
+function mentionsValue(message: string, value: unknown): boolean {
+  if (typeof value === "string") return value.length > 0 && message.includes(value);
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    const text = String(value);
+    return text.length > 0 && message.includes(text);
+  }
+  return false;
 }
 
 /** A write the caller asked for. */
@@ -461,7 +470,7 @@ function redactStatements(
     let changed = false;
     const next = statements.map((statement) => {
       if (statement.params === undefined) return statement;
-      const params = redactParams(schema, input, statement.params);
+      const params = redactParams(schema, input, statement.params, table);
       if (params === statement.params) return statement;
       changed = true;
       return { ...statement, params };

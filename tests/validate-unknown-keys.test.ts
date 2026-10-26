@@ -90,6 +90,28 @@ test("R1: validation true refuses unknown keys on insert and update", async () =
   expect(typo.message).toContain("Did you mean");
 });
 
+test("standalone validate and check refuse an unknown key", async () => {
+  const db = connect(pool, { schema: app });
+  await db.connected;
+  const validated = await codeOf(() =>
+    db.notes.insert.validate({ id: NOTE, title: "a", nope: 5 } as never),
+  );
+  expect(validated.code).toBe("OKM1120");
+  expect(validated.message).toContain("nope");
+  expect(validated.message).toContain("notes");
+  const checked = await codeOf(() =>
+    db.notes.insert.check({ id: NOTE, title: "a", nope: 5 } as never),
+  );
+  expect(checked.code).toBe("OKM1120");
+  expect(checked.message).toContain("nope");
+  const updated = await codeOf(() =>
+    db.notes.update.validate({ set: { title: "b", nope: 5 } } as never),
+  );
+  expect(updated.code).toBe("OKM1120");
+  expect(updated.message).toContain("nope");
+  expect(updated.message).toContain("notes");
+});
+
 test("validated OKM1120 lists accepted names in the core path's sorted order", async () => {
   const validated = connect(pool, { schema: orderedApp });
   const core = connect(pool, { schema: plainApp });

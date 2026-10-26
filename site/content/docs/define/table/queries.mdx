@@ -750,7 +750,7 @@ A stream with no `limit` and no `.all(reason)` is refused.
 
 ### Unknown keys
 
-An unknown key on `insert`, `update`, upsert / `onConflict`, or first-or-create is OKM1120. The message names the key and the table. Typos are no longer dropped silently. Guarded, sealed, and computed fields keep their existing codes (OKM1190 and the rest).
+An unknown key on `insert`, `update`, upsert / `onConflict`, first-or-create, or standalone `insert.validate`, `insert.check`, and `update.validate` is OKM1120. The message names the key and the table. Typos are no longer dropped silently. Guarded, sealed, and computed fields keep their existing codes (OKM1190 and the rest).
 
 <Callout type="error" title="OKM1120">
 `Field nope is not on notes.` Use a field from the catalog.

@@ -289,7 +289,7 @@ test("params and stack are opt-in, and sensitive values are redacted", async () 
   expect(JSON.stringify(bare[0])).not.toContain(secret);
 });
 
-test("tenant parameter values are redacted", async () => {
+test("tenant parameter values are included when params is true", async () => {
   const tenants = table("tenant_notes", {
     id: t.text().primaryKey(),
     body: t.text(),
@@ -312,8 +312,8 @@ test("tenant parameter values are redacted", async () => {
     onQuery,
   }).for({ tenantId: tenant });
   await db.tenant_notes.find({ limit: 1 });
-  expect(events[0]?.params).toContain("[redacted]");
-  expect(JSON.stringify(events)).not.toContain(tenant);
+  expect(events[0]?.params).toContain(tenant);
+  expect(events[0]?.params).not.toContain("[redacted]");
   expect(JSON.stringify(toOtel(events[0] as QueryEvent).attributes)).not.toContain(tenant);
 });
 
