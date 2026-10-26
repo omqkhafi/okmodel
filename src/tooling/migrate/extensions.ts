@@ -15,7 +15,7 @@ import {
   sameExtensionDefinition,
 } from "../../contracts/catalog/extension.js";
 import { identityKey } from "../../contracts/catalog/identity.js";
-import type { CatalogObject, ExtensionObject } from "../../contracts/catalog/types.js";
+import type { Catalog, CatalogObject, ExtensionObject } from "../../contracts/catalog/types.js";
 import type { DriverConnection } from "../../contracts/driver.js";
 import type { DdlDialect, DdlStep } from "../../dialects/ddl.js";
 
@@ -56,6 +56,29 @@ export function ensureExtensionSchemaSql(sql: string, namespace: string): string
   if (statement?.kind !== "create" || statement.schema === undefined) return undefined;
   if (statement.schema === namespace) return undefined;
   return `create schema if not exists ${quoteIdent(statement.schema)}`;
+}
+
+/**
+ * `search_path` that includes every extension schema outside `namespace`.
+ *
+ * A type such as `citext` installed in `extensions` is then visible to a
+ * later statement in the session. Absent when every extension is already in
+ * `namespace`.
+ *
+ * @param catalog - Schema being pushed or checked
+ * @param namespace - Catalog schema
+ * @returns A `search_path` list, or `undefined` when nothing is added
+ */
+export function extensionSchemaPath(catalog: Catalog, namespace: string): string | undefined {
+  const extra: string[] = [];
+  for (const object of catalog.objects) {
+    if (object.kind !== "extension") continue;
+    const home = object.definition.schema;
+    if (home === namespace || extra.includes(home)) continue;
+    extra.push(home);
+  }
+  if (extra.length === 0) return undefined;
+  return [namespace, ...extra].map((name) => quoteIdent(name)).join(", ");
 }
 
 /**

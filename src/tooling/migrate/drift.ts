@@ -33,6 +33,7 @@ import {
 } from "../../dialects/pg/introspect.js";
 import { sealViews } from "../../dialects/pg/view/scratch.js";
 import type { RolesInput } from "../../dialects/pg/role/index.js";
+import { extensionSchemaPath } from "./extensions.js";
 import { planMigration } from "./plan.js";
 import { withoutUnpulled } from "./unpulled.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
@@ -62,12 +63,15 @@ export async function assertAuthorDrift(
   const schema = authorSchema(author);
   // pg_get_viewdef qualifies a table that is not on the search path, so a
   // namespace's views would read back as `appns.tasks` and never match.
+  // An extension schema is on the path too, so a scratch column sees citext.
+  const searchPath =
+    extensionSchemaPath(author, schema) ?? (schema !== "public" ? quoteIdent(schema) : undefined);
   const sql = postgres(driverUrl(url), {
     max: 1,
     connect_timeout: 5,
     idle_timeout: 1,
     onnotice: () => {},
-    ...(schema !== "public" ? { connection: { search_path: quoteIdent(schema) } } : {}),
+    ...(searchPath !== undefined ? { connection: { search_path: searchPath } } : {}),
   });
   try {
     await probeStableBackend(
@@ -214,6 +218,7 @@ function unvalidatedNotNull(live: Catalog, author: Catalog): string {
  */
 export async function sealDomainChecks(runner: CatalogQuery, source: Catalog): Promise<Catalog> {
   const types = reprintTypes(source);
+  const extensions = extensionTypeSchemas(source);
   const objects: CatalogObject[] = [];
   let changed = false;
   for (const object of source.objects) {
@@ -226,6 +231,7 @@ export async function sealDomainChecks(runner: CatalogQuery, source: Catalog): P
       object.definition.base,
       object.definition.check,
       types,
+      extensions,
     );
     if (reprinted === object.definition.check) {
       objects.push(object);
@@ -281,6 +287,7 @@ export async function sealIndexExpressions(
 ): Promise<Catalog> {
   const columnsByParent = indexParentColumns(source);
   const types = reprintTypes(source);
+  const extensions = extensionTypeSchemas(source);
   const objects: CatalogObject[] = [];
   let changed = false;
   for (const object of source.objects) {
@@ -303,6 +310,7 @@ export async function sealIndexExpressions(
           ? { predicate: object.definition.predicate }
           : {}),
       },
+      extensions,
     );
     const predicate =
       object.definition.predicate === undefined
@@ -349,6 +357,7 @@ export async function sealGeneratedColumns(
 ): Promise<Catalog> {
   const columnsByTable = tableColumns(source);
   const types = reprintTypes(source);
+  const extensions = extensionTypeSchemas(source);
   const objects: CatalogObject[] = [];
   let changed = false;
   for (const object of source.objects) {
@@ -366,6 +375,7 @@ export async function sealGeneratedColumns(
       { name: object.identity.name, dataType: object.definition.dataType },
       siblings,
       types,
+      extensions,
     );
     if (reprinted === object.definition.generated.expression) {
       objects.push(object);
@@ -398,6 +408,7 @@ export async function sealGeneratedColumns(
 export async function sealTableChecks(runner: CatalogQuery, source: Catalog): Promise<Catalog> {
   const columnsByTable = tableColumns(source);
   const types = reprintTypes(source);
+  const extensions = extensionTypeSchemas(source);
   const objects: CatalogObject[] = [];
   let changed = false;
   for (const object of source.objects) {
@@ -415,6 +426,7 @@ export async function sealTableChecks(runner: CatalogQuery, source: Catalog): Pr
       object.definition.expression,
       columnsByTable.get(parent) ?? [],
       types,
+      extensions,
     );
     if (reprinted === object.definition.expression) {
       objects.push(object);
@@ -444,6 +456,7 @@ export async function sealTableChecks(runner: CatalogQuery, source: Catalog): Pr
 export async function sealTriggerWhens(runner: CatalogQuery, source: Catalog): Promise<Catalog> {
   const columnsByTable = tableColumns(source);
   const types = reprintTypes(source);
+  const extensions = extensionTypeSchemas(source);
   const objects: CatalogObject[] = [];
   let changed = false;
   for (const object of source.objects) {
@@ -457,6 +470,7 @@ export async function sealTriggerWhens(runner: CatalogQuery, source: Catalog): P
       object.definition,
       columnsByTable.get(object.identity.parent.name) ?? [],
       types,
+      extensions,
     );
     if (reprinted === undefined || reprinted === object.definition.when) {
       objects.push(object);
@@ -466,6 +480,43 @@ export async function sealTriggerWhens(runner: CatalogQuery, source: Catalog): P
     objects.push({ ...object, definition: { ...object.definition, when: reprinted } });
   }
   return changed ? { version: source.version, objects } : source;
+}
+
+/**
+ * Schema of each extension type a scratch column must name.
+ *
+ * An enum or domain is a temporary stand-in and is not in this map. `citext`
+ * installed in `extensions` is `"extensions"."citext"`, so a session whose
+ * `search_path` is another schema still sees it.
+ *
+ * @param source - Catalog being reprinted
+ * @returns Type name to install schema
+ */
+function extensionTypeSchemas(source: Catalog): ReadonlyMap<string, string> {
+  const homes = new Map<string, string>();
+  for (const object of source.objects) {
+    if (object.kind === "extension") homes.set(object.identity.name, object.definition.schema);
+  }
+  const types = new Map<string, string>();
+  const note = (dataType: string, extension: string): void => {
+    const schema = homes.get(extension);
+    if (schema === undefined) return;
+    const scalar = dataType.replace(/(?:\[\])+$/, "");
+    if (scalar.length > 0) types.set(scalar, schema);
+  };
+  for (const object of source.objects) {
+    if (object.kind === "column") {
+      for (const edge of object.dependencies) {
+        if (edge.target.kind === "extension") note(object.definition.dataType, edge.target.name);
+      }
+    }
+    if (object.kind === "type" && isDomain(object.definition)) {
+      for (const edge of object.dependencies) {
+        if (edge.target.kind === "extension") note(object.definition.base, edge.target.name);
+      }
+    }
+  }
+  return types;
 }
 
 function reprintTypes(source: Catalog): readonly ReprintType[] {
