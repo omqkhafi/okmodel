@@ -11,7 +11,7 @@ bunx okm import drizzle ./src/db/schema.ts --out ./adopted
 
 An existing file is OKM1855 and nothing is written. A project that cannot resolve `drizzle-orm` is OKM1856. Install it in that project.
 
-The report starts with `namespace <name>`. SQL names stay. TypeScript fields follow the Drizzle property names. File stems are unique when folded to lowercase, and a Windows-reserved stem gets a `_` prefix, the same rules as `okm pull`. Composite primary-key columns are not null. When the namespace is not `public`, set it on the config. `schema()` still compiles `public`.
+The report starts with `namespace <name>`. SQL names stay. A named index keeps that SQL name when it is not `{table}_{columns}_idx`. TypeScript fields follow the Drizzle property names. File stems are unique when folded to lowercase, and a Windows-reserved stem gets a `_` prefix, the same rules as `okm pull`. Composite primary-key columns are not null. When the namespace is not `public`, set it on the config. `schema()` still compiles `public`.
 
 Casing is detected in this order:
 

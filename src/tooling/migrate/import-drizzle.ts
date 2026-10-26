@@ -15,6 +15,7 @@ import type { Casing } from "../../dialects/pg/casing.js";
 import { catalog } from "../../contracts/catalog/build.js";
 import { enumType } from "../../contracts/catalog/enum.js";
 import { staticNamespace } from "../../contracts/catalog/identity.js";
+import { deterministicName } from "../../contracts/catalog/identifier.js";
 import { column, constraint, index, sequence, table } from "../../contracts/catalog/object.js";
 import type {
   CatalogObject,
@@ -574,7 +575,7 @@ function catalogOf(
           parent,
           constraintKind: "unique",
           columns: [name],
-          nameKey: keyName(stringField(value, "uniqueName"), [name]),
+          nameKey: keyName(undefined, [name]),
           provenance: provenanceOf(),
         }),
       );
@@ -671,12 +672,15 @@ function catalogOf(
         extras.push(extra("index", label, "the index predicate could not be read"));
         continue;
       }
+      const nameKey = names.length > 0 ? names.join("_") : keyName(item.config.name, ["expr"]);
+      const storedName = storedIndexName(parent.name, item.config.name, nameKey);
       objects.push(
         index({
           parent,
           columns: names,
           unique: item.config.unique,
-          nameKey: keyName(item.config.name, names.length > 0 ? names : ["expr"]),
+          nameKey,
+          ...(storedName !== undefined ? { name: storedName } : {}),
           ...(predicate !== undefined ? { predicate } : {}),
           ...(expression !== undefined ? { expression } : {}),
           provenance: provenanceOf(),
@@ -961,6 +965,16 @@ function enumNote(value: unknown): EnumNote | undefined {
 function action(value: string | undefined): ReferentialAction | undefined {
   if (value === undefined || value === "no action") return undefined;
   return referentialAction(value);
+}
+
+function storedIndexName(
+  parent: string,
+  declared: string | undefined,
+  nameKey: string,
+): string | undefined {
+  if (declared === undefined || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(declared)) return undefined;
+  const generated = deterministicName({ parent, purpose: "index", nameKey });
+  return declared === generated ? undefined : declared;
 }
 
 function keyName(name: string | undefined, columns: readonly string[]): string {
