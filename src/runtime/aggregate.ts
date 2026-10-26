@@ -39,6 +39,7 @@ import {
   isRecord,
   isTextColumn,
   list,
+  orderNamesRelation,
   parseOrder,
   projectExpr,
   quote,
@@ -221,6 +222,13 @@ function plan(
   }
   const names = groupNames(spec.groups);
   const orderBy = record.orderBy;
+  if (orderNamesRelation(indexed, orderBy)) {
+    fail(
+      "OKM1128",
+      "orderBy on a relation is not available in aggregate.",
+      "Order by a groupBy field, count, or a select name.",
+    );
+  }
   if (orderBy !== undefined) {
     if (!isRecord(orderBy)) fail("OKM1120", "orderBy must be an object of fields.");
     const accepted = spec.groups.length > 0 ? [...names, ...spec.slots.keys()] : names;

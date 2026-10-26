@@ -15,24 +15,35 @@
  * primary key (one value, or a tuple when the key is composite). No sort value
  * of a hidden or sensitive column is stored. The next page reads the sort
  * values back from that row, in the same statement, under the same tenant and
- * archive predicates. A row that is gone is OKM1130.
+ * archive predicates. A row that is gone is OKM1130. A hidden or sensitive
+ * column of a relation uses that same cursor. A visible relation column, or a
+ * to-many count, is one more value in the cursor the page already returns.
  */
 
 import { OkmError, throwNamed } from "../contracts/error.js";
 import type { ColumnModel } from "../dialects/pg/model.js";
 import { attachHttp, decodeRows, readCall, readHandle, type Mods, type Session } from "./client.js";
 import {
+  orderItems,
+  parseRelationOrder,
+  writeOrder,
+  writeSortSelect,
+  type SortKey,
+} from "./order-relation.js";
+import {
   emitVisibility,
   fail,
   indexes,
   isRecord,
   list,
+  orderNamesRelation,
   parseOrder,
   quote,
   readLimit,
   registerFailFix,
   rejectKeys,
   selectedColumns,
+  type Built,
   type Indexed,
   type ArchiveView,
   type Keyset,
@@ -59,11 +70,8 @@ const OPTIONS = [
   "timeout",
 ] as const;
 
-type Key = {
-  readonly column: ColumnModel;
-  readonly dir: "asc" | "desc";
-  readonly nulls: "first" | "last";
-};
+/** A page sort key. A column of this table leaves the relation fields unset. */
+type Key = SortKey;
 
 /**
  * Builds the handle for one `page()` call.
@@ -120,9 +128,13 @@ function plan(
   if (size < 1) {
     throw new OkmError("invalid", "page() limit must be at least 1.", { kind: "invalid" });
   }
-  const keys = orderKeys(indexed, record.orderBy);
-  const signature = `${table}:${keys.map((key) => `${key.column.field}.${key.dir}.${key.nulls}`).join(",")}`;
-  const keyMode = keys.some((key) => concealed(key.column));
+  const parsed = orderNamesRelation(indexed, record.orderBy)
+    ? parseRelationOrder(session.schema, indexed, record.orderBy)
+    : undefined;
+  const keys =
+    parsed === undefined ? orderKeys(indexed, record.orderBy) : tieBreak(indexed, parsed.keys);
+  const signature = `${table}:${keys.map((key) => `${keyLabel(key)}.${key.dir}.${key.nulls}`).join(",")}`;
+  const keyMode = keys.some((key) => keyConcealed(key));
   const pk = primaryColumns(indexed);
   const cursor =
     record.after === undefined || record.after === null
@@ -138,14 +150,30 @@ function plan(
         : keyset(keys, signature, record.after);
   const wanted = selectedColumns(indexed, record.select);
   const pkNames = new Set(indexed.model.primary);
-  const extra = keys
-    .filter((key) => !wanted.includes(key.column))
-    .filter((key) => !(keyMode && concealed(key.column) && !pkNames.has(key.column.field)))
-    .map((key) => key.column.field);
+  const extra: string[] = [];
+  for (const key of keys) {
+    const column = key.column;
+    if (key.expr !== undefined || column === undefined || wanted.includes(column)) continue;
+    if (keyMode && concealed(column) && !pkNames.has(column.field)) continue;
+    extra.push(column.field);
+  }
   const select =
     extra.length === 0 ? record.select : [...wanted.map((column) => column.field), ...extra];
   const orderBy: Record<string, unknown> = {};
-  for (const key of keys) orderBy[key.column.field] = { dir: key.dir, nulls: key.nulls };
+  if (parsed === undefined) {
+    for (const key of keys) {
+      const column = key.column;
+      if (column === undefined) continue;
+      orderBy[column.field] = { dir: key.dir, nulls: key.nulls };
+    }
+  }
+  const slots = keyMode
+    ? []
+    : keys.flatMap((key) =>
+        key.expr !== undefined && key.slot !== undefined && key.dataType !== undefined
+          ? [{ expr: key.expr, slot: key.slot, dataType: key.dataType }]
+          : [],
+      );
   const call = {
     ...readCall(
       "find",
@@ -153,7 +181,7 @@ function plan(
       {
         where: record.where,
         select,
-        orderBy,
+        orderBy: parsed === undefined ? orderBy : record.orderBy,
         limit: size + 1,
         include: record.include,
         ...(record.ignore !== undefined ? { ignore: record.ignore } : {}),
@@ -167,12 +195,34 @@ function plan(
       session.schema,
       view,
     ),
+    ...(parsed === undefined
+      ? {}
+      : {
+          rel: {
+            join: (sink: Sink) => parsed.join(sink, "t"),
+            order: (sink: Sink) => writeOrder(sink, orderItems(keys, "t")),
+            ...(keyMode
+              ? {}
+              : {
+                  select: (sink: Sink, outputs: Built | undefined, at: number) =>
+                    writeSortSelect(sink, outputs, at, slots),
+                }),
+          },
+        }),
     ...(after !== undefined ? { after } : {}),
     ...(cursor !== undefined
       ? {
           keyCursor: {
             open(sink: Sink) {
-              writeCursorCte(sink, session, indexed, keys, pk, cursor);
+              writeCursorCte(
+                sink,
+                session,
+                indexed,
+                keys,
+                pk,
+                cursor,
+                parsed === undefined ? undefined : (inner) => parsed.join(inner, "k"),
+              );
             },
             close: writeCursorMiss,
           },
@@ -195,13 +245,54 @@ function plan(
           ? makeKeyCursor(compiled, last, pk, signature)
           : makeCursor(compiled, last, keys, signature)
         : null;
-    if (extra.length > 0) {
+    const dropped = keyMode
+      ? extra
+      : [
+          ...extra,
+          ...keys.flatMap((key) =>
+            key.expr !== undefined && key.slot !== undefined ? [key.slot] : [],
+          ),
+        ];
+    if (dropped.length > 0) {
       for (const item of kept) {
-        for (const field of extra) delete item[field];
+        for (const field of dropped) delete item[field];
       }
     }
     return { items: kept, next };
   });
+}
+
+function keyLabel(key: Key): string {
+  return key.label ?? key.column?.field ?? "";
+}
+
+function keySlot(key: Key): string {
+  return key.slot ?? key.column?.field ?? "";
+}
+
+function keyConcealed(key: Key): boolean {
+  if (key.expr !== undefined) return key.relationConcealed === true;
+  return key.column !== undefined && concealed(key.column);
+}
+
+/** The value compared on the page row. A column uses `alias.column`. */
+function leftOf(key: Key, alias: string): string {
+  if (key.expr !== undefined) return key.expr;
+  return `${alias}.${quote(key.column?.sql ?? "")}`;
+}
+
+/** The same value on the cursor row `c`. */
+function rightOf(key: Key): string {
+  if (key.cursor !== undefined) return `c.${quote(key.cursor)}`;
+  return `c.${quote(key.column?.sql ?? "")}`;
+}
+
+/** One cursor-row column. A relation value is named so the page can compare it. */
+function cursorSelect(key: Key): string {
+  if (key.expr !== undefined && key.cursor !== undefined) {
+    return `${key.expr} as ${quote(key.cursor)}`;
+  }
+  return `k.${quote(key.column?.sql ?? "")}`;
 }
 
 /** `orderBy` as written, then the primary key columns it does not name. */
@@ -222,15 +313,26 @@ function orderKeys(table: Indexed, orderBy: unknown): readonly Key[] {
     }
     keys.push({ column, ...parseOrder(field, orderBy?.[field]) });
   }
+  return tieBreak(table, keys);
+}
+
+/** Primary-key tie-break. A relation key is not a column of this table. */
+function tieBreak(table: Indexed, keys: readonly Key[]): readonly Key[] {
   if (table.model.primary.length === 0) {
     fail("OKM1120", `page() needs a primary key on ${table.model.name} to break ties.`);
   }
+  const next = [...keys];
   for (const field of table.model.primary) {
     const column = table.columns.get(field);
-    if (column === undefined || keys.some((key) => key.column === column)) continue;
-    keys.push({ column, dir: "asc", nulls: "last" });
+    if (
+      column === undefined ||
+      next.some((key) => key.expr === undefined && key.column === column)
+    ) {
+      continue;
+    }
+    next.push({ column, dir: "asc", nulls: "last" });
   }
-  return keys;
+  return next;
 }
 
 /**
@@ -258,7 +360,7 @@ function keyset(keys: readonly Key[], signature: string, token: unknown): Keyset
         const prior = keys[before];
         const held = values[before];
         if (prior === undefined || held === undefined) continue;
-        const ref = `${alias}.${quote(prior.column.sql)}`;
+        const ref = leftOf(prior, alias);
         if (held === null) {
           sink.text(`${ref} is null and `);
         } else {
@@ -267,7 +369,7 @@ function keyset(keys: readonly Key[], signature: string, token: unknown): Keyset
           sink.text(" and ");
         }
       }
-      const ref = `${alias}.${quote(key.column.sql)}`;
+      const ref = leftOf(key, alias);
       if (value === null) {
         sink.text(`${ref} is not null`);
       } else {
@@ -293,11 +395,10 @@ function makeCursor(
 ): string {
   return encodeToken([
     signature,
-    ...wireValues(
-      plan,
-      row,
-      keys.map((key) => key.column),
-    ),
+    ...keys.map((key) => {
+      const at = plan.outputs.fields.find((field) => field.key === keySlot(key))?.at;
+      return at === undefined ? null : (row[at] ?? null);
+    }),
   ]);
 }
 
@@ -364,8 +465,8 @@ function keyCompare(keys: readonly Key[], signature: string): Keyset {
       for (let before = 0; before < index; before += 1) {
         const prior = keys[before];
         if (prior === undefined) continue;
-        const left = `${alias}.${quote(prior.column.sql)}`;
-        const right = `c.${quote(prior.column.sql)}`;
+        const left = leftOf(prior, alias);
+        const right = rightOf(prior);
         sink.text(`${left} is not distinct from ${right} and `);
       }
       later(sink, key, alias);
@@ -376,8 +477,8 @@ function keyCompare(keys: readonly Key[], signature: string): Keyset {
 }
 
 function later(sink: Sink, key: Key, alias: string): void {
-  const left = `${alias}.${quote(key.column.sql)}`;
-  const right = `c.${quote(key.column.sql)}`;
+  const left = leftOf(key, alias);
+  const right = rightOf(key);
   const op = key.dir === "asc" ? ">" : "<";
   if (key.nulls === "last") {
     sink.text(`(${right} is not null and (${left} ${op} ${right} or ${left} is null))`);
@@ -400,18 +501,20 @@ function writeCursorCte(
   keys: readonly Key[],
   pk: readonly ColumnModel[],
   ids: readonly (string | null)[],
+  join?: (sink: Sink) => void,
 ): void {
   sink.text("with c as (select ");
   for (let index = 0; index < keys.length; index += 1) {
     const key = keys[index];
     if (key === undefined) continue;
     if (index > 0) sink.text(", ");
-    sink.text("k.");
-    sink.text(quote(key.column.sql));
+    sink.text(cursorSelect(key));
   }
   sink.text(" from ");
   sink.text(quote(table.model.sql));
-  sink.text(" k where ");
+  sink.text(" k");
+  if (join !== undefined) join(sink);
+  sink.text(" where ");
   for (let index = 0; index < pk.length; index += 1) {
     const column = pk[index];
     const value = ids[index];

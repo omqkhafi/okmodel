@@ -15,7 +15,7 @@ import {
   indexes,
   isRecord,
   needsOperatorSql,
-  orderHasRelevance,
+  orderScan,
   jsonExpr,
   list,
   projectExpr,
@@ -714,7 +714,7 @@ function walkOperators(schema: QuerySchema, table: Indexed, include: unknown): b
     if (relation === undefined) continue;
     const child = indexes(schema).get(relation.table);
     if (child === undefined) continue;
-    if (needsOperatorSql(child, value.where) || orderHasRelevance(value.orderBy)) return true;
+    if (needsOperatorSql(child, value.where) || (orderScan(value.orderBy) & 1) !== 0) return true;
     if (walkOperators(schema, child, value.include)) return true;
   }
   return false;
