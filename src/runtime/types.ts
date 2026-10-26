@@ -199,12 +199,24 @@ type WhereKeys<
   F extends boolean,
 > = F extends true ? keyof FilterFiltersOf<S, K> : keyof FiltersOf<S, K>;
 
-/** Column keys `orderBy` may name. Relations are not an order. */
-type OrderKeys<
+/** Column keys `orderBy` may name. An include order stays on these. */
+type ColumnOrderKeys<
   S extends QuerySchema,
   K extends keyof S["~byName"],
   F extends boolean,
 > = F extends true ? keyof FilterableOf<S, K> : keyof RowOf<S, K>;
+
+/** Column keys `orderBy` may name. A relation name is not one of these. */
+type OrderKeys<
+  S extends QuerySchema,
+  K extends keyof S["~byName"],
+  F extends boolean,
+> = ColumnOrderKeys<S, K, F>;
+
+/** Column keys plus relation names. Only a relation `orderBy` overload seals with this. */
+type RelationOrderKeys<S extends QuerySchema, K extends keyof S["~byName"], F extends boolean> =
+  | ColumnOrderKeys<S, K, F>
+  | RelationKeys<RelationsOf<S, K>>;
 
 /** `where` on this call, sealed, and skipped when the call has no `where`. */
 type WhereField<S extends QuerySchema, K extends keyof S["~byName"], O, F extends boolean> =
@@ -282,7 +294,7 @@ type IncludeOrder<
 > = V extends { readonly orderBy: infer B }
   ? [B] extends [undefined]
     ? true
-    : OrderSeal<B, OrderKeys<S, T, F>> extends infer Seal
+    : OrderSeal<B, ColumnOrderKeys<S, T, F>> extends infer Seal
       ? [Seal] extends [true]
         ? true
         : { readonly orderBy: Seal }
@@ -347,6 +359,21 @@ type ReadSeal<
   O,
   F extends boolean,
 > = WhereField<S, K, O, F> & OrderField<S, K, O, F> & IncludeField<S, K, O, F>;
+
+/**
+ * The read seal for an `orderBy` that may name a relation.
+ *
+ * The column seal stays on the first overloads. This one is reached only when
+ * that order is not a column order, so a plain `find` does not build it.
+ */
+type RelationSeal<
+  S extends QuerySchema,
+  K extends keyof S["~byName"],
+  O,
+  F extends boolean,
+> = WhereField<S, K, O, F> &
+  IncludeField<S, K, O, F> &
+  SealField<OrderSeal<OrderOfTarget<O>, RelationOrderKeys<S, K, F>>, "orderBy">;
 
 /** `page` option names. `search` and `lock` are not among them. */
 type PageKey =
@@ -818,6 +845,81 @@ type NumericKeys<Row> = {
 
 /** One `orderBy` value. `asc` is nulls last and `desc` is nulls first unless `nulls` is set. */
 type SortDir = "asc" | "desc" | { readonly dir: "asc" | "desc"; readonly nulls?: "first" | "last" };
+
+/** The related row `orderBy` may name. Filterable hidden columns join when `F` is true. */
+type RelatedOrderRow<
+  S extends QuerySchema,
+  T extends string,
+  F extends boolean,
+> = T extends keyof S["~byName"] ? (F extends true ? FilterableOf<S, T> : RowOf<S, T>) : never;
+
+/**
+ * One hop of `orderBy` on a relation.
+ *
+ * A to-one names columns. A to-many names `count`. A morph names nothing.
+ */
+type RelationSort<S extends QuerySchema, Rel, F extends boolean> = Rel extends {
+  readonly morph: unknown;
+}
+  ? never
+  : Rel extends { readonly kind: "many"; readonly resolve: unknown }
+    ? Rel extends { readonly through: unknown }
+      ? { readonly count?: SortDir }
+      : never
+    : Rel extends { readonly kind: "many" }
+      ? { readonly count?: SortDir }
+      : Rel extends { readonly kind: "one"; readonly table: infer T extends string }
+        ? {
+            readonly [
+              C in keyof RelatedOrderRow<S, T, F> as C extends "count" ? never : C
+            ]?: SortDir;
+          }
+        : never;
+
+/**
+ * `orderBy` for `find`, `one`, `page`, and `stream`.
+ *
+ * A column of this table is the same set as {@link OrderBy}. A relation is one
+ * hop: `{ project: { name: "asc" } }` or `{ tasks: { count: "desc" } }`.
+ * `F` adds `hidden({ filterable: true })` on this table and on a to-one target.
+ */
+export type OrderByOf<
+  S extends QuerySchema,
+  K extends keyof S["~byName"],
+  F extends boolean = false,
+> = OrderBy<F extends true ? FilterableOf<S, K> : RowOf<S, K>> & {
+  readonly [R in RelationKeys<RelationsOf<S, K>>]?: RelationSort<S, RelationsOf<S, K>[R], F>;
+};
+
+/** `find` options whose `orderBy` may name a relation. */
+type RelationFind<S extends QuerySchema, K extends keyof S["~byName"], F extends boolean, L> = Omit<
+  F extends true ? FindFilterOptions<S, K, L> : FindOptions<S, K> & L,
+  "orderBy"
+> & {
+  readonly orderBy?: OrderByOf<S, K, F>;
+};
+
+/** `one` options whose `orderBy` may name a relation. */
+type RelationOne<S extends QuerySchema, K extends keyof S["~byName"], F extends boolean> = Omit<
+  F extends true ? ReadFilterOptions<S, K> : ReadOptions<S, K>,
+  "orderBy"
+> & {
+  readonly orderBy?: OrderByOf<S, K, F>;
+};
+
+/** `page` options whose `orderBy` may name a relation. */
+type RelationPage<S extends QuerySchema, K extends keyof S["~byName"], F extends boolean> = Omit<
+  F extends true
+    ? Omit<PageOptions<S, K>, "where" | "orderBy" | "include"> & ReadFilterOptions<S, K>
+    : PageOptions<S, K>,
+  "orderBy"
+> & { readonly orderBy?: OrderByOf<S, K, F> };
+
+/** `page` without `limit`, when `limits.page` is set, and `orderBy` may name a relation. */
+type RelationDefaultPage<S extends QuerySchema, K extends keyof S["~byName"], F extends boolean> =
+  Defaults<S, "page"> extends true
+    ? Omit<RelationPage<S, K, F>, "limit"> & { readonly limit?: number }
+    : never;
 
 /** One `select` entry of `aggregate`: a single function and its field. */
 export type AggregateCall<Field extends string, Numeric extends string> =
@@ -1422,8 +1524,14 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   find<const O extends FindOptions<S, K> & L & { readonly limit: number }>(
     options: O & ReadSeal<S, K, O, false>,
   ): Read<readonly ResultRow<S, K, O>[]>;
+  find<const O extends RelationFind<S, K, false, L> & { readonly limit: number }>(
+    options: O & RelationSeal<S, K, O, false>,
+  ): Read<readonly ResultRow<S, K, O>[]>;
   find<const O extends FindFilterOptions<S, K, L> & { readonly limit: number }>(
     options: O & ReadSeal<S, K, O, true>,
+  ): Read<readonly ResultRow<S, K, O>[]>;
+  find<const O extends RelationFind<S, K, true, L> & { readonly limit: number }>(
+    options: O & RelationSeal<S, K, O, true>,
   ): Read<readonly ResultRow<S, K, O>[]>;
   find<const O extends FindFilterOptions<S, K, L>>(
     options: O & ReadSeal<S, K, O, true>,
@@ -1431,11 +1539,23 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   find<const O extends FindOptions<S, K> & L>(
     options: O & ReadSeal<S, K, O, false>,
   ): Unbounded<S, "find", Read<readonly ResultRow<S, K, O>[]>>;
+  find<const O extends RelationFind<S, K, false, L>>(
+    options: O & RelationSeal<S, K, O, false>,
+  ): Unbounded<S, "find", Read<readonly ResultRow<S, K, O>[]>>;
+  find<const O extends RelationFind<S, K, true, L>>(
+    options: O & RelationSeal<S, K, O, true>,
+  ): Unbounded<S, "find", Read<readonly ResultRow<S, K, O>[]>>;
   one<const O extends ReadOptions<S, K>>(
     options?: O & ReadSeal<S, K, O, false>,
   ): Read<ResultRow<S, K, O> | null>;
+  one<const O extends RelationOne<S, K, false>>(
+    options?: O & RelationSeal<S, K, O, false>,
+  ): Read<ResultRow<S, K, O> | null>;
   one<const O extends ReadFilterOptions<S, K>>(
     options?: O & ReadSeal<S, K, O, true>,
+  ): Read<ResultRow<S, K, O> | null>;
+  one<const O extends RelationOne<S, K, true>>(
+    options?: O & RelationSeal<S, K, O, true>,
   ): Read<ResultRow<S, K, O> | null>;
   /**
    * One page of rows and the cursor for the next.
@@ -1446,17 +1566,29 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   page<const O extends PageOptions<S, K>>(
     options: O & NoRank<O> & PageSeal<S, K, O, false>,
   ): Query<Page<ResultRow<S, K, O>>>;
+  page<const O extends RelationPage<S, K, false>>(
+    options: O & NoRank<O> & PageTop<O> & RelationSeal<S, K, O, false>,
+  ): Query<Page<ResultRow<S, K, O>>>;
   page<
     const O extends Omit<PageOptions<S, K>, "where" | "orderBy" | "include"> &
       ReadFilterOptions<S, K>,
   >(
     options: O & NoRank<O> & PageSeal<S, K, O, true>,
   ): Query<Page<ResultRow<S, K, O>>>;
+  page<const O extends RelationPage<S, K, true>>(
+    options: O & NoRank<O> & PageTop<O> & RelationSeal<S, K, O, true>,
+  ): Query<Page<ResultRow<S, K, O>>>;
   page<const O extends DefaultPage<S, K>>(
     options: O & NoRank<O> & PageSeal<S, K, O, false>,
   ): Query<Page<ResultRow<S, K, O>>>;
   page<const O extends DefaultPage<S, K, true>>(
     options: O & NoRank<O> & PageSeal<S, K, O, true>,
+  ): Query<Page<ResultRow<S, K, O>>>;
+  page<const O extends RelationDefaultPage<S, K, false>>(
+    options: O & NoRank<O> & PageTop<O> & RelationSeal<S, K, O, false>,
+  ): Query<Page<ResultRow<S, K, O>>>;
+  page<const O extends RelationDefaultPage<S, K, true>>(
+    options: O & NoRank<O> & PageTop<O> & RelationSeal<S, K, O, true>,
   ): Query<Page<ResultRow<S, K, O>>>;
   /**
    * Counts, sums, averages, and finds extremes, per group.
