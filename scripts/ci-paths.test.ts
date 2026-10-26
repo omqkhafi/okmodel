@@ -65,6 +65,10 @@ test("packed paths, src, scripts, and package.json run the pack contract", () =>
   expect(packContractRelevant(["skills/okm/SKILL.md"])).toBe(true);
   expect(packContractRelevant(["README.md"])).toBe(true);
   expect(packContractRelevant(["LICENSE"])).toBe(true);
+  expect(packContractRelevant(["LICENSE.md"])).toBe(true);
+  expect(packContractRelevant(["readme.md"])).toBe(true);
+  expect(packContractRelevant(["CHANGELOG.md"])).toBe(true);
+  expect(packContractRelevant(["site/README.md"])).toBe(false);
   expect(packContractRelevant(["site/package.json"])).toBe(false);
   expect(packContractRelevant(["tests/fixtures/pack-contract.snap.json"])).toBe(false);
   expect(packContractRelevant([])).toBe(false);

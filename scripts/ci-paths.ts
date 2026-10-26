@@ -18,8 +18,10 @@
  * diff touches `src/tooling` or `src/dialects`: the pull request then runs the
  * site tests, because that is where CLI output the hero reads is produced.
  * `pack` is true when the diff touches a path `package.json` `files` packs
- * (`dist`, `docs`, `schemas`, `skills`, `README.md`, `LICENSE`), or `src/`,
- * `scripts/`, or `package.json`. The pull request then runs the pack contract.
+ * (`dist`, `docs`, `schemas`, `skills`, `README.md`, `LICENSE`), a root
+ * README, LICENSE, LICENCE, CHANGELOG, CHANGES, or HISTORY name npm always
+ * packs, or `src/`, `scripts/`, or `package.json`. The pull request then
+ * runs the pack contract.
  */
 
 import { appendFileSync, readFileSync } from "node:fs";
@@ -137,8 +139,10 @@ export function siteTestsRelevant(paths: readonly string[]): boolean {
  * Whether a pull request runs the pack contract inside `gate / check`.
  *
  * The packed file list drifts when a path in `package.json` `files` changes,
- * and when `src/`, `scripts/`, or `package.json` changes. The after-merge job
- * still runs it on main. A pull request that does not touch those paths skips it.
+ * when npm packs a root README, LICENSE, LICENCE, CHANGELOG, CHANGES, or
+ * HISTORY name, and when `src/`, `scripts/`, or `package.json` changes. The
+ * after-merge job still runs it on main. A pull request that does not touch
+ * those paths skips it.
  *
  * @param paths - Paths from the repository root
  * @returns True when any path can change the packed list
@@ -152,8 +156,17 @@ export function packContractRelevant(paths: readonly string[]): boolean {
       path.startsWith("src/") ||
       path === "scripts" ||
       path.startsWith("scripts/") ||
+      npmAlwaysPacked(path) ||
       packed.some((entry) => path === entry || path.startsWith(`${entry}/`)),
   );
+}
+
+/** Root names npm packs even when `files` does not list them. */
+const ALWAYS_PACKED_ROOT =
+  /^(?:readme|license|licence|changelog|changes|history)(?:\.[^/]+)?$/i;
+
+function npmAlwaysPacked(path: string): boolean {
+  return !path.includes("/") && ALWAYS_PACKED_ROOT.test(path);
 }
 
 /** Directories and files named in the root `package.json` `files` list. */
