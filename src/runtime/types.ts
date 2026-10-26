@@ -1897,14 +1897,16 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     options: Opt,
   ): UpdateWrite<S, K, readonly ClaimedRow<S, K, Opt>[]>;
   /**
-   * Last signature, so `Parameters` reads {@link UpdateArg}.
+   * Last signature, so `Parameters` reads {@link UpdateObject}.
    *
    * The third argument is required, so a call matches an earlier overload.
-   * A generic exact constraint collapses to `Record<string, never>` there and
-   * a helper then rejects a valid update.
+   * That object is the same type an earlier overload accepts, so a helper
+   * can pass it back, including through a generic table name. The list form
+   * stays on {@link UpdateList}. A generic exact constraint collapses to
+   * `Record<string, never>` and a helper then rejects a valid update.
    */
   update(
-    target: UpdateArg<S, K>,
+    target: UpdateObject<S, K>,
     options: WriteOptions<S, K> | undefined,
     _parameters: 0,
   ): UpdateWrite<S, K, WriteCount>;
