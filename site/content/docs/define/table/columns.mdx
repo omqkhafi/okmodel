@@ -18,7 +18,8 @@ An array is [`.array()`](/docs/define/table/shape#array) on a scalar. A fixed se
 | a tight integer | `t.smallint()` |
 | a typical count | `t.integer()` |
 | a 64-bit integer | `t.bigint()` |
-| a generated integer key | `t.identity()` |
+| a generated integer key | `t.integerIdentity()` |
+| a generated 64-bit key | `t.identity()` |
 | money, a rate, or any exact quantity | `t.numeric(precision, scale)` |
 | a measurement that may round | `t.double()` |
 | an instant | `t.timestamptz()` |
@@ -208,7 +209,7 @@ Any other `as` on `t.bigint()` or `t.identity()` is refused.
 
 #### Identity
 
-`t.identity()` is `bigint` `GENERATED ALWAYS AS IDENTITY` and a primary key. Insert and update omit it. The range and the `as` modes match [bigint](#bigint). A generated integer key uses this builder.
+`t.identity()` is `bigint` `GENERATED ALWAYS AS IDENTITY` and a primary key. Insert and update omit it. The range and the `as` modes match [bigint](#bigint). An integer key is `t.integerIdentity()`.
 
 ```ts title="identity.ts"
 import { table, t } from "okmodel/pg";
@@ -657,7 +658,9 @@ Postgres has these types. This dialect has no builder under that name. The Postg
 
 | Postgres type | Bytes | Call | Postgres |
 | --- | --- | --- | --- |
-| `smallserial`, `serial`, `bigserial` | 2, 4, 8 | `t.identity()` | yes |
+| `serial` | 4 | `t.integerIdentity()` | yes |
+| `bigserial` | 8 | `t.identity()` | yes |
+| `smallserial` | 2 | `t.smallint()` | yes |
 | `money` | 8 | `t.numeric(precision, scale)` | yes |
 | `decimal` | variable | `t.numeric()` | yes |
 | `tsrange` | variable | `t.tstzrange()` | yes |
