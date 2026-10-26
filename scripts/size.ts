@@ -79,8 +79,11 @@ export const FULL_ENTRY = "scripts/app-full.ts";
  *
  * P27 measured 88,278. Plus 3 percent, rounded down, is 90,900, under the 91,000 allowance (D143).
  * Was 87,900 (P24).
+ * 92,900: casing, pull, the Drizzle import, and orderBy on a relation.
+ * `schema()` calls `namesFor()` synchronously, so casing stays on this graph, and pull and the
+ * Drizzle import share it. The relation-order scan stays eager so the join chunk can stay lazy.
  */
-export const APP_MAX_MIN_BYTES = 90_900;
+export const APP_MAX_MIN_BYTES = 92_900;
 
 /**
  * Gzipped app-fixture ceiling, in bytes (D160).
@@ -136,7 +139,8 @@ export const CONNECT_ENTRIES = [
     file: "neon.js",
     external: ["@neondatabase/serverless"],
     maxMinBytes: 42_000,
-    maxGzipBytes: 14_500,
+    // 14,700: casing, pull, the Drizzle import, and orderBy on a relation.
+    maxGzipBytes: 14_700,
   },
 ] as const;
 

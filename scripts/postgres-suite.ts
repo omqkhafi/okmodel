@@ -143,20 +143,35 @@ export async function postgresReachable(url: string): Promise<boolean> {
   }
   const port = parsed.port === "" ? 5432 : Number(parsed.port);
   if (!Number.isInteger(port)) return false;
+  // Bun.connect has no timeout. Bound the probe here and close a late socket,
+  // or the process sits on a kernel TCP timeout of about 200s.
+  let settled = false;
+  let opened: { end(): void } | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const connect = Bun.connect({
+    hostname: parsed.hostname,
+    port,
+    socket: {
+      data() {},
+      error() {},
+    },
+  }).then(
+    (socket) => {
+      if (settled) socket.end();
+      else opened = socket;
+      return true;
+    },
+    () => false,
+  );
+  const bound = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => resolve(false), 2_000);
+  });
   try {
-    const socket = await Bun.connect({
-      hostname: parsed.hostname,
-      port,
-      socket: {
-        data() {},
-        error() {},
-      },
-      // Bun.connect has no timeout option; the race below bounds the probe.
-    });
-    socket.end();
-    return true;
-  } catch {
-    return false;
+    return await Promise.race([connect, bound]);
+  } finally {
+    settled = true;
+    if (timer !== undefined) clearTimeout(timer);
+    opened?.end();
   }
 }
 

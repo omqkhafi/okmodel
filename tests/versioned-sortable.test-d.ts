@@ -111,14 +111,9 @@ void plainUpdate({ where: { id: "1" }, set: { title: "b" } }).all("qa");
 void plainUpdate({ where: { id: "1" }, set: { title: "b" }, version: 1 });
 // @ts-expect-error version on a table that is not versioned()
 void plainUpdate([{ id: "1", set: { title: "b" }, version: 1 }]);
-void plainUpdate({
-  where: { id: "1" },
-  set: { title: "b" },
-  limit: 1,
-  lock: "skip",
-  // @ts-expect-error version: "any" is only on a versioned table
-  version: "any",
-});
+const bare = plainUpdate;
+// @ts-expect-error version: "any" is only on a versioned table
+void bare({ where: { id: "1" }, set: { title: "b" }, limit: 1, lock: "skip", version: "any" });
 
 declare const claimHidden: TableApi<typeof app, "queued">["update"];
 void claimHidden({
