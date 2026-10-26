@@ -576,13 +576,15 @@ function tableColumns(source: Catalog): ReadonlyMap<string, readonly ReprintChec
   return grouped;
 }
 
+type TransactionSql = postgres.TransactionSql;
+
 /**
  * Turns a postgres.js handle into the query shape introspection uses.
  *
- * @param sql - One connection
+ * @param sql - One connection, or the transaction `okm migrate check` already holds
  * @returns A {@link CatalogQuery}
  */
-export function catalogQuery(sql: Sql): CatalogQuery {
+export function catalogQuery(sql: Sql | TransactionSql): CatalogQuery {
   return {
     async query(text, params) {
       const rows = await sql.unsafe(text, params === undefined ? undefined : [...params]);
@@ -596,15 +598,13 @@ export function catalogQuery(sql: Sql): CatalogQuery {
       const token = new IsolateRollback();
       let value: unknown;
       let captured = false;
-      const run = async (tx: Sql): Promise<void> => {
+      const run = async (tx: Sql | TransactionSql): Promise<void> => {
         value = await body(catalogQuery(tx));
         captured = true;
         throw token;
       };
-      const saver = (sql as Sql & { savepoint?: (fn: (tx: Sql) => Promise<void>) => Promise<void> })
-        .savepoint;
       try {
-        if (typeof saver === "function") await saver(run);
+        if ("savepoint" in sql) await sql.savepoint(run);
         else await sql.begin(run);
       } catch (error) {
         if (!(error instanceof IsolateRollback)) throw error;
