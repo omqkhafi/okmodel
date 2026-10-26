@@ -22,6 +22,7 @@ import {
   indexes,
   isRecord,
   list,
+  orderNamesRelation,
   quote,
   refuseHidden,
   selectedColumns,
@@ -77,6 +78,18 @@ function plan(
   }
   if (rest.include !== undefined || rest.search !== undefined) {
     fail("OKM1120", "distinct and distinctOn do not take include or search.");
+  }
+  if (orderNamesRelation(indexed, rest.orderBy)) {
+    const on = distinctOn !== undefined;
+    fail(
+      "OKM1127",
+      on
+        ? "orderBy on a relation is not available with distinctOn."
+        : "orderBy on a relation is not available with distinct.",
+      on
+        ? "Order by a column of this table, or drop distinctOn."
+        : "Order by a column of this table, or drop distinct.",
+    );
   }
   const keys = distinctOn === undefined ? undefined : onKeys(indexed, distinctOn);
   const columns = selectedColumns(indexed, rest.select);

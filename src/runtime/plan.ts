@@ -95,14 +95,26 @@ export type ReadCall = {
    * Primary-key cursor for one `page()`.
    *
    * Set only when `after` names a row and the order includes a hidden or
-   * sensitive column. The lookup stays in this statement. Absent on every
-   * other read, so a value cursor does not carry it.
+   * sensitive column, including a hidden or sensitive column of a relation.
+   * The lookup stays in this statement. Absent on every other read, so a
+   * value cursor does not carry it.
    */
   readonly keyCursor?: {
     /** Writes `with c as (...) (` before `select`. */
     open(sink: Sink): void;
     /** Writes the `union all` arm that marks a missing cursor row. */
     close(sink: Sink, columns: number): void;
+  };
+  /**
+   * Joins and `order by` for an `orderBy` that names a relation.
+   *
+   * Absent on a column order. `select` projects a sort value into a page cursor.
+   * The relation chunk sets this.
+   */
+  readonly rel?: {
+    select?(sink: Sink, outputs: Built | undefined, column: number): number;
+    join(sink: Sink): void;
+    order(sink: Sink): void;
   };
   /** Set by `aggregate`. It writes the statement and the safety predicates stay in `emitWhere`. */
   readonly build?: ReadBuild;
@@ -434,27 +446,61 @@ export function installOperatorSql(emit: OperatorEmit): void {
  * @param call - The read
  * @returns `true` when {@link installOperatorSql} has not run and the read needs it
  */
-export function readNeedsOperatorSql(schema: QuerySchema, call: ReadCall): boolean {
-  if (operatorEmit !== undefined) return false;
+/**
+ * Bit 1: load the operator compiler. Bit 2: the order names a relation.
+ *
+ * Bit 1 stays clear once that compiler is installed. Bit 2 does not.
+ *
+ * @param schema - Connected schema
+ * @param call - The read
+ * @returns Bit 1, bit 2, both, or 0
+ */
+export function readMarks(schema: QuerySchema, call: ReadCall): number {
   const table = indexes(schema).get(call.table);
-  if (table === undefined) return false;
-  return needsOperatorSql(table, call.where) || orderHasRelevance(call.orderBy);
+  if (table === undefined) return 0;
+  const bits = orderScan(call.orderBy);
+  if (operatorEmit !== undefined) return bits & 2;
+  return (needsOperatorSql(table, call.where) ? 1 : 0) | bits;
 }
 
 /**
- * Reports whether `orderBy` holds a `relevance` value.
+ * Scans `orderBy` once.
  *
- * Called before the operator compiler has loaded. The include planner uses it
- * for a related table.
+ * Bit 1 is a `relevance` term. Bit 2 is a nested object that is not
+ * `{ dir, nulls }`, which is the shape of an order on a relation. The
+ * relation chunk loads only for bit 2.
  *
  * @param orderBy - The caller's order
- * @returns `true` when a value is `relevance`
+ * @returns Bit 1, bit 2, both, or 0
  */
-export function orderHasRelevance(orderBy: unknown): boolean {
+export function orderScan(orderBy: unknown): number {
+  if (!isRecord(orderBy)) return 0;
+  let bits = 0;
+  for (const value of Object.values(orderBy)) {
+    if (isOperator(value) && operatorName(value) === "relevance") bits |= 1;
+    else if (isRecord(value) && value.dir == null && value.direction == null) bits |= 2;
+  }
+  return bits;
+}
+
+/**
+ * Reports whether `orderBy` names a relation on `table`.
+ *
+ * A column written as `{ dir }` is not one. Callers that already have the
+ * table use this and skip the relation chunk.
+ *
+ * @param table - The read's table
+ * @param orderBy - The caller's order
+ * @returns `true` when a key is a relation and its value is not a column direction
+ */
+export function orderNamesRelation(table: Indexed, orderBy: unknown): boolean {
   if (!isRecord(orderBy)) return false;
   for (const key of Object.keys(orderBy)) {
+    if (!table.relations.has(key)) continue;
     const value = orderBy[key];
-    if (isOperator(value) && operatorName(value) === "relevance") return true;
+    if (!isRecord(value)) continue;
+    if (value.dir !== undefined || value.direction !== undefined) continue;
+    return true;
   }
   return false;
 }
@@ -825,6 +871,8 @@ function emitRead(
     if (hooks === undefined) continue;
     column = hooks.select(include, `i${String(index)}`, sink, outputs, column);
   }
+  const rel = call.rel;
+  if (rel?.select !== undefined) column = rel.select(sink, outputs, column);
   if (cursor !== undefined) {
     if (column > 0 || bare) sink.text(", ");
     sink.text("'1'");
@@ -838,8 +886,10 @@ function emitRead(
     if (include === undefined) continue;
     hooks?.join(schema, include, sink, "t", `i${String(index)}`, 0);
   }
+  rel?.join(sink);
   emitWhere(schema, table, call.where, sink, "t", 0, false, call.after);
-  emitOrder(table, call.orderBy, sink, "t");
+  if (rel !== undefined) rel.order(sink);
+  else emitOrder(table, call.orderBy, sink, "t");
   emitLimit(call, sink);
   call.tail?.(sink);
   if (cursor !== undefined) cursor.close(sink, column + (bare ? 1 : 0) + 1);
@@ -980,14 +1030,7 @@ function emitPredicate(
   }
   schema.tenancy?.guard(table.model.name, key, "where");
   const column = table.columns.get(key);
-  if (column === undefined) {
-    throwNamed(
-      "OKM1120",
-      key,
-      table.names,
-      `Field ${key} is not on ${table.model.name}. Accepted names: ${list(table.names)}.`,
-    );
-  }
+  if (column === undefined) unknownField(table, key);
   refuseHidden(column);
   sink.mark(`w:${key}`);
   emitOperand(schema, table, column, value, sink, alias, depth);
@@ -1197,13 +1240,10 @@ function emitRelationFilter(
   alias: string,
   depth: number,
 ): void {
-  if (!isOperator(value)) {
-    fail("OKM1121", `Relation ${relation.name} needs has, none, or every.`);
-  }
+  const needs = `Relation ${relation.name} needs has, none, or every.`;
+  if (!isOperator(value)) fail("OKM1121", needs);
   const name = operatorName(value);
-  if (name !== "has" && name !== "none" && name !== "every") {
-    fail("OKM1121", `Relation ${relation.name} needs has, none, or every.`);
-  }
+  if (name !== "has" && name !== "none" && name !== "every") fail("OKM1121", needs);
   const child = indexes(schema).get(relation.table);
   if (child === undefined) {
     fail(
@@ -1241,14 +1281,7 @@ export function emitOrder(table: Indexed, orderBy: unknown, sink: Sink, alias: s
     const key = keys[index];
     if (key === undefined) continue;
     const column = table.columns.get(key);
-    if (column === undefined) {
-      throwNamed(
-        "OKM1120",
-        key,
-        table.names,
-        `Field ${key} is not on ${table.model.name}. Accepted names: ${list(table.names)}.`,
-      );
-    }
+    if (column === undefined) unknownField(table, key);
     refuseHidden(column);
     const value = orderBy[key];
     if (index > 0) sink.text(", ");
@@ -1383,14 +1416,7 @@ export function selectedColumns(table: Indexed, select: unknown): readonly Colum
       fail("OKM1120", "select must be a list of field names.");
     }
     const column = table.columns.get(name);
-    if (column === undefined) {
-      throwNamed(
-        "OKM1120",
-        name,
-        table.names,
-        `Field ${name} is not on ${table.model.name}. Accepted names: ${list(table.names)}.`,
-      );
-    }
+    if (column === undefined) unknownField(table, name);
     columns.push(column);
   }
   return columns;
@@ -1571,13 +1597,17 @@ export function statementFingerprint(key: string): string {
   return `Q_${hash.toString(16).padStart(16, "0")}`;
 }
 
+function unknownField(table: Indexed, field: string): never {
+  throwNamed(
+    "OKM1120",
+    field,
+    table.names,
+    `Field ${field} is not on ${table.model.name}. Accepted names: ${list(table.names)}.`,
+  );
+}
+
 export function quote(name: string): string {
-  let out = '"';
-  for (let index = 0; index < name.length; index += 1) {
-    const char = name[index] ?? "";
-    out += char === '"' ? '""' : char;
-  }
-  return `${out}"`;
+  return `"${name.replaceAll('"', '""')}"`;
 }
 
 export function list(names: readonly string[]): string {

@@ -39,6 +39,7 @@ import {
   index,
   inList,
   many,
+  one,
   or,
   raw,
   schema,
@@ -1353,6 +1354,51 @@ thrown(
       id = "";
     }
     await raw(notesClient().notes, Row, "read", fragment`select ${ident("id")} from notes`);
+  },
+);
+
+function relationClient() {
+  const projects = table("projects", { id: t.text().primaryKey(), name: t.text() });
+  const tasks = table(
+    "tasks",
+    {
+      id: t.text().primaryKey(),
+      title: t.text(),
+      projectId: t.text().nullable().references("projects"),
+    },
+    { relations: { project: one("projects", "projectId") } },
+  );
+  return connect(pool, { schema: schema({ tables: [projects, tasks] }) });
+}
+
+thrown(
+  "OKM1127",
+  async () => {
+    await relationClient().tasks.find({
+      distinctOn: ["title"],
+      orderBy: { title: "asc", project: { name: "asc" } },
+      limit: 5,
+    });
+  },
+  async () => {
+    await relationClient().tasks.find({
+      distinctOn: ["title"],
+      orderBy: { title: "asc" },
+      limit: 5,
+    });
+  },
+);
+
+thrown(
+  "OKM1128",
+  async () => {
+    await relationClient().tasks.aggregate({
+      count: true,
+      orderBy: { project: { name: "asc" } } as never,
+    });
+  },
+  async () => {
+    await relationClient().tasks.aggregate({ count: true, orderBy: { count: "desc" } });
   },
 );
 

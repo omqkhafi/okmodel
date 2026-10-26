@@ -259,6 +259,20 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     fix: "Chunk the work, or filter with = any(array) instead of a long inList.",
   },
   {
+    code: "OKM1127",
+    title: "Relation order with distinct",
+    summary: "orderBy on a relation is not available with distinct or distinctOn.",
+    fix: "Order by a column of this table, or drop distinctOn.",
+    since: "0.10",
+  },
+  {
+    code: "OKM1128",
+    title: "Relation order in aggregate",
+    summary: "orderBy on a relation is not available in aggregate.",
+    fix: "Order by a groupBy field, count, or a select name.",
+    since: "0.10",
+  },
+  {
     code: "OKM1130",
     title: "Cursor order",
     summary:

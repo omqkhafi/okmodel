@@ -23,7 +23,7 @@ import {
   compileCall,
   decodeResult,
   logicalIntent,
-  readNeedsOperatorSql,
+  readMarks,
   copiedReadKeys,
   readOptionNames,
   rejectKeys,
@@ -675,8 +675,12 @@ export function readHandle(
     if (searched) {
       call = (await import("./text-search.js")).applyTextSearch(session.schema, call);
     }
+    const mark = readMarks(session.schema, call);
+    if ((mark & 2) !== 0 && call.rel === undefined) {
+      call = (await import("./order-relation.js")).attach(session.schema, call);
+    }
     const hooks = await hooksFor(call);
-    if (readNeedsOperatorSql(session.schema, call) || hooks?.needsOperator(session.schema, call)) {
+    if ((mark & 1) !== 0 || hooks?.needsOperator(session.schema, call)) {
       await loadOperatorSql();
     }
     if (call.build === undefined && selectHasWindow(call.select)) {
@@ -701,14 +705,15 @@ export function readHandle(
     prepared = { plan, params: bound.params };
     return prepared;
   };
-  // True when the statement can be planned now: no include, no preset, no operator SQL to load.
+  // True when the statement can be planned now: no include, no preset, no operator SQL,
+  // and no relation order. A relation order loads its joins in `prepare`.
   const sync = (): boolean =>
+    readMarks(session.schema, call) === 0 &&
     !searched &&
     call.limits === undefined &&
     call.include === undefined &&
     mods.uses === undefined &&
-    !selectHasWindow(call.select) &&
-    !readNeedsOperatorSql(session.schema, call);
+    !selectHasWindow(call.select);
   const run = async (): Promise<unknown> => {
     await session.connected;
     const { plan, params } = await prepare();
