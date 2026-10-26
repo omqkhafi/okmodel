@@ -1091,7 +1091,8 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   {
     code: "OKM1894",
     title: "Testing object exists",
-    summary: "testing() found a table or extension that already exists in the database.",
+    summary:
+      "testing() found a table, type, or extension that already exists in the database. Two testing() calls on one database hit the same code.",
     fix: "Use an empty database, or pass migrate: false when the schema is already applied.",
     since: "0.10",
   },
