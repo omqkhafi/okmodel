@@ -258,6 +258,7 @@ export async function assertExtensionsAvailable(
       );
     }
   }
+  await assertRoleCanCreateExtensions(connection, [...creates]);
   for (const update of updates) {
     if (!available.has(update.name)) {
       throw new OkmError(
@@ -362,6 +363,79 @@ function alterExtension(
     ...dialect.lower({ op: "update-extension", name: after.identity.name, version: next }),
   );
   return steps;
+}
+
+/**
+ * Refuses `CREATE EXTENSION` when the current role cannot run it.
+ *
+ * A superuser can create any available extension. Anyone else needs `CREATE`
+ * on the database, and the default version must be trusted. An extension
+ * that is already installed is skipped: the replay and a later apply do not
+ * create it again. A name missing from `pg_available_extensions` is skipped
+ * so the caller can report that the package is absent.
+ *
+ * @param runner - Pool or connection, after `SET ROLE` when a migration role is in force
+ * @param names - Extensions a statement will create
+ * @throws OkmError OKM1811 naming the role and the extension
+ */
+export async function assertRoleCanCreateExtensions(
+  runner: SqlRunner,
+  names: readonly string[],
+): Promise<void> {
+  const unique = [...new Set(names)];
+  if (unique.length === 0) return;
+  const who = await runner.execute(
+    `select current_user::text, r.rolsuper::text,
+            has_database_privilege(current_user, current_database(), 'CREATE')::text
+       from pg_roles r
+      where r.rolname = current_user`,
+  );
+  const row = who.rows[0];
+  if (flag(row?.[1])) return;
+  const role = text(row?.[0]);
+  const create = flag(row?.[2]);
+  const placeholders = unique.map((_, index) => `$${String(index + 1)}`).join(", ");
+  const listed = await runner.execute(
+    `select e.name, v.trusted::text, (x.oid is not null)::text
+       from pg_available_extensions e
+       left join pg_available_extension_versions v
+         on v.name = e.name and v.version = e.default_version
+       left join pg_extension x on x.extname = e.name
+      where e.name in (${placeholders})`,
+    unique,
+  );
+  const known = new Map<string, { readonly trusted: boolean; readonly installed: boolean }>();
+  for (const item of listed.rows) {
+    const name = text(item[0]);
+    if (name.length === 0) continue;
+    known.set(name, { trusted: flag(item[1]), installed: flag(item[2]) });
+  }
+  for (const name of unique) {
+    const found = known.get(name);
+    if (found === undefined || found.installed) continue;
+    if (found.trusted && create) continue;
+    const why = found.trusted
+      ? `Grant CREATE on the database to ${role}. A non-superuser needs it to create ${name}.`
+      : `Only a superuser can create ${name}. The default version is not trusted.`;
+    throw new OkmError("OKM1811", `Role ${role} cannot create extension ${name}.`, {
+      fix: { summary: why },
+    });
+  }
+}
+
+type SqlRunner = {
+  execute(
+    text: string,
+    params?: readonly (string | null)[],
+  ): Promise<{ readonly rows: readonly (readonly unknown[])[] }>;
+};
+
+function text(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function flag(value: unknown): boolean {
+  return value === true || value === "t" || value === "true";
 }
 
 async function availableExtensions(

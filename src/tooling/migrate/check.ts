@@ -43,6 +43,8 @@ import {
 import { assertLiveExternal, assertSnapshots, loadSnapshots } from "./export.js";
 import { openProject } from "./project.js";
 import { proveCheckSnapshot, replayCheckHistory } from "./sandbox.js";
+import { assertCreatableExtensions } from "./server-requirements.js";
+import { createExtensionName } from "./extensions.js";
 import { transactionControl } from "./sql-lex.js";
 
 /** Prefix of the scratch schema. The random suffix makes the name unique. */
@@ -131,6 +133,7 @@ export async function checkMigrations(
     const equivalence = await proveSnapshot(opened.config, target.url, flags, history);
     if (equivalence !== undefined) throwFailure([equivalence]);
   }
+  await assertCreatableExtensions(target.url, extensionCreates(history));
   const replayed = await replayHistory(opened.config, target.url, flags, history);
   const reprintErrors = replayed.reprints.filter((item) => item.severity === "error");
   const reprintWarnings = replayed.reprints.filter((item) => item.severity === "warning");
@@ -341,6 +344,17 @@ async function replayHistory(
     skips: outcome.skips,
     reprints: outcome.reprints,
   };
+}
+
+function extensionCreates(history: readonly HistoryEntry[]): readonly string[] {
+  const names: string[] = [];
+  for (const migration of history) {
+    for (const step of migration.steps) {
+      const name = createExtensionName(step.sql);
+      if (name !== undefined) names.push(name);
+    }
+  }
+  return names;
 }
 
 function refuseTransactionControl(history: readonly HistoryEntry[]): void {

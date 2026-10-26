@@ -3,10 +3,12 @@
  *
  * Doctor and `okm check` share this. Codes stay OKM1802 / OKM1803 for the
  * major and OKM1811 for a missing extension (D300). A pending `CREATE
- * EXTENSION` step is not OKM1811 while the package is available. An applied
- * step is. The same skip applies when the database has no history and no
- * migration files: the initial migration will create every required
- * extension (#400).
+ * EXTENSION` step is not OKM1811 while the package is available and the
+ * connected role can create it. An untrusted default version needs a
+ * superuser. A trusted one needs `CREATE` on the database. An applied step
+ * is still OKM1811. The same availability rule applies when the database has
+ * no history and no migration files: the initial migration will create every
+ * required extension (#400).
  */
 
 import { open } from "../../adapters/pg/postgresjs.js";
@@ -19,7 +21,7 @@ import {
   type PostgresMajor,
 } from "../../dialects/pg/floor.js";
 import { driverUrl } from "./driver-url.js";
-import { createExtensionName } from "./extensions.js";
+import { assertRoleCanCreateExtensions, createExtensionName } from "./extensions.js";
 import { loadMigrations } from "./files.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { describe } from "./schema-api.js";
@@ -233,13 +235,18 @@ export async function assertExtensionsAgainstPool(
   const forthcoming = names.filter((name) => !installed.has(name) && covered(name));
   const available =
     forthcoming.length === 0 ? new Set<string>() : await availableExtensions(pool, forthcoming);
+  await assertRoleCanCreateExtensions(
+    pool,
+    forthcoming.filter((name) => available.has(name)),
+  );
   for (const item of description.requirements.extensions) {
     if (installed.has(item.name)) continue;
     if (covered(item.name)) {
       // Not installed yet. A pending step creates it, or the initial
       // migration will create a declared extension. An operator class with
       // no declaration is not created by that migration. An applied step
-      // does not hide a later drop.
+      // does not hide a later drop. An available package the role cannot
+      // create was refused above.
       if (available.has(item.name)) continue;
       if (pending.names.has(item.name)) {
         throw new OkmError("OKM1811", `Extension ${item.name} is not available on the server.`, {
@@ -346,6 +353,31 @@ async function availableExtensions(
  */
 export function encodeTextArray(values: readonly string[]): string {
   return `{${values.map((value) => `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`).join(",")}}`;
+}
+
+/**
+ * Same refusal as {@link assertRoleCanCreateExtensions}, opening its own pool.
+ *
+ * `okm migrate check` calls this before the scratch replay, so a role that
+ * cannot create the extension fails OKM1811 instead of a permission error.
+ *
+ * @param url - Target URL
+ * @param names - Extensions the history creates
+ * @throws OkmError OKM1811
+ */
+export async function assertCreatableExtensions(
+  url: string,
+  names: readonly string[],
+): Promise<void> {
+  if (names.length === 0) return;
+  const pool = open({ url: driverUrl(url), max: 1 });
+  try {
+    await assertRoleCanCreateExtensions(pool, names);
+  } catch (error) {
+    throw sessionFailure(error) ?? error;
+  } finally {
+    await finishQuiet(() => pool.close());
+  }
 }
 
 function cell(value: WireValue | undefined): string {
