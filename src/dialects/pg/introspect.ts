@@ -10,7 +10,8 @@
 import { catalog } from "../../contracts/catalog/build.js";
 import { OkmError } from "../../contracts/error.js";
 import { domainType, enumType } from "../../contracts/catalog/enum.js";
-import { staticNamespace } from "../../contracts/catalog/identity.js";
+import { identityKey, staticNamespace } from "../../contracts/catalog/identity.js";
+import { isReservedIdentifier } from "../../contracts/catalog/identifier.js";
 import { extensionObject } from "../../contracts/catalog/extension.js";
 import { column, constraint, index, sequence, table } from "../../contracts/catalog/object.js";
 import { policyObject } from "../../contracts/catalog/policy.js";
@@ -71,7 +72,45 @@ export type IntrospectOptions = {
    * when that extension lives outside the schema being read.
    */
   readonly hostedExtensions?: readonly string[];
+  /**
+   * Objects whose names `table()` would reject as reserved words.
+   *
+   * Set by `okm pull`. Those columns, constraints, and indexes are left out
+   * of the catalog and recorded here. Drift and check omit this list, so
+   * they still refuse a reserved word instead of dropping it quietly.
+   */
+  readonly reserved?: IntrospectSkip[];
 };
+
+/** One object pull left out because `table()` rejects a reserved word. */
+export type IntrospectSkip = {
+  readonly kind: "column" | "constraint" | "index";
+  /** {@link identityKey} of the object that was not stored. */
+  readonly key: string;
+  /** `table.column` or `table.constraint`. */
+  readonly label: string;
+  readonly reason: string;
+};
+
+const RESERVED_REASON = "table() rejects a reserved word";
+
+function leaveReserved(
+  skipped: IntrospectSkip[] | undefined,
+  kind: IntrospectSkip["kind"],
+  parent: ObjectRef,
+  name: string,
+  words: readonly string[],
+): boolean {
+  if (skipped === undefined) return false;
+  if (!words.some((word) => isReservedIdentifier(word))) return false;
+  skipped.push({
+    kind,
+    key: identityKey({ kind, parent, name }),
+    label: `${parent.name}.${name}`,
+    reason: RESERVED_REASON,
+  });
+  return true;
+}
 
 /** A connection that can run one query. Parameters are `$1`, `$2`, … */
 export type CatalogQuery = {
@@ -225,11 +264,13 @@ export async function introspectSchema(
     if (enumLabels.has(dataType) || domainNames.has(dataType)) {
       extra.push({ kind: "type", namespace, name: dataType });
     }
+    const columnName = text(row, "name");
+    if (leaveReserved(options?.reserved, "column", parent, columnName, [columnName])) continue;
     const notNull = flag(row, "not_null");
     const unvalidated = notNull ? text(row, "not_null_unvalidated") : "";
     const built: ColumnObject = column({
       parent,
-      name: text(row, "name"),
+      name: columnName,
       dataType,
       nullable: !notNull,
       provenance,
@@ -255,6 +296,15 @@ export async function introspectSchema(
     const definition = text(row, "definition");
     const onDelete = actionAfter(definition, "delete");
     const onUpdate = actionAfter(definition, "update");
+    if (
+      leaveReserved(options?.reserved, "constraint", parent, name, [
+        name,
+        ...columns,
+        ...refColumns,
+      ])
+    ) {
+      continue;
+    }
     objects.push(
       constraint({
         parent,
@@ -289,14 +339,18 @@ export async function introspectSchema(
   for (const row of indexes) {
     const parentName = text(row, "parent");
     const parent = parents.get(parentName) ?? { namespace, name: parentName };
+    const indexName = text(row, "name");
     if (matviewNames.has(parentName)) {
       const columns = list(text(row, "columns"));
+      if (leaveReserved(options?.reserved, "index", parent, indexName, [indexName, ...columns])) {
+        continue;
+      }
       const predicate = text(row, "predicate");
       const expression = indexExpression(row, columns);
       objects.push(
         materializedViewIndex({
           parent,
-          name: text(row, "name"),
+          name: indexName,
           columns,
           unique: flag(row, "is_unique"),
           provenance,
@@ -307,12 +361,15 @@ export async function introspectSchema(
       continue;
     }
     const columns = list(text(row, "columns"));
+    if (leaveReserved(options?.reserved, "index", parent, indexName, [indexName, ...columns])) {
+      continue;
+    }
     const predicate = text(row, "predicate");
     const expression = indexExpression(row, columns);
     objects.push(
       index({
         parent,
-        name: text(row, "name"),
+        name: indexName,
         nameKey: columns.length > 0 ? columns.join("_") : "expr",
         columns,
         unique: flag(row, "is_unique"),

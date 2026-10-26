@@ -16,7 +16,11 @@ import postgres, { type Sql } from "postgres";
 import { OkmError } from "../../contracts/error.js";
 import type { Casing } from "../../dialects/pg/casing.js";
 import { cliNotice } from "../cli/notices.js";
-import { introspectSchema, type CatalogQuery } from "../../dialects/pg/introspect.js";
+import {
+  introspectSchema,
+  type CatalogQuery,
+  type IntrospectSkip,
+} from "../../dialects/pg/introspect.js";
 import { catalog } from "../../contracts/catalog/build.js";
 import { identityKey, staticNamespace } from "../../contracts/catalog/identity.js";
 import type {
@@ -227,14 +231,19 @@ async function readCatalog(
     const requested = schemas.length > 0 ? schemas : [await currentSchema(sql)];
     const chosen = uniqueNames(requested);
     const parts: { schema: string; objects: readonly CatalogObject[] }[] = [];
+    const reserved: IntrospectSkip[] = [];
     for (const name of chosen) {
       // Logical name is the concrete schema so a foreign key to another
       // schema is recorded, instead of looking like a missing public table.
-      const live = await introspectSchema(queryOf(sql), name, name);
+      const live = await introspectSchema(queryOf(sql), name, name, { reserved });
       parts.push({ schema: name, objects: live.objects });
     }
     const merged = mergePulledSchemas(parts);
-    return { catalog: merged.catalog, schemas: chosen, outside: merged.outside };
+    return {
+      catalog: merged.catalog,
+      schemas: chosen,
+      outside: [...merged.outside, ...reserved.map((item) => ({ ...item, sql: "" }))],
+    };
   } catch (error) {
     if (error instanceof OkmError) throw error;
     throw sessionFailure(error) ?? unavailable(error);
