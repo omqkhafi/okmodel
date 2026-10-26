@@ -25,7 +25,6 @@ const namesOf = new WeakMap<object, ReadonlySet<string>>();
  * @returns The inspection a caller can print
  */
 export function redactView(schema: QuerySchema, view: Inspection, call: ReadCall): Inspection {
-  const names = concealedNames(schema);
   const model = schema.model[call.table];
   const rules = model === undefined ? view.rules : [...view.rules, ...exposureRules(model, call)];
   if (safetyInstalled()) runSafety(rules, undefined);
@@ -33,13 +32,18 @@ export function redactView(schema: QuerySchema, view: Inspection, call: ReadCall
     ...view,
     intent: {
       ...view.intent,
-      where: walk(view.intent.where, names),
-      include: walk(view.intent.include, names),
+      where: walk(view.intent.where, schema, model),
+      include: walk(view.intent.include, schema, model, "include"),
     },
     rules,
     sql: {
       ...view.sql,
-      params: redactParams(schema, { where: call.where, include: call.include }, view.sql.params),
+      params: redactParams(
+        schema,
+        { where: call.where, include: call.include },
+        view.sql.params,
+        call.table,
+      ),
     },
   };
 }
@@ -54,18 +58,20 @@ export function redactView(schema: QuerySchema, view: Inspection, call: ReadCall
  * @param schema - Connected schema
  * @param source - Caller input that may hold hidden or sensitive values
  * @param params - Bound parameters
+ * @param table - Table the statement targets. A shared field name uses this table's codec
  * @returns The same array when nothing was concealed, otherwise a copy
  */
 export function redactParams(
   schema: QuerySchema,
   source: unknown,
   params: readonly (string | null)[],
+  table: string,
 ): readonly (string | null)[] {
   if (params.length === 0) return params;
   const names = concealedNames(schema);
   if (names.size === 0) return params;
   const secrets = new Set<string>();
-  harvest(schema, source, names, undefined, secrets);
+  harvest(schema, source, names, undefined, secrets, schema.model[table]);
   if (secrets.size === 0) return params;
   let changed = false;
   const next = params.map((value) => {
@@ -89,8 +95,9 @@ export function redactParams(
 export function scrubCall(error: OkmError, schema: QuerySchema, call: ReadCall): OkmError {
   const names = concealedNames(schema);
   const secrets = new Set<string>();
-  harvest(schema, call.where, names, undefined, secrets);
-  harvest(schema, call.include, names, undefined, secrets);
+  const model = schema.model[call.table];
+  harvest(schema, call.where, names, undefined, secrets, model);
+  harvest(schema, call.include, names, "include", secrets, model);
   let message = error.message;
   for (const secret of secrets) {
     if (secret.length < 4 || !message.includes(secret)) continue;
@@ -159,37 +166,58 @@ function harvest(
   names: ReadonlySet<string>,
   key: string | undefined,
   into: Set<string>,
+  table: TableModel | undefined,
 ): void {
   if (isOperator(value)) {
+    const name = operatorName(value);
     const inner = operatorValue(value);
-    if (
-      operatorName(value) === "json.set" &&
-      isRecord(inner) &&
-      "value" in inner &&
-      key !== undefined
-    ) {
-      addEncoded(schema, key, inner.value, into);
+    if (name === "json.set" && isRecord(inner) && "value" in inner && key !== undefined) {
+      addEncoded(table, key, inner.value, into);
     }
-    harvest(schema, inner, names, key, into);
+    if ((name === "has" || name === "none" || name === "every") && table !== undefined) {
+      harvest(schema, inner, names, undefined, into, relationTable(schema, table, key) ?? table);
+      return;
+    }
+    harvest(schema, inner, names, key, into, table);
     return;
   }
   if (Array.isArray(value)) {
-    if (key !== undefined && names.has(key)) addEncoded(schema, key, value, into);
-    for (const item of value) harvest(schema, item, names, key, into);
+    if (key !== undefined && names.has(key)) addEncoded(table, key, value, into);
+    for (const item of value) harvest(schema, item, names, key, into, table);
     return;
   }
   if (typeof value === "object" && value !== null) {
-    if (key !== undefined && names.has(key)) addEncoded(schema, key, value, into);
+    if (key !== undefined && names.has(key)) addEncoded(table, key, value, into);
     const record = value as Record<string, unknown>;
-    for (const child of Object.keys(record)) harvest(schema, record[child], names, child, into);
+    if (key === "include" && table !== undefined) {
+      for (const child of Object.keys(record)) {
+        harvest(
+          schema,
+          record[child],
+          names,
+          undefined,
+          into,
+          relationTable(schema, table, child) ?? table,
+        );
+      }
+      return;
+    }
+    for (const child of Object.keys(record)) {
+      harvest(schema, record[child], names, child, into, table);
+    }
     return;
   }
   if (key === undefined || !names.has(key)) return;
-  addEncoded(schema, key, value, into);
+  addEncoded(table, key, value, into);
 }
 
-function addEncoded(schema: QuerySchema, key: string, value: unknown, into: Set<string>): void {
-  const column = columnFor(schema, key);
+function addEncoded(
+  table: TableModel | undefined,
+  key: string,
+  value: unknown,
+  into: Set<string>,
+): void {
+  const column = columnOn(table, key);
   if (column === undefined) return;
   pushEncoded(column.encode, value, into);
   if (column.elementEncode !== undefined && column.elementEncode !== column.encode) {
@@ -206,11 +234,22 @@ function pushEncoded(encode: (value: unknown) => string, value: unknown, into: S
   }
 }
 
-function columnFor(schema: QuerySchema, field: string): ColumnModel | undefined {
-  for (const model of Object.values(schema.model)) {
-    for (const column of model.columns) {
-      if (column.field === field && (column.hidden || column.sensitive)) return column;
-    }
+function columnOn(table: TableModel | undefined, field: string): ColumnModel | undefined {
+  if (table === undefined) return undefined;
+  for (const column of table.columns) {
+    if (column.field === field && (column.hidden || column.sensitive)) return column;
+  }
+  return undefined;
+}
+
+function relationTable(
+  schema: QuerySchema,
+  table: TableModel,
+  name: string | undefined,
+): TableModel | undefined {
+  if (name === undefined) return undefined;
+  for (const relation of table.relations) {
+    if (relation.name === name) return schema.model[relation.table];
   }
   return undefined;
 }
@@ -219,17 +258,35 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function walk(value: unknown, names: ReadonlySet<string>, key?: string): unknown {
-  if (Array.isArray(value)) return value.map((item) => walk(item, names, key));
+function walk(
+  value: unknown,
+  schema: QuerySchema,
+  table: TableModel | undefined,
+  key?: string,
+): unknown {
+  if (Array.isArray(value)) return value.map((item) => walk(item, schema, table, key));
   if (typeof value === "object" && value !== null) {
     const record = value as Record<string, unknown>;
     if (typeof record.op === "string" && "value" in record) {
-      return { op: record.op, value: walk(record.value, names, key) };
+      const op = record.op;
+      if ((op === "has" || op === "none" || op === "every") && table !== undefined) {
+        const related = relationTable(schema, table, key) ?? table;
+        return { op, value: walk(record.value, schema, related) };
+      }
+      return { op, value: walk(record.value, schema, table, key) };
+    }
+    if (key === "include" && table !== undefined) {
+      const out: Record<string, unknown> = {};
+      for (const child of Object.keys(record)) {
+        const related = relationTable(schema, table, child) ?? table;
+        out[child] = walk(record[child], schema, related);
+      }
+      return out;
     }
     const out: Record<string, unknown> = {};
-    for (const child of Object.keys(record)) out[child] = walk(record[child], names, child);
+    for (const child of Object.keys(record)) out[child] = walk(record[child], schema, table, child);
     return out;
   }
-  if (key !== undefined && names.has(key)) return REDACTED;
+  if (key !== undefined && columnOn(table, key) !== undefined) return REDACTED;
   return value;
 }
