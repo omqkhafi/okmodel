@@ -30,7 +30,7 @@ function saveDoc(target: DocUpdate): ReturnType<typeof db.docs.update> {
 
 saveDoc({ where: { id: "1" }, set: { title: "b" }, version: 1 });
 
-function saveTable<K extends keyof (typeof app)["~byName"] & string>(
+function saveTable<K extends keyof (typeof app)["~byName"]>(
   name: K,
   target: Parameters<TableApi<typeof app, K>["update"]>[0],
 ) {
