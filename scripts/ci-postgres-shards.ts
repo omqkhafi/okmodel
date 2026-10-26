@@ -69,6 +69,7 @@ const BUILD_FILES: ReadonlySet<string> = new Set([
   "tests/package.test.ts",
   "tests/quickstart.test.ts",
   "tests/recipes.test.ts",
+  "tests/pull-adopt-pg.test.ts",
   "tests/pull-pg.test.ts",
 ]);
 
