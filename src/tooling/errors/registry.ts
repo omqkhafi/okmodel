@@ -1120,6 +1120,14 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     since: "0.10",
   },
   {
+    code: "OKM1898",
+    title: "Data loss",
+    summary:
+      "okm push would drop a column, a primary key, a unique constraint, or a table that still has a row.",
+    fix: "Keep the column, key, or table, or pass --allow-data-loss when those rows can go.",
+    since: "0.10",
+  },
+  {
     code: "OKM2200",
     title: "Observer buffer overflow",
     summary:
@@ -1169,7 +1177,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   // Reserved, not registered (no raising path): version OKM1804–OKM1809,
   // extension OKM1815–OKM1819, feature refusal OKM1861 and OKM1868–OKM1879,
   // adapter capability refusal OKM1880 and OKM1889. OKM1881–OKM1888 (agent files) and
-  // OKM1890–OKM1897 are registered.
+  // OKM1890–OKM1898 are registered.
   // OKM1140–OKM1179 stay reserved (D291).
 ];
 

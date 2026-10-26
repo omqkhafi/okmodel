@@ -344,6 +344,7 @@ test("short flags and guard flags stay inside the spec", () => {
       if (
         flag.name === "allow-protected" ||
         flag.name === "allow-pooler" ||
+        flag.name === "allow-data-loss" ||
         flag.name === "replace"
       ) {
         expect(flag.short).toBeUndefined();

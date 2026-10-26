@@ -8,7 +8,7 @@
  */
 
 import { catalog } from "../../contracts/catalog/build.js";
-import { OkmError } from "../../contracts/error.js";
+import { OkmError, catalogError } from "../../contracts/error.js";
 import { domainType, enumType } from "../../contracts/catalog/enum.js";
 import { identityKey, staticNamespace } from "../../contracts/catalog/identity.js";
 import { isReservedIdentifier } from "../../contracts/catalog/identifier.js";
@@ -87,6 +87,14 @@ export type IntrospectOptions = {
    * Any other recorded column is still built, so push can refuse its drop.
    */
   readonly omit?: ReadonlySet<string>;
+  /**
+   * Refuse a reserved index name that was not omitted.
+   *
+   * `okm check` and `okm push` set this. The name is OKM1122, the same
+   * error a reserved column raises from `column()`, instead of a drop.
+   * Pull does not set it: those names are recorded and left out.
+   */
+  readonly refuseReserved?: boolean;
 };
 
 /** One object pull left out because `table()` rejects a reserved word. */
@@ -115,6 +123,11 @@ function listed(
   if (keys === undefined || keys.size === 0) return false;
   if (!words.some((word) => isReservedIdentifier(word))) return false;
   return keys.has(identityKey({ kind, parent, name }));
+}
+
+function refuseReservedIndex(options: IntrospectOptions | undefined, name: string): void {
+  if (options?.refuseReserved !== true || !isReservedIdentifier(name)) return;
+  catalogError("OKM1122", `index ${name} is a reserved word.`);
 }
 
 function leaveReserved(
@@ -378,6 +391,7 @@ export async function introspectSchema(
       if (leaveReserved(options?.reserved, "index", parent, indexName, [indexName, ...columns])) {
         continue;
       }
+      refuseReservedIndex(options, indexName);
       const predicate = text(row, "predicate");
       const expression = indexExpression(row, columns);
       objects.push(
@@ -398,6 +412,7 @@ export async function introspectSchema(
     if (leaveReserved(options?.reserved, "index", parent, indexName, [indexName, ...columns])) {
       continue;
     }
+    refuseReservedIndex(options, indexName);
     const predicate = text(row, "predicate");
     const expression = indexExpression(row, columns);
     objects.push(

@@ -948,6 +948,7 @@ function invokeOf(parsed: ParsedCli): InvokeFlags {
     ...(parsed.target !== undefined ? { target: parsed.target } : {}),
     allowProtected: parsed.allowProtected,
     allowPooler: parsed.allowPooler,
+    allowDataLoss: parsed.allowDataLoss,
     ...(parsed.lockTimeoutMs !== undefined ? { lockTimeoutMs: parsed.lockTimeoutMs } : {}),
     ...(parsed.statementTimeoutMs !== undefined
       ? { statementTimeoutMs: parsed.statementTimeoutMs }

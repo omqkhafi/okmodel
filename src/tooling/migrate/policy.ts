@@ -38,6 +38,8 @@ export type InvokeFlags = {
   readonly target?: string;
   readonly allowProtected: boolean;
   readonly allowPooler: boolean;
+  /** `okm push --allow-data-loss`. Other commands leave this unset. */
+  readonly allowDataLoss?: boolean;
   readonly lockTimeoutMs?: number;
   readonly statementTimeoutMs?: number;
 };

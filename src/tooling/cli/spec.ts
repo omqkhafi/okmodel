@@ -103,6 +103,12 @@ const allowPooler: FlagSpec = {
   hint: "This invocation only. No short form.",
 };
 
+const allowDataLoss: FlagSpec = {
+  name: "allow-data-loss",
+  type: "boolean",
+  hint: "Drop a column, primary key, unique constraint, or table that still has a row. This invocation only. No short form.",
+};
+
 const replace: FlagSpec = {
   name: "replace",
   type: "string",
@@ -442,7 +448,7 @@ export const COMMANDS: readonly CommandSpec[] = [
     maxOperands: 0,
     usesDatabase: true,
     ownOut: false,
-    flags: [target, allowProtected, allowPooler],
+    flags: [target, allowProtected, allowPooler, allowDataLoss],
   }),
   spec({
     id: "pull",

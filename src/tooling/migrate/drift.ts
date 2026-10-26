@@ -1,8 +1,10 @@
 /**
  * Live drift for `okm check`.
  *
- * A database that has never been pushed has no `okm_meta` and is left alone.
- * After push, the introspected catalog is planned back to the schema. Each
+ * A database that has never been pushed has no `okm_meta` and is not planned.
+ * A reserved column or index that the pull record does not list is still
+ * OKM1122, the same error `okm push` raises. After push, the introspected
+ * catalog is planned back to the schema. Each
  * view is reprinted on this server first, so a `pg_get_viewdef` spelling is
  * not drift. A btree index expression is reprinted the same way. Any remaining
  * statement is OKM1520. `okm_meta`, `okm_history`,
@@ -82,21 +84,26 @@ export async function assertAuthorDrift(
       },
       allowPooler,
     );
+    const runner = catalogQuery(sql);
+    const introspectOptions: IntrospectOptions = {
+      ...liveIntrospectOptions(roles, author),
+      ...(unpulled.size > 0 ? { omit: unpulled } : {}),
+      refuseReserved: true,
+    };
     const present = await sql<{ reg: string | null }[]>`
       select to_regclass(${metaReg(schema)})::text as reg
     `;
-    if (present[0]?.reg == null) return;
-    const runner = catalogQuery(sql);
+    if (present[0]?.reg == null) {
+      await introspectSchema(runner, schema, schema, introspectOptions);
+      return;
+    }
     const authorOnServer = await sealTriggerWhens(
       runner,
       await sealStoredChecks(runner, await sealViews(runner, author)),
     );
     const live = await sealStoredChecks(
       runner,
-      await introspectSchema(runner, schema, schema, {
-        ...liveIntrospectOptions(roles, author),
-        ...(unpulled.size > 0 ? { omit: unpulled } : {}),
-      }),
+      await introspectSchema(runner, schema, schema, introspectOptions),
     );
     const invalid = await invalidIndexReport(runner, schema);
     // Pull lists policies and does not write them. After baseline, okm_meta

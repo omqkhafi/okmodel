@@ -29,6 +29,8 @@ export type ParsedCli = {
   readonly out: string | undefined;
   readonly allowProtected: boolean;
   readonly allowPooler: boolean;
+  /** `okm push --allow-data-loss`. Not read from the environment. */
+  readonly allowDataLoss: boolean;
   readonly dryRun: boolean;
   readonly provision: boolean;
   readonly replace: readonly string[];
@@ -131,8 +133,8 @@ export function argvHasJson(argv: readonly string[]): boolean {
 /**
  * Parses one invocation.
  *
- * `--allow-protected`, `--allow-pooler`, and `--replace` are not read from
- * the environment. `-f` is not a short form.
+ * `--allow-protected`, `--allow-pooler`, `--allow-data-loss`, and `--replace`
+ * are not read from the environment. `-f` is not a short form.
  *
  * @param argv - Arguments after the program name
  * @returns The invocation
@@ -224,6 +226,7 @@ export function parseCli(argv: readonly string[]): ParsedCli {
     ...(out === undefined ? { out: undefined } : { out }),
     allowProtected: values["allow-protected"] === true,
     allowPooler: values["allow-pooler"] === true,
+    allowDataLoss: values["allow-data-loss"] === true,
     dryRun: values["dry-run"] === true,
     provision: values.provision === true,
     replace: stringList(values.replace),
@@ -316,6 +319,7 @@ function blank(flags: { readonly help: boolean; readonly json: boolean }): Parse
     out: undefined,
     allowProtected: false,
     allowPooler: false,
+    allowDataLoss: false,
     dryRun: false,
     provision: false,
     replace: [],
