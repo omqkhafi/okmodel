@@ -64,8 +64,9 @@ export type PullResult = {
  * `tables/`. Without it, the project's schema path and tables directory are
  * used. A tables directory that the config omits is `tables` beside the
  * schema file. `.okm/pull.json` is written at the project root for that pull.
- * A `--out` pull of another `--target`, or one that passes `--schema`, leaves
- * the existing record in place.
+ * `--out` of the target named `default`, or of the only target, refreshes it.
+ * `--out` of any other `--target`, or one that passes `--schema`, leaves the
+ * existing record in place.
  *
  * @param cwd - Project directory
  * @param argv - Arguments after `pull`
@@ -113,8 +114,9 @@ export async function pullProject(
     const skipped = [...emitted.skipped, ...read.outside];
     // `--out` of another target or an explicit schema is a scratch copy.
     // Replacing the record would let the next push of the project target
-    // drop an identity column the first pull had kept.
-    if (replacesPullRecord(cwd, config.schema, flags, listTargets(config).length)) {
+    // drop an identity column the first pull had kept. `--out` of the
+    // target named `default` is a refresh of that database.
+    if (replacesPullRecord(flags, listTargets(config).length)) {
       writeUnpulled(cwd, skipped);
     }
     return {
@@ -584,13 +586,13 @@ export function commitPullFiles(
 /**
  * Whether this pull should replace `.okm/pull.json`.
  *
- * A pull that writes the project schema does. So does `--out` of the only
- * target with no `--schema`: that is a refresh of the same database. `--out`
- * of a second target, or any `--out` that passes `--schema`, does not.
+ * A pull with no `--out` writes the project schema, so it replaces the record.
+ * `--out` of the target named `default`, or of the only target, refreshes that
+ * database and replaces the record too. `--out` of any other target leaves the
+ * record, including when the directory is the project schema directory. Any
+ * `--out` that passes `--schema` leaves the record.
  */
 function replacesPullRecord(
-  cwd: string,
-  schema: string,
   flags: {
     readonly out: string | undefined;
     readonly schemas: readonly string[];
@@ -599,9 +601,8 @@ function replacesPullRecord(
   targetCount: number,
 ): boolean {
   if (flags.out === undefined) return true;
-  if (projectPath(cwd, flags.out) === dirname(projectPath(cwd, schema))) return true;
   if (flags.schemas.length > 0) return false;
-  if (flags.target !== undefined && targetCount > 1) return false;
+  if (flags.target !== undefined && flags.target !== "default" && targetCount > 1) return false;
   return true;
 }
 

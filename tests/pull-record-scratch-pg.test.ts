@@ -7,6 +7,7 @@
 
 import { expect } from "bun:test";
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -74,6 +75,57 @@ postgresTest(
         main.url,
         `select count(*)::text as keys from pg_constraint
           where conrelid = 'public.o'::regclass and contype = 'p'`,
+      );
+      expect(keys[0]?.["keys"]).toBe("1");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await main.close();
+      await other.close();
+    }
+  },
+  120_000,
+);
+
+postgresTest(
+  gate,
+  "pull --target default --out refreshes the record when another target exists",
+  async () => {
+    const main = await createIsolatedDatabase();
+    const other = await createIsolatedDatabase();
+    const cwd = mkdtempSync(join(tmpdir(), "okm-pull-default-out-"));
+    try {
+      writeTargets(cwd, main.url, other.url);
+      linkOkmodel(cwd);
+      await seed(main.url, `create table z (id int primary key);`);
+      await cli(cwd, ["pull", "--target", "default"]);
+      const recordPath = join(cwd, ".okm", "pull.json");
+      expect(readFileSync(recordPath, "utf8")).not.toContain("p.id");
+      await seed(
+        main.url,
+        `create table p (id smallint generated always as identity primary key, v text);
+         insert into p (v) values ('keep');`,
+      );
+      await cli(cwd, ["pull", "--target", "default", "--out", "scratch"]);
+      const refreshed = readFileSync(recordPath, "utf8");
+      expect(refreshed).toContain("p.id");
+      expect(refreshed).toContain("p_pkey");
+      rmSync(join(cwd, "db"), { recursive: true, force: true });
+      cpSync(join(cwd, "scratch"), join(cwd, "db"), { recursive: true });
+      useSourceImports(join(cwd, "db"));
+      const refused = await refusal(cwd, ["push", "--target", "default"]);
+      expect(refused.code).toBe("OKM1897");
+      expect(refused.message).toContain("p.id");
+      const columns = await query(
+        main.url,
+        `select string_agg(column_name, ',' order by ordinal_position) as columns
+           from information_schema.columns
+          where table_schema = 'public' and table_name = 'p'`,
+      );
+      expect(columns[0]?.["columns"]).toBe("id,v");
+      const keys = await query(
+        main.url,
+        `select count(*)::text as keys from pg_constraint
+          where conrelid = 'public.p'::regclass and contype = 'p'`,
       );
       expect(keys[0]?.["keys"]).toBe("1");
     } finally {
