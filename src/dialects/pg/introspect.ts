@@ -1028,11 +1028,10 @@ async function reprintCheckOnce(
   types: readonly ReprintType[],
   extensions: ReadonlyMap<string, string>,
 ): Promise<string> {
-  if (!(await extensionTypesReady(runner, extensions))) {
-    return usingExtensionTypes(runner, extensions, (query) =>
-      reprintCheckOnce(query, expression, columns, types, extensions),
-    );
-  }
+  const redirected = await withExtensionSchemas(runner, extensions, (query, next) =>
+    reprintCheckOnce(query, expression, columns, types, next),
+  );
+  if (redirected !== undefined) return redirected.value;
   const table = scratchName("okm_expr");
   const standIns = await createStandIns(
     runner,
@@ -1183,11 +1182,10 @@ async function reprintIndexOnce(
   options: { readonly unique: boolean; readonly predicate?: string },
   extensions: ReadonlyMap<string, string>,
 ): Promise<ReprintedIndex> {
-  if (!(await extensionTypesReady(runner, extensions))) {
-    return usingExtensionTypes(runner, extensions, (query) =>
-      reprintIndexOnce(query, expression, columns, types, options, extensions),
-    );
-  }
+  const redirected = await withExtensionSchemas(runner, extensions, (query, next) =>
+    reprintIndexOnce(query, expression, columns, types, options, next),
+  );
+  if (redirected !== undefined) return redirected.value;
   const table = scratchName("okm_idx");
   const index = scratchName("okm_idx");
   const standIns = await createStandIns(
@@ -1279,11 +1277,10 @@ export async function reprintTriggerWhen(
   types: readonly ReprintType[] = [],
   extensions: ReadonlyMap<string, string> = NO_EXTENSION_SCHEMAS,
 ): Promise<string | undefined> {
-  if (!(await extensionTypesReady(runner, extensions))) {
-    return usingExtensionTypes(runner, extensions, (query) =>
-      reprintTriggerWhen(query, expression, trigger, columns, types, extensions),
-    );
-  }
+  const redirected = await withExtensionSchemas(runner, extensions, (query, next) =>
+    reprintTriggerWhen(query, expression, trigger, columns, types, next),
+  );
+  if (redirected !== undefined) return redirected.value;
   const table = scratchName("okm_when");
   const fn = scratchName("okm_when_fn");
   const standIns = await createStandIns(
@@ -1366,11 +1363,10 @@ async function reprintDomainCheckOnce(
   types: readonly ReprintType[],
   extensions: ReadonlyMap<string, string>,
 ): Promise<string> {
-  if (!(await extensionTypesReady(runner, extensions))) {
-    return usingExtensionTypes(runner, extensions, (query) =>
-      reprintDomainCheckOnce(query, base, expression, types, extensions),
-    );
-  }
+  const redirected = await withExtensionSchemas(runner, extensions, (query, next) =>
+    reprintDomainCheckOnce(query, base, expression, types, next),
+  );
+  if (redirected !== undefined) return redirected.value;
   const domain = scratchName("okm_expr_domain");
   const standIns = await createStandIns(runner, [base], types, extensions);
   try {
@@ -1431,11 +1427,10 @@ async function reprintGeneratedOnce(
   types: readonly ReprintType[],
   extensions: ReadonlyMap<string, string>,
 ): Promise<string> {
-  if (!(await extensionTypesReady(runner, extensions))) {
-    return usingExtensionTypes(runner, extensions, (query) =>
-      reprintGeneratedOnce(query, expression, column, columns, types, extensions),
-    );
-  }
+  const redirected = await withExtensionSchemas(runner, extensions, (query, next) =>
+    reprintGeneratedOnce(query, expression, column, columns, types, next),
+  );
+  if (redirected !== undefined) return redirected.value;
   const table = scratchName("okm_expr_gen");
   const standIns = await createStandIns(
     runner,
@@ -1486,21 +1481,90 @@ function scratchName(prefix: string): string {
 const NO_EXTENSION_SCHEMAS: ReadonlyMap<string, string> = new Map();
 
 /**
- * True when every extension type is already installed, or this connection
- * cannot install one for the reprint and roll it back.
+ * Points a reprint at an extension type that is already installed.
+ *
+ * `okm migrate check` replays `citext` into the scratch schema, while the
+ * stored catalog still names `public`. Creating it again fails, and a scratch
+ * column of `"public"."citext"` does not resolve. The installed schema prints
+ * the same check text. A type that is missing everywhere is installed for the
+ * reprint and rolled back.
+ *
+ * @param runner - Database connection
+ * @param extensions - Type name to the schema the catalog declares
+ * @param run - Reprint, called with the schema that actually owns each type
+ * @returns The reprint when a schema had to change or a type had to be installed
  */
-async function extensionTypesReady(
+async function withExtensionSchemas<T>(
   runner: CatalogQuery,
   extensions: ReadonlyMap<string, string>,
-): Promise<boolean> {
-  if (extensions.size === 0 || runner.isolate === undefined) return true;
-  for (const [type, schema] of extensions) {
-    const rows = await runner.query(`select to_regtype($1) as reg`, [
-      `${quoteIdent(schema)}.${quoteIdent(type)}`,
-    ]);
-    if (text(rows[0] ?? {}, "reg").length === 0) return false;
+  run: (query: CatalogQuery, extensions: ReadonlyMap<string, string>) => Promise<T>,
+): Promise<{ readonly value: T } | undefined> {
+  const located = await installedExtensionSchemas(runner, extensions);
+  if (located.missing && runner.isolate !== undefined) {
+    return {
+      value: await usingExtensionTypes(runner, located.extensions, (query) =>
+        run(query, located.extensions),
+      ),
+    };
   }
-  return true;
+  if (located.extensions !== extensions) return { value: await run(runner, located.extensions) };
+  return undefined;
+}
+
+/**
+ * Keeps a declared schema when that type is installed there.
+ *
+ * Otherwise uses the schema `pg_extension` records. The extension name is the
+ * type name, which is also what {@link usingExtensionTypes} creates.
+ *
+ * @param runner - Database connection
+ * @param extensions - Type name to the schema the catalog declares
+ * @returns That map, or a copy, and whether any type is still absent
+ */
+async function installedExtensionSchemas(
+  runner: CatalogQuery,
+  extensions: ReadonlyMap<string, string>,
+): Promise<{ readonly extensions: ReadonlyMap<string, string>; readonly missing: boolean }> {
+  if (extensions.size === 0) return { extensions, missing: false };
+  let copy: Map<string, string> | undefined;
+  let missing = false;
+  for (const [type, schema] of extensions) {
+    if (await extensionTypeExists(runner, schema, type)) continue;
+    const installed = await installedExtensionSchema(runner, type);
+    if (installed === undefined) {
+      missing = true;
+      continue;
+    }
+    copy ??= new Map(extensions);
+    copy.set(type, installed);
+  }
+  return { extensions: copy ?? extensions, missing };
+}
+
+async function extensionTypeExists(
+  runner: CatalogQuery,
+  schema: string,
+  type: string,
+): Promise<boolean> {
+  const rows = await runner.query(`select to_regtype($1) as reg`, [
+    `${quoteIdent(schema)}.${quoteIdent(type)}`,
+  ]);
+  return text(rows[0] ?? {}, "reg").length > 0;
+}
+
+async function installedExtensionSchema(
+  runner: CatalogQuery,
+  type: string,
+): Promise<string | undefined> {
+  const rows = await runner.query(
+    `select n.nspname as schema
+     from pg_extension e
+     join pg_namespace n on n.oid = e.extnamespace
+     where e.extname = $1`,
+    [type],
+  );
+  const schema = text(rows[0] ?? {}, "schema");
+  return schema.length > 0 ? schema : undefined;
 }
 
 /**

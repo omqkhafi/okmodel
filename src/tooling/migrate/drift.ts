@@ -595,6 +595,9 @@ export function catalogQuery(sql: Sql | TransactionSql): CatalogQuery {
       });
     },
     async isolate(body) {
+      // `okm migrate check` reserves a connection and opens the transaction
+      // with `BEGIN`. That handle has neither `begin` nor `savepoint`.
+      if (!("savepoint" in sql) && !("begin" in sql)) return isolateSavepoint(sql, body);
       const token = new IsolateRollback();
       let value: unknown;
       let captured = false;
@@ -615,6 +618,35 @@ export function catalogQuery(sql: Sql | TransactionSql): CatalogQuery {
       return value as Awaited<ReturnType<typeof body>>;
     },
   };
+}
+
+/**
+ * Rolls a reprint back with `SAVEPOINT` on a transaction that is already open.
+ *
+ * postgres.js only attaches `begin` to the pool handle and `savepoint` to the
+ * handle `begin` creates. The check connection is neither of those. A failed
+ * statement stays inside the savepoint, so the check transaction is not aborted.
+ *
+ * @param sql - Connection already running in a transaction
+ * @param body - Reprint that may install an extension type
+ * @returns The body's result, after the savepoint is rolled back
+ */
+async function isolateSavepoint<T>(
+  sql: Sql | TransactionSql,
+  body: (query: CatalogQuery) => Promise<T>,
+): Promise<T> {
+  const name = `okm_ext_${crypto.randomUUID().replaceAll("-", "")}`;
+  await sql.unsafe(`savepoint ${name}`);
+  try {
+    const value = await body(catalogQuery(sql));
+    await sql.unsafe(`rollback to savepoint ${name}`);
+    await sql.unsafe(`release savepoint ${name}`);
+    return value;
+  } catch (error) {
+    await sql.unsafe(`rollback to savepoint ${name}`).catch(() => undefined);
+    await sql.unsafe(`release savepoint ${name}`).catch(() => undefined);
+    throw error;
+  }
 }
 
 /** Marks the end of a rolled-back reprint. The result is already in memory. */
