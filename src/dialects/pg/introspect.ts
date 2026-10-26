@@ -99,7 +99,10 @@ export type IntrospectSkip = {
   readonly reason: string;
 };
 
-const RESERVED_REASON = "table() rejects a reserved word";
+/** Why pull leaves out a column, constraint, or index `table()` would reject. */
+export const RESERVED_WORD_REASON = "table() rejects a reserved word";
+
+const RESERVED_REASON = RESERVED_WORD_REASON;
 
 function listed(
   options: IntrospectOptions | undefined,

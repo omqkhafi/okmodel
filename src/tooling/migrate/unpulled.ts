@@ -1,5 +1,5 @@
 /**
- * Columns and constraints `okm pull` listed and did not write.
+ * Columns, constraints, and reserved indexes `okm pull` listed and did not write.
  *
  * The record is `.okm/pull.json` at the project root, including when `--out`
  * writes the schema somewhere else for the same target. A scratch `--out` of
@@ -16,24 +16,27 @@ import { identitySequenceName } from "../../contracts/catalog/identifier.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
 import { OkmError } from "../../contracts/error.js";
 import { dropObjectSql } from "../../dialects/pg/ddl.js";
+import { RESERVED_WORD_REASON } from "../../dialects/pg/introspect.js";
 import type { PlanStep } from "./plan.js";
 import type { PullSkip } from "./pull-emit.js";
 
 /** Project-relative path of the pull record. */
 export const PULL_RECORD = ".okm/pull.json";
 
-/** One column or constraint pull reported and did not write. */
+/** One column, constraint, or reserved index pull reported and did not write. */
 export type UnpulledObject = {
-  readonly kind: "column" | "constraint";
+  readonly kind: "column" | "constraint" | "index";
   readonly key: string;
   readonly label: string;
 };
 
 /**
- * Replaces `.okm/pull.json` with the columns and constraints in `skipped`.
+ * Replaces `.okm/pull.json` with the columns, constraints, and reserved
+ * indexes in `skipped`.
  *
  * An empty list clears an older record. Policies and other kinds stay out:
- * check already omits unmanaged policies on its own.
+ * check already omits unmanaged policies on its own. A reserved index is
+ * recorded so check and push leave it out instead of dropping it.
  *
  * @param cwd - Project directory
  * @param skipped - Objects the pull report listed
@@ -41,8 +44,10 @@ export type UnpulledObject = {
 export function writeUnpulled(cwd: string, skipped: readonly PullSkip[]): void {
   const objects = skipped
     .filter(
-      (item): item is PullSkip & { readonly kind: "column" | "constraint" } =>
-        item.kind === "column" || item.kind === "constraint",
+      (item): item is PullSkip & { readonly kind: "column" | "constraint" | "index" } =>
+        item.kind === "column" ||
+        item.kind === "constraint" ||
+        (item.kind === "index" && item.reason === RESERVED_WORD_REASON),
     )
     .map((item) => ({ kind: item.kind, key: item.key, label: item.label }))
     .sort((left, right) => (left.key < right.key ? -1 : left.key > right.key ? 1 : 0));
@@ -177,7 +182,7 @@ function parseUnpulled(text: string, path: string): readonly UnpulledObject[] {
     const key = item["key"];
     const label = item["label"];
     if (
-      (kind !== "column" && kind !== "constraint") ||
+      (kind !== "column" && kind !== "constraint" && kind !== "index") ||
       typeof key !== "string" ||
       key.length === 0
     ) {

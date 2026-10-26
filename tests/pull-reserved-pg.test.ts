@@ -100,6 +100,99 @@ postgresTest(
   90_000,
 );
 
+postgresTest(
+  gate,
+  "an index on a reserved column is kept by check and push",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = mkdtempSync(join(tmpdir(), "okm-pull-reserved-idx-"));
+    try {
+      writeConfig(cwd, database.url);
+      linkOkmodel(cwd);
+      await seed(
+        database.url,
+        `create table shop (
+           id int primary key,
+           "order" int check ("order" > 0),
+           note text
+         );
+         create index shop_order_idx on shop("order");`,
+      );
+      const report = await cli(cwd, ["pull"]);
+      expect(report).toContain("shop.order");
+      expect(report).toContain("shop.shop_order_idx");
+      const record = readFileSync(join(cwd, ".okm", "pull.json"), "utf8");
+      expect(record).toContain("shop.order");
+      expect(record).toContain("shop.shop_order_idx");
+      useSourceImports(cwd);
+      const pushed = await cli(cwd, ["push"]);
+      expect(pushed).not.toContain("OKM1122");
+      expect(pushed.toLowerCase()).not.toContain("drop index");
+      const checked = await cli(cwd, ["check"]);
+      expect(checked).toMatch(/ok\n$/);
+      expect(checked).not.toContain("OKM1122");
+      const indexes = await query(
+        database.url,
+        `select string_agg(indexname, ',' order by indexname) as names
+           from pg_indexes where tablename = 'shop'`,
+      );
+      expect(indexes[0]?.["names"]).toBe("shop_order_idx,shop_pkey");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  90_000,
+);
+
+postgresTest(
+  gate,
+  "a reserved index name is recorded and push does not drop it",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = mkdtempSync(join(tmpdir(), "okm-pull-reserved-name-"));
+    try {
+      writeConfig(cwd, database.url);
+      linkOkmodel(cwd);
+      await seed(
+        database.url,
+        `create table shop (id int primary key, note text);
+         create index "Order" on shop(note);
+         alter table shop add constraint "select" check (id > 0);`,
+      );
+      const report = await cli(cwd, ["pull"]);
+      expect(report).toContain("not pulled yet");
+      expect(report).toContain("shop.Order");
+      expect(report).toContain("shop.select");
+      const record = readFileSync(join(cwd, ".okm", "pull.json"), "utf8");
+      expect(record).toContain("shop.Order");
+      expect(record).toContain('"kind": "index"');
+      useSourceImports(cwd);
+      const pushed = await cli(cwd, ["push"]);
+      expect(pushed).not.toContain("OKM1122");
+      expect(pushed.toLowerCase()).not.toContain("drop index");
+      const checked = await cli(cwd, ["check"]);
+      expect(checked).toMatch(/ok\n$/);
+      const indexes = await query(
+        database.url,
+        `select string_agg(indexname, ',' order by indexname) as names
+           from pg_indexes where tablename = 'shop'`,
+      );
+      expect(indexes[0]?.["names"]).toBe("Order,shop_pkey");
+      const constraints = await query(
+        database.url,
+        `select string_agg(conname, ',' order by conname) as names
+           from pg_constraint where conrelid = 'shop'::regclass`,
+      );
+      expect(String(constraints[0]?.["names"])).toContain("select");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  90_000,
+);
+
 async function seed(url: string, statement: string): Promise<void> {
   const sql = openPostgres(url);
   try {
