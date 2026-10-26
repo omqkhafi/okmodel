@@ -50,6 +50,7 @@ import { sqlQuoteOpen } from "./sql-lex.js";
 import { canonicalTypeName } from "./type-name.js";
 import { sealLowered, type DdlDialect, type DdlStep } from "../../dialects/ddl.js";
 import { ddlStep as step } from "../../dialects/ddl-step.js";
+import { visibleExtensionType } from "../../dialects/pg/extension-type.js";
 import { postgresDialect } from "./postgres-dialect.js";
 import { assertNoChains, type Replacement } from "./values.js";
 
@@ -219,6 +220,7 @@ export function planMigration(
   const replacements = request.replacements ?? [];
   assertNoChains(replacements);
   const renamed = applyRenames(request.before, renames);
+  const extensionSchemas = extensionSchemaIndex(renamed, request.after);
   const beforeList = index(renamed);
   const afterList = index(request.after);
   const beforeBy = new Map(beforeList.map((item) => [item.key, item.object]));
@@ -247,7 +249,7 @@ export function planMigration(
   }
   for (const item of afterList) {
     const previous = beforeBy.get(item.key);
-    if (previous === undefined || sameDefinition(previous, item.object)) continue;
+    if (previous === undefined || sameDefinition(previous, item.object, extensionSchemas)) continue;
     if (handsOff(item.object) || childOfHandsOff(item.object, afterBy)) continue;
     if (previous.kind === "extension" && item.object.kind === "extension") continue;
     if (previous.kind === "role" && item.object.kind === "role") continue;
@@ -554,7 +556,7 @@ export function planMigration(
     steps.push(...take(dialect.lower({ op: "create-policy", object, schema })));
   }
   for (const change of replaces) {
-    if (sameDefinition(change.before, change.after)) continue;
+    if (sameDefinition(change.before, change.after, extensionSchemas)) continue;
     const key = identityKey(change.after.identity);
     if (dropKeys.has(key) && createKeys.has(key)) continue;
     if (change.kind === "function" && change.after.kind === "function") {
@@ -1875,7 +1877,63 @@ function releaseHandsOff(
   }
 }
 
-function sameDefinition(left: CatalogObject, right: CatalogObject): boolean {
+/**
+ * Install schema of every extension in either catalog.
+ *
+ * A move keeps both names so `extensions.ltree` and `public.ltree` compare
+ * as `ltree`. The extension alter is a separate step.
+ *
+ * @param before - Catalog already applied
+ * @param after - Catalog the plan must reach
+ * @returns Extension name to the schemas it is installed in
+ */
+function extensionSchemaIndex(
+  before: Catalog,
+  after: Catalog,
+): ReadonlyMap<string, readonly string[]> {
+  const schemas = new Map<string, string[]>();
+  for (const catalog of [before, after]) {
+    for (const object of catalog.objects) {
+      if (object.kind !== "extension") continue;
+      const known = schemas.get(object.identity.name);
+      const home = object.definition.schema;
+      if (known === undefined) schemas.set(object.identity.name, [home]);
+      else if (!known.includes(home)) known.push(home);
+    }
+  }
+  return schemas;
+}
+
+/**
+ * Column type with the extension's install schema removed.
+ *
+ * `t.ltree()` stores `ltree`. Introspection of an extension installed in
+ * `extensions` stores `extensions.ltree` until the qualifier is dropped.
+ * A custom type written as `extensions.hstore` compares as `hstore`.
+ *
+ * @param column - Column that may depend on an extension
+ * @param schemas - Install schemas from {@link extensionSchemaIndex}
+ * @returns The type name used for equality
+ */
+function comparedExtensionType(
+  column: ColumnObject,
+  schemas: ReadonlyMap<string, readonly string[]>,
+): string {
+  let typeName = column.definition.dataType;
+  for (const edge of column.dependencies) {
+    if (edge.target.kind !== "extension") continue;
+    const homes = schemas.get(edge.target.name);
+    if (homes === undefined) continue;
+    for (const home of homes) typeName = visibleExtensionType(typeName, home);
+  }
+  return typeName;
+}
+
+function sameDefinition(
+  left: CatalogObject,
+  right: CatalogObject,
+  schemas: ReadonlyMap<string, readonly string[]>,
+): boolean {
   if (left.kind === "materializedView" && right.kind === "materializedView") {
     return (
       stable(canonicalColumns(left.definition.columns)) ===
@@ -1883,7 +1941,7 @@ function sameDefinition(left: CatalogObject, right: CatalogObject): boolean {
       left.definition.query === right.definition.query
     );
   }
-  return stable(forComparison(left)) === stable(forComparison(right));
+  return stable(forComparison(left, schemas)) === stable(forComparison(right, schemas));
 }
 
 /**
@@ -1905,14 +1963,18 @@ function sameDefinition(left: CatalogObject, right: CatalogObject): boolean {
  * introspection cannot tell it from an absent action.
  *
  * @param object - One side of the diff
+ * @param schemas - Install schemas of each extension, from both catalogs
  * @returns The definition, with type names in the long spelling
  */
-function forComparison(object: CatalogObject): unknown {
+function forComparison(
+  object: CatalogObject,
+  schemas: ReadonlyMap<string, readonly string[]>,
+): unknown {
   switch (object.kind) {
     case "column":
       return {
         ...object.definition,
-        dataType: canonicalTypeName(object.definition.dataType),
+        dataType: canonicalTypeName(comparedExtensionType(object, schemas)),
         ...canonicalDefault(object.definition.defaultExpression, object.definition.dataType),
       };
     case "sequence":

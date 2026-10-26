@@ -28,6 +28,7 @@ import {
 } from "../../contracts/catalog/view.js";
 import { VIEW_DEPENDENCIES, viewDependencyEdges } from "./view/depend.js";
 import { quoteIdent, typeRef } from "./ddl.js";
+import { visibleExtensionType } from "./extension-type.js";
 import { quoteLiteral } from "./quote.js";
 import { withUnvalidatedNotNull } from "../../contracts/catalog/not-null.js";
 import { unvalidatedNotNullSql } from "./not-null.js";
@@ -62,10 +63,12 @@ export type IntrospectOptions = {
    */
   readonly reportingRole?: string;
   /**
-   * Extensions installed in another schema whose types this schema uses.
+   * Extension names to read even when they are installed in another schema.
    *
    * Each is read as an extension row, with the schema it is really installed
    * in. `okm migrate check` passes the extensions it replays without moving.
+   * A column type or an index operator class also pulls in its extension
+   * when that extension lives outside the schema being read.
    */
   readonly hostedExtensions?: readonly string[];
 };
@@ -201,6 +204,8 @@ export async function introspectSchema(
     domainNames.add(name);
     objects.push(domainType({ namespace, name, base: domain.base, check, provenance }));
   }
+  const extensionHomes = new Map<string, string>();
+  for (const row of extensions) extensionHomes.set(text(row, "name"), text(row, "schema"));
   for (const row of columns) {
     const parentName = text(row, "parent");
     const parent = parents.get(parentName) ?? { namespace, name: parentName };
@@ -209,9 +214,11 @@ export async function introspectSchema(
     const expression = text(row, "expression");
     const collation = text(row, "collation");
     const sequenceName = text(row, "sequence");
-    const dataType = text(row, "type");
-    const extra: ObjectIdentity[] = [];
     const extensionName = text(row, "extension");
+    const home = extensionName.length > 0 ? extensionHomes.get(extensionName) : undefined;
+    const dataType =
+      home === undefined ? text(row, "type") : visibleExtensionType(text(row, "type"), home);
+    const extra: ObjectIdentity[] = [];
     if (extensionName.length > 0) extra.push({ kind: "extension", name: extensionName });
     const owned = sequenceIdentity.get(sequenceName);
     if (owned !== undefined) extra.push(owned);
@@ -1582,12 +1589,54 @@ const ENUMS = `
   order by t.typname, e.enumsortorder
 `;
 
+/**
+ * Extensions installed in this schema, named by the caller, or used by an
+ * object in this schema.
+ *
+ * A type such as `ltree` and an operator class such as `gin_trgm_ops` are
+ * members of the extension. The column or index that uses them may live in
+ * `public` while the extension is installed in `extensions`. The dependency
+ * check needs that extension row or it reports the column depends on an
+ * extension which is not in the catalog.
+ */
 const EXTENSIONS = `
   select e.extname as name, n.nspname as schema, e.extrelocatable as relocatable,
     e.extversion as version
   from pg_extension e
   join pg_namespace n on n.oid = e.extnamespace
-  where n.nspname = $1 or e.extname in (select jsonb_array_elements_text($2::text::jsonb))
+  where n.nspname = $1
+    or e.extname in (select jsonb_array_elements_text($2::text::jsonb))
+    or exists (
+      select 1
+      from pg_depend d
+      join pg_depend m
+        on m.classid = d.refclassid
+       and m.objid = d.refobjid
+       and m.refclassid = 'pg_extension'::regclass
+       and m.deptype = 'e'
+       and m.refobjid = e.oid
+      where d.deptype in ('n', 'a')
+        and case d.classid
+          when 'pg_class'::regclass
+            then (select c.relnamespace from pg_class c where c.oid = d.objid)
+          when 'pg_attrdef'::regclass
+            then (
+              select c.relnamespace from pg_attrdef a
+              join pg_class c on c.oid = a.adrelid
+              where a.oid = d.objid
+            )
+          when 'pg_constraint'::regclass
+            then (
+              select c.relnamespace from pg_constraint k
+              join pg_class c on c.oid = k.conrelid
+              where k.oid = d.objid
+            )
+          when 'pg_proc'::regclass
+            then (select p.pronamespace from pg_proc p where p.oid = d.objid)
+          when 'pg_type'::regclass
+            then (select t.typnamespace from pg_type t where t.oid = d.objid)
+        end = (select oid from pg_namespace where nspname = $1)
+    )
 `;
 
 const FUNCTIONS = `
