@@ -33,19 +33,17 @@ db.docs.update(
   { allow: ["position"] },
 );
 
-db.docs.update(
-  {
-    where: { id: "1" },
-    set: {
-      title: "b",
-      // @ts-expect-error position is guarded unless allow names it
-      position: 1,
-    },
-    limit: 1,
-    lock: "skip",
-    version: "any",
+db.docs.update({
+  where: { id: "1" },
+  set: {
+    title: "b",
+    // @ts-expect-error position is guarded unless allow names it
+    position: 1,
   },
-);
+  limit: 1,
+  lock: "skip",
+  version: "any",
+});
 
 db.docs.update(
   {

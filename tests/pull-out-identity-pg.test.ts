@@ -87,12 +87,10 @@ postgresTest(
           order by table_name, column_name`,
       );
       expect(columns).toEqual(
-        [...TABLES]
-          .sort()
-          .flatMap((table) => [
-            { table_name: table, column_name: "id" },
-            { table_name: table, column_name: "v" },
-          ]),
+        [...TABLES].sort().flatMap((table) => [
+          { table_name: table, column_name: "id" },
+          { table_name: table, column_name: "v" },
+        ]),
       );
       const rows = await query(
         database.url,

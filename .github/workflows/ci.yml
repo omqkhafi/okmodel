@@ -413,7 +413,21 @@ jobs:
   check:
     name: gate / check
     needs:
-      [changes, lint, types, build, test, size, pull, paths, suite, lifecycle, composition, site, pack]
+      [
+        changes,
+        lint,
+        types,
+        build,
+        test,
+        size,
+        pull,
+        paths,
+        suite,
+        lifecycle,
+        composition,
+        site,
+        pack,
+      ]
     if: always()
     runs-on: ubuntu-24.04
     permissions:
