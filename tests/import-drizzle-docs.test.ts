@@ -6,7 +6,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 
-import type { Catalog, CatalogObject } from "../src/contracts/catalog/types.js";
+import type { Catalog, CatalogObject, IndexObject } from "../src/contracts/catalog/types.js";
 import { importDrizzle } from "../src/tooling/migrate/import-drizzle.js";
 import { loadSchema } from "../src/tooling/migrate/project.js";
 import { repoRoot } from "../scripts/root.js";
@@ -24,10 +24,11 @@ test("import drizzle matches the docs table shapes", async () => {
     rewriteAdoptedImports(join(cwd, "adopted"));
     const built = await loadSchema(cwd, "./adopted/schema.ts");
     expect(bare(built.catalog)).toEqual(bare(docs.catalog));
-    const index = built.catalog.objects.find(
-      (object) => object.kind === "index" && object.identity.parent.name === "posts",
+    const postsIndex = built.catalog.objects.find(
+      (object): object is IndexObject =>
+        object.kind === "index" && object.identity.parent.name === "posts",
     );
-    expect(index?.identity.name).toBe("posts_content_idx");
+    expect(postsIndex?.identity.name).toBe("posts_content_idx");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

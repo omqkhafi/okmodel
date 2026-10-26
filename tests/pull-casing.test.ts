@@ -16,7 +16,7 @@ import { emitPull, formatPullReport } from "../src/tooling/migrate/pull-emit.js"
 import { parsePullArgs } from "../src/tooling/migrate/pull.js";
 
 const ns: Namespace = { form: "static", name: "public" };
-const provenance = { origin: "database" as const, name: "public" };
+const provenance = { origin: "file" as const, name: "public" };
 const root = repoRoot();
 
 function notes(): CatalogObject[] {
