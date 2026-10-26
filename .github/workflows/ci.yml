@@ -10,7 +10,9 @@ name: CI
 # workflow again, because the title lint is part of the gate. A body edit
 # does not replace that result: the gate repeats the last conclusion for
 # the commit. Site tests run when the diff touches src/tooling or
-# src/dialects. The Site workflow is not required.
+# src/dialects. The Site workflow is not required. The pack contract runs
+# when the diff touches src/, scripts/, or package.json. A drift fails
+# with `bun ./scripts/pack-contract.ts --update`.
 on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
@@ -35,6 +37,7 @@ jobs:
       lifecycle: ${{ steps.plan.outputs.lifecycle }}
       composition: ${{ steps.plan.outputs.composition }}
       site: ${{ steps.plan.outputs.site }}
+      pack: ${{ steps.plan.outputs.pack }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -383,10 +386,34 @@ jobs:
         env:
           POSTGRES_VERSION: "18"
 
+  pack:
+    name: package / contract
+    needs: [build, changes]
+    if: (github.event.action != 'edited' || github.event.changes.title) && needs.changes.outputs.pack == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup
+        uses: ./.github/actions/setup-bun
+
+      - name: Download dist
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+
+      - name: Dist is present
+        run: test -f dist/contracts/index.js
+
+      - name: Pack contract
+        run: bun run pack-contract
+
   check:
     name: gate / check
     needs:
-      [changes, lint, types, build, test, size, pull, paths, suite, lifecycle, composition, site]
+      [changes, lint, types, build, test, size, pull, paths, suite, lifecycle, composition, site, pack]
     if: always()
     runs-on: ubuntu-24.04
     permissions:
@@ -407,6 +434,7 @@ jobs:
           --lifecycle ${{ needs.changes.outputs.lifecycle == 'true' && '1' || '0' }}
           --composition ${{ needs.changes.outputs.composition == 'true' && '1' || '0' }}
           --site ${{ needs.changes.outputs.site == 'true' && '1' || '0' }}
+          --pack ${{ needs.changes.outputs.pack == 'true' && '1' || '0' }}
           changes=${{ needs.changes.result }}
           lint=${{ needs.lint.result }}
           types=${{ needs.types.result }}
@@ -419,6 +447,7 @@ jobs:
           lifecycle=${{ needs.lifecycle.result }}
           composition=${{ needs.composition.result }}
           site=${{ needs.site.result }}
+          pack=${{ needs.pack.result }}
 
       - name: Mirror the last gate on a body edit
         if: github.event.action == 'edited' && github.event.changes.title == null

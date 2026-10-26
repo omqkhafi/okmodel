@@ -8,14 +8,17 @@
  *
  *   bun ./scripts/ci-paths.ts --base <sha> --head <sha>
  *
- * Writes `runtime=`, `workflows=`, `postgres=`, `lifecycle=`, and `site=` lines
- * to `GITHUB_OUTPUT` when that file is set, and always prints the same lines.
+ * Writes `runtime=`, `workflows=`, `postgres=`, `lifecycle=`, `site=`, and
+ * `pack=` lines to `GITHUB_OUTPUT` when that file is set, and always prints
+ * the same lines.
  * `postgres` is true when the diff touches dialects, migrate, or runtime: the
  * pull request then runs Postgres 18. `lifecycle` is true when the diff
  * touches dialects, migrate, or `tests/lifecycle`: the pull request then runs
  * the migration lifecycle property on Postgres 18. `site` is true when the
  * diff touches `src/tooling` or `src/dialects`: the pull request then runs the
  * site tests, because that is where CLI output the hero reads is produced.
+ * `pack` is true when the diff touches `src/`, `scripts/`, or `package.json`:
+ * the pull request then runs the pack contract against `dist`.
  */
 
 import { appendFileSync } from "node:fs";
@@ -128,6 +131,27 @@ export function siteTestsRelevant(paths: readonly string[]): boolean {
   );
 }
 
+/**
+ * Whether a pull request runs the pack contract inside `gate / check`.
+ *
+ * The packed file list drifts when `src/`, `scripts/`, or `package.json`
+ * changes. The after-merge job still runs it on main. A pull request that
+ * does not touch those paths skips it.
+ *
+ * @param paths - Paths from the repository root
+ * @returns True when any path is in those trees
+ */
+export function packContractRelevant(paths: readonly string[]): boolean {
+  return paths.some(
+    (path) =>
+      path === "package.json" ||
+      path === "src" ||
+      path.startsWith("src/") ||
+      path === "scripts" ||
+      path.startsWith("scripts/"),
+  );
+}
+
 function isDocsPath(path: string): boolean {
   return path === "docs" || path.startsWith("docs/");
 }
@@ -167,7 +191,8 @@ function writeOutputs(paths: readonly string[]): void {
     `postgres=${postgres18Relevant(paths) ? "true" : "false"}\n` +
     `lifecycle=${lifecycleRelevant(paths) ? "true" : "false"}\n` +
     `composition=${compositionRelevant(paths) ? "true" : "false"}\n` +
-    `site=${siteTestsRelevant(paths) ? "true" : "false"}\n`;
+    `site=${siteTestsRelevant(paths) ? "true" : "false"}\n` +
+    `pack=${packContractRelevant(paths) ? "true" : "false"}\n`;
   const output = process.env.GITHUB_OUTPUT;
   if (output !== undefined && output.length > 0) appendFileSync(output, text);
   process.stdout.write(text);

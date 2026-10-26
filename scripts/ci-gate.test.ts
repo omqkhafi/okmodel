@@ -154,6 +154,48 @@ test("a pull request that does not touch tooling or dialects allows a skipped si
   ).toEqual([]);
 });
 
+test("the pack contract must succeed when src, scripts, or package.json changed", () => {
+  const skipped = [...READY, { name: "pack", result: "skipped" }];
+  expect(
+    gateFailures(skipped, { postgres: false, lifecycle: false, site: false, pack: true }).map(
+      (slice) => slice.name,
+    ),
+  ).toEqual(["pack"]);
+  expect(
+    gateFailures([...READY, { name: "pack", result: "failure" }], {
+      postgres: false,
+      lifecycle: false,
+      site: false,
+      pack: true,
+    }).map((slice) => slice.name),
+  ).toEqual(["pack"]);
+  expect(
+    gateFailures([...READY, { name: "pack", result: "success" }], {
+      postgres: false,
+      lifecycle: false,
+      site: false,
+      pack: true,
+    }),
+  ).toEqual([]);
+});
+
+test("a pull request that does not touch those paths allows a skipped pack job", () => {
+  expect(
+    gateFailures([...READY, { name: "pack", result: "skipped" }], {
+      postgres: false,
+      lifecycle: false,
+      site: false,
+    }),
+  ).toEqual([]);
+  expect(
+    gateFailures([...READY, { name: "pack", result: "failure" }], {
+      postgres: false,
+      lifecycle: false,
+      site: false,
+    }).map((slice) => slice.name),
+  ).toEqual(["pack"]);
+});
+
 test("parseGateSlices reads name=result and ignores flags", () => {
   expect(parseGateSlices(["lint=success", "suite=skipped", "--postgres"])).toEqual([
     { name: "lint", result: "success" },
