@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { OkmError } from "../src/contracts/error.js";
-import { sealLowered, type DdlDialect } from "../src/dialects/ddl.js";
+import { requireLowered, sealLowered, type DdlDialect } from "../src/dialects/ddl.js";
 import { ddlStep } from "../src/dialects/ddl-step.js";
 import { classOf } from "../src/dialects/step-class.js";
 import { fn } from "../src/dialects/pg/fn/index.js";
@@ -263,6 +263,8 @@ test("a lowered step has sql, a kind, and that kind's class", () => {
   expect(sealLowered(steps)).toBe(steps);
 
   const blank = caught(() => sealLowered([{ ...step!, sql: "  " }]));
+  const untyped = caught(() => sealLowered([{ ...step!, sql: undefined as unknown as string }]));
+  const missingResult = caught(() => requireLowered(undefined));
   const missing = caught(() =>
     sealLowered([
       {
@@ -276,9 +278,13 @@ test("a lowered step has sql, a kind, and that kind's class", () => {
   );
   const lied = caught(() => sealLowered([{ ...step!, class: "expand" }]));
   expect(blank).toBeInstanceOf(OkmError);
+  expect(untyped).toBeInstanceOf(OkmError);
+  expect(missingResult).toBeInstanceOf(OkmError);
   expect(missing).toBeInstanceOf(OkmError);
   expect(lied).toBeInstanceOf(OkmError);
   if (blank instanceof OkmError) expect(blank.code).toBe("OKM1559");
+  if (untyped instanceof OkmError) expect(untyped.code).toBe("OKM1559");
+  if (missingResult instanceof OkmError) expect(missingResult.code).toBe("OKM1559");
   if (missing instanceof OkmError) {
     expect(missing.code).toBe("OKM1559");
     expect(missing.message).toContain("no kind");

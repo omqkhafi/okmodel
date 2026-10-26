@@ -1091,7 +1091,8 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   {
     code: "OKM1894",
     title: "Testing object exists",
-    summary: "testing() found a table or extension that already exists in the database.",
+    summary:
+      "testing() found a table, type, or extension that already exists in the database. Two testing() calls on one database hit the same code.",
     fix: "Use an empty database, or pass migrate: false when the schema is already applied.",
     since: "0.10",
   },
@@ -1108,6 +1109,14 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     summary:
       "A check, picklist, domain check, generated column, or btree index expression is reprinted on a temporary table. This connection is read-only, or the role cannot create temporary tables.",
     fix: "Point the command at a writable primary. The role needs TEMP on the database. It does not need CREATE on the schema. Parallel runs use a random temporary name.",
+    since: "0.10",
+  },
+  {
+    code: "OKM1897",
+    title: "Pull left objects behind",
+    summary:
+      "okm push would drop a column or constraint that okm pull listed under not pulled yet.",
+    fix: "Those columns and constraints stay in the database. Pull did not write them, so push does not drop them.",
     since: "0.10",
   },
   {
@@ -1160,7 +1169,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   // Reserved, not registered (no raising path): version OKM1804–OKM1809,
   // extension OKM1815–OKM1819, feature refusal OKM1861 and OKM1868–OKM1879,
   // adapter capability refusal OKM1880 and OKM1889. OKM1881–OKM1888 (agent files) and
-  // OKM1890–OKM1896 are registered.
+  // OKM1890–OKM1897 are registered.
   // OKM1140–OKM1179 stay reserved (D291).
 ];
 

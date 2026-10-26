@@ -131,6 +131,23 @@ export function identity<const TAs extends BigintAs = "string">(options?: {
 }
 
 /**
+ * `integer` identity column, `GENERATED ALWAYS AS IDENTITY`.
+ *
+ * Insert and update omit it. The sequence type is `integer`, so an existing
+ * `t.identity()` bigint sequence stays a bigint.
+ *
+ * @returns An identity column
+ */
+export function integerIdentity(): ColumnBuilder<number, IdentityFlags> {
+  return openColumn({
+    ...identityFlags(),
+    baseType: "integer",
+    encode: (value: number) => integerToken(value, -2_147_483_648, 2_147_483_647, "integer"),
+    decode: (wire) => decodeBounded(wire, -2_147_483_648, 2_147_483_647, "integer"),
+  }) as unknown as ColumnBuilder<number, IdentityFlags>;
+}
+
+/**
  * Encodes a bigint decimal string.
  *
  * @param value - Decimal integer

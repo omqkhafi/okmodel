@@ -10,7 +10,7 @@ import { custom } from "./custom.js";
 import { double, numeric, real } from "./decimal.js";
 import { domain, enumColumn } from "./enum.js";
 import { line, point } from "./geometry.js";
-import { bigint, identity, integer, smallint } from "./integer.js";
+import { bigint, identity, integer, integerIdentity, smallint } from "./integer.js";
 import { json, jsonb } from "./json.js";
 import { id, uuid } from "./keys.js";
 import { cidr, inet, macaddr, macaddr8 } from "./network.js";
@@ -25,6 +25,7 @@ import { date, interval, time, timestamp, timestamptz, timetz } from "./time.js"
 export const t = {
   id,
   identity,
+  integerIdentity,
   uuid,
   smallint,
   integer,

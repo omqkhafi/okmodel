@@ -10,7 +10,8 @@
 import { catalog } from "../../contracts/catalog/build.js";
 import { OkmError } from "../../contracts/error.js";
 import { domainType, enumType } from "../../contracts/catalog/enum.js";
-import { staticNamespace } from "../../contracts/catalog/identity.js";
+import { identityKey, staticNamespace } from "../../contracts/catalog/identity.js";
+import { isReservedIdentifier } from "../../contracts/catalog/identifier.js";
 import { extensionObject } from "../../contracts/catalog/extension.js";
 import { column, constraint, index, sequence, table } from "../../contracts/catalog/object.js";
 import { policyObject } from "../../contracts/catalog/policy.js";
@@ -27,7 +28,7 @@ import {
   viewObject,
 } from "../../contracts/catalog/view.js";
 import { VIEW_DEPENDENCIES, viewDependencyEdges } from "./view/depend.js";
-import { quoteIdent, typeRef } from "./ddl.js";
+import { qualify, quoteIdent, typeRef } from "./ddl.js";
 import { visibleExtensionType } from "../extension-type.js";
 import { quoteLiteral } from "./quote.js";
 import { withUnvalidatedNotNull } from "../../contracts/catalog/not-null.js";
@@ -71,7 +72,45 @@ export type IntrospectOptions = {
    * when that extension lives outside the schema being read.
    */
   readonly hostedExtensions?: readonly string[];
+  /**
+   * Objects whose names `table()` would reject as reserved words.
+   *
+   * Set by `okm pull`. Those columns, constraints, and indexes are left out
+   * of the catalog and recorded here. Drift and check omit this list, so
+   * they still refuse a reserved word instead of dropping it quietly.
+   */
+  readonly reserved?: IntrospectSkip[];
 };
+
+/** One object pull left out because `table()` rejects a reserved word. */
+export type IntrospectSkip = {
+  readonly kind: "column" | "constraint" | "index";
+  /** {@link identityKey} of the object that was not stored. */
+  readonly key: string;
+  /** `table.column` or `table.constraint`. */
+  readonly label: string;
+  readonly reason: string;
+};
+
+const RESERVED_REASON = "table() rejects a reserved word";
+
+function leaveReserved(
+  skipped: IntrospectSkip[] | undefined,
+  kind: IntrospectSkip["kind"],
+  parent: ObjectRef,
+  name: string,
+  words: readonly string[],
+): boolean {
+  if (skipped === undefined) return false;
+  if (!words.some((word) => isReservedIdentifier(word))) return false;
+  skipped.push({
+    kind,
+    key: identityKey({ kind, parent, name }),
+    label: `${parent.name}.${name}`,
+    reason: RESERVED_REASON,
+  });
+  return true;
+}
 
 /** A connection that can run one query. Parameters are `$1`, `$2`, … */
 export type CatalogQuery = {
@@ -225,11 +264,13 @@ export async function introspectSchema(
     if (enumLabels.has(dataType) || domainNames.has(dataType)) {
       extra.push({ kind: "type", namespace, name: dataType });
     }
+    const columnName = text(row, "name");
+    if (leaveReserved(options?.reserved, "column", parent, columnName, [columnName])) continue;
     const notNull = flag(row, "not_null");
     const unvalidated = notNull ? text(row, "not_null_unvalidated") : "";
     const built: ColumnObject = column({
       parent,
-      name: text(row, "name"),
+      name: columnName,
       dataType,
       nullable: !notNull,
       provenance,
@@ -255,6 +296,15 @@ export async function introspectSchema(
     const definition = text(row, "definition");
     const onDelete = actionAfter(definition, "delete");
     const onUpdate = actionAfter(definition, "update");
+    if (
+      leaveReserved(options?.reserved, "constraint", parent, name, [
+        name,
+        ...columns,
+        ...refColumns,
+      ])
+    ) {
+      continue;
+    }
     objects.push(
       constraint({
         parent,
@@ -289,14 +339,18 @@ export async function introspectSchema(
   for (const row of indexes) {
     const parentName = text(row, "parent");
     const parent = parents.get(parentName) ?? { namespace, name: parentName };
+    const indexName = text(row, "name");
     if (matviewNames.has(parentName)) {
       const columns = list(text(row, "columns"));
+      if (leaveReserved(options?.reserved, "index", parent, indexName, [indexName, ...columns])) {
+        continue;
+      }
       const predicate = text(row, "predicate");
       const expression = indexExpression(row, columns);
       objects.push(
         materializedViewIndex({
           parent,
-          name: text(row, "name"),
+          name: indexName,
           columns,
           unique: flag(row, "is_unique"),
           provenance,
@@ -307,12 +361,15 @@ export async function introspectSchema(
       continue;
     }
     const columns = list(text(row, "columns"));
+    if (leaveReserved(options?.reserved, "index", parent, indexName, [indexName, ...columns])) {
+      continue;
+    }
     const predicate = text(row, "predicate");
     const expression = indexExpression(row, columns);
     objects.push(
       index({
         parent,
-        name: text(row, "name"),
+        name: indexName,
         nameKey: columns.length > 0 ? columns.join("_") : "expr",
         columns,
         unique: flag(row, "is_unique"),
@@ -912,6 +969,7 @@ export type ReprintType = {
  * @param expression - Check expression without the `CHECK` keyword
  * @param columns - Scratch columns. Defaults to `id integer` and `title text`
  * @param types - Enums and domains the columns may name, with the labels or base to rebuild
+ * @param extensions - Extension type name to the schema that owns it. An enum or domain keeps its stand-in
  * @returns The reprinted expression, without the `CHECK` keyword
  */
 export async function reprintCheck(
@@ -922,9 +980,10 @@ export async function reprintCheck(
     { name: "title", dataType: "text" },
   ],
   types: readonly ReprintType[] = [],
+  extensions: ReadonlyMap<string, string> = NO_EXTENSION_SCHEMAS,
 ): Promise<string> {
   return reprintUntilStable(expression, (current) =>
-    reprintCheckOnce(runner, current, columns, types),
+    reprintCheckOnce(runner, current, columns, types, extensions),
   );
 }
 
@@ -933,18 +992,23 @@ async function reprintCheckOnce(
   expression: string,
   columns: readonly ReprintCheckColumn[],
   types: readonly ReprintType[],
+  extensions: ReadonlyMap<string, string>,
 ): Promise<string> {
   const table = scratchName("okm_expr");
   const standIns = await createStandIns(
     runner,
     columns.map((column) => column.dataType),
     types,
+    extensions,
   );
   try {
     const defs =
       columns.length > 0
         ? columns
-            .map((column) => `${quoteIdent(column.name)} ${standInType(column.dataType, types)}`)
+            .map(
+              (column) =>
+                `${quoteIdent(column.name)} ${standInType(column.dataType, types, extensions)}`,
+            )
             .join(", ")
         : "id integer";
     await runner.query(`create temp table ${table} (${defs})`);
@@ -1028,6 +1092,7 @@ export type ReprintedIndex = {
  * @param columns - Columns of the parent table, so the expression resolves
  * @param types - Enums and domains the columns may name
  * @param options - Uniqueness and the partial predicate, when the index has one
+ * @param extensions - Extension type name to the schema that owns it
  * @returns The reprinted expression, key columns, and predicate
  */
 export async function reprintIndex(
@@ -1036,6 +1101,7 @@ export async function reprintIndex(
   columns: readonly ReprintCheckColumn[] = [],
   types: readonly ReprintType[] = [],
   options?: { readonly unique?: boolean; readonly predicate?: string },
+  extensions: ReadonlyMap<string, string> = NO_EXTENSION_SCHEMAS,
 ): Promise<ReprintedIndex> {
   if (/^using\s/i.test(expression)) {
     return { expression, columns: [], predicate: options?.predicate ?? "" };
@@ -1046,10 +1112,17 @@ export async function reprintIndex(
     predicate: options?.predicate ?? "",
   };
   for (let pass = 0; pass < REPRINT_PASSES; pass += 1) {
-    const next = await reprintIndexOnce(runner, printed.expression, columns, types, {
-      unique: options?.unique === true,
-      ...(printed.predicate.length > 0 ? { predicate: printed.predicate } : {}),
-    });
+    const next = await reprintIndexOnce(
+      runner,
+      printed.expression,
+      columns,
+      types,
+      {
+        unique: options?.unique === true,
+        ...(printed.predicate.length > 0 ? { predicate: printed.predicate } : {}),
+      },
+      extensions,
+    );
     if (
       pass > 0 &&
       next.expression === printed.expression &&
@@ -1069,6 +1142,7 @@ async function reprintIndexOnce(
   columns: readonly ReprintCheckColumn[],
   types: readonly ReprintType[],
   options: { readonly unique: boolean; readonly predicate?: string },
+  extensions: ReadonlyMap<string, string>,
 ): Promise<ReprintedIndex> {
   const table = scratchName("okm_idx");
   const index = scratchName("okm_idx");
@@ -1076,12 +1150,16 @@ async function reprintIndexOnce(
     runner,
     columns.map((column) => column.dataType),
     types,
+    extensions,
   );
   try {
     const defs =
       columns.length > 0
         ? columns
-            .map((column) => `${quoteIdent(column.name)} ${standInType(column.dataType, types)}`)
+            .map(
+              (column) =>
+                `${quoteIdent(column.name)} ${standInType(column.dataType, types, extensions)}`,
+            )
             .join(", ")
         : "id integer";
     await runner.query(`create temp table ${table} (${defs})`);
@@ -1146,6 +1224,7 @@ export type ReprintTrigger = {
  * @param trigger - Timing, events, and level of the trigger that carries it
  * @param columns - Columns of the table the trigger is on
  * @param types - Enums and domains the columns may name, with the labels or base to rebuild
+ * @param extensions - Extension type name to the schema that owns it
  * @returns The reprinted expression, or `undefined` when this server refuses the scratch trigger
  */
 export async function reprintTriggerWhen(
@@ -1154,6 +1233,7 @@ export async function reprintTriggerWhen(
   trigger: ReprintTrigger,
   columns: readonly ReprintCheckColumn[],
   types: readonly ReprintType[] = [],
+  extensions: ReadonlyMap<string, string> = NO_EXTENSION_SCHEMAS,
 ): Promise<string | undefined> {
   const table = scratchName("okm_when");
   const fn = scratchName("okm_when_fn");
@@ -1161,12 +1241,16 @@ export async function reprintTriggerWhen(
     runner,
     columns.map((column) => column.dataType),
     types,
+    extensions,
   );
   try {
     const defs =
       columns.length > 0
         ? columns
-            .map((column) => `${quoteIdent(column.name)} ${standInType(column.dataType, types)}`)
+            .map(
+              (column) =>
+                `${quoteIdent(column.name)} ${standInType(column.dataType, types, extensions)}`,
+            )
             .join(", ")
         : "id integer";
     await runner.query(`create temp table ${table} (${defs})`);
@@ -1211,6 +1295,7 @@ export async function reprintTriggerWhen(
  * @param base - Domain base type, as Postgres `format_type` spells it
  * @param expression - Check expression without the `CHECK` keyword
  * @param types - Enums and domains `base` may name, with the labels or base to rebuild
+ * @param extensions - Extension type name to the schema that owns it
  * @returns The reprinted expression, without the `CHECK` keyword
  */
 export async function reprintDomainCheck(
@@ -1218,9 +1303,10 @@ export async function reprintDomainCheck(
   base: string,
   expression: string,
   types: readonly ReprintType[] = [],
+  extensions: ReadonlyMap<string, string> = NO_EXTENSION_SCHEMAS,
 ): Promise<string> {
   return reprintUntilStable(expression, (current) =>
-    reprintDomainCheckOnce(runner, base, current, types),
+    reprintDomainCheckOnce(runner, base, current, types, extensions),
   );
 }
 
@@ -1229,12 +1315,13 @@ async function reprintDomainCheckOnce(
   base: string,
   expression: string,
   types: readonly ReprintType[],
+  extensions: ReadonlyMap<string, string>,
 ): Promise<string> {
   const domain = scratchName("okm_expr_domain");
-  const standIns = await createStandIns(runner, [base], types);
+  const standIns = await createStandIns(runner, [base], types, extensions);
   try {
     await runner.query(
-      `create domain pg_temp.${domain} as ${standInType(base, types)} check (${expression})`,
+      `create domain pg_temp.${domain} as ${standInType(base, types, extensions)} check (${expression})`,
     );
     const rows = await runner.query(
       `select pg_get_constraintdef(c.oid) as definition
@@ -1266,6 +1353,7 @@ const REPRINT_PASSES = 4;
  * @param column - Name and type of the generated column
  * @param columns - Other columns of the same table. The generated column is omitted
  * @param types - Enums and domains the columns may name
+ * @param extensions - Extension type name to the schema that owns it
  * @returns The reprinted expression
  */
 export async function reprintGenerated(
@@ -1274,9 +1362,10 @@ export async function reprintGenerated(
   column: ReprintCheckColumn,
   columns: readonly ReprintCheckColumn[] = [],
   types: readonly ReprintType[] = [],
+  extensions: ReadonlyMap<string, string> = NO_EXTENSION_SCHEMAS,
 ): Promise<string> {
   return reprintUntilStable(expression, (current) =>
-    reprintGeneratedOnce(runner, current, column, columns, types),
+    reprintGeneratedOnce(runner, current, column, columns, types, extensions),
   );
 }
 
@@ -1286,17 +1375,21 @@ async function reprintGeneratedOnce(
   column: ReprintCheckColumn,
   columns: readonly ReprintCheckColumn[],
   types: readonly ReprintType[],
+  extensions: ReadonlyMap<string, string>,
 ): Promise<string> {
   const table = scratchName("okm_expr_gen");
   const standIns = await createStandIns(
     runner,
     [column.dataType, ...columns.map((item) => item.dataType)],
     types,
+    extensions,
   );
   try {
     const defs = [
-      ...columns.map((item) => `${quoteIdent(item.name)} ${standInType(item.dataType, types)}`),
-      `${quoteIdent(column.name)} ${standInType(column.dataType, types)} generated always as (${expression}) stored`,
+      ...columns.map(
+        (item) => `${quoteIdent(item.name)} ${standInType(item.dataType, types, extensions)}`,
+      ),
+      `${quoteIdent(column.name)} ${standInType(column.dataType, types, extensions)} generated always as (${expression}) stored`,
     ].join(", ");
     await runner.query(`create temp table ${table} (${defs})`);
     const rows = await runner.query(
@@ -1331,7 +1424,19 @@ function scratchName(prefix: string): string {
   return `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
 }
 
-function standInType(dataType: string, types: readonly ReprintType[]): string {
+const NO_EXTENSION_SCHEMAS: ReadonlyMap<string, string> = new Map();
+
+function standInType(
+  dataType: string,
+  types: readonly ReprintType[],
+  extensions: ReadonlyMap<string, string> = NO_EXTENSION_SCHEMAS,
+): string {
+  const tail = /(?:\[\])+$/.exec(dataType)?.[0] ?? "";
+  const scalar = dataType.slice(0, dataType.length - tail.length);
+  if (!types.some((type) => type.name === scalar)) {
+    const schema = extensions.get(scalar);
+    if (schema !== undefined) return `${qualify(schema, scalar)}${tail}`;
+  }
   return typeRef(dataType, (name) => types.some((type) => type.name === name));
 }
 
@@ -1356,6 +1461,7 @@ async function createStandIns(
   runner: CatalogQuery,
   dataTypes: readonly string[],
   types: readonly ReprintType[],
+  extensions: ReadonlyMap<string, string> = NO_EXTENSION_SCHEMAS,
 ): Promise<readonly string[]> {
   if (types.length === 0) return [];
   const ordered: ReprintType[] = [];
@@ -1376,7 +1482,7 @@ async function createStandIns(
       const body =
         type.labels !== undefined
           ? `as enum (${type.labels.map((label) => quoteLiteral(label)).join(", ")})`
-          : `as ${standInType(type.base ?? "text", types)}`;
+          : `as ${standInType(type.base ?? "text", types, extensions)}`;
       const kind = type.labels !== undefined ? "type" : "domain";
       await runner.query(`create ${kind} pg_temp.${name} ${body}`);
       created.unshift(`drop ${kind} pg_temp.${name}`);

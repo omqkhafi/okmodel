@@ -123,6 +123,7 @@ Needs PostgreSQL 18 or higher.
 | `t.id({ default: uuidv7 })` | The client generator. Nothing is stored in the catalog. | Omitted. |
 | `t.id({ default: "none" })` | Nothing. | Required. Still omitted from update. |
 | `t.identity()` | `generated always as identity`. A bigint. | Omitted. |
+| `t.integerIdentity()` | `generated always as identity`. An integer. | Omitted. |
 
 #### database
 
@@ -179,7 +180,7 @@ export const notes = table("notes", {
 
 #### identity
 
-`t.identity()` is a generated bigint, not a uuid.
+`t.identity()` is a generated bigint, not a uuid. `t.integerIdentity()` is the same column as an integer.
 
 ```ts title="identity.ts"
 import { table, t } from "okmodel/pg";

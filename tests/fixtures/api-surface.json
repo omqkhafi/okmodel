@@ -1445,6 +1445,10 @@
       "kind": "stable"
     },
     {
+      "name": "integerIdentity",
+      "kind": "stable"
+    },
+    {
       "name": "interval",
       "kind": "stable"
     },

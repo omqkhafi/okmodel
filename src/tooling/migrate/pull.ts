@@ -16,9 +16,13 @@ import postgres, { type Sql } from "postgres";
 import { OkmError } from "../../contracts/error.js";
 import type { Casing } from "../../dialects/pg/casing.js";
 import { cliNotice } from "../cli/notices.js";
-import { introspectSchema, type CatalogQuery } from "../../dialects/pg/introspect.js";
+import {
+  introspectSchema,
+  type CatalogQuery,
+  type IntrospectSkip,
+} from "../../dialects/pg/introspect.js";
 import { catalog } from "../../contracts/catalog/build.js";
-import { staticNamespace } from "../../contracts/catalog/identity.js";
+import { identityKey, staticNamespace } from "../../contracts/catalog/identity.js";
 import type {
   Catalog,
   CatalogObject,
@@ -40,6 +44,7 @@ import {
   type PullSkip,
 } from "./pull-emit.js";
 import { planRoutines } from "./pull-routines.js";
+import { writeUnpulled } from "./unpulled.js";
 import { verifyPulled } from "./pull-verify.js";
 import { loadConfig } from "./project.js";
 
@@ -104,6 +109,7 @@ export async function pullProject(
     }
     commitPullFiles(emitted.files, "Pull");
     const skipped = [...emitted.skipped, ...read.outside];
+    if (flags.out === undefined) writeUnpulled(cwd, skipped);
     return {
       text: formatPullReport(
         emitted.counts,
@@ -225,14 +231,19 @@ async function readCatalog(
     const requested = schemas.length > 0 ? schemas : [await currentSchema(sql)];
     const chosen = uniqueNames(requested);
     const parts: { schema: string; objects: readonly CatalogObject[] }[] = [];
+    const reserved: IntrospectSkip[] = [];
     for (const name of chosen) {
       // Logical name is the concrete schema so a foreign key to another
       // schema is recorded, instead of looking like a missing public table.
-      const live = await introspectSchema(queryOf(sql), name, name);
+      const live = await introspectSchema(queryOf(sql), name, name, { reserved });
       parts.push({ schema: name, objects: live.objects });
     }
     const merged = mergePulledSchemas(parts);
-    return { catalog: merged.catalog, schemas: chosen, outside: merged.outside };
+    return {
+      catalog: merged.catalog,
+      schemas: chosen,
+      outside: [...merged.outside, ...reserved.map((item) => ({ ...item, sql: "" }))],
+    };
   } catch (error) {
     if (error instanceof OkmError) throw error;
     throw sessionFailure(error) ?? unavailable(error);
@@ -292,7 +303,7 @@ function mergePulledSchemas(
         !selectedTarget(object.definition.references.parent, selected, selectedTables)
       ) {
         outside.push({
-          key: `outside-fk\0${part.schema}\0${object.identity.parent.name}\0${object.identity.name}`,
+          key: identityKey(object.identity),
           kind: "constraint",
           label: `${object.identity.parent.name}.${object.identity.name}`,
           reason: "references a table outside the selected schemas",

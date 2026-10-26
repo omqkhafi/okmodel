@@ -1818,7 +1818,7 @@
     "code": "OKM1894",
     "kind": "invalid",
     "category": "input",
-    "summary": "testing() found a table or extension that already exists in the database.",
+    "summary": "testing() found a table, type, or extension that already exists in the database. Two testing() calls on one database hit the same code.",
     "fix": "Use an empty database, or pass migrate: false when the schema is already applied.",
     "retryable": false,
     "docs": "docs/errors/OKM1894.md"
@@ -1840,6 +1840,15 @@
     "fix": "Point the command at a writable primary. The role needs TEMP on the database. It does not need CREATE on the schema. Parallel runs use a random temporary name.",
     "retryable": false,
     "docs": "docs/errors/OKM1896.md"
+  },
+  {
+    "code": "OKM1897",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "okm push would drop a column or constraint that okm pull listed under not pulled yet.",
+    "fix": "Those columns and constraints stay in the database. Pull did not write them, so push does not drop them.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1897.md"
   },
   {
     "code": "OKM2200",

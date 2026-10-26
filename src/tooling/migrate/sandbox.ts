@@ -533,6 +533,17 @@ async function replayExtensions(
   let moved = false;
   for (const statement of source) {
     const parsed = extensionStatement(statement);
+    // A hosted DROP EXTENSION is checked before this step runs. Statements
+    // earlier in the same step, such as the column drop that removed the
+    // last dependent, have to land first.
+    if (
+      parsed?.kind === "drop" &&
+      kept.length > 0 &&
+      (await dropsHostedExtension(sql, parsed, scratch, session))
+    ) {
+      await sql.unsafe(`${kept.join(";\n")};`);
+      kept.length = 0;
+    }
     const remaining =
       parsed === undefined
         ? statement
@@ -543,6 +554,18 @@ async function replayExtensions(
   }
   if (moved) await placeHosted(sql, scratch, session);
   return kept.length === 0 ? "" : `${kept.join(";\n")};`;
+}
+
+async function dropsHostedExtension(
+  sql: Sql,
+  parsed: Extract<ExtensionStatement, { kind: "drop" }>,
+  scratch: string,
+  session: Session,
+): Promise<boolean> {
+  for (const name of parsed.names) {
+    if ((await hostedExtension(sql, session, name, scratch)) !== undefined) return true;
+  }
+  return false;
 }
 
 async function replayExtension(

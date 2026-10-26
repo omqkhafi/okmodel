@@ -51,7 +51,15 @@ export type {
   ValidateModifier,
   WithGenerated,
 } from "./column.js";
-export { bigint, identity, integer, smallint, type BigintAs, type BigintValue } from "./integer.js";
+export {
+  bigint,
+  identity,
+  integer,
+  integerIdentity,
+  smallint,
+  type BigintAs,
+  type BigintValue,
+} from "./integer.js";
 export { double, numeric, real, type NumericAs, type NumericValue } from "./decimal.js";
 export { boolean, bytea } from "./bool.js";
 export { jsonb, jsonReplacer } from "./json.js";

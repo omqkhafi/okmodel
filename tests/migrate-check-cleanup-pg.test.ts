@@ -161,6 +161,39 @@ postgresTest(
 
 postgresTest(
   gate,
+  "a step that drops the citext column and then the extension does not see a dependent",
+  async () => {
+    await withInstalledCitext(async (url, sql) => {
+      let thrown: unknown;
+      const outcome = await replayCheckHistory(url, schemaName(), config, false, [
+        migration(
+          INSTALLED,
+          'create table "public"."t" ("id" int, "email" citext)',
+          'alter table "public"."t" drop column "email";\ndrop extension "citext"',
+        ),
+      ]).catch((error: unknown) => {
+        thrown = error;
+        return undefined;
+      });
+      expect(thrown).toBeUndefined();
+      const planned = outcome?.stop?.back.steps.map((step) => step.sql).join("\n") ?? "";
+      expect(planned).not.toContain("depend on it");
+      expect(planned).not.toContain("drop extension");
+      expect(await citextHome(sql)).toEqual(["public"]);
+      expect(await scratchSchemas(sql)).toEqual([]);
+      const column = await sql<{ type: string }[]>`
+        select format_type(a.atttypid, a.atttypmod) as type
+        from pg_attribute a
+        where a.attrelid = 'public.people'::regclass and a.attname = 'email'
+      `;
+      expect(column.map((row) => row.type)).toEqual(["citext"]);
+    });
+  },
+  30_000,
+);
+
+postgresTest(
+  gate,
   "replaying drop extension still fails while a scratch object uses it",
   async () => {
     await withInstalledCitext(async (url, sql) => {

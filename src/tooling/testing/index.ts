@@ -213,35 +213,77 @@ export async function testing<const S extends TestingSchema>(
  */
 function harnessConflict(error: unknown, statement: string): OkmError | undefined {
   const sqlstate = sqlstateOf(error);
-  if (sqlstate !== "42P07" && sqlstate !== "42710") return undefined;
   const object = createdObject(statement);
+  if (sqlstate === "23505" && catalogRace(error)) {
+    const name = object?.name ?? detailName(error);
+    if (name === undefined) return undefined;
+    const kind = object?.kind ?? (errorField(error, "table") === "pg_class" ? "table" : "type");
+    return asConflict(kind, name);
+  }
+  if (sqlstate !== "42P07" && sqlstate !== "42710") return undefined;
   if (object === undefined) return undefined;
+  return asConflict(object.kind, object.name);
+}
+
+function asConflict(kind: "table" | "extension" | "type", name: string): OkmError | undefined {
   try {
-    testingObjectConflict(object.kind, object.name);
+    testingObjectConflict(kind, name);
   } catch (conflict) {
     if (conflict instanceof OkmError) return conflict;
   }
   return undefined;
 }
 
+function catalogRace(error: unknown): boolean {
+  const table = errorField(error, "table");
+  const constraint = errorField(error, "constraint");
+  return (
+    table === "pg_type" ||
+    table === "pg_class" ||
+    constraint.startsWith("pg_type_") ||
+    constraint.startsWith("pg_class_")
+  );
+}
+
+function detailName(error: unknown): string | undefined {
+  const match = /=\(([^,)]+)/.exec(errorField(error, "detail"));
+  const name = match?.[1]?.trim();
+  return name !== undefined && name.length > 0 ? name : undefined;
+}
+
+function errorField(error: unknown, key: string): string {
+  if (typeof error !== "object" || error === null || !(key in error)) return "";
+  const value = (error as Record<string, unknown>)[key];
+  return typeof value === "string" ? value : "";
+}
+
 function createdObject(
   statement: string,
-): { readonly kind: "table" | "extension"; readonly name: string } | undefined {
+): { readonly kind: "table" | "extension" | "type"; readonly name: string } | undefined {
   const text = statement.trimStart();
   const extension = /^create extension\s+/i.exec(text);
   if (extension !== null) {
     const name = readIdent(text.slice(extension[0].length));
     return name === undefined ? undefined : { kind: "extension", name: name.value };
   }
+  const type = /^create type\s+/i.exec(text);
+  if (type !== null) {
+    const name = qualifiedIdent(text.slice(type[0].length));
+    return name === undefined ? undefined : { kind: "type", name };
+  }
   const table = /^create table\s+/i.exec(text);
   if (table === null) return undefined;
-  let rest = text.slice(table[0].length);
-  const first = readIdent(rest);
+  const name = qualifiedIdent(text.slice(table[0].length));
+  return name === undefined ? undefined : { kind: "table", name };
+}
+
+function qualifiedIdent(text: string): string | undefined {
+  const first = readIdent(text);
   if (first === undefined) return undefined;
-  rest = rest.slice(first.consumed);
-  if (!rest.startsWith(".")) return { kind: "table", name: first.value };
+  const rest = text.slice(first.consumed);
+  if (!rest.startsWith(".")) return first.value;
   const second = readIdent(rest.slice(1));
-  return second === undefined ? undefined : { kind: "table", name: second.value };
+  return second?.value;
 }
 
 function readIdent(

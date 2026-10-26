@@ -11,7 +11,7 @@ import { OkmError } from "../../contracts/error.js";
  * @param name - The object's name
  * @returns Never
  */
-export function testingObjectConflict(kind: "table" | "extension", name: string): never {
+export function testingObjectConflict(kind: "table" | "extension" | "type", name: string): never {
   throw new OkmError("OKM1894", `testing() found an existing ${kind} "${name}".`, {
     fix: {
       summary: "Use an empty database, or pass migrate: false when the schema is already applied.",

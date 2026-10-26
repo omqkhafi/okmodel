@@ -67,6 +67,9 @@ expectTypeOf<ColumnRowOf<typeof serial>>().toEqualTypeOf<string>();
 expectTypeOf<ColumnInsertOf<typeof serial>>().toEqualTypeOf<never>();
 const serialNumber = t.identity({ as: "number" });
 expectTypeOf<ColumnRowOf<typeof serialNumber>>().toEqualTypeOf<number>();
+const integerSerial = t.integerIdentity();
+expectTypeOf<ColumnRowOf<typeof integerSerial>>().toEqualTypeOf<number>();
+expectTypeOf<ColumnInsertOf<typeof integerSerial>>().toEqualTypeOf<never>();
 
 expectTypeOf<ColumnRowOf<ReturnType<typeof t.uuid>>>().toEqualTypeOf<string>();
 expectTypeOf<ColumnRowOf<ReturnType<typeof t.smallint>>>().toEqualTypeOf<number>();

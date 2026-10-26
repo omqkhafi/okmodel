@@ -28,7 +28,7 @@ import {
   statementOutsideTransaction,
   type BackfillBatch,
 } from "./runner.js";
-import { assertExtensionsAvailable } from "./extensions.js";
+import { assertExtensionsAvailable, extensionSchemaPath } from "./extensions.js";
 import { assertUuidV7Available } from "./engine.js";
 import { assertSnapshots } from "./export.js";
 import { asProject, projectPath, type ProjectContext } from "./paths.js";
@@ -37,6 +37,12 @@ import { loadHeadSnapshot, loadMigrations } from "./files.js";
 import { readReference, referenceInserts, type ReferenceTable } from "./reference.js";
 import { expandProvisioned, installSnapshot, provisionMark } from "./snapshot.js";
 import { planStatements, type PlanStep } from "./plan.js";
+import {
+  readUnpulled,
+  refuseUnpulledDrops,
+  unpulledDropLabels,
+  type UnpulledObject,
+} from "./unpulled.js";
 import type { StoredMigration } from "./files.js";
 import { finishQuiet } from "./lost.js";
 import type { StepBoundary } from "./step-engine.js";
@@ -560,6 +566,7 @@ export async function pushProject(
       : {}),
     ...catalogSchema(config.namespace),
     ...batchSizeField(config.backfill?.batchSize),
+    unpulled: readUnpulled(cwd),
   });
   if (report.applied.length === 0 && (report.restamped ?? []).length === 0) {
     return `target ${target.name}\nno changes\n`;
@@ -588,6 +595,7 @@ type PushRequest = {
   readonly backfillPauseMs?: number;
   readonly backfillStatementTimeoutMs?: number;
   readonly batchSize?: number;
+  readonly unpulled: readonly UnpulledObject[];
 };
 
 /**
@@ -630,23 +638,28 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
     const session: { setRole?: string } = {};
     const schema = request.schema ?? "public";
     await enterCatalogSchema(connection, schema);
+    const extensionPath = extensionSchemaPath(request.after, schema);
+    if (extensionPath !== undefined) {
+      await connection.execute(`set search_path to ${extensionPath}`);
+    }
     await ensureMigrationTables((sql) => connection.execute(sql));
     const history = await readHistory(connection);
     const pushId = nextSequenceId("push", history.ids);
+    const searchPath = extensionPath ?? (schema !== "public" ? quoteIdent(schema) : undefined);
     const sql = postgres(url, {
       max: 1,
       connect_timeout: 5,
       idle_timeout: 1,
       onnotice: () => {},
-      ...(schema !== "public" ? { connection: { search_path: schema } } : {}),
+      ...(searchPath !== undefined ? { connection: { search_path: searchPath } } : {}),
     });
     let planSteps: readonly PlanStep[] = [];
     try {
       const runner = catalogQuery(sql);
       if (schema !== "public") {
         await sql.unsafe(`create schema if not exists ${quoteIdent(schema)}`);
-        await sql.unsafe(`set search_path to ${quoteIdent(schema)}`);
       }
+      if (searchPath !== undefined) await sql.unsafe(`set search_path to ${searchPath}`);
       const authorViews = await sealViews(runner, request.after);
       const author = await sealTriggerWhens(runner, await sealStoredChecks(runner, authorViews));
       const live = await sealStoredChecks(
@@ -676,6 +689,7 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
       });
       const weakened = lintPlan(plan, live, author).filter((item) => item.code === "OKM1550");
       if (weakened.length > 0) throw lintRefusal(weakened, PUSH_RLS_FIX);
+      refuseUnpulledDrops(unpulledDropLabels(plan.steps, live, request.unpulled, schema));
       planSteps = plan.steps;
     } finally {
       await finishQuiet(() => sql.end({ timeout: 5 }));

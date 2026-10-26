@@ -107,6 +107,7 @@ import { assertLocked, assertSignature, staleLockCodes } from "../describe/lock.
 import { discoverRawCalls } from "../describe/scan.js";
 import { schemaAdvice } from "../migrate/schema-rules.js";
 import { testingObjectConflict } from "../testing/conflict.js";
+import { refuseUnpulledDrops } from "../migrate/unpulled.js";
 import { parseCli } from "../cli/parse.js";
 
 /** Codes whose producer reads a live server. */
@@ -2137,6 +2138,16 @@ thrown(
   },
   () => {
     readOnlyReprint(new Error('column "status" does not exist'));
+  },
+);
+
+thrown(
+  "OKM1897",
+  () => {
+    refuseUnpulledDrops(["notes.note"]);
+  },
+  () => {
+    refuseUnpulledDrops([]);
   },
 );
 
