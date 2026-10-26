@@ -113,14 +113,25 @@ postgresTest(
   "okm doctor refuses a missing required extension with OKM1811",
   async () => {
     const database = await createIsolatedDatabase();
+    const sql = openPostgres(database.url);
     const cwd = project(database.url, vectorSchema());
     try {
+      // An empty migrations directory is the initial migration, which does not
+      // refuse an extension the server can create. Drop vector when it is
+      // installed, and record a migration that does not create it.
+      await sql.unsafe("drop extension if exists vector");
+      writeFileSync(join(cwd, "migrations", "0001_present.sql"), "-- class: expand\n-- no steps\n");
+      writeFileSync(
+        join(cwd, "migrations", "0001_present.catalog.json"),
+        '{"version":1,"objects":[]}\n',
+      );
       const error = await refused(() => doctorProject(cwd, undefined));
       expect(error.code).toBe("OKM1811");
       expect(error.message).toContain("vector");
       expect(error.fix.summary).toContain("extension(vector)");
       expect(error.fix.summary).toContain("Install the extension");
     } finally {
+      await sql.end({ timeout: 5 });
       rmSync(cwd, { recursive: true, force: true });
       await database.close();
     }
