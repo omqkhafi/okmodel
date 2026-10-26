@@ -2,7 +2,8 @@
  * N-147: a reserved-word column must not abort `okm pull`.
  *
  * The other tables and columns are written. The reserved column is listed
- * under "not pulled yet". Push still cannot drop it.
+ * under "not pulled yet". With `.okm/pull.json` present, check and push
+ * compare that name and do not run the reserved-word check.
  */
 
 import { expect } from "bun:test";
@@ -18,7 +19,6 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { OkmError } from "../src/contracts/error.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
 import { repoRoot } from "../scripts/root.js";
@@ -60,9 +60,18 @@ postgresTest(
       expect(ranks).toContain("note:");
       expect(ranks).not.toMatch(/["']?order["']?\s*:/i);
       expect(readFileSync(join(cwd, "schema.ts"), "utf8").length).toBeGreaterThan(0);
+      const record = readFileSync(join(cwd, ".okm", "pull.json"), "utf8");
+      expect(record).toContain("ranks.order");
+      expect(record).toContain("ranks.Order");
       useSourceImports(cwd);
-      const pushed = await refused(cwd, ["push"]);
-      expect(pushed.code).toBe("OKM1122");
+      const pushed = await cli(cwd, ["push"]);
+      expect(pushed).not.toContain("OKM1122");
+      expect(pushed.toLowerCase()).not.toContain("drop column");
+      expect(pushed.toLowerCase()).not.toContain("drop constraint");
+      const checked = await cli(cwd, ["check"]);
+      expect(checked).toMatch(/ok\n$/);
+      expect(checked).not.toContain("OKM1122");
+      expect(checked.toLowerCase()).not.toContain("drop column");
       const columns = await query(
         database.url,
         `select table_name, column_name
@@ -90,16 +99,6 @@ postgresTest(
   },
   90_000,
 );
-
-async function refused(cwd: string, argv: readonly string[]): Promise<OkmError> {
-  try {
-    await cli(cwd, argv);
-  } catch (error) {
-    expect(error).toBeInstanceOf(OkmError);
-    return error as OkmError;
-  }
-  throw new Error("expected a refusal");
-}
 
 async function seed(url: string, statement: string): Promise<void> {
   const sql = openPostgres(url);

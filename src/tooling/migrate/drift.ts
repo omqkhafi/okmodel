@@ -93,7 +93,10 @@ export async function assertAuthorDrift(
     );
     const live = await sealStoredChecks(
       runner,
-      await introspectSchema(runner, schema, schema, liveIntrospectOptions(roles, author)),
+      await introspectSchema(runner, schema, schema, {
+        ...liveIntrospectOptions(roles, author),
+        ...(unpulled.size > 0 ? { omit: unpulled } : {}),
+      }),
     );
     const invalid = await invalidIndexReport(runner, schema);
     // Pull lists policies and does not write them. After baseline, okm_meta

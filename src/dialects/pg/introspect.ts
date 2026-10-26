@@ -76,10 +76,17 @@ export type IntrospectOptions = {
    * Objects whose names `table()` would reject as reserved words.
    *
    * Set by `okm pull`. Those columns, constraints, and indexes are left out
-   * of the catalog and recorded here. Drift and check omit this list, so
-   * they still refuse a reserved word instead of dropping it quietly.
+   * of the catalog and recorded here.
    */
   readonly reserved?: IntrospectSkip[];
+  /**
+   * Identity keys to leave out before a name is checked.
+   *
+   * `okm check` and `okm push` pass the keys in `.okm/pull.json`. A recorded
+   * name that `table()` would reject is left out. The comparison is the name.
+   * Any other recorded column is still built, so push can refuse its drop.
+   */
+  readonly omit?: ReadonlySet<string>;
 };
 
 /** One object pull left out because `table()` rejects a reserved word. */
@@ -93,6 +100,19 @@ export type IntrospectSkip = {
 };
 
 const RESERVED_REASON = "table() rejects a reserved word";
+
+function listed(
+  options: IntrospectOptions | undefined,
+  kind: IntrospectSkip["kind"],
+  parent: ObjectRef,
+  name: string,
+  words: readonly string[],
+): boolean {
+  const keys = options?.omit;
+  if (keys === undefined || keys.size === 0) return false;
+  if (!words.some((word) => isReservedIdentifier(word))) return false;
+  return keys.has(identityKey({ kind, parent, name }));
+}
 
 function leaveReserved(
   skipped: IntrospectSkip[] | undefined,
@@ -265,6 +285,7 @@ export async function introspectSchema(
       extra.push({ kind: "type", namespace, name: dataType });
     }
     const columnName = text(row, "name");
+    if (listed(options, "column", parent, columnName, [columnName])) continue;
     if (leaveReserved(options?.reserved, "column", parent, columnName, [columnName])) continue;
     const notNull = flag(row, "not_null");
     const unvalidated = notNull ? text(row, "not_null_unvalidated") : "";
@@ -296,6 +317,7 @@ export async function introspectSchema(
     const definition = text(row, "definition");
     const onDelete = actionAfter(definition, "delete");
     const onUpdate = actionAfter(definition, "update");
+    if (listed(options, "constraint", parent, name, [name, ...columns, ...refColumns])) continue;
     if (
       leaveReserved(options?.reserved, "constraint", parent, name, [
         name,
@@ -342,6 +364,7 @@ export async function introspectSchema(
     const indexName = text(row, "name");
     if (matviewNames.has(parentName)) {
       const columns = list(text(row, "columns"));
+      if (listed(options, "index", parent, indexName, [indexName, ...columns])) continue;
       if (leaveReserved(options?.reserved, "index", parent, indexName, [indexName, ...columns])) {
         continue;
       }
@@ -361,6 +384,7 @@ export async function introspectSchema(
       continue;
     }
     const columns = list(text(row, "columns"));
+    if (listed(options, "index", parent, indexName, [indexName, ...columns])) continue;
     if (leaveReserved(options?.reserved, "index", parent, indexName, [indexName, ...columns])) {
       continue;
     }
