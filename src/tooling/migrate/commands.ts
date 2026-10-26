@@ -677,6 +677,7 @@ async function drizzle(
   const { importDrizzle } = await import("./import-drizzle.js");
   const args = [parsed.operands[0] ?? ""];
   if (parsed.out !== undefined) args.push("--out", parsed.out);
+  if (parsed.drizzleCasing !== undefined) args.push("--drizzle-casing", parsed.drizzleCasing);
   const text = (await importDrizzle(project.cwd, args)).text;
   human(text);
   return textData(text);
@@ -837,6 +838,7 @@ async function pull(
   if (parsed.out !== undefined) args.push("--out", parsed.out);
   for (const name of parsed.schemas) args.push("--schema", name);
   if (parsed.importExt !== "ts") args.push("--import-ext", parsed.importExt);
+  if (parsed.casing !== undefined) args.push("--casing", parsed.casing);
   const text = (await pullProject(project, args)).text;
   human(text);
   return textData(text);

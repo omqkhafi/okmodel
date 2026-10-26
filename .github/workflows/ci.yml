@@ -18,7 +18,8 @@ on:
 concurrency:
   group: ci-${{ github.event.pull_request.number }}
   # A body edit waits, then mirrors. It must not cancel the run for this commit.
-  cancel-in-progress: ${{ github.event.action != 'edited' || github.event.changes.title }}
+  # The flag has to be a boolean. A null title fails the run before any job starts.
+  cancel-in-progress: ${{ github.event.action != 'edited' || contains(toJSON(github.event.changes), '"title":') }}
 
 permissions:
   contents: read

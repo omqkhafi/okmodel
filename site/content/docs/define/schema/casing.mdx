@@ -69,6 +69,12 @@ export default schema({
 });
 ```
 
+### pull
+
+`okm pull` keeps each database name as the TypeScript key. `--casing snake` or `--casing camel` is opt-in. The key is the other spelling, so `schema({ casing })` can write the database name back. `user_id` with `--casing snake` is `userId`. `userId` with `--casing camel` is `user_id`.
+
+`.sqlName()` is added when that key does not spell the database name exactly. `a_b_c` with `--casing snake` is `aBC`, and `aBC` spells `a_bc`, so the column is `aBC: t.text().sqlName("a_b_c")`. Each of those names is a line in the pull report.
+
 ### What casing covers
 
 Casing spells every name you did not set: tables, columns, and the names derived from them (constraints, indexes, identity sequences, policies, and the `okm_touch` function). Views, enums, domains, functions, and triggers use the name you wrote.
