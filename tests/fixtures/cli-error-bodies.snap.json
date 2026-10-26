@@ -283,6 +283,24 @@
     "docs": "docs/errors/OKM1126.md"
   },
   {
+    "code": "OKM1127",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "orderBy on a relation is not available with distinct or distinctOn.",
+    "fix": "Order by a column of this table, or drop distinctOn.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1127.md"
+  },
+  {
+    "code": "OKM1128",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "orderBy on a relation is not available in aggregate.",
+    "fix": "Order by a groupBy field, count, or a select name.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1128.md"
+  },
+  {
     "code": "OKM1130",
     "kind": "invalid",
     "category": "input",
