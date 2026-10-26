@@ -2,8 +2,10 @@
  * Columns and constraints `okm pull` listed and did not write.
  *
  * The record is `.okm/pull.json` at the project root, including when `--out`
- * writes the schema somewhere else. Push refuses a plan that drops one of
- * them (OKM1897). Check omits them, so an ok report does not list those drops.
+ * writes the schema somewhere else for the same target. A scratch `--out` of
+ * another target or an explicit `--schema` does not replace it. Push refuses
+ * a plan that drops one of them (OKM1897). Check omits them, so an ok report
+ * does not list those drops.
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";

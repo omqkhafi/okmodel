@@ -32,7 +32,7 @@ import type {
 import { driverUrl } from "./driver-url.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { asProject, projectPath, type ProjectContext } from "./paths.js";
-import { assertTargetPolicy, selectTarget } from "./policy.js";
+import { assertTargetPolicy, listTargets, selectTarget } from "./policy.js";
 import {
   emitPull,
   formatPullReport,
@@ -63,7 +63,9 @@ export type PullResult = {
  * may be repeated. `--out` is the directory that receives `schema.ts` and
  * `tables/`. Without it, the project's schema path and tables directory are
  * used. A tables directory that the config omits is `tables` beside the
- * schema file. `.okm/pull.json` is always written at the project root.
+ * schema file. `.okm/pull.json` is written at the project root for that pull.
+ * A `--out` pull of another `--target`, or one that passes `--schema`, leaves
+ * the existing record in place.
  *
  * @param cwd - Project directory
  * @param argv - Arguments after `pull`
@@ -109,8 +111,12 @@ export async function pullProject(
     }
     commitPullFiles(emitted.files, "Pull");
     const skipped = [...emitted.skipped, ...read.outside];
-    // The record stays at the project root. `--out` only moves the schema files.
-    writeUnpulled(cwd, skipped);
+    // `--out` of another target or an explicit schema is a scratch copy.
+    // Replacing the record would let the next push of the project target
+    // drop an identity column the first pull had kept.
+    if (replacesPullRecord(cwd, config.schema, flags, listTargets(config).length)) {
+      writeUnpulled(cwd, skipped);
+    }
     return {
       text: formatPullReport(
         emitted.counts,
@@ -573,6 +579,30 @@ export function commitPullFiles(
     writeFileSync(file.path, file.text);
   }
   formatFiles(files.map((file) => file.path));
+}
+
+/**
+ * Whether this pull should replace `.okm/pull.json`.
+ *
+ * A pull that writes the project schema does. So does `--out` of the only
+ * target with no `--schema`: that is a refresh of the same database. `--out`
+ * of a second target, or any `--out` that passes `--schema`, does not.
+ */
+function replacesPullRecord(
+  cwd: string,
+  schema: string,
+  flags: {
+    readonly out: string | undefined;
+    readonly schemas: readonly string[];
+    readonly target: string | undefined;
+  },
+  targetCount: number,
+): boolean {
+  if (flags.out === undefined) return true;
+  if (projectPath(cwd, flags.out) === dirname(projectPath(cwd, schema))) return true;
+  if (flags.schemas.length > 0) return false;
+  if (flags.target !== undefined && targetCount > 1) return false;
+  return true;
 }
 
 function layoutOf(
