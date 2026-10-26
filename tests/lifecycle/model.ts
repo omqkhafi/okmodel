@@ -168,12 +168,32 @@ export type Evolution =
       readonly onUpdate: FkAction;
     };
 
+/** Login the lifecycle commands use. `replica` runs `okm check` on a hot standby. */
+export type HostileRole = "superuser" | "owner" | "creator" | "replica";
+
+/** What is already in the database when the case starts. */
+export type HostileStart = "empty" | "foreign" | "rows" | "clash";
+
+/** An object planted under a name OKModel will use. */
+export type ClashKind = "scratch" | "steps" | "index";
+
+/** Where the temp project directory lives. */
+export type ProjectPlace = "plain" | "symlink" | "spaces";
+
 /** One property case: initial schema, evolutions, and run mode. */
 export type LifecycleCase = {
   readonly initial: SchemaModel;
   readonly evolutions: readonly Evolution[];
   /** Insert a row into each table after the first apply. */
   readonly withRows: boolean;
+  /** Who runs generate, check, and apply. */
+  readonly role: HostileRole;
+  /** Database contents before the first command. */
+  readonly start: HostileStart;
+  /** Which planted name to use when {@link start} is `clash`. */
+  readonly clash: ClashKind;
+  /** Project directory shape. */
+  readonly place: ProjectPlace;
   /** Feature tags used for known-bug matching and coverage. */
   readonly tags: readonly string[];
 };
@@ -184,15 +204,29 @@ export type LifecycleCase = {
  * @param initial - Starting schema
  * @param evolutions - Later steps
  * @param withRows - Whether the case seeds rows
+ * @param env - Role, start state, and project place. Omitted on older callers
  * @returns Deduplicated tags
  */
 export function tagsFor(
   initial: SchemaModel,
   evolutions: readonly Evolution[],
   withRows: boolean,
+  env?: {
+    readonly role: HostileRole;
+    readonly start: HostileStart;
+    readonly clash: ClashKind;
+    readonly place: ProjectPlace;
+  },
 ): readonly string[] {
   const tags = new Set<string>();
   if (withRows) tags.add("with-rows");
+  if (env !== undefined) {
+    tags.add(`role-${env.role}`);
+    tags.add(`start-${env.start}`);
+    tags.add(`place-${env.place}`);
+    tags.add(initial.namespace === undefined ? "namespace-public" : "namespace-other");
+    if (env.start === "clash") tags.add(`clash-${env.clash}`);
+  }
   if (initial.casing === "snake") tags.add("casing-snake");
   else if (initial.casing === "camel") tags.add("casing-camel");
   else tags.add("casing-omit");

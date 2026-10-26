@@ -20,6 +20,8 @@ import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/po
 import { open as openPglite } from "../src/adapters/pg/pglite.js";
 import { catalog } from "../src/contracts/catalog/build.js";
 import type { Catalog } from "../src/contracts/catalog/types.js";
+import { introspectSchema, type CatalogQuery } from "../src/dialects/pg/introspect.js";
+import { run } from "../src/tooling/migrate/commands.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
 
 const root = join(import.meta.dir, "..");
@@ -92,6 +94,15 @@ postgresTest(
           await sql.unsafe(statement);
         });
         assertTriggerWhen(example, statements);
+        if (example.page === "extensions") {
+          const live = await introspectSchema(queryOf(sql), "public", "public");
+          const back = planMigration({
+            before: live,
+            after: loaded.schema.catalog,
+            name: "again",
+          });
+          expect(back.steps.map((step) => step.sql)).toEqual([]);
+        }
         if (loaded.add !== undefined) {
           const row = insertedRow(await loaded.add(database.url, "hello"));
           expect(row.title).toBe("hello");
@@ -105,6 +116,63 @@ postgresTest(
         await database.close();
       }
     }
+  },
+  120_000,
+);
+
+postgresTest(
+  gate,
+  "the extensions schema example passes generate, migrate check, apply, and okm check",
+  async () => {
+    const body = fence(
+      readFileSync(join(root, "site/content/docs/define/schema/extensions.mdx"), "utf8"),
+      "schema-name.ts",
+    );
+    if (body === undefined) throw new Error("extensions.mdx is missing schema-name.ts");
+    expect(body).toContain('extension("ltree", { schema: "extensions" })');
+    expect(body).toContain("path: t.ltree()");
+    await withCliProject(body, async ({ cwd, sql }) => {
+      await cli(cwd, ["generate", "init"]);
+      expect(await cli(cwd, ["migrate", "check"])).toStartWith("ok 1 migrations\n");
+      await cli(cwd, ["migrate", "apply"]);
+      expect(await cli(cwd, ["check"])).toContain("ok\n");
+      const live = await introspectSchema(queryOf(sql), "public", "public");
+      const extension = live.objects.find((object) => object.kind === "extension");
+      expect(extension?.identity).toEqual({ kind: "extension", name: "ltree" });
+      expect(extension?.definition.schema).toBe("extensions");
+      const column = live.objects.find(
+        (object) => object.kind === "column" && object.identity.name === "path",
+      );
+      expect(column?.kind === "column" ? column.definition.dataType : undefined).toBe("ltree");
+      expect(
+        column?.dependencies.some(
+          (edge) => edge.target.kind === "extension" && edge.target.name === "ltree",
+        ),
+      ).toBe(true);
+    });
+    await withCliProject(body.replace(', { schema: "extensions" }', ""), async ({ cwd, sql }) => {
+      await cli(cwd, ["generate", "init"]);
+      await cli(cwd, ["migrate", "check"]);
+      await cli(cwd, ["migrate", "apply"]);
+      expect(await cli(cwd, ["check"])).toContain("ok\n");
+      const live = await introspectSchema(queryOf(sql), "public", "public");
+      const extension = live.objects.find((object) => object.kind === "extension");
+      expect(extension?.definition.schema).toBe("public");
+    });
+    await withCliProject(trigramSchema(), async ({ cwd, sql }) => {
+      await cli(cwd, ["generate", "init"]);
+      expect(await cli(cwd, ["migrate", "check"])).toStartWith("ok 1 migrations\n");
+      await cli(cwd, ["migrate", "apply"]);
+      expect(await cli(cwd, ["check"])).toContain("ok\n");
+      const live = await introspectSchema(queryOf(sql), "public", "public");
+      const extension = live.objects.find((object) => object.kind === "extension");
+      expect(extension?.identity).toEqual({ kind: "extension", name: "pg_trgm" });
+      expect(extension?.definition.schema).toBe("extensions");
+      const index = live.objects.find((object) => object.kind === "index");
+      expect(index?.kind === "index" ? index.definition.expression : undefined).toContain(
+        "gin_trgm_ops",
+      );
+    });
   },
   120_000,
 );
@@ -231,6 +299,74 @@ function isSchema(value: unknown): value is { readonly catalog: Catalog } {
  * @param value - Whatever `add` returned
  * @returns The inserted title and label
  */
+function trigramSchema(): string {
+  return [
+    `import { schema, t, table } from ${JSON.stringify(join(root, "src/dialects/pg/index.ts"))};`,
+    `import { pgTrgm } from ${JSON.stringify(join(root, "src/dialects/pg/ext/pg-trgm.ts"))};`,
+    'const trigram = pgTrgm({ schema: "extensions" });',
+    "export default schema({",
+    '  tables: [table("docs", { id: t.id(), body: t.text() }, { indexes: (c) => [trigram.gin(c.body.name)] })],',
+    "  extensions: [trigram],",
+    "});",
+    "",
+  ].join("\n");
+}
+
+async function withCliProject(
+  schemaBody: string,
+  body: (context: { cwd: string; sql: ReturnType<typeof openPostgres> }) => Promise<void>,
+): Promise<void> {
+  const database = await createIsolatedDatabase();
+  const cwd = mkdtempSync(join(tmpdir(), "okm-ext-schema-"));
+  const sql = openPostgres(database.url);
+  try {
+    const ready = await sql<{ ok: boolean }[]>`
+      select
+        exists (select 1 from pg_available_extensions where name = 'ltree')
+        and exists (select 1 from pg_available_extensions where name = 'pg_trgm') as ok
+    `;
+    if (ready[0]?.ok !== true) throw new Error("ltree and pg_trgm must be available");
+    writeFileSync(join(cwd, "schema.ts"), rewriteImports(schemaBody));
+    const migrate = JSON.stringify(join(root, "src/tooling/migrate/index.ts"));
+    writeFileSync(
+      join(cwd, "okmodel.config.ts"),
+      [
+        `import { defineConfig } from ${migrate};`,
+        "export default defineConfig({",
+        '  schema: "./schema.ts",',
+        '  migrations: "./migrations",',
+        `  database: ${JSON.stringify(database.url)},`,
+        "});",
+        "",
+      ].join("\n"),
+    );
+    await body({ cwd, sql });
+  } finally {
+    await sql.end({ timeout: 5 });
+    rmSync(cwd, { recursive: true, force: true });
+    await database.close();
+  }
+}
+
+async function cli(cwd: string, argv: readonly string[]): Promise<string> {
+  const lines: string[] = [];
+  await run(argv, { cwd, stdout: (text) => lines.push(text) });
+  return lines.join("");
+}
+
+function queryOf(sql: ReturnType<typeof openPostgres>): CatalogQuery {
+  return {
+    async query(text, params) {
+      const rows = await sql.unsafe(text, params === undefined ? undefined : [...params]);
+      return rows.map((row) => {
+        const copy: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(row)) copy[key] = value;
+        return copy;
+      });
+    },
+  };
+}
+
 function insertedRow(value: unknown): { readonly title: string; readonly label: string } {
   if (typeof value !== "object" || value === null) throw new Error("insert returned nothing");
   const row = value as Record<string, unknown>;

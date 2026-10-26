@@ -81,7 +81,7 @@ export async function assertAuthorDrift(
     );
     const live = await sealStoredChecks(
       runner,
-      await introspectSchema(runner, schema, schema, managedRoleOptions(roles)),
+      await introspectSchema(runner, schema, schema, liveIntrospectOptions(roles, author)),
     );
     const invalid = await invalidIndexReport(runner, schema);
     // Pull lists policies and does not write them. After baseline, okm_meta
@@ -547,6 +547,35 @@ export function managedRoleOptions(roles: RolesInput | undefined): IntrospectOpt
         managedRoles: names,
         ...(roles?.reporting !== undefined ? { reportingRole: roles.reporting } : {}),
       };
+}
+
+/**
+ * Introspection options for a live catalog compared with `author`.
+ *
+ * Declared extensions are named so one installed outside the table schema
+ * is still read. A column or index that depends on an extension finds it
+ * even when this list is empty.
+ *
+ * @param roles - `defineConfig({ roles })`, when set
+ * @param author - Schema catalog
+ * @returns Options, or `undefined` when there is nothing to add
+ */
+export function liveIntrospectOptions(
+  roles: RolesInput | undefined,
+  author: Catalog,
+): IntrospectOptions | undefined {
+  const hosted = extensionNames(author);
+  const managed = managedRoleOptions(roles);
+  if (hosted.length === 0) return managed;
+  return { ...managed, hostedExtensions: hosted };
+}
+
+function extensionNames(catalog: Catalog): string[] {
+  const names: string[] = [];
+  for (const object of catalog.objects) {
+    if (object.kind === "extension") names.push(object.identity.name);
+  }
+  return names;
 }
 
 function authorSchema(author: Catalog): string {

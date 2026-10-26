@@ -8,6 +8,7 @@
 
 import { relative, dirname } from "node:path";
 
+import { caseName, type Casing } from "../../dialects/pg/casing.js";
 import { isDomain } from "../../contracts/catalog/enum.js";
 import { identityKey } from "../../contracts/catalog/identity.js";
 import { deterministicName } from "../../contracts/catalog/identifier.js";
@@ -73,6 +74,11 @@ export type PullEmission = {
    * `NOT NULL … NOT VALID` (PostgreSQL 18). The files declare it nullable.
    */
   readonly unvalidated: readonly string[];
+  /**
+   * `table.column` or a table name whose cased key does not spell the
+   * database name. Empty when casing is omitted.
+   */
+  readonly renames: readonly string[];
   readonly counts: {
     readonly tables: number;
     readonly functions: number;
@@ -161,16 +167,18 @@ const RESERVED = new Set([
  * @param source - Catalog from introspection, logical namespace `public`
  * @param layout - Schema file and tables directory
  * @param review - Scratch verdicts. Omitted marks every function candidate-only
- * @param options - `importExt` defaults to `ts`
+ * @param options - `importExt` defaults to `ts`. `casing` rewrites keys
  * @returns The files and the objects they do not declare
  */
 export function emitPull(
   source: Catalog,
   layout: PullLayout,
   review?: PullReview,
-  options?: { readonly importExt?: PullImportExt },
+  options?: { readonly importExt?: PullImportExt; readonly casing?: Casing },
 ): PullEmission {
   const importExt = options?.importExt ?? "ts";
+  const casing = options?.casing;
+  const renames: string[] = [];
   const statements = rendered(source);
   const skipped: PullSkip[] = [];
   const enums = enumLabels(source);
@@ -189,7 +197,7 @@ export function emitPull(
   for (const table of tables) {
     if (table.definition.partition !== undefined) continue;
     const exportName = freshIdent(
-      declaredIdent(table.provenance.source, table.identity.name),
+      declaredIdent(table.provenance.source, table.identity.name, casing),
       usedExports,
     );
     tableExports.set(table.identity.name, exportName);
@@ -222,6 +230,8 @@ export function emitPull(
       exportName,
       tableExports,
       pulledColumns,
+      casing,
+      renames,
     );
     if (planned === undefined) continue;
     if (planned.identitySequence !== undefined) identitySequences.add(planned.identitySequence);
@@ -289,7 +299,14 @@ export function emitPull(
   const routines = renderRoutines(plan, new Map(verdictList.map((item) => [item.key, item])));
   files.push({
     path: layout.schemaFile,
-    text: schemaText(layout.schemaFile, imports, extensionCalls(source), routines, importExt),
+    text: schemaText(
+      layout.schemaFile,
+      imports,
+      extensionCalls(source),
+      routines,
+      importExt,
+      casing,
+    ),
   });
   files.sort((left, right) => compare(left.path, right.path));
   skipped.sort((left, right) =>
@@ -301,6 +318,7 @@ export function emitPull(
     skipped,
     verdicts: verdictList,
     unvalidated: unvalidatedColumns(source, skippedKeys),
+    renames: [...new Set(renames)].sort(compare),
     counts: {
       tables: tables.length - skippedTables(source, skipped),
       functions: plan.functions.length,
@@ -345,6 +363,8 @@ function skippedTables(source: Catalog, skipped: readonly PullSkip[]): number {
  * @param unexpressed - Aggregates, procedures, event triggers, and rules
  * @param verb - `imported` for `okm import drizzle`. `pulled` is `okm pull`
  * @param unvalidated - Columns the database holds as `NOT NULL … NOT VALID`
+ * @param renames - Cased keys that do not spell the database name
+ * @param findings - Casing choices that were not guessed
  * @returns The report, with a trailing newline
  */
 export function formatPullReport(
@@ -354,6 +374,8 @@ export function formatPullReport(
   unexpressed: readonly PullCount[] = [],
   verb: "pulled" | "imported" = "pulled",
   unvalidated: readonly string[] = [],
+  renames: readonly string[] = [],
+  findings: readonly string[] = [],
 ): string {
   const lines = [
     verb === "imported"
@@ -365,6 +387,13 @@ export function formatPullReport(
     const detail = item.detail.length > 0 ? ` — ${item.detail}` : "";
     lines.push(`  ${item.label}: ${item.status}${detail}`);
   }
+  if (renames.length > 0) {
+    lines.push(
+      `  sqlName: ${String(renames.length)} — cased key does not round-trip to the database name`,
+    );
+    for (const label of renames) lines.push(`    ${label}`);
+  }
+  for (const finding of findings) lines.push(`  finding: ${finding}`);
   lines.push(verb === "imported" ? "not imported" : "not pulled yet");
   const deferredKinds = ["policy", "role", "grant", "defaultPrivilege"];
   for (const kind of deferredKinds) {
@@ -426,6 +455,8 @@ function planTable(
   exportName: string,
   tableExports: ReadonlyMap<string, string>,
   pulledColumns: ReadonlyMap<string, ReadonlySet<string>>,
+  casing: Casing | undefined,
+  renames: string[],
 ): PlannedTable | undefined {
   const bag = byParent.get(table.identity.name) ?? {
     columns: [],
@@ -444,16 +475,19 @@ function planTable(
   for (const column of [...bag.columns].sort((left, right) =>
     compare(left.identity.name, right.identity.name),
   )) {
-    const field = freshIdent(declaredIdent(column.provenance.source, column.identity.name), names);
+    const field = freshIdent(
+      declaredIdent(column.provenance.source, column.identity.name, casing),
+      names,
+    );
     fields.set(column.identity.name, field);
+    const label = `${table.identity.name}.${column.identity.name}`;
     if (column === identityColumn) {
-      const renamed =
-        field !== column.identity.name ? `.sqlName(${JSON.stringify(column.identity.name)})` : "";
+      const renamed = sqlNameCall(casing, field, column.identity.name, label, renames);
       columnLines.push(`    ${jsKey(field)}: t.identity()${renamed},`);
       emitted.add(column.identity.name);
       continue;
     }
-    const built = columnSource(column, field, enums, domains);
+    const built = columnSource(column, field, enums, domains, casing, label, renames);
     if (built === undefined) {
       skipped.push(
         skip(
@@ -477,7 +511,8 @@ function planTable(
   }
 
   const options: string[] = [];
-  if (exportName !== table.identity.name) {
+  if (nameDiffers(casing, exportName, table.identity.name)) {
+    if (casing !== undefined) renames.push(table.identity.name);
     options.push(`    sqlName: ${JSON.stringify(table.identity.name)},`);
   }
   if (primary !== undefined && identityColumn === undefined && primaryColumns.length > 0) {
@@ -744,7 +779,9 @@ function pulledColumnNames(
         names.add(column.identity.name);
         continue;
       }
-      if (columnSource(column, column.identity.name, enums, domains) !== undefined) {
+      if (
+        columnSource(column, column.identity.name, enums, domains, undefined, "", []) !== undefined
+      ) {
         names.add(column.identity.name);
       }
     }
@@ -767,6 +804,9 @@ function columnSource(
   field: string,
   enums: ReadonlyMap<string, readonly string[]>,
   domains: ReadonlyMap<string, { readonly base: string; readonly check: string }>,
+  casing: Casing | undefined,
+  label: string,
+  renames: string[],
 ): string | undefined {
   if (column.definition.identity !== undefined) return undefined;
   if (column.definition.generated !== undefined && column.definition.generated.stored !== true) {
@@ -786,7 +826,7 @@ function columnSource(
     call = builderFor(column.definition.dataType);
   }
   if (call === undefined) return undefined;
-  if (field !== column.identity.name) call += `.sqlName(${JSON.stringify(column.identity.name)})`;
+  call += sqlNameCall(casing, field, column.identity.name, label, renames);
   if (column.definition.nullable || column.definition.unvalidatedNotNull !== undefined) {
     call += ".nullable()";
   }
@@ -1059,6 +1099,7 @@ function schemaText(
     readonly views: readonly string[];
   },
   importExt: PullImportExt,
+  casing: Casing | undefined,
 ): string {
   const lines = ['import { schema } from "okmodel/pg";'];
   if (extensions.length > 0) lines.push('import { extension } from "okmodel/ext";');
@@ -1070,6 +1111,7 @@ function schemaText(
     );
   }
   const tables = sorted.map((item) => item.name).join(", ");
+  const casingBlock = casing === undefined ? "" : `,\n  casing: ${JSON.stringify(casing)}`;
   const extensionBlock =
     extensions.length === 0
       ? ""
@@ -1096,7 +1138,7 @@ ${extensions.map((call) => `    ${call},`).join("\n")}
   return `${lines.join("\n")}
 ${body}
 export default schema({
-  tables: [${tables}]${extensionBlock}${functionBlock}${triggerBlock}${viewBlock},
+  tables: [${tables}]${casingBlock}${extensionBlock}${functionBlock}${triggerBlock}${viewBlock},
 });
 `;
 }
@@ -1377,16 +1419,24 @@ function reservedFileStem(name: string): string {
  * A partitioned table is omitted. The binding matches the table file.
  *
  * @param source - Introspected catalog
+ * @param casing - When set, keys are the other casing and tables are ordered by name
  * @returns Bindings for tables this step writes
  */
-export function tableExportNames(source: Catalog): ReadonlyMap<string, string> {
+export function tableExportNames(source: Catalog, casing?: Casing): ReadonlyMap<string, string> {
   const names = new Map<string, string>();
   const used = new Set<string>();
-  for (const object of source.objects) {
-    if (object.kind !== "table" || object.definition.partition !== undefined) continue;
+  const tables = source.objects.filter(
+    (object): object is TableObject =>
+      object.kind === "table" && object.definition.partition === undefined,
+  );
+  const ordered =
+    casing === undefined
+      ? tables
+      : [...tables].sort((left, right) => compare(left.identity.name, right.identity.name));
+  for (const object of ordered) {
     names.set(
       object.identity.name,
-      freshIdent(declaredIdent(object.provenance.source, object.identity.name), used),
+      freshIdent(declaredIdent(object.provenance.source, object.identity.name, casing), used),
     );
   }
   return names;
@@ -1401,18 +1451,42 @@ function exportNameOf(name: string): string {
  *
  * `okm import drizzle` sets `field:<property>` and `export:<binding>`.
  * Introspection leaves `source` unset, so `okm pull` keeps the SQL name.
+ * With `casing`, that SQL name becomes the other casing: `snake` writes a
+ * camelCase key, and `camel` writes a snake_case key. `field:` and `export:`
+ * stay as recorded.
  *
  * @param source - Provenance source, when the author recorded one
  * @param fallback - SQL name
+ * @param casing - Schema casing, when the pull asked for it
  * @returns The name to sanitize into an identifier
  */
-function declaredIdent(source: string | undefined, fallback: string): string {
-  if (source === undefined) return fallback;
-  const field = prefixed(source, "field:");
-  if (field !== undefined) return field;
-  const exported = prefixed(source, "export:");
-  if (exported !== undefined) return exported;
-  return fallback;
+function declaredIdent(source: string | undefined, fallback: string, casing?: Casing): string {
+  if (source !== undefined) {
+    const field = prefixed(source, "field:");
+    if (field !== undefined) return field;
+    const exported = prefixed(source, "export:");
+    if (exported !== undefined) return exported;
+  }
+  if (casing === undefined) return fallback;
+  const key = caseName(casing === "snake" ? "camel" : "snake", fallback);
+  return key.length > 0 ? key : fallback;
+}
+
+function nameDiffers(casing: Casing | undefined, key: string, sqlName: string): boolean {
+  const spelled = casing === undefined ? key : caseName(casing, key);
+  return spelled !== sqlName;
+}
+
+function sqlNameCall(
+  casing: Casing | undefined,
+  field: string,
+  sqlName: string,
+  label: string,
+  renames: string[],
+): string {
+  if (!nameDiffers(casing, field, sqlName)) return "";
+  if (casing !== undefined) renames.push(label);
+  return `.sqlName(${JSON.stringify(sqlName)})`;
 }
 
 function prefixed(source: string, prefix: string): string | undefined {

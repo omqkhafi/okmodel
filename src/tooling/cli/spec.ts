@@ -281,7 +281,13 @@ export const COMMANDS: readonly CommandSpec[] = [
     missing: "okm import drizzle needs a path.",
     usesDatabase: false,
     ownOut: "directory",
-    flags: [],
+    flags: [
+      {
+        name: "drizzle-casing",
+        type: "string",
+        hint: "snake_case, camelCase, or none. Overrides detection. The default detects casing, then uses none.",
+      },
+    ],
   }),
   spec({
     id: "driver test",
@@ -461,6 +467,11 @@ export const COMMANDS: readonly CommandSpec[] = [
         name: "import-ext",
         type: "string",
         hint: "ts, js, or none. Extension on relative imports. The default is ts.",
+      },
+      {
+        name: "casing",
+        type: "string",
+        hint: "snake or camel. Opt-in. The default keeps each database name as the TypeScript key.",
       },
     ],
   }),

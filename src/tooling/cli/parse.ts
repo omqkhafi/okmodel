@@ -10,6 +10,8 @@ import { parseArgs, type ParseArgsConfig } from "node:util";
 import { nearestName } from "../../contracts/nearest.js";
 import { OkmError } from "../../contracts/error.js";
 import { tagOutcome } from "./outcome.js";
+import type { Casing } from "../../dialects/pg/casing.js";
+import { drizzleCasingValue, type DrizzleCasing } from "../migrate/drizzle-casing.js";
 import { COMMANDS, flagNames, flagsFor, type CommandSpec } from "./spec.js";
 
 /** One parsed invocation. Guard flags are booleans with no environment variable. */
@@ -33,6 +35,10 @@ export type ParsedCli = {
   readonly schemas: readonly string[];
   /** `okm pull --import-ext`. `ts` when the flag is absent. */
   readonly importExt: "ts" | "js" | "none";
+  /** `okm pull --casing`. Absent keeps database names verbatim. */
+  readonly casing: Casing | undefined;
+  /** `okm import drizzle --drizzle-casing`. Absent detects casing. */
+  readonly drizzleCasing: DrizzleCasing | undefined;
   readonly url: string | undefined;
   readonly lockTimeoutMs: number | undefined;
   readonly statementTimeoutMs: number | undefined;
@@ -223,6 +229,8 @@ export function parseCli(argv: readonly string[]): ParsedCli {
     replace: stringList(values.replace),
     schemas: schemasOf(values.schema),
     importExt: importExtOf(stringValue(values["import-ext"])),
+    casing: casingOf(stringValue(values.casing)),
+    drizzleCasing: drizzleCasingOf(stringValue(values["drizzle-casing"])),
     url: stringValue(values.url),
     lockTimeoutMs: milliseconds(values["lock-timeout"], "--lock-timeout"),
     statementTimeoutMs: milliseconds(values["statement-timeout"], "--statement-timeout"),
@@ -313,6 +321,8 @@ function blank(flags: { readonly help: boolean; readonly json: boolean }): Parse
     replace: [],
     schemas: [],
     importExt: "ts",
+    casing: undefined,
+    drizzleCasing: undefined,
     url: undefined,
     lockTimeoutMs: undefined,
     statementTimeoutMs: undefined,
@@ -536,6 +546,22 @@ function milliseconds(value: unknown, flag: string): number | undefined {
     throw usage(`${flag} needs a number of milliseconds.`, `Pass ${flag} <milliseconds>.`);
   }
   return parsed;
+}
+
+function casingOf(value: string | undefined): Casing | undefined {
+  if (value === undefined) return undefined;
+  if (value === "snake" || value === "camel") return value;
+  throw usage("--casing accepts snake or camel.", "Pass --casing snake or --casing camel.");
+}
+
+function drizzleCasingOf(value: string | undefined): DrizzleCasing | undefined {
+  if (value === undefined) return undefined;
+  const casing = drizzleCasingValue(value);
+  if (casing !== undefined) return casing;
+  throw usage(
+    "--drizzle-casing accepts snake_case, camelCase, or none.",
+    "Pass --drizzle-casing snake_case, --drizzle-casing camelCase, or --drizzle-casing none.",
+  );
 }
 
 function importExtOf(value: string | undefined): "ts" | "js" | "none" {

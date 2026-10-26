@@ -27,7 +27,7 @@ import { driverUrl } from "./driver-url.js";
 import {
   catalogQuery,
   invalidIndexReport,
-  managedRoleOptions,
+  liveIntrospectOptions,
   sealStoredChecks,
   sealTriggerWhens,
 } from "./drift.js";
@@ -298,7 +298,7 @@ async function compareLive(
       await sealStoredChecks(runner, await sealViews(runner, model)),
     );
     const live = omitManagedObjects(
-      await introspectSchema(runner, namespace, namespace, managedRoleOptions(roles)),
+      await introspectSchema(runner, namespace, namespace, liveIntrospectOptions(roles, model)),
     );
     const modelKeys = new Set(authorOnServer.objects.map((object) => identityKey(object.identity)));
     const unmanagedObjects = live.objects.filter(

@@ -43,7 +43,7 @@ import type { StepBoundary } from "./step-engine.js";
 import {
   catalogQuery,
   invalidIndexReport,
-  managedRoleOptions,
+  liveIntrospectOptions,
   sealStoredChecks,
   sealTriggerWhens,
 } from "./drift.js";
@@ -651,7 +651,12 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
       const author = await sealTriggerWhens(runner, await sealStoredChecks(runner, authorViews));
       const live = await sealStoredChecks(
         runner,
-        await introspectSchema(runner, schema, schema, managedRoleOptions(request.roles)),
+        await introspectSchema(
+          runner,
+          schema,
+          schema,
+          liveIntrospectOptions(request.roles, author),
+        ),
       );
       const invalid = await invalidIndexReport(runner, schema);
       if (invalid.length > 0) {

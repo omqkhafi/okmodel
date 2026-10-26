@@ -5,6 +5,7 @@
 import { expect, test } from "bun:test";
 
 import {
+  compositionRelevant,
   lifecycleRelevant,
   postgres18Relevant,
   runtimeRelevant,
@@ -50,6 +51,15 @@ test("tooling and dialects run the site tests", () => {
   expect(siteTestsRelevant(["site/lib/hero-derived.json"])).toBe(false);
   expect(siteTestsRelevant(["docs/errors/OKM1510.md"])).toBe(false);
   expect(siteTestsRelevant([])).toBe(false);
+});
+
+test("dialects, runtime, and tests/composition run the composition cases", () => {
+  expect(compositionRelevant(["src/dialects/pg/ddl.ts"])).toBe(true);
+  expect(compositionRelevant(["src/runtime/client.ts"])).toBe(true);
+  expect(compositionRelevant(["tests/composition/composition-pg.test.ts"])).toBe(true);
+  expect(compositionRelevant(["src/tooling/migrate/apply.ts"])).toBe(false);
+  expect(compositionRelevant(["docs/github.md"])).toBe(false);
+  expect(compositionRelevant([])).toBe(false);
 });
 
 test("dialects, migrate, and tests/lifecycle run the lifecycle property", () => {
