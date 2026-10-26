@@ -1,5 +1,6 @@
 /**
- * `orderBy` on a relation: one left join, or a to-many count.
+ * `orderBy` on a relation: a left join per to-one, or a to-many count.
+ * More than one relation is one join each, and `page()` keeps that order.
  *
  * The related table's tenant predicate and archive filter sit on the join.
  * A missing related row stays in the result. Real Postgres.
@@ -328,6 +329,46 @@ postgresTest(
       expect(decoded[0]).not.toBe("k");
       expect(String(decoded[0])).toContain("notes.count");
       expect(decoded).toContain("3");
+    });
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
+  "orderBy names two relations and page keeps that order",
+  async () => {
+    await withApp(async (db) => {
+      const a = db.for({ tenantId: TENANT_A });
+      await a.projects.insert([
+        { id: "pa", name: "alpha" },
+        { id: "pm", name: "mid" },
+      ]);
+      await a.tasks.insert([
+        { id: "t-a-many", title: "many", projectId: "pa" },
+        { id: "t-a-few", title: "few", projectId: "pa" },
+        { id: "t-m", title: "mid", projectId: "pm" },
+        { id: "t-none", title: "none", projectId: null },
+      ]);
+      const bodies: { id: string; taskId: string; body: string }[] = [];
+      for (const [taskId, count] of [
+        ["t-a-many", 3],
+        ["t-a-few", 1],
+        ["t-m", 5],
+        ["t-none", 4],
+      ] as const) {
+        for (let index = 0; index < count; index += 1) {
+          bodies.push({ id: `${taskId}-${String(index)}`, taskId, body: "n" });
+        }
+      }
+      await a.notes.insert(bodies);
+
+      const order = { project: { name: "asc" as const }, notes: { count: "desc" as const } };
+      const planned = await a.tasks.find({ orderBy: order, limit: 5 }).sql();
+      expect(planned.text).toContain("left join");
+      expect(planned.text).toContain("left join lateral");
+      const paged = await ids((after) => a.tasks.page({ orderBy: order, limit: 2, after }));
+      expect(paged.ids).toEqual(["t-a-many", "t-a-few", "t-m", "t-none"]);
     });
   },
   60_000,

@@ -62,7 +62,9 @@ export function postgresTest(
   timeoutMs = 5_000,
 ): void {
   if (decision.run) {
-    test(name, fn, { timeout: timeoutMs });
+    // Bun's own timeout is one second later, so this rejection is the one
+    // reported and it names the test. A kernel TCP timeout is about 200s.
+    test(name, () => withNamedTimeout(name, fn, timeoutMs), { timeout: timeoutMs + 1_000 });
     return;
   }
   if (decision.fail) {
@@ -73,6 +75,31 @@ export function postgresTest(
   }
   notePostgresSkip();
   test.skip(name, fn);
+}
+
+/**
+ * Fails the test by name when `fn` is still running at `timeoutMs`.
+ *
+ * @param name - Test name, included in the error
+ * @param fn - Test body
+ * @param timeoutMs - Deadline for `fn`
+ */
+async function withNamedTimeout(
+  name: string,
+  fn: () => Promise<void>,
+  timeoutMs: number,
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error(`${name} timed out after ${String(timeoutMs)}ms`));
+      }, timeoutMs);
+      fn().then(resolve, reject);
+    });
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 /**

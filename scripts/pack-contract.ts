@@ -36,6 +36,17 @@ import { restoreWorkspaces } from "./strip-workspaces.js";
 /** Install-time scripts the published manifest must not define. */
 export const FORBIDDEN_SCRIPTS = ["preinstall", "install", "postinstall", "prepare"] as const;
 
+/** The one command that rewrites the committed snapshot. Named by every drift failure. */
+const UPDATE_SNAPSHOT = "bun ./scripts/pack-contract.ts --update";
+
+/**
+ * @param detail - What drifted
+ * @returns That detail plus the snapshot command
+ */
+function snapshotDrift(detail: string): string {
+  return `${detail} ${UPDATE_SNAPSHOT}`;
+}
+
 /**
  * npm used for `npm pack --dry-run --json`.
  *
@@ -222,23 +233,17 @@ function compareSnapshot(snapshotPath: string, next: PackSnapshot): readonly str
   }
   const problems: string[] = [];
   if (canonical(next.exports) !== canonical(snapshot.exports)) {
-    problems.push(
-      `pack-contract: exports differ from ${snapshotPath}. Run with --update and commit the snapshot.`,
-    );
+    problems.push(snapshotDrift(`pack-contract: exports differ from ${snapshotPath}.`));
   }
   if (canonical(next.bin) !== canonical(snapshot.bin)) {
-    problems.push(
-      `pack-contract: bin differs from ${snapshotPath}. Run with --update and commit the snapshot.`,
-    );
+    problems.push(snapshotDrift(`pack-contract: bin differs from ${snapshotPath}.`));
   }
   if (canonical(next.main) !== canonical(snapshot.main)) {
-    problems.push(
-      `pack-contract: main differs from ${snapshotPath}. Run with --update and commit the snapshot.`,
-    );
+    problems.push(snapshotDrift(`pack-contract: main differs from ${snapshotPath}.`));
   }
   const diff = packedFileDiff(next.files, snapshot.files);
   if (diff.extra.length > 0 || diff.missing.length > 0) {
-    problems.push(`pack-contract: packed files differ from ${snapshotPath}`);
+    problems.push(snapshotDrift(`pack-contract: packed files differ from ${snapshotPath}.`));
     for (const path of diff.extra) problems.push(`  + ${path}`);
     for (const path of diff.missing) problems.push(`  - ${path}`);
   }
@@ -390,7 +395,7 @@ function readSnapshot(path: string): PackSnapshot {
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "ENOENT") {
-      throw new Error(`snapshot is missing: ${path}. Run with --update and commit the snapshot.`);
+      throw new Error(snapshotDrift(`snapshot is missing: ${path}.`));
     }
     throw error;
   }

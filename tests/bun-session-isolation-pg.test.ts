@@ -115,7 +115,8 @@ function safe<T>(
 }
 
 /** Post-storm pool recovery: retry only unavailable/closed, bounded for CI. */
-const AFTER_STORM_ATTEMPTS = 8;
+const AFTER_STORM_ATTEMPTS = 16;
+const KILL_GAP_MS = 20;
 
 function recoverableAfterStorm(error: unknown): boolean {
   if (error instanceof OkmError) return error.kind === "unavailable";
@@ -134,11 +135,15 @@ async function untilAfterStorm<T>(work: () => Promise<T>): Promise<T> {
     if (result.ok) return result.value;
     last = result.error;
     if (!recoverableAfterStorm(last)) throw last;
-    // The pool replaces the dead client on release. Give that client one
-    // turn before the next checkout (#433 retried with no gap).
-    await Bun.sleep(50 * attempt);
+    // The pool replaces the dead client on release. One turn, not a growing sleep.
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
   }
-  throw last;
+  const message = last instanceof Error ? last.message : String(last);
+  throw new Error(
+    `Bun.sql kill storm keeps scoped reads full and writes outside read-only (B-03): scoped read did not recover after ${String(AFTER_STORM_ATTEMPTS)} attempts: ${message}`,
+  );
 }
 
 async function dockerPrimaryLogsSince(sinceIso: string): Promise<string> {
@@ -182,7 +187,7 @@ postgresTest(
               ),
               CALL_MS,
             ).catch(() => undefined);
-            await Bun.sleep(15 + Math.floor(Math.random() * 30));
+            await Bun.sleep(KILL_GAP_MS);
           }
         })();
         const deadline = Date.now() + STRESS_MS;
@@ -263,14 +268,13 @@ postgresTest(
                 `select pg_terminate_backend(pid) from pg_stat_activity where usename = '${role}'`,
               )
               .catch(() => undefined);
-            await Bun.sleep(10);
+            await Bun.sleep(KILL_GAP_MS);
           }
         })();
-        const deadline = Date.now() + 3_000;
         await Promise.all(
           pools.map(async (pool) => {
-            while (Date.now() < deadline) {
-              await pool.execute("select 1").catch(() => undefined);
+            for (let round = 0; round < 20; round += 1) {
+              await timed(pool.execute("select 1"), CALL_MS).catch(() => undefined);
             }
           }),
         );
@@ -279,14 +283,17 @@ postgresTest(
         for (const pool of pools) {
           let last = "";
           let ok = false;
-          for (let attempt = 1; attempt <= 5; attempt += 1) {
+          for (let attempt = 1; attempt <= 16; attempt += 1) {
             try {
-              await pool.execute("select 1");
+              await timed(pool.execute("select 1"), CALL_MS);
               ok = true;
               last = "";
               break;
             } catch (error) {
               last = error instanceof Error ? error.message : String(error);
+              await new Promise<void>((resolve) => {
+                setImmediate(resolve);
+              });
             }
           }
           expect(last).toBe("");

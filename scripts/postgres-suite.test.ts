@@ -17,6 +17,12 @@ describe("R2 postgresReachable", () => {
   test("a malformed URL is not reachable", async () => {
     expect(await postgresReachable("not a url")).toBe(false);
   });
+
+  test("a blackhole port returns false inside the probe bound", async () => {
+    const started = Date.now();
+    expect(await postgresReachable("postgres://okm:okm@192.0.2.1:5432/okm")).toBe(false);
+    expect(Date.now() - started).toBeLessThan(5_000);
+  }, 15_000);
 });
 
 describe("R2 readSkipCount", () => {
