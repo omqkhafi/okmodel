@@ -940,10 +940,8 @@ function compileTable(
         const seq = sequence({
           namespace,
           name: seqName,
-          dataType:
-            column.state.baseType === "integer" || column.state.baseType === "smallint"
-              ? column.state.baseType
-              : "bigint",
+          // The sequence type is the column type. A bigint identity stays a bigint.
+          dataType: column.state.baseType,
           provenance,
           dependencies: [{ kind: "table", namespace, name: sqlName }],
         });
