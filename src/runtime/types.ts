@@ -1464,6 +1464,31 @@ type VersionAnyArg<
     }
   : never;
 
+/**
+ * `version: "any"` when `{ allow }` sets a guarded column.
+ *
+ * Same claim as {@link VersionAnyArg}. `set` also accepts the columns named
+ * in `allow`. A key outside that set stays `never`, including a typo.
+ * This stays on a later overload: an earlier one is built for every update.
+ */
+type VersionAnyAllowArg<
+  S extends QuerySchema,
+  K extends keyof S["~byName"],
+  W,
+  Set,
+  Allow extends readonly (keyof RowOf<S, K> & string)[],
+> = S["~byName"][K] extends {
+  readonly "~versioned": true;
+}
+  ? {
+      readonly where?: FilterWhereOf<S, K, W>;
+      readonly set: ClosedWhere<Set, AllowedSet<S, K, Allow>>;
+      readonly limit: number;
+      readonly lock: "skip";
+      readonly version: "any";
+    }
+  : never;
+
 /** Update target with `version` required (versioned tables, D305). */
 type UpdateTargetVersioned<S extends QuerySchema, K extends keyof S["~byName"]> =
   | {
@@ -1855,14 +1880,33 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     ? UpdateWrite<S, K, readonly ClaimedRow<S, K, Opt>[]>
     : UpdateWrite<S, K, WriteCount>;
   /**
-   * Last signature, so `Parameters` reads {@link UpdateArg}.
+   * `version: "any"` with `{ allow }` naming a guarded column.
+   *
+   * Later than the integer `{ allow }` overload, so a numeric version does
+   * not build this constraint.
+   */
+  update<
+    const Allow extends readonly (keyof RowOf<S, K> & string)[],
+    const T extends ExactConstraint<
+      T,
+      VersionAnyAllowArg<S, K, WhereOfTarget<T>, SetOfTarget<T>, Allow>
+    >,
+    const Opt extends WriteOptions<S, K> & { readonly allow: Allow },
+  >(
+    target: T & OneVersion<T>,
+    options: Opt,
+  ): UpdateWrite<S, K, readonly ClaimedRow<S, K, Opt>[]>;
+  /**
+   * Last signature, so `Parameters` reads {@link UpdateObject}.
    *
    * The third argument is required, so a call matches an earlier overload.
-   * A generic exact constraint collapses to `Record<string, never>` there and
-   * a helper then rejects a valid update.
+   * That object is the same type an earlier overload accepts, so a helper
+   * can pass it back, including through a generic table name. The list form
+   * stays on {@link UpdateList}. A generic exact constraint collapses to
+   * `Record<string, never>` and a helper then rejects a valid update.
    */
   update(
-    target: UpdateArg<S, K>,
+    target: UpdateObject<S, K>,
     options: WriteOptions<S, K> | undefined,
     _parameters: 0,
   ): UpdateWrite<S, K, WriteCount>;

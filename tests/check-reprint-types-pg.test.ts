@@ -1,6 +1,9 @@
 /**
  * N-33: a check reprint on a scratch table sees citext, an enum, a domain,
  * and an extension installed outside public.
+ *
+ * The matrix is generate init, migrate apply, check, push, and migrate
+ * check. Each of those must not report `type "..." does not exist`.
  */
 
 import { expect } from "bun:test";
@@ -18,34 +21,23 @@ const root = repoRoot();
 
 postgresTest(
   gate,
-  "push and check reprint citext, an enum, a domain, and an extension schema",
+  "generate, apply, check, push, and migrate check reprint citext, an enum, a domain, and an extension schema",
   async () => {
     const database = await createIsolatedDatabase();
     const cwd = mkdtempSync(join(tmpdir(), "okm-reprint-types-"));
     const sql = openPostgres(database.url);
     try {
-      await sql.unsafe("create schema extensions");
-      await sql.unsafe("create extension citext schema extensions");
       writeConfig(cwd, database.url);
       writeFileSync(join(cwd, "schema.ts"), schemaText());
-      const pushed = await cli(cwd, ["push"]);
-      expect(pushed.toLowerCase()).not.toContain("does not exist");
-      expect(pushed).toMatch(/applied push-1|nothing to apply/);
-      const checked = await cli(cwd, ["check"]);
-      expect(checked.toLowerCase()).not.toContain("does not exist");
-      expect(checked.trimEnd().endsWith("ok")).toBe(true);
+      await expectMatrix(cwd);
 
       const app = mkdtempSync(join(tmpdir(), "okm-reprint-app-"));
       try {
-        await sql.unsafe("create schema app");
+        await sql.unsafe("drop extension if exists citext cascade");
+        await sql.unsafe("drop schema if exists extensions cascade");
         writeConfig(app, database.url, "app");
         writeFileSync(join(app, "schema.ts"), appSchemaText());
-        const appPush = await cli(app, ["push"]);
-        expect(appPush.toLowerCase()).not.toContain("does not exist");
-        expect(appPush).toMatch(/applied push-1/);
-        const appCheck = await cli(app, ["check"]);
-        expect(appCheck.toLowerCase()).not.toContain("does not exist");
-        expect(appCheck.trimEnd().endsWith("ok")).toBe(true);
+        await expectMatrix(app);
       } finally {
         rmSync(app, { recursive: true, force: true });
       }
@@ -55,7 +47,7 @@ postgresTest(
       await database.close();
     }
   },
-  90_000,
+  180_000,
 );
 
 function schemaText(): string {
@@ -125,6 +117,27 @@ function writeConfig(cwd: string, url: string, namespace?: string): void {
       .filter((item) => item.length > 0)
       .join("\n"),
   );
+}
+
+async function expectMatrix(cwd: string): Promise<void> {
+  const generated = await cli(cwd, ["generate", "init"]);
+  expect(generated.toLowerCase()).not.toContain("does not exist");
+  expect(generated).toContain(".sql");
+  const checkedFirst = await cli(cwd, ["migrate", "check"]);
+  expect(checkedFirst.toLowerCase()).not.toContain("does not exist");
+  expect(checkedFirst).toMatch(/^ok \d+ migrations/);
+  const applied = await cli(cwd, ["migrate", "apply"]);
+  expect(applied.toLowerCase()).not.toContain("does not exist");
+  expect(applied).toContain("applied");
+  const checked = await cli(cwd, ["check"]);
+  expect(checked.toLowerCase()).not.toContain("does not exist");
+  expect(checked.trimEnd().endsWith("ok")).toBe(true);
+  const pushed = await cli(cwd, ["push"]);
+  expect(pushed.toLowerCase()).not.toContain("does not exist");
+  expect(pushed).toMatch(/applied push-1|nothing to apply|no changes/);
+  const replayed = await cli(cwd, ["migrate", "check"]);
+  expect(replayed.toLowerCase()).not.toContain("does not exist");
+  expect(replayed).toMatch(/^ok \d+ migrations/);
 }
 
 async function cli(cwd: string, argv: readonly string[]): Promise<string> {

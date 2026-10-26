@@ -9,6 +9,7 @@ import {
   lifecycleRelevant,
   postgres18Relevant,
   runtimeRelevant,
+  packContractRelevant,
   siteTestsRelevant,
   workflowsChanged,
 } from "./ci-paths.js";
@@ -51,6 +52,26 @@ test("tooling and dialects run the site tests", () => {
   expect(siteTestsRelevant(["site/lib/hero-derived.json"])).toBe(false);
   expect(siteTestsRelevant(["docs/errors/OKM1510.md"])).toBe(false);
   expect(siteTestsRelevant([])).toBe(false);
+});
+
+test("packed paths, src, scripts, and package.json run the pack contract", () => {
+  expect(packContractRelevant(["src/runtime/client.ts"])).toBe(true);
+  expect(packContractRelevant(["scripts/pack-contract.ts"])).toBe(true);
+  expect(packContractRelevant(["package.json"])).toBe(true);
+  expect(packContractRelevant(["src/dialects/pg/ddl.ts", "docs/github.md"])).toBe(true);
+  expect(packContractRelevant(["docs/errors/OKM9999.md"])).toBe(true);
+  expect(packContractRelevant(["docs/github.md"])).toBe(true);
+  expect(packContractRelevant(["schemas/config.json"])).toBe(true);
+  expect(packContractRelevant(["skills/okm/SKILL.md"])).toBe(true);
+  expect(packContractRelevant(["README.md"])).toBe(true);
+  expect(packContractRelevant(["LICENSE"])).toBe(true);
+  expect(packContractRelevant(["LICENSE.md"])).toBe(true);
+  expect(packContractRelevant(["readme.md"])).toBe(true);
+  expect(packContractRelevant(["CHANGELOG.md"])).toBe(true);
+  expect(packContractRelevant(["site/README.md"])).toBe(false);
+  expect(packContractRelevant(["site/package.json"])).toBe(false);
+  expect(packContractRelevant(["tests/fixtures/pack-contract.snap.json"])).toBe(false);
+  expect(packContractRelevant([])).toBe(false);
 });
 
 test("dialects, runtime, and tests/composition run the composition cases", () => {

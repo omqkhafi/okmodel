@@ -41,6 +41,7 @@ import {
   readUnpulled,
   refuseUnpulledDrops,
   unpulledDropLabels,
+  unpulledKeys,
   type UnpulledObject,
 } from "./unpulled.js";
 import type { StoredMigration } from "./files.js";
@@ -662,14 +663,13 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
       if (searchPath !== undefined) await sql.unsafe(`set search_path to ${searchPath}`);
       const authorViews = await sealViews(runner, request.after);
       const author = await sealTriggerWhens(runner, await sealStoredChecks(runner, authorViews));
+      const unpulled = unpulledKeys(request.unpulled);
       const live = await sealStoredChecks(
         runner,
-        await introspectSchema(
-          runner,
-          schema,
-          schema,
-          liveIntrospectOptions(request.roles, author),
-        ),
+        await introspectSchema(runner, schema, schema, {
+          ...liveIntrospectOptions(request.roles, author),
+          ...(unpulled.size > 0 ? { omit: unpulled } : {}),
+        }),
       );
       const invalid = await invalidIndexReport(runner, schema);
       if (invalid.length > 0) {

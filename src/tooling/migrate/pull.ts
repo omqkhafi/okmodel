@@ -32,7 +32,7 @@ import type {
 import { driverUrl } from "./driver-url.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { asProject, projectPath, type ProjectContext } from "./paths.js";
-import { assertTargetPolicy, selectTarget } from "./policy.js";
+import { assertTargetPolicy, listTargets, selectTarget } from "./policy.js";
 import {
   emitPull,
   formatPullReport,
@@ -63,7 +63,10 @@ export type PullResult = {
  * may be repeated. `--out` is the directory that receives `schema.ts` and
  * `tables/`. Without it, the project's schema path and tables directory are
  * used. A tables directory that the config omits is `tables` beside the
- * schema file.
+ * schema file. `.okm/pull.json` is written at the project root for that pull.
+ * `--out` of the target named `default`, or of the only target, refreshes it.
+ * `--out` of any other `--target`, or one that passes `--schema`, leaves the
+ * existing record in place.
  *
  * @param cwd - Project directory
  * @param argv - Arguments after `pull`
@@ -109,7 +112,13 @@ export async function pullProject(
     }
     commitPullFiles(emitted.files, "Pull");
     const skipped = [...emitted.skipped, ...read.outside];
-    if (flags.out === undefined) writeUnpulled(cwd, skipped);
+    // `--out` of another target or an explicit schema is a scratch copy.
+    // Replacing the record would let the next push of the project target
+    // drop an identity column the first pull had kept. `--out` of the
+    // target named `default` is a refresh of that database.
+    if (replacesPullRecord(flags, listTargets(config).length)) {
+      writeUnpulled(cwd, skipped);
+    }
     return {
       text: formatPullReport(
         emitted.counts,
@@ -572,6 +581,29 @@ export function commitPullFiles(
     writeFileSync(file.path, file.text);
   }
   formatFiles(files.map((file) => file.path));
+}
+
+/**
+ * Whether this pull should replace `.okm/pull.json`.
+ *
+ * A pull with no `--out` writes the project schema, so it replaces the record.
+ * `--out` of the target named `default`, or of the only target, refreshes that
+ * database and replaces the record too. `--out` of any other target leaves the
+ * record, including when the directory is the project schema directory. Any
+ * `--out` that passes `--schema` leaves the record.
+ */
+function replacesPullRecord(
+  flags: {
+    readonly out: string | undefined;
+    readonly schemas: readonly string[];
+    readonly target: string | undefined;
+  },
+  targetCount: number,
+): boolean {
+  if (flags.out === undefined) return true;
+  if (flags.schemas.length > 0) return false;
+  if (flags.target !== undefined && flags.target !== "default" && targetCount > 1) return false;
+  return true;
 }
 
 function layoutOf(

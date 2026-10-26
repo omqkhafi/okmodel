@@ -8,17 +8,24 @@
  *
  *   bun ./scripts/ci-paths.ts --base <sha> --head <sha>
  *
- * Writes `runtime=`, `workflows=`, `postgres=`, `lifecycle=`, and `site=` lines
- * to `GITHUB_OUTPUT` when that file is set, and always prints the same lines.
+ * Writes `runtime=`, `workflows=`, `postgres=`, `lifecycle=`, `site=`, and
+ * `pack=` lines to `GITHUB_OUTPUT` when that file is set, and always prints
+ * the same lines.
  * `postgres` is true when the diff touches dialects, migrate, or runtime: the
  * pull request then runs Postgres 18. `lifecycle` is true when the diff
  * touches dialects, migrate, or `tests/lifecycle`: the pull request then runs
  * the migration lifecycle property on Postgres 18. `site` is true when the
  * diff touches `src/tooling` or `src/dialects`: the pull request then runs the
  * site tests, because that is where CLI output the hero reads is produced.
+ * `pack` is true when the diff touches a path `package.json` `files` packs
+ * (`dist`, `docs`, `schemas`, `skills`, `README.md`, `LICENSE`), a root
+ * README, LICENSE, LICENCE, CHANGELOG, CHANGES, or HISTORY name npm always
+ * packs, or `src/`, `scripts/`, or `package.json`. The pull request then
+ * runs the pack contract.
  */
 
-import { appendFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { parseArgs } from "node:util";
 
 import { repoRoot } from "./root.js";
@@ -128,6 +135,48 @@ export function siteTestsRelevant(paths: readonly string[]): boolean {
   );
 }
 
+/**
+ * Whether a pull request runs the pack contract inside `gate / check`.
+ *
+ * The packed file list drifts when a path in `package.json` `files` changes,
+ * when npm packs a root README, LICENSE, LICENCE, CHANGELOG, CHANGES, or
+ * HISTORY name, and when `src/`, `scripts/`, or `package.json` changes. The
+ * after-merge job still runs it on main. A pull request that does not touch
+ * those paths skips it.
+ *
+ * @param paths - Paths from the repository root
+ * @returns True when any path can change the packed list
+ */
+export function packContractRelevant(paths: readonly string[]): boolean {
+  const packed = packedEntries();
+  return paths.some(
+    (path) =>
+      path === "package.json" ||
+      path === "src" ||
+      path.startsWith("src/") ||
+      path === "scripts" ||
+      path.startsWith("scripts/") ||
+      npmAlwaysPacked(path) ||
+      packed.some((entry) => path === entry || path.startsWith(`${entry}/`)),
+  );
+}
+
+/** Root names npm packs even when `files` does not list them. */
+const ALWAYS_PACKED_ROOT = /^(?:readme|license|licence|changelog|changes|history)(?:\.[^/]+)?$/i;
+
+function npmAlwaysPacked(path: string): boolean {
+  return !path.includes("/") && ALWAYS_PACKED_ROOT.test(path);
+}
+
+/** Directories and files named in the root `package.json` `files` list. */
+function packedEntries(): readonly string[] {
+  const manifest = JSON.parse(readFileSync(join(repoRoot(), "package.json"), "utf8")) as {
+    files?: unknown;
+  };
+  if (!Array.isArray(manifest.files)) return [];
+  return manifest.files.filter((entry): entry is string => typeof entry === "string");
+}
+
 function isDocsPath(path: string): boolean {
   return path === "docs" || path.startsWith("docs/");
 }
@@ -167,7 +216,8 @@ function writeOutputs(paths: readonly string[]): void {
     `postgres=${postgres18Relevant(paths) ? "true" : "false"}\n` +
     `lifecycle=${lifecycleRelevant(paths) ? "true" : "false"}\n` +
     `composition=${compositionRelevant(paths) ? "true" : "false"}\n` +
-    `site=${siteTestsRelevant(paths) ? "true" : "false"}\n`;
+    `site=${siteTestsRelevant(paths) ? "true" : "false"}\n` +
+    `pack=${packContractRelevant(paths) ? "true" : "false"}\n`;
   const output = process.env.GITHUB_OUTPUT;
   if (output !== undefined && output.length > 0) appendFileSync(output, text);
   process.stdout.write(text);

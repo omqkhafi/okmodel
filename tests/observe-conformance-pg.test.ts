@@ -622,8 +622,9 @@ each("clients scoped by for, unscoped, and with report only their own tenant", a
       expect(otel).not.toContain(value);
     }
     const queries = JSON.stringify(seen.queries);
-    expect(queries).toContain(TENANT_A);
-    expect(queries).toContain(TENANT_B);
+    expect(queries).toContain("[redacted]");
+    expect(queries).not.toContain(TENANT_A);
+    expect(queries).not.toContain(TENANT_B);
     for (const event of writesOf(seen.events)) {
       expect(event.settings.every((name) => typeof name === "string")).toBe(true);
     }
