@@ -1514,9 +1514,8 @@ async function usingExtensionTypes<T>(
   extensions: ReadonlyMap<string, string>,
   run: (query: CatalogQuery) => Promise<T>,
 ): Promise<T> {
-  const isolate = runner.isolate;
-  if (isolate === undefined) return run(runner);
-  return isolate(async (query) => {
+  if (runner.isolate === undefined) return run(runner);
+  return runner.isolate(async (query) => {
     const created = new Set<string>();
     for (const [type, schema] of extensions) {
       const key = `${schema}.${type}`;
