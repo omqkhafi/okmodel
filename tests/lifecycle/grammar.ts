@@ -13,7 +13,11 @@ import {
   type ColumnTypeKind,
   type Evolution,
   type FkAction,
+  type ClashKind,
+  type HostileRole,
+  type HostileStart,
   type LifecycleCase,
+  type ProjectPlace,
   type SchemaModel,
   type TableModel,
 } from "./model.js";
@@ -70,7 +74,11 @@ export const lifecycleCaseArb: fc.Arbitrary<LifecycleCase> = fc
       "collide",
       "long",
     ),
-    namespace: fc.option(fc.constantFrom("appns", "tenant_a"), { nil: undefined }),
+    namespace: fc.constantFrom("public", "appns"),
+    role: fc.constantFrom("superuser", "owner", "creator", "replica"),
+    start: fc.constantFrom("empty", "foreign", "rows", "clash"),
+    clash: fc.constantFrom("scratch", "steps", "index"),
+    place: fc.constantFrom("plain", "symlink", "spaces"),
     tenancy: fc.boolean(),
     trgm: fc.boolean(),
     withRows: fc.boolean(),
@@ -128,11 +136,15 @@ export const lifecycleCaseArb: fc.Arbitrary<LifecycleCase> = fc
       const tables: TableModel[] = needsParent ? [parent, child] : [child];
       // A rename under defineConfig({ namespace }) is not a schema the planner
       // accepts: the snapshot lives in that schema and the rename looks in public.
+      // A view is forced into a non-public namespace so both namespace values
+      // stay reachable when the draw is public.
       const namespace = renaming
         ? undefined
         : pick.featurePack === "view"
-          ? (pick.namespace ?? "appns")
-          : pick.namespace;
+          ? "appns"
+          : pick.namespace === "public"
+            ? undefined
+            : pick.namespace;
       const initial: SchemaModel = {
         casing,
         ...(pick.nameStress === "none" ? {} : { stress: pick.nameStress }),
@@ -157,11 +169,19 @@ export const lifecycleCaseArb: fc.Arbitrary<LifecycleCase> = fc
       };
       const evolutions = buildEvolutions(initial, pick.evolutionKind);
       const withRows = pick.withRows;
-      const tags = tagsFor(initial, evolutions, withRows);
+      const role = pick.role as HostileRole;
+      const start = pick.start as HostileStart;
+      const clash = pick.clash as ClashKind;
+      const place = pick.place as ProjectPlace;
+      const tags = tagsFor(initial, evolutions, withRows, { role, start, clash, place });
       return fc.constant({
         initial,
         evolutions,
         withRows,
+        role,
+        start,
+        clash,
+        place,
         tags,
       });
     }),

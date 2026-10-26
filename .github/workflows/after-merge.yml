@@ -324,7 +324,7 @@ jobs:
           POSTGRES_VERSION: ${{ matrix.version }}
 
       - name: Lifecycle property
-        run: bun test tests/lifecycle/lifecycle-pg.test.ts
+        run: bun test tests/lifecycle/lifecycle-pg.test.ts tests/lifecycle/creator-scratch-pg.test.ts
         env:
           REQUIRE_DOCKER: "1"
           POSTGRES_VERSION: ${{ matrix.version }}

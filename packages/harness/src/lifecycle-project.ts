@@ -5,7 +5,14 @@
  * product code.
  */
 
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -19,11 +26,14 @@ export type LifecycleCliResult = {
   readonly kind?: OkmError["kind"];
 };
 
+/** Where the temp project directory is created. */
+export type LifecyclePlace = "plain" | "symlink" | "spaces";
+
 /** A disposable project directory for generate / apply / push / check. */
 export type LifecycleProject = {
   readonly cwd: string;
   writeSchema(source: string): void;
-  writeConfig(url: string, namespace?: string): void;
+  writeConfig(url: string, namespace?: string, replica?: string): void;
   cli(argv: readonly string[]): Promise<string>;
   generateAllowing(): Promise<string>;
   close(): void;
@@ -34,17 +44,35 @@ export type LifecycleProject = {
  *
  * @param root - Repository root (absolute imports in generated files)
  * @param label - mkdtemp prefix fragment
+ * @param place - Plain directory, a symlink to it, or a path that contains a space
  * @returns Project handle
  */
-export function openLifecycleProject(root: string, label = "lifecycle"): LifecycleProject {
-  const cwd = mkdtempSync(join(tmpdir(), `okm-${label}-`));
+export function openLifecycleProject(
+  root: string,
+  label = "lifecycle",
+  place: LifecyclePlace = "plain",
+): LifecycleProject {
+  const parent = place === "spaces" ? mkdtempSync(join(tmpdir(), "okm lifecycle ")) : tmpdir();
+  const real = mkdtempSync(join(parent, `okm-${label}-`));
+  const link = place === "symlink" ? `${real}-link` : undefined;
+  if (link !== undefined) symlinkSync(real, link);
+  const cwd = link ?? real;
   const source = (path: string): string => JSON.stringify(join(root, path));
   return {
     cwd,
     writeSchema(text: string): void {
       writeFileSync(join(cwd, "schema.ts"), text.endsWith("\n") ? text : `${text}\n`);
     },
-    writeConfig(url: string, namespace?: string): void {
+    writeConfig(url: string, namespace?: string, replica?: string): void {
+      const target =
+        replica === undefined
+          ? [`  database: ${JSON.stringify(url)},`]
+          : [
+              "  targets: {",
+              `    primary: ${JSON.stringify(url)},`,
+              `    replica: ${JSON.stringify(replica)},`,
+              "  },",
+            ];
       writeFileSync(
         join(cwd, "okmodel.config.ts"),
         [
@@ -52,7 +80,7 @@ export function openLifecycleProject(root: string, label = "lifecycle"): Lifecyc
           "export default defineConfig({",
           '  schema: "./schema.ts",',
           '  migrations: "./migrations",',
-          `  database: ${JSON.stringify(url)},`,
+          ...target,
           ...(namespace === undefined ? [] : [`  namespace: ${JSON.stringify(namespace)},`]),
           "});",
           "",
@@ -87,7 +115,9 @@ export function openLifecycleProject(root: string, label = "lifecycle"): Lifecyc
       return name;
     },
     close(): void {
-      rmSync(cwd, { recursive: true, force: true });
+      if (link !== undefined) rmSync(link, { force: true });
+      if (place === "spaces") rmSync(parent, { recursive: true, force: true });
+      else rmSync(real, { recursive: true, force: true });
     },
   };
 }

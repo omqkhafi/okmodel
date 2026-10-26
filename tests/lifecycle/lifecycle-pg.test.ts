@@ -5,6 +5,10 @@
  * Nightly: 300 cases and a printed random seed when `OKM_LIFECYCLE_SEED` is unset
  * and `OKM_LIFECYCLE_CASES=300`.
  *
+ * Each case also draws a role, a start state, a namespace, and a project place.
+ * It still ends at check ok, migrate check ok, generate with no changes, and
+ * no scratch objects left behind.
+ *
  * Only runs when `OKM_LIFECYCLE=1` so the ordinary Postgres suite stays fast.
  * Known open bugs are skipped by id; anything else fails with a copyable schema.
  */
@@ -19,7 +23,7 @@ import { repoRoot } from "../../scripts/root.js";
 import { lifecycleCaseArb } from "./grammar.js";
 import { formatLifecycleReport, knownSkipExceedsBudget, type LifecycleReport } from "./report.js";
 import { runLifecycleCase } from "./run.js";
-import type { ColumnModel, LifecycleCase, LifecycleCasing } from "./model.js";
+import { tagsFor, type ColumnModel, type LifecycleCase, type LifecycleCasing } from "./model.js";
 
 const gate = await loadPostgresGate();
 const root = repoRoot();
@@ -162,28 +166,36 @@ function plainCase(casing: LifecycleCasing, tableName: string, columnName: strin
     unique: false,
     defaultKind: "none",
   });
+  const initial = {
+    casing,
+    tenancy: false,
+    trgm: false,
+    tables: [
+      {
+        key: "notes",
+        name: tableName,
+        columns: [column("id", "identity", true), column(columnName, "text", false)],
+        indexes: [],
+        checks: [],
+        archive: false,
+        versioned: false,
+      },
+    ],
+    triggers: [],
+    views: [],
+  };
+  const env = {
+    role: "owner" as const,
+    start: "empty" as const,
+    clash: "index" as const,
+    place: "plain" as const,
+  };
   return {
-    initial: {
-      casing,
-      tenancy: false,
-      trgm: false,
-      tables: [
-        {
-          key: "notes",
-          name: tableName,
-          columns: [column("id", "identity", true), column(columnName, "text", false)],
-          indexes: [],
-          checks: [],
-          archive: false,
-          versioned: false,
-        },
-      ],
-      triggers: [],
-      views: [],
-    },
+    initial,
     evolutions: [],
     withRows: false,
-    tags: [`casing-${casing}`],
+    ...env,
+    tags: tagsFor(initial, [], false, env),
   };
 }
 
