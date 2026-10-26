@@ -1240,10 +1240,10 @@ function emitRelationFilter(
   alias: string,
   depth: number,
 ): void {
-  const name = isOperator(value) ? operatorName(value) : "";
-  if (name !== "has" && name !== "none" && name !== "every") {
-    fail("OKM1121", `Relation ${relation.name} needs has, none, or every.`);
-  }
+  const needs = `Relation ${relation.name} needs has, none, or every.`;
+  if (!isOperator(value)) fail("OKM1121", needs);
+  const name = operatorName(value);
+  if (name !== "has" && name !== "none" && name !== "every") fail("OKM1121", needs);
   const child = indexes(schema).get(relation.table);
   if (child === undefined) {
     fail(
