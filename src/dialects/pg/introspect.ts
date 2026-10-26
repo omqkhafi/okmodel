@@ -145,6 +145,13 @@ export type CatalogQuery = {
    * @returns Rows as objects keyed by the select aliases
    */
   query(text: string, params?: readonly string[]): Promise<readonly Record<string, unknown>[]>;
+  /**
+   * Runs `body` and rolls the statements back.
+   *
+   * A check reprint uses this to install a missing extension type for the
+   * scratch table, then remove it. The body's result is kept.
+   */
+  isolate?<T>(body: (query: CatalogQuery) => Promise<T>): Promise<T>;
 };
 
 const PROVENANCE_NAME = "database";
@@ -1021,6 +1028,11 @@ async function reprintCheckOnce(
   types: readonly ReprintType[],
   extensions: ReadonlyMap<string, string>,
 ): Promise<string> {
+  if (!(await extensionTypesReady(runner, extensions))) {
+    return usingExtensionTypes(runner, extensions, (query) =>
+      reprintCheckOnce(query, expression, columns, types, extensions),
+    );
+  }
   const table = scratchName("okm_expr");
   const standIns = await createStandIns(
     runner,
@@ -1171,6 +1183,11 @@ async function reprintIndexOnce(
   options: { readonly unique: boolean; readonly predicate?: string },
   extensions: ReadonlyMap<string, string>,
 ): Promise<ReprintedIndex> {
+  if (!(await extensionTypesReady(runner, extensions))) {
+    return usingExtensionTypes(runner, extensions, (query) =>
+      reprintIndexOnce(query, expression, columns, types, options, extensions),
+    );
+  }
   const table = scratchName("okm_idx");
   const index = scratchName("okm_idx");
   const standIns = await createStandIns(
@@ -1262,6 +1279,11 @@ export async function reprintTriggerWhen(
   types: readonly ReprintType[] = [],
   extensions: ReadonlyMap<string, string> = NO_EXTENSION_SCHEMAS,
 ): Promise<string | undefined> {
+  if (!(await extensionTypesReady(runner, extensions))) {
+    return usingExtensionTypes(runner, extensions, (query) =>
+      reprintTriggerWhen(query, expression, trigger, columns, types, extensions),
+    );
+  }
   const table = scratchName("okm_when");
   const fn = scratchName("okm_when_fn");
   const standIns = await createStandIns(
@@ -1344,6 +1366,11 @@ async function reprintDomainCheckOnce(
   types: readonly ReprintType[],
   extensions: ReadonlyMap<string, string>,
 ): Promise<string> {
+  if (!(await extensionTypesReady(runner, extensions))) {
+    return usingExtensionTypes(runner, extensions, (query) =>
+      reprintDomainCheckOnce(query, base, expression, types, extensions),
+    );
+  }
   const domain = scratchName("okm_expr_domain");
   const standIns = await createStandIns(runner, [base], types, extensions);
   try {
@@ -1404,6 +1431,11 @@ async function reprintGeneratedOnce(
   types: readonly ReprintType[],
   extensions: ReadonlyMap<string, string>,
 ): Promise<string> {
+  if (!(await extensionTypesReady(runner, extensions))) {
+    return usingExtensionTypes(runner, extensions, (query) =>
+      reprintGeneratedOnce(query, expression, column, columns, types, extensions),
+    );
+  }
   const table = scratchName("okm_expr_gen");
   const standIns = await createStandIns(
     runner,
@@ -1452,6 +1484,58 @@ function scratchName(prefix: string): string {
 }
 
 const NO_EXTENSION_SCHEMAS: ReadonlyMap<string, string> = new Map();
+
+/**
+ * True when every extension type is already installed, or this connection
+ * cannot install one for the reprint and roll it back.
+ */
+async function extensionTypesReady(
+  runner: CatalogQuery,
+  extensions: ReadonlyMap<string, string>,
+): Promise<boolean> {
+  if (extensions.size === 0 || runner.isolate === undefined) return true;
+  for (const [type, schema] of extensions) {
+    const rows = await runner.query(`select to_regtype($1) as reg`, [
+      `${quoteIdent(schema)}.${quoteIdent(type)}`,
+    ]);
+    if (text(rows[0] ?? {}, "reg").length === 0) return false;
+  }
+  return true;
+}
+
+/**
+ * Installs missing extension types, runs `run`, and rolls the install back.
+ *
+ * The scratch column can then name `citext` before `okm push` has created
+ * the extension. The reprinted text is what the real type prints.
+ */
+async function usingExtensionTypes<T>(
+  runner: CatalogQuery,
+  extensions: ReadonlyMap<string, string>,
+  run: (query: CatalogQuery) => Promise<T>,
+): Promise<T> {
+  const isolate = runner.isolate;
+  if (isolate === undefined) return run(runner);
+  return isolate(async (query) => {
+    const created = new Set<string>();
+    for (const [type, schema] of extensions) {
+      const key = `${schema}.${type}`;
+      if (created.has(key)) continue;
+      created.add(key);
+      const rows = await query.query(`select to_regtype($1) as reg`, [
+        `${quoteIdent(schema)}.${quoteIdent(type)}`,
+      ]);
+      if (text(rows[0] ?? {}, "reg").length > 0) continue;
+      if (schema !== "public") {
+        await query.query(`create schema if not exists ${quoteIdent(schema)}`);
+      }
+      await query.query(
+        `create extension if not exists ${quoteIdent(type)} schema ${quoteIdent(schema)}`,
+      );
+    }
+    return run(query);
+  });
+}
 
 function standInType(
   dataType: string,

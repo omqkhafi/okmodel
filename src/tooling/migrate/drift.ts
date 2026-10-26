@@ -592,7 +592,36 @@ export function catalogQuery(sql: Sql): CatalogQuery {
         return copy;
       });
     },
+    async isolate(body) {
+      const token = new IsolateRollback();
+      let value: unknown;
+      let captured = false;
+      const run = async (tx: Sql): Promise<void> => {
+        value = await body(catalogQuery(tx));
+        captured = true;
+        throw token;
+      };
+      const saver = (sql as Sql & { savepoint?: (fn: (tx: Sql) => Promise<void>) => Promise<void> })
+        .savepoint;
+      try {
+        if (typeof saver === "function") await saver(run);
+        else await sql.begin(run);
+      } catch (error) {
+        if (!(error instanceof IsolateRollback)) throw error;
+      }
+      if (!captured) {
+        throw new Error("The extension reprint rolled back before it finished.");
+      }
+      return value as Awaited<ReturnType<typeof body>>;
+    },
   };
+}
+
+/** Marks the end of a rolled-back reprint. The result is already in memory. */
+class IsolateRollback extends Error {
+  constructor() {
+    super("okm-isolate-rollback");
+  }
 }
 
 /**
