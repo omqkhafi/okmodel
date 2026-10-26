@@ -169,7 +169,7 @@ bunx okm pull --schema public --out ./adopted
 
 `okm import drizzle <path>` reads a Drizzle schema and writes one table file per table, plus the schema file. It imports that path, so the file runs. The `drizzle-orm` package is the one installed in the project. okmodel does not depend on it. A missing package is OKM1856: install `drizzle-orm` in the project. An existing file is OKM1855 and nothing is written. The command does not connect.
 
-The report starts with `namespace <name>`. When the name is not `public`, set [namespace](/docs/define/config#namespace) to it. `schema()` still compiles `public`. File stems follow the same lowercase-folded uniqueness and Windows-reserved rules as [pull](#pull). Composite primary-key columns are not null even when Drizzle omitted `.notNull()` on the column.
+The report starts with `namespace <name>`. When the name is not `public`, set [namespace](/docs/define/config#namespace) to it. `schema()` still compiles `public`. File stems follow the same lowercase-folded uniqueness and Windows-reserved rules as [pull](#pull). Composite primary-key columns are not null even when Drizzle omitted `.notNull()` on the column. An index with no name keeps drizzle-kit's `{table}_{columns}_index`. A name that is already `{table}_{columns}_idx` is left as `index(...)`.
 
 Casing is the `--drizzle-casing snake_case|camelCase|none` flag, then a `snakeCase` or `camelCase` builder, then `casing` on `drizzle()` and `drizzle.config.*`, then `none`. `none` reports each `keyAsName` column. An empty SQL name is reported and not written. See [From Drizzle](/docs/migrate/from-drizzle).
 

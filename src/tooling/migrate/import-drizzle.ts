@@ -673,7 +673,7 @@ function catalogOf(
         continue;
       }
       const nameKey = names.length > 0 ? names.join("_") : keyName(item.config.name, ["expr"]);
-      const storedName = storedIndexName(parent.name, item.config.name, nameKey);
+      const storedName = storedIndexName(parent.name, item.config.name, nameKey, names.length > 0);
       objects.push(
         index({
           parent,
@@ -969,12 +969,17 @@ function action(value: string | undefined): ReferentialAction | undefined {
 
 function storedIndexName(
   parent: string,
-  declared: string | undefined,
+  declared: string | null | undefined,
   nameKey: string,
+  columnIndex: boolean,
 ): string | undefined {
-  if (declared === undefined || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(declared)) return undefined;
   const generated = deterministicName({ parent, purpose: "index", nameKey });
-  return declared === generated ? undefined : declared;
+  // drizzle-kit 0.31 names an unnamed column index `{table}_{columns}_index`.
+  // Leaving it unset makes the first push rename that index to `_idx`.
+  const drizzleDefault = columnIndex ? `${parent}_${nameKey}_index` : undefined;
+  const chosen = typeof declared === "string" && declared.length > 0 ? declared : drizzleDefault;
+  if (chosen === undefined || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(chosen)) return undefined;
+  return chosen === generated ? undefined : chosen;
 }
 
 function keyName(name: string | undefined, columns: readonly string[]): string {

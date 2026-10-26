@@ -32,6 +32,8 @@ The composite action `.github/actions/migrate` posts one sticky pull-request com
 
 The files are the same ones `okm pull` writes. SQL names stay. TypeScript fields follow the Drizzle property names. The report starts with `namespace <name>`. When that name is not `public`, set `defineConfig({ namespace })`. `schema()` still compiles `public`. Casing follows `--drizzle-casing`, then a `snakeCase` or `camelCase` builder, then `drizzle()` and `drizzle.config.*`, then `none`. `none` reports `keyAsName` columns. An empty SQL name is reported and the column is not written. drizzle-orm 1.0.0-rc has no `Relations` export; that is not OKM1856.
 
+An index drizzle-kit 0.31 would name `{table}_{columns}_index` keeps that name (`.name()`), including when the Drizzle index left the name unset. The first `okm push` does not rename it to `{table}_{columns}_idx`. A name that is already the okmodel default is left unset.
+
 Not imported, each with the table and the reason: a composite foreign key, `relations()` (they are not turned into `references()`), a custom column type, a view, a policy, a sequence `table()` cannot map, and the sequence behind `serial`, `smallserial`, or `bigserial`. Those columns are written as `integer`, `smallint`, or `bigint` and not null, without the sequence. A second Postgres schema is listed too: one import writes one namespace.
 
 ## Programmatic schema API
