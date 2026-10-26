@@ -162,8 +162,7 @@ export function packContractRelevant(paths: readonly string[]): boolean {
 }
 
 /** Root names npm packs even when `files` does not list them. */
-const ALWAYS_PACKED_ROOT =
-  /^(?:readme|license|licence|changelog|changes|history)(?:\.[^/]+)?$/i;
+const ALWAYS_PACKED_ROOT = /^(?:readme|license|licence|changelog|changes|history)(?:\.[^/]+)?$/i;
 
 function npmAlwaysPacked(path: string): boolean {
   return !path.includes("/") && ALWAYS_PACKED_ROOT.test(path);
