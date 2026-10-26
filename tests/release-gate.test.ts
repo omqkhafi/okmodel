@@ -366,7 +366,7 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(ci).toContain("pull_request:");
   expect(ci).toContain("types: [opened, synchronize, reopened, edited]");
   expect(ci).toContain(
-    "cancel-in-progress: ${{ github.event.action != 'edited' || github.event.changes.title }}",
+    "cancel-in-progress: ${{ github.event.action != 'edited' || contains(toJSON(github.event.changes), '\"title\":') }}",
   );
   expect(ci).toContain("group: ci-${{ github.event.pull_request.number }}");
   expect(ci).toContain("github.event.action != 'edited' || github.event.changes.title");
