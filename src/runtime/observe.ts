@@ -224,7 +224,7 @@ export type QueryObserverOptions = {
   /**
    * Include bound parameters on the event.
    *
-   * Sensitive columns, hidden columns, and tenant keys are `"[redacted]"`.
+   * Sensitive and hidden columns are `"[redacted]"`. Tenant ids are included.
    */
   readonly params?: boolean;
   /** Include a stack trace on the event. */
