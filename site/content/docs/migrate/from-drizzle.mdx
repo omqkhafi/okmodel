@@ -13,6 +13,17 @@ An existing file is OKM1855 and nothing is written. A project that cannot resolv
 
 The report starts with `namespace <name>`. SQL names stay. TypeScript fields follow the Drizzle property names. File stems are unique when folded to lowercase, and a Windows-reserved stem gets a `_` prefix, the same rules as `okm pull`. Composite primary-key columns are not null. When the namespace is not `public`, set it on the config. `schema()` still compiles `public`.
 
+Casing is detected in this order:
+
+1. `--drizzle-casing snake_case`, `--drizzle-casing camelCase`, or `--drizzle-casing none`.
+2. A `snakeCase` or `camelCase` builder, read from the column names `getTableConfig` returns. Drizzle 1.0.0-rc writes those names when the table is built.
+3. A scan of the schema file, `drizzle()` calls next to it, and `drizzle.config.*` for `casing: "snake_case"` or `casing: "camelCase"`. This is the global casing on drizzle-orm 0.34 through 0.45.4.
+4. `none`.
+
+`none` writes no `casing` on `schema()`. A `keyAsName` column is then a finding: the stored Drizzle name is kept, and the property is not used to invent one. An empty SQL name is a finding too, and that column is not written. When the files do set `casing`, `.sqlName()` is added only where the TypeScript key does not spell the Drizzle name exactly. `getURLs` under snake casing is one of those, because Drizzle spells it `get_ur_ls`.
+
+`Relations` is optional. drizzle-orm 1.0.0-rc does not export it, and that is not OKM1856. OKM1856 is a project that cannot resolve `drizzle-orm`, or a package with no pg table helpers.
+
 ```ts title="okmodel.config.ts"
 import { defineConfig } from "okmodel/migrate";
 

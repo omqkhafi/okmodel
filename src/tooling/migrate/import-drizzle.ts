@@ -11,6 +11,7 @@ import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import type { Casing } from "../../dialects/pg/casing.js";
 import { catalog } from "../../contracts/catalog/build.js";
 import { enumType } from "../../contracts/catalog/enum.js";
 import { staticNamespace } from "../../contracts/catalog/identity.js";
@@ -25,6 +26,17 @@ import type {
 import { referentialAction } from "../../contracts/catalog/types.js";
 import { OkmError } from "../../contracts/error.js";
 import { quoteLiteral } from "../../dialects/pg/quote.js";
+import {
+  chooseDrizzleCasing,
+  drizzleCasingValue,
+  effectiveColumnName,
+  fallbackCamel,
+  fallbackSnake,
+  inferBuilderCasing,
+  scanProjectCasing,
+  type DrizzleCasing,
+  type Spellings,
+} from "./drizzle-casing.js";
 import { commitPullFiles, pullLayout } from "./pull.js";
 import { emitPull, formatPullReport, type PullSkip } from "./pull-emit.js";
 import { loadConfig } from "./project.js";
@@ -45,7 +57,7 @@ type Loaded = {
   readonly PgView: object;
   readonly PgMaterializedView: object;
   readonly PgSequence: object;
-  readonly Relations: object;
+  readonly Relations: object | undefined;
   readonly getTableConfig: (table: object) => TableConfig;
   readonly getTableColumns: (table: object) => Record<string, object>;
   readonly getViewConfig: (view: object) => { readonly name?: string };
@@ -60,8 +72,8 @@ type TableConfig = {
   readonly uniqueConstraints: readonly DrizzleUnique[];
   readonly name: string;
   readonly schema: string | undefined;
-  readonly policies: readonly { readonly name?: string }[];
-  readonly enableRLS: boolean;
+  readonly policies?: readonly { readonly name?: string }[];
+  readonly enableRLS?: boolean;
 };
 
 type DrizzleIndex = {
@@ -100,7 +112,7 @@ type DrizzlePrimary = {
 type DrizzleUnique = {
   readonly columns: readonly Named[];
   readonly name?: string;
-  readonly nullsNotDistinct: boolean;
+  readonly nullsNotDistinct?: boolean;
 };
 
 type Named = {
@@ -141,6 +153,7 @@ export async function importDrizzle(
   const flags = parseImportArgs(argv);
   const file = readableFile(cwd, flags.path);
   const drizzle = await loadDrizzle(cwd);
+  const spell = await loadSpellings(cwd);
   const imported = await loadSchemaModule(file);
   const found = collect(imported, drizzle);
   if (found.tables.length === 0) {
@@ -149,11 +162,22 @@ export async function importDrizzle(
     });
   }
   const namespace = chooseNamespace(found.tables, drizzle);
+  const chosen = chooseDrizzleCasing({
+    flag: flags.casing,
+    inferred: inferBuilderCasing(builderColumns(found, drizzle), spell),
+    scan:
+      flags.casing === undefined
+        ? scanProjectCasing(cwd, file)
+        : { casing: undefined, conflict: false },
+  });
   const extras: PullSkip[] = [];
-  const objects = catalogOf(found, drizzle, namespace, extras);
+  const findings: string[] = [];
+  if (chosen.finding !== undefined) findings.push(chosen.finding);
+  const objects = catalogOf(found, drizzle, namespace, extras, chosen.casing, spell, findings);
   const built = catalog(objects);
   const layout = await layoutFor(cwd, flags.out);
-  const emitted = emitPull(built, layout);
+  const casing = okmodelCasing(chosen.casing);
+  const emitted = emitPull(built, layout, undefined, casing === undefined ? undefined : { casing });
   const tables = emitted.files.filter((item) => item.path !== layout.schemaFile);
   if (tables.length === 0) {
     throw new OkmError("invalid", "The Drizzle schema has no table okmodel can write.", {
@@ -170,6 +194,9 @@ export async function importDrizzle(
     [],
     [],
     "imported",
+    [],
+    emitted.renames,
+    [...findings].sort(compare),
   );
   return {
     text: `namespace ${namespace}\n${report}`,
@@ -187,11 +214,32 @@ export async function importDrizzle(
 export function parseImportArgs(argv: readonly string[]): {
   readonly path: string;
   readonly out: string | undefined;
+  readonly casing: DrizzleCasing | undefined;
 } {
   let path: string | undefined;
   let out: string | undefined;
+  let casing: DrizzleCasing | undefined;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index] ?? "";
+    if (arg === "--drizzle-casing" || arg.startsWith("--drizzle-casing=")) {
+      const value =
+        arg === "--drizzle-casing" ? argv[index + 1] : arg.slice("--drizzle-casing=".length);
+      if (arg === "--drizzle-casing") index += 1;
+      if (
+        value === undefined ||
+        value.startsWith("--") ||
+        drizzleCasingValue(value) === undefined
+      ) {
+        throw new OkmError("invalid", "--drizzle-casing accepts snake_case, camelCase, or none.", {
+          fix: {
+            summary:
+              "Pass --drizzle-casing snake_case, --drizzle-casing camelCase, or --drizzle-casing none.",
+          },
+        });
+      }
+      casing = drizzleCasingValue(value);
+      continue;
+    }
     if (arg === "--out") {
       const value = argv[index + 1];
       if (value === undefined || value.startsWith("--")) {
@@ -209,7 +257,7 @@ export function parseImportArgs(argv: readonly string[]): {
     }
     if (arg.startsWith("--")) {
       throw new OkmError("invalid", `Unknown flag ${arg}.`, {
-        fix: { summary: "okm import drizzle accepts <path> and --out." },
+        fix: { summary: "okm import drizzle accepts <path>, --out, and --drizzle-casing." },
       });
     }
     if (path !== undefined) {
@@ -224,7 +272,7 @@ export function parseImportArgs(argv: readonly string[]): {
       fix: { summary: "Pass the Drizzle schema file." },
     });
   }
-  return { path, out };
+  return { path, out, casing };
 }
 
 function readableFile(cwd: string, spec: string): string {
@@ -275,7 +323,6 @@ async function loadDrizzle(project: string): Promise<Loaded> {
     typeof PgView !== "function" ||
     typeof PgMaterializedView !== "function" ||
     typeof PgSequence !== "function" ||
-    typeof Relations !== "function" ||
     typeof getViewConfig !== "function"
   ) {
     throw new OkmError("OKM1856", "This project's drizzle-orm has no pg table helpers.", {
@@ -288,7 +335,7 @@ async function loadDrizzle(project: string): Promise<Loaded> {
     PgView,
     PgMaterializedView,
     PgSequence,
-    Relations,
+    Relations: typeof Relations === "function" ? (Relations as object) : undefined,
     getTableConfig: getTableConfig as Loaded["getTableConfig"],
     getTableColumns: getTableColumns as Loaded["getTableColumns"],
     getViewConfig: getViewConfig as Loaded["getViewConfig"],
@@ -342,7 +389,7 @@ function collect(module: Record<string, unknown>, drizzle: Loaded): Found {
       }
       return;
     }
-    if (drizzle.is(value, drizzle.Relations)) {
+    if (drizzle.Relations !== undefined && drizzle.is(value, drizzle.Relations)) {
       relations.push(exportName);
       return;
     }
@@ -378,6 +425,9 @@ function catalogOf(
   drizzle: Loaded,
   namespaceName: string,
   extras: PullSkip[],
+  casing: DrizzleCasing,
+  spell: Spellings,
+  findings: string[],
 ): CatalogObject[] {
   const namespace = staticNamespace(namespaceName);
   const objects: CatalogObject[] = [];
@@ -408,6 +458,21 @@ function catalogOf(
       }),
     );
   }
+  const namesByTable = new Map<object, SqlNames>();
+  const namesFor = (table: object, tableName: string): SqlNames => {
+    const hit = namesByTable.get(table);
+    if (hit !== undefined) return hit;
+    const names = sqlNamesOf(
+      drizzle.getTableColumns(table),
+      casing,
+      spell,
+      tableName,
+      extras,
+      findings,
+    );
+    namesByTable.set(table, names);
+    return names;
+  };
   for (const item of found.tables) {
     const config = drizzle.getTableConfig(item.value);
     const schemaName = config.schema ?? "public";
@@ -429,22 +494,26 @@ function catalogOf(
         provenance: provenanceOf(`export:${item.exportName}`),
       }),
     );
-    if (config.enableRLS) {
+    if (config.enableRLS === true) {
       extras.push(
         extra("policy", `${config.name}.row level security`, "a later step writes policies"),
       );
     }
-    for (const policy of config.policies) {
+    for (const policy of config.policies ?? []) {
       const name = policy.name ?? "policy";
       extras.push(extra("policy", `${config.name}.${name}`, "a later step writes policies"));
     }
     const columns = drizzle.getTableColumns(item.value);
-    const primaryColumns = primaryColumnsOf(config, columns);
+    const sqlNames = namesFor(item.value, config.name);
+    const primaryColumns = primaryColumnsOf(config, columns, sqlNames);
     for (const [property, value] of Object.entries(columns)) {
+      const sqlName = sqlNames.byProperty.get(property);
+      if (sqlName === undefined) continue;
       const built = columnOf(
         parent,
         property,
         value,
+        sqlName,
         primaryColumns,
         enums,
         objects,
@@ -455,7 +524,9 @@ function catalogOf(
       if (built !== undefined) objects.push(built);
     }
     for (const key of config.primaryKeys) {
-      const names = key.columns.map((entry) => entry.name);
+      const names = key.columns
+        .map((entry) => lookupSql(sqlNames, entry.name))
+        .filter((name) => name.length > 0);
       if (names.length === 0) continue;
       if (sameColumns(names, primaryColumns)) continue;
       objects.push(
@@ -481,7 +552,7 @@ function catalogOf(
     }
     const uniqueSets = new Set<string>();
     for (const unique of config.uniqueConstraints) {
-      const names = unique.columns.map((entry) => entry.name);
+      const names = unique.columns.map((entry) => lookupSql(sqlNames, entry.name));
       uniqueSets.add(names.join("\0"));
       objects.push(
         constraint({
@@ -489,14 +560,14 @@ function catalogOf(
           constraintKind: "unique",
           columns: names,
           nameKey: keyName(unique.name, names),
-          nullsNotDistinct: unique.nullsNotDistinct,
+          nullsNotDistinct: unique.nullsNotDistinct === true,
           provenance: provenanceOf(),
         }),
       );
     }
     for (const [property, value] of Object.entries(columns)) {
       if (!flag(value, "isUnique")) continue;
-      const name = stringField(value, "name") ?? property;
+      const name = sqlNames.byProperty.get(property) ?? stringField(value, "name") ?? property;
       if (uniqueSets.has(name)) continue;
       objects.push(
         constraint({
@@ -510,9 +581,8 @@ function catalogOf(
     }
     for (const key of config.foreignKeys) {
       const ref = key.reference();
-      const local = ref.columns.map((entry) => entry.name);
-      const remote = ref.foreignColumns.map((entry) => entry.name);
       const target = drizzle.getTableConfig(ref.foreignTable);
+      const local = ref.columns.map((entry) => lookupSql(sqlNames, entry.name));
       if ((target.schema ?? "public") !== namespaceName) {
         extras.push(
           extra(
@@ -523,6 +593,9 @@ function catalogOf(
         );
         continue;
       }
+      const remote = ref.foreignColumns.map((entry) =>
+        lookupSql(namesFor(ref.foreignTable, target.name), entry.name),
+      );
       const onDelete = action(key.onDelete);
       const onUpdate = action(key.onUpdate);
       objects.push(
@@ -557,7 +630,7 @@ function catalogOf(
         constraint({
           parent,
           constraintKind: "check",
-          columns: namesIn(check.value),
+          columns: namesIn(check.value).map((name) => lookupSql(sqlNames, name)),
           nameKey: keyName(check.name, [check.name]),
           expression: rendered,
           provenance: provenanceOf(),
@@ -583,7 +656,8 @@ function catalogOf(
       }
       const names = item.config.columns
         .map((entry) => stringField(entry, "name"))
-        .filter((name): name is string => name !== undefined);
+        .filter((name): name is string => name !== undefined)
+        .map((name) => lookupSql(sqlNames, name));
       const expression = item.config.columns
         .filter((entry) => stringField(entry, "name") === undefined)
         .map((entry) => sqlText(entry))
@@ -623,10 +697,93 @@ function catalogOf(
   return objects;
 }
 
+type SqlNames = {
+  readonly byProperty: ReadonlyMap<string, string>;
+  readonly byRaw: ReadonlyMap<string, string>;
+};
+
+function sqlNamesOf(
+  columns: Record<string, object>,
+  casing: DrizzleCasing,
+  spell: Spellings,
+  tableName: string,
+  extras: PullSkip[],
+  findings: string[],
+): SqlNames {
+  const byProperty = new Map<string, string>();
+  const byRaw = new Map<string, string>();
+  for (const [property, value] of Object.entries(columns)) {
+    const rawField = recordField(value, "name");
+    const raw = typeof rawField === "string" ? rawField : "";
+    const keyAsName = flag(value, "keyAsName");
+    const sql = effectiveColumnName(raw, keyAsName, property, casing, spell);
+    if (sql === undefined) {
+      extras.push(extra("column", `${tableName}.${property}`, "the SQL name is empty"));
+      continue;
+    }
+    if (casing === "none" && keyAsName) {
+      findings.push(
+        `casing was not detected, so keyAsName column ${tableName}.${property} keeps the stored name`,
+      );
+    }
+    byProperty.set(property, sql);
+    if (raw.length > 0) byRaw.set(raw, sql);
+  }
+  return { byProperty, byRaw };
+}
+
+function lookupSql(names: SqlNames, raw: string): string {
+  return names.byRaw.get(raw) ?? names.byProperty.get(raw) ?? raw;
+}
+
+function builderColumns(
+  found: Found,
+  drizzle: Loaded,
+): readonly { readonly property: string; readonly name: string; readonly keyAsName: boolean }[] {
+  const columns: { property: string; name: string; keyAsName: boolean }[] = [];
+  for (const item of found.tables) {
+    for (const [property, value] of Object.entries(drizzle.getTableColumns(item.value))) {
+      const raw = recordField(value, "name");
+      columns.push({
+        property,
+        name: typeof raw === "string" ? raw : "",
+        keyAsName: flag(value, "keyAsName"),
+      });
+    }
+  }
+  return columns;
+}
+
+async function loadSpellings(project: string): Promise<Spellings> {
+  try {
+    const require = createRequire(join(resolve(project), "package.json"));
+    const entry = require.resolve("drizzle-orm/casing");
+    const mod = (await import(pathToFileURL(entry).href)) as Record<string, unknown>;
+    const snake = mod.toSnakeCase;
+    const camel = mod.toCamelCase;
+    if (typeof snake === "function" && typeof camel === "function") {
+      return {
+        snake: (name: string) => String((snake as (input: string) => unknown)(name)),
+        camel: (name: string) => String((camel as (input: string) => unknown)(name)),
+      };
+    }
+  } catch {
+    // drizzle-orm/casing is absent. The 0.45 spellings cover that package.
+  }
+  return { snake: fallbackSnake, camel: fallbackCamel };
+}
+
+function okmodelCasing(casing: DrizzleCasing): Casing | undefined {
+  if (casing === "snake_case") return "snake";
+  if (casing === "camelCase") return "camel";
+  return undefined;
+}
+
 function columnOf(
   parent: ObjectRef,
   property: string,
   value: object,
+  sqlName: string,
   primaryColumns: readonly string[],
   enums: Map<string, readonly string[]>,
   objects: CatalogObject[],
@@ -634,7 +791,6 @@ function columnOf(
   extras: PullSkip[],
   tableName: string,
 ): CatalogObject | undefined {
-  const sqlName = stringField(value, "name") ?? property;
   const rawType = sqlType(value);
   if (rawType === undefined) return undefined;
   const mapped = catalogType(rawType);
@@ -678,17 +834,22 @@ function columnOf(
   });
 }
 
-function primaryColumnsOf(config: TableConfig, columns: Record<string, object>): readonly string[] {
+function primaryColumnsOf(
+  config: TableConfig,
+  columns: Record<string, object>,
+  sqlNames: SqlNames,
+): readonly string[] {
   const declared = config.primaryKeys[0];
   if (declared !== undefined && declared.columns.length > 0) {
-    return declared.columns.map((entry) => entry.name);
+    return declared.columns
+      .map((entry) => lookupSql(sqlNames, entry.name))
+      .filter((name) => name.length > 0);
   }
   const names: string[] = [];
-  for (const value of Object.values(columns)) {
-    if (flag(value, "primary")) {
-      const name = stringField(value, "name");
-      if (name !== undefined) names.push(name);
-    }
+  for (const [property, value] of Object.entries(columns)) {
+    if (!flag(value, "primary")) continue;
+    const name = sqlNames.byProperty.get(property);
+    if (name !== undefined && name.length > 0) names.push(name);
   }
   return names;
 }

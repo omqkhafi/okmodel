@@ -14,6 +14,7 @@ import { delimiter, dirname, join } from "node:path";
 import postgres, { type Sql } from "postgres";
 
 import { OkmError } from "../../contracts/error.js";
+import type { Casing } from "../../dialects/pg/casing.js";
 import { cliNotice } from "../cli/notices.js";
 import { introspectSchema, type CatalogQuery } from "../../dialects/pg/introspect.js";
 import { catalog } from "../../contracts/catalog/build.js";
@@ -82,14 +83,17 @@ export async function pullProject(
   try {
     const read = await readCatalog(sql, flags.schemas);
     const query = queryOf(sql);
-    const plan = planRoutines(read.catalog, tableExportNames(read.catalog));
+    const plan = planRoutines(read.catalog, tableExportNames(read.catalog, flags.casing));
     const verdicts = await verifyPulled(query, read.catalog, plan);
     const unexpressed = await countUnexpressed(query, read.schemas);
     const emitted = emitPull(
       read.catalog,
       layout,
       { plan, verdicts, unexpressed },
-      { importExt: flags.importExt },
+      {
+        importExt: flags.importExt,
+        ...(flags.casing === undefined ? {} : { casing: flags.casing }),
+      },
     );
     const tables = emitted.files.filter((file) => file.path !== layout.schemaFile);
     if (tables.length === 0) {
@@ -108,6 +112,7 @@ export async function pullProject(
         unexpressed,
         "pulled",
         emitted.unvalidated,
+        emitted.renames,
       ),
       skipped,
     };
@@ -120,7 +125,7 @@ export async function pullProject(
 }
 
 /**
- * Reads `--out`, `--schema`, and `--target` from a pull invocation.
+ * Reads `--out`, `--schema`, `--casing`, and `--target` from a pull invocation.
  *
  * @param argv - Arguments after `pull`
  * @returns The flags this command reads
@@ -131,11 +136,14 @@ export function parsePullArgs(argv: readonly string[]): {
   readonly out: string | undefined;
   readonly schemas: readonly string[];
   readonly importExt: PullImportExt;
+  /** Omitted keeps every database name as the TypeScript key. */
+  readonly casing: Casing | undefined;
 } {
   let target: string | undefined;
   let out: string | undefined;
   let allowProtected = false;
   let importExt: PullImportExt = "ts";
+  let casing: Casing | undefined;
   const schemas: string[] = [];
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index] ?? "";
@@ -143,7 +151,13 @@ export function parsePullArgs(argv: readonly string[]): {
       allowProtected = true;
       continue;
     }
-    if (arg === "--target" || arg === "--schema" || arg === "--out" || arg === "--import-ext") {
+    if (
+      arg === "--target" ||
+      arg === "--schema" ||
+      arg === "--out" ||
+      arg === "--import-ext" ||
+      arg === "--casing"
+    ) {
       const value = argv[index + 1];
       if (value === undefined || value.startsWith("--")) {
         throw new OkmError("invalid", `${arg} needs a value.`, {
@@ -153,6 +167,7 @@ export function parsePullArgs(argv: readonly string[]): {
       if (arg === "--target") target = value;
       else if (arg === "--out") out = value;
       else if (arg === "--import-ext") importExt = importExtValue(value);
+      else if (arg === "--casing") casing = casingValue(value);
       else schemas.push(...splitSchemas(value));
       index += 1;
       continue;
@@ -173,11 +188,22 @@ export function parsePullArgs(argv: readonly string[]): {
       importExt = importExtValue(arg.slice("--import-ext=".length));
       continue;
     }
+    if (arg.startsWith("--casing=")) {
+      casing = casingValue(arg.slice("--casing=".length));
+      continue;
+    }
     throw new OkmError("invalid", `Unknown flag ${arg}.`, {
-      fix: { summary: "okm pull accepts --target, --schema, --out, and --import-ext." },
+      fix: { summary: "okm pull accepts --target, --schema, --out, --import-ext, and --casing." },
     });
   }
-  return { target, allowProtected, out, schemas, importExt };
+  return { target, allowProtected, out, schemas, importExt, casing };
+}
+
+function casingValue(value: string): Casing {
+  if (value === "snake" || value === "camel") return value;
+  throw new OkmError("invalid", "--casing accepts snake or camel.", {
+    fix: { summary: "Pass --casing snake or --casing camel. Omit it to keep database names." },
+  });
 }
 
 function importExtValue(value: string): PullImportExt {
