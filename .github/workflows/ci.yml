@@ -11,8 +11,8 @@ name: CI
 # does not replace that result: the gate repeats the last conclusion for
 # the commit. Site tests run when the diff touches src/tooling or
 # src/dialects. The Site workflow is not required. The pack contract runs
-# when the diff touches src/, scripts/, or package.json. A drift fails
-# with `bun ./scripts/pack-contract.ts --update`.
+# when the diff touches a path in package.json `files`, src/, scripts/,
+# or package.json. A drift fails with `bun ./scripts/pack-contract.ts --update`.
 on:
   pull_request:
     types: [opened, synchronize, reopened, edited]

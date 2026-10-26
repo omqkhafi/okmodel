@@ -8,8 +8,8 @@
  * `tests/lifecycle`. The composition cases must be `success` when the diff
  * touches dialects, runtime, or `tests/composition`. The site tests must be
  * `success` when the diff touches `src/tooling` or `src/dialects`. The pack
- * contract must be `success` when the diff touches `src/`, `scripts/`, or
- * `package.json`. Otherwise a skipped suite, lifecycle, composition, site, or
+ * contract must be `success` when the diff touches a packed path, `src/`,
+ * `scripts/`, or `package.json`. Otherwise a skipped suite, lifecycle, composition, site, or
  * pack job is a pass. A failure is not.
  *
  *   bun ./scripts/ci-gate.ts --postgres 0 --lifecycle 0 --composition 0 --site 0 --pack 0 lint=success suite=skipped lifecycle=skipped composition=skipped site=skipped pack=skipped

@@ -54,12 +54,17 @@ test("tooling and dialects run the site tests", () => {
   expect(siteTestsRelevant([])).toBe(false);
 });
 
-test("src, scripts, and package.json run the pack contract", () => {
+test("packed paths, src, scripts, and package.json run the pack contract", () => {
   expect(packContractRelevant(["src/runtime/client.ts"])).toBe(true);
   expect(packContractRelevant(["scripts/pack-contract.ts"])).toBe(true);
   expect(packContractRelevant(["package.json"])).toBe(true);
   expect(packContractRelevant(["src/dialects/pg/ddl.ts", "docs/github.md"])).toBe(true);
-  expect(packContractRelevant(["docs/github.md"])).toBe(false);
+  expect(packContractRelevant(["docs/errors/OKM9999.md"])).toBe(true);
+  expect(packContractRelevant(["docs/github.md"])).toBe(true);
+  expect(packContractRelevant(["schemas/config.json"])).toBe(true);
+  expect(packContractRelevant(["skills/okm/SKILL.md"])).toBe(true);
+  expect(packContractRelevant(["README.md"])).toBe(true);
+  expect(packContractRelevant(["LICENSE"])).toBe(true);
   expect(packContractRelevant(["site/package.json"])).toBe(false);
   expect(packContractRelevant(["tests/fixtures/pack-contract.snap.json"])).toBe(false);
   expect(packContractRelevant([])).toBe(false);
