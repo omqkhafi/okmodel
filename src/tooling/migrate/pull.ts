@@ -17,7 +17,13 @@ import { OkmError } from "../../contracts/error.js";
 import { cliNotice } from "../cli/notices.js";
 import { introspectSchema, type CatalogQuery } from "../../dialects/pg/introspect.js";
 import { catalog } from "../../contracts/catalog/build.js";
-import type { Catalog, CatalogObject } from "../../contracts/catalog/types.js";
+import { staticNamespace } from "../../contracts/catalog/identity.js";
+import type {
+  Catalog,
+  CatalogObject,
+  Namespace,
+  ObjectIdentity,
+} from "../../contracts/catalog/types.js";
 import { driverUrl } from "./driver-url.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { asProject, projectPath, type ProjectContext } from "./paths.js";
@@ -28,6 +34,7 @@ import {
   tableExportNames,
   type PullCount,
   type PullFile,
+  type PullImportExt,
   type PullLayout,
   type PullSkip,
 } from "./pull-emit.js";
@@ -78,7 +85,12 @@ export async function pullProject(
     const plan = planRoutines(read.catalog, tableExportNames(read.catalog));
     const verdicts = await verifyPulled(query, read.catalog, plan);
     const unexpressed = await countUnexpressed(query, read.schemas);
-    const emitted = emitPull(read.catalog, layout, { plan, verdicts, unexpressed });
+    const emitted = emitPull(
+      read.catalog,
+      layout,
+      { plan, verdicts, unexpressed },
+      { importExt: flags.importExt },
+    );
     const tables = emitted.files.filter((file) => file.path !== layout.schemaFile);
     if (tables.length === 0) {
       const name = read.schemas.join(", ");
@@ -87,16 +99,17 @@ export async function pullProject(
       });
     }
     commitPullFiles(emitted.files, "Pull");
+    const skipped = [...emitted.skipped, ...read.outside];
     return {
       text: formatPullReport(
         emitted.counts,
-        emitted.skipped,
+        skipped,
         emitted.verdicts,
         unexpressed,
         "pulled",
         emitted.unvalidated,
       ),
-      skipped: emitted.skipped,
+      skipped,
     };
   } catch (error) {
     if (error instanceof OkmError) throw error;
@@ -117,10 +130,12 @@ export function parsePullArgs(argv: readonly string[]): {
   readonly allowProtected: boolean;
   readonly out: string | undefined;
   readonly schemas: readonly string[];
+  readonly importExt: PullImportExt;
 } {
   let target: string | undefined;
   let out: string | undefined;
   let allowProtected = false;
+  let importExt: PullImportExt = "ts";
   const schemas: string[] = [];
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index] ?? "";
@@ -128,7 +143,7 @@ export function parsePullArgs(argv: readonly string[]): {
       allowProtected = true;
       continue;
     }
-    if (arg === "--target" || arg === "--schema" || arg === "--out") {
+    if (arg === "--target" || arg === "--schema" || arg === "--out" || arg === "--import-ext") {
       const value = argv[index + 1];
       if (value === undefined || value.startsWith("--")) {
         throw new OkmError("invalid", `${arg} needs a value.`, {
@@ -137,6 +152,7 @@ export function parsePullArgs(argv: readonly string[]): {
       }
       if (arg === "--target") target = value;
       else if (arg === "--out") out = value;
+      else if (arg === "--import-ext") importExt = importExtValue(value);
       else schemas.push(...splitSchemas(value));
       index += 1;
       continue;
@@ -153,29 +169,256 @@ export function parsePullArgs(argv: readonly string[]): {
       schemas.push(...splitSchemas(arg.slice("--schema=".length)));
       continue;
     }
+    if (arg.startsWith("--import-ext=")) {
+      importExt = importExtValue(arg.slice("--import-ext=".length));
+      continue;
+    }
     throw new OkmError("invalid", `Unknown flag ${arg}.`, {
-      fix: { summary: "okm pull accepts --target, --schema, and --out." },
+      fix: { summary: "okm pull accepts --target, --schema, --out, and --import-ext." },
     });
   }
-  return { target, allowProtected, out, schemas };
+  return { target, allowProtected, out, schemas, importExt };
+}
+
+function importExtValue(value: string): PullImportExt {
+  if (value === "ts" || value === "js" || value === "none") return value;
+  throw new OkmError("invalid", "--import-ext accepts ts, js, or none.", {
+    fix: { summary: "Pass --import-ext ts, --import-ext js, or --import-ext none." },
+  });
 }
 
 async function readCatalog(
   sql: Sql,
   schemas: readonly string[],
-): Promise<{ readonly catalog: Catalog; readonly schemas: readonly string[] }> {
+): Promise<{
+  readonly catalog: Catalog;
+  readonly schemas: readonly string[];
+  readonly outside: readonly PullSkip[];
+}> {
   try {
-    const chosen = schemas.length > 0 ? schemas : [await currentSchema(sql)];
-    const objects: CatalogObject[] = [];
+    const requested = schemas.length > 0 ? schemas : [await currentSchema(sql)];
+    const chosen = uniqueNames(requested);
+    const parts: { schema: string; objects: readonly CatalogObject[] }[] = [];
     for (const name of chosen) {
-      const live = await introspectSchema(queryOf(sql), name, "public");
-      objects.push(...live.objects);
+      // Logical name is the concrete schema so a foreign key to another
+      // schema is recorded, instead of looking like a missing public table.
+      const live = await introspectSchema(queryOf(sql), name, name);
+      parts.push({ schema: name, objects: live.objects });
     }
-    return { catalog: catalog(objects), schemas: chosen };
+    const merged = mergePulledSchemas(parts);
+    return { catalog: merged.catalog, schemas: chosen, outside: merged.outside };
   } catch (error) {
     if (error instanceof OkmError) throw error;
     throw sessionFailure(error) ?? unavailable(error);
   }
+}
+
+/**
+ * Folds every selected schema into the one namespace `schema()` can hold.
+ *
+ * A foreign key whose target was not selected is omitted and reported.
+ * Two selected schemas that share a table name are OKM1023: the files would
+ * both become `public` and `catalog()` would only say "Duplicate identity".
+ */
+function mergePulledSchemas(
+  parts: readonly { schema: string; objects: readonly CatalogObject[] }[],
+): {
+  readonly catalog: Catalog;
+  readonly outside: readonly PullSkip[];
+} {
+  const selected = new Set(parts.map((part) => part.schema));
+  const tables = new Map<string, string[]>();
+  for (const part of parts) {
+    for (const object of part.objects) {
+      if (object.kind !== "table" || schemaOf(object.identity) !== part.schema) continue;
+      const list = tables.get(object.identity.name) ?? [];
+      list.push(part.schema);
+      tables.set(object.identity.name, list);
+    }
+  }
+  for (const [name, schemas] of tables) {
+    if (schemas.length < 2) continue;
+    const list = schemas.length === 2 ? `${schemas[0]} and ${schemas[1]}` : schemas.join(", ");
+    throw new OkmError(
+      "OKM1023",
+      `Table ${name} is in ${list}. schema() has one namespace, so okm pull cannot keep both.`,
+      {
+        fix: {
+          summary: "Pull one of those schemas, or rename one table. schema() has one namespace.",
+        },
+      },
+    );
+  }
+  const selectedTables = new Set<string>();
+  for (const [name, schemas] of tables) {
+    const schema = schemas[0];
+    if (schema !== undefined) selectedTables.add(`${schema}.${name}`);
+  }
+  const objects: CatalogObject[] = [];
+  const outside: PullSkip[] = [];
+  for (const part of parts) {
+    for (const object of part.objects) {
+      const home = schemaOf(object.identity);
+      if (home !== undefined && home !== part.schema) continue;
+      if (
+        object.kind === "constraint" &&
+        object.definition.references !== undefined &&
+        !selectedTarget(object.definition.references.parent, selected, selectedTables)
+      ) {
+        outside.push({
+          key: `outside-fk\0${part.schema}\0${object.identity.parent.name}\0${object.identity.name}`,
+          kind: "constraint",
+          label: `${object.identity.parent.name}.${object.identity.name}`,
+          reason: "references a table outside the selected schemas",
+          sql: "",
+        });
+        continue;
+      }
+      objects.push(rewriteSchema(object, selected));
+    }
+  }
+  return { catalog: adoptCatalog(objects), outside };
+}
+
+function selectedTarget(
+  parent: { readonly namespace: Namespace; readonly name: string },
+  selected: ReadonlySet<string>,
+  tables: ReadonlySet<string>,
+): boolean {
+  if (parent.namespace.form !== "static") return false;
+  return (
+    tables.has(`${parent.namespace.name}.${parent.name}`) && selected.has(parent.namespace.name)
+  );
+}
+
+function adoptCatalog(objects: readonly CatalogObject[]): Catalog {
+  try {
+    return catalog(objects);
+  } catch (error) {
+    if (error instanceof OkmError && error.code === "OKM1023") {
+      throw new OkmError(
+        "OKM1023",
+        `${error.message} schema() has one namespace, so okm pull cannot keep both.`,
+        {
+          fix: {
+            summary: "Pull one schema, or rename one of the objects. schema() has one namespace.",
+          },
+        },
+      );
+    }
+    throw error;
+  }
+}
+
+function rewriteSchema(object: CatalogObject, selected: ReadonlySet<string>): CatalogObject {
+  const identity = rewriteIdentity(object.identity, selected);
+  const dependencies = object.dependencies
+    .filter((edge) => {
+      const home = schemaOf(edge.target);
+      return home === undefined || selected.has(home);
+    })
+    .map((edge) => ({ target: rewriteIdentity(edge.target, selected) }));
+  if (object.kind === "constraint" && object.definition.references !== undefined) {
+    const references = object.definition.references;
+    return {
+      ...object,
+      identity,
+      dependencies,
+      definition: {
+        ...object.definition,
+        references: {
+          ...references,
+          parent: {
+            name: references.parent.name,
+            namespace: mapNamespace(references.parent.namespace, selected),
+          },
+        },
+      },
+    } as CatalogObject;
+  }
+  return { ...object, identity, dependencies } as CatalogObject;
+}
+
+function rewriteIdentity(identity: ObjectIdentity, selected: ReadonlySet<string>): ObjectIdentity {
+  switch (identity.kind) {
+    case "table":
+    case "view":
+    case "materializedView":
+    case "sequence":
+    case "type":
+    case "function":
+    case "defaultPrivilege":
+      return { ...identity, namespace: mapNamespace(identity.namespace, selected) };
+    case "column":
+    case "index":
+    case "constraint":
+    case "trigger":
+    case "policy":
+      return {
+        ...identity,
+        parent: {
+          name: identity.parent.name,
+          namespace: mapNamespace(identity.parent.namespace, selected),
+        },
+      };
+    case "grant":
+      return {
+        ...identity,
+        object: {
+          ...identity.object,
+          namespace: mapNamespace(identity.object.namespace, selected),
+        },
+      };
+    case "role":
+    case "extension":
+      return identity;
+  }
+}
+
+function mapNamespace(namespace: Namespace, selected: ReadonlySet<string>): Namespace {
+  if (namespace.form !== "static" || namespace.name === "public" || !selected.has(namespace.name)) {
+    return namespace;
+  }
+  return staticNamespace("public");
+}
+
+function schemaOf(identity: ObjectIdentity): string | undefined {
+  switch (identity.kind) {
+    case "table":
+    case "view":
+    case "materializedView":
+    case "sequence":
+    case "type":
+    case "function":
+    case "defaultPrivilege":
+      return identity.namespace.form === "static" ? identity.namespace.name : undefined;
+    case "column":
+    case "index":
+    case "constraint":
+    case "trigger":
+    case "policy":
+      return identity.parent.namespace.form === "static"
+        ? identity.parent.namespace.name
+        : undefined;
+    case "grant":
+      return identity.object.namespace.form === "static"
+        ? identity.object.namespace.name
+        : undefined;
+    case "role":
+    case "extension":
+      return undefined;
+  }
+}
+
+function uniqueNames(names: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const chosen: string[] = [];
+  for (const name of names) {
+    if (seen.has(name)) continue;
+    seen.add(name);
+    chosen.push(name);
+  }
+  return chosen;
 }
 
 const UNEXPRESSED = `

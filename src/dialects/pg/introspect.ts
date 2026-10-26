@@ -840,7 +840,22 @@ function indexExpression(
 ): string {
   const method = text(row, "am");
   const stored = text(row, "expression");
-  if (method.length === 0 || method === "btree") return stored;
+  const btree = method.length === 0 || method === "btree";
+  if (btree) {
+    const custom = list(text(row, "opc_custom"));
+    if (stored.length === 0 && custom.some((name) => name.length > 0)) {
+      const body = columns
+        .map((name, index) => {
+          const opclass = custom[index];
+          return opclass === undefined || opclass.length === 0
+            ? quoteIdent(name)
+            : `${quoteIdent(name)} ${opclass}`;
+        })
+        .join(", ");
+      return `using btree (${body})`;
+    }
+    return stored;
+  }
   const opclasses = list(text(row, "opc"));
   const body = columns
     .map((name, index) => {
@@ -1491,7 +1506,17 @@ const INDEXES = `
       select coalesce(string_agg(opc.opcname, ',' order by cols.ord), '')
       from unnest(i.indclass) with ordinality as cols(opcoid, ord)
       join pg_opclass opc on opc.oid = cols.opcoid
-    ) as opc
+    ) as opc,
+    (
+      select coalesce(string_agg(
+        case when opc.opcdefault then '' else opc.opcname end,
+        ',' order by key.ord
+      ), '')
+      from unnest(i.indkey) with ordinality as key(attnum, ord)
+      join unnest(i.indclass) with ordinality as class(opcoid, ord) on class.ord = key.ord
+      join pg_opclass opc on opc.oid = class.opcoid
+      where key.attnum > 0
+    ) as opc_custom
   from pg_index i
   join pg_class idx on idx.oid = i.indexrelid
   join pg_class tbl on tbl.oid = i.indrelid

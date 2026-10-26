@@ -11,7 +11,7 @@ import { relative, dirname } from "node:path";
 import { isDomain } from "../../contracts/catalog/enum.js";
 import { identityKey } from "../../contracts/catalog/identity.js";
 import { deterministicName } from "../../contracts/catalog/identifier.js";
-import { renderCatalog } from "../../dialects/pg/ddl.js";
+import { qualify, renderCatalog } from "../../dialects/pg/ddl.js";
 import type {
   Catalog,
   CatalogObject,
@@ -22,6 +22,7 @@ import type {
   TableObject,
 } from "../../contracts/catalog/types.js";
 import {
+  avoidImportBinding,
   planRoutines,
   renderRoutines,
   type RoutinePlan,
@@ -49,6 +50,9 @@ export type PullSkip = {
   /** SQL from the catalog. Empty when the kind has no statement of its own. */
   readonly sql: string;
 };
+
+/** Extension written on relative imports. Files on disk stay `.ts`. */
+export type PullImportExt = "ts" | "js" | "none";
 
 /** Where the schema file and the table files go. */
 export type PullLayout = {
@@ -157,9 +161,16 @@ const RESERVED = new Set([
  * @param source - Catalog from introspection, logical namespace `public`
  * @param layout - Schema file and tables directory
  * @param review - Scratch verdicts. Omitted marks every function candidate-only
+ * @param options - `importExt` defaults to `ts`
  * @returns The files and the objects they do not declare
  */
-export function emitPull(source: Catalog, layout: PullLayout, review?: PullReview): PullEmission {
+export function emitPull(
+  source: Catalog,
+  layout: PullLayout,
+  review?: PullReview,
+  options?: { readonly importExt?: PullImportExt },
+): PullEmission {
+  const importExt = options?.importExt ?? "ts";
   const statements = rendered(source);
   const skipped: PullSkip[] = [];
   const enums = enumLabels(source);
@@ -184,6 +195,7 @@ export function emitPull(source: Catalog, layout: PullLayout, review?: PullRevie
     tableExports.set(table.identity.name, exportName);
   }
 
+  const pulledColumns = pulledColumnNames(tables, byParent, enums, domains);
   for (const table of tables) {
     if (table.definition.partition !== undefined) {
       skipped.push(
@@ -209,6 +221,7 @@ export function emitPull(source: Catalog, layout: PullLayout, review?: PullRevie
       skipped,
       exportName,
       tableExports,
+      pulledColumns,
     );
     if (planned === undefined) continue;
     if (planned.identitySequence !== undefined) identitySequences.add(planned.identitySequence);
@@ -270,12 +283,13 @@ export function emitPull(source: Catalog, layout: PullLayout, review?: PullRevie
       ),
     );
   }
+  appendRowLevelSecurity(source, skipped);
 
   const verdictList = review?.verdicts ?? [];
   const routines = renderRoutines(plan, new Map(verdictList.map((item) => [item.key, item])));
   files.push({
     path: layout.schemaFile,
-    text: schemaText(layout.schemaFile, imports, extensionCalls(source), routines),
+    text: schemaText(layout.schemaFile, imports, extensionCalls(source), routines, importExt),
   });
   files.sort((left, right) => compare(left.path, right.path));
   skipped.sort((left, right) =>
@@ -371,9 +385,11 @@ export function formatPullReport(
   }
   for (const kind of [...groups.keys()].sort()) {
     const rows = groups.get(kind) ?? [];
-    lines.push(`  ${kindLabel(kind)}: ${String(rows.length)} — ${rows[0]?.reason ?? ""}`);
+    const header = rows[0]?.reason ?? "";
+    lines.push(`  ${kindLabel(kind)}: ${String(rows.length)} — ${header}`);
     for (const row of rows) {
-      lines.push(`    ${row.label}`);
+      const note = row.reason === header ? "" : ` — ${row.reason}`;
+      lines.push(`    ${row.label}${note}`);
       if (row.sql.length > 0) lines.push(`      ${row.sql}`);
     }
   }
@@ -409,6 +425,7 @@ function planTable(
   skipped: PullSkip[],
   exportName: string,
   tableExports: ReadonlyMap<string, string>,
+  pulledColumns: ReadonlyMap<string, ReadonlySet<string>>,
 ): PlannedTable | undefined {
   const bag = byParent.get(table.identity.name) ?? {
     columns: [],
@@ -422,14 +439,7 @@ function planTable(
   const emitted = new Set<string>();
   const primary = bag.constraints.find((item) => item.definition.constraintKind === "primaryKey");
   const primaryColumns = primary?.definition.columns ?? [];
-  const identityColumn = bag.columns.find(
-    (column) =>
-      column.definition.identity?.always === true &&
-      !column.definition.nullable &&
-      primaryColumns.length === 1 &&
-      primaryColumns[0] === column.identity.name &&
-      column.definition.dataType === "bigint",
-  );
+  const identityColumn = identityPrimary(bag.columns, primaryColumns);
 
   for (const column of [...bag.columns].sort((left, right) =>
     compare(left.identity.name, right.identity.name),
@@ -567,7 +577,18 @@ function planTable(
         );
         continue;
       }
-      if (field === undefined) continue;
+      if (field === undefined || !referencedColumnsPulled(references, pulledColumns)) {
+        skipped.push(
+          skip(
+            constraint,
+            "constraint",
+            label,
+            "references a column that was not pulled",
+            statementFor(statements, constraint.identity.name),
+          ),
+        );
+        continue;
+      }
       foreign.set(field, referenceCall(references, tableExports));
       continue;
     }
@@ -626,9 +647,6 @@ function planTable(
     }
     indexLines.push(`      ${indexCall(index, fields)},`);
     needsIndex = true;
-    if (index.definition.predicate !== undefined || index.definition.expression !== undefined) {
-      needsSql = true;
-    }
   }
   if (indexLines.length > 0) {
     options.push("    indexes: (columns) => [");
@@ -683,6 +701,65 @@ ${columnText.join("\n")}
       ? {}
       : { identitySequence: identitySequence(table.identity.name, identityColumn.identity.name) }),
   };
+}
+
+function identityPrimary(
+  columns: readonly ColumnObject[],
+  primaryColumns: readonly string[],
+): ColumnObject | undefined {
+  return columns.find(
+    (column) =>
+      column.definition.identity?.always === true &&
+      !column.definition.nullable &&
+      primaryColumns.length === 1 &&
+      primaryColumns[0] === column.identity.name &&
+      column.definition.dataType === "bigint",
+  );
+}
+
+/**
+ * SQL column names `planTable` will write, keyed by table name.
+ *
+ * A foreign key to a name outside this set is not emitted. `t.identity()` is
+ * only the bigint generated-always primary key, so an integer identity key
+ * is absent and the key that points at it is listed instead of built.
+ */
+function pulledColumnNames(
+  tables: readonly TableObject[],
+  byParent: ReadonlyMap<string, ParentBag>,
+  enums: ReadonlyMap<string, readonly string[]>,
+  domains: ReadonlyMap<string, { readonly base: string; readonly check: string }>,
+): ReadonlyMap<string, ReadonlySet<string>> {
+  const pulled = new Map<string, ReadonlySet<string>>();
+  for (const table of tables) {
+    const bag = byParent.get(table.identity.name);
+    const columns = bag?.columns ?? [];
+    const primary = bag?.constraints.find(
+      (item) => item.definition.constraintKind === "primaryKey",
+    );
+    const identityColumn = identityPrimary(columns, primary?.definition.columns ?? []);
+    const names = new Set<string>();
+    for (const column of columns) {
+      if (column === identityColumn) {
+        names.add(column.identity.name);
+        continue;
+      }
+      if (columnSource(column, column.identity.name, enums, domains) !== undefined) {
+        names.add(column.identity.name);
+      }
+    }
+    pulled.set(table.identity.name, names);
+  }
+  return pulled;
+}
+
+function referencedColumnsPulled(
+  references: NonNullable<ConstraintObject["definition"]["references"]>,
+  pulled: ReadonlyMap<string, ReadonlySet<string>>,
+): boolean {
+  const columns = pulled.get(references.parent.name);
+  if (columns === undefined) return false;
+  return references.columns.every((name) => columns.has(name));
 }
 
 function columnSource(
@@ -873,23 +950,19 @@ function indexCall(index: IndexObject, fields: ReadonlyMap<string, string>): str
   const columns = index.definition.columns
     .map((name) => `columns.${fields.get(name) ?? name}`)
     .join(", ");
-  const predicate = index.definition.predicate;
-  const expression = index.definition.expression;
+  let call = `index(${columns})`;
+  if (index.definition.unique) call += ".unique()";
   const sqlName = customIndexName(index);
-  if (predicate === undefined && expression === undefined) {
-    let call = `index(${columns})`;
-    if (index.definition.unique) call += ".unique()";
-    if (sqlName !== undefined) call += `.name(${JSON.stringify(sqlName)})`;
-    return call;
+  if (sqlName !== undefined) call += `.name(${JSON.stringify(sqlName)})`;
+  const extra: string[] = [];
+  if (index.definition.predicate !== undefined) {
+    extra.push(`predicate: ${JSON.stringify(index.definition.predicate)}`);
   }
-  const fieldsText = [
-    `columns: [${index.definition.columns.map((name) => `columns.${fields.get(name) ?? name}.name`).join(", ")}]`,
-    `isUnique: ${index.definition.unique ? "true" : "false"}`,
-  ];
-  if (predicate !== undefined) fieldsText.push(`predicate: ${JSON.stringify(predicate)}`);
-  if (expression !== undefined) fieldsText.push(`expression: ${JSON.stringify(expression)}`);
-  if (sqlName !== undefined) fieldsText.push(`sqlName: ${JSON.stringify(sqlName)}`);
-  return `{ ${fieldsText.join(", ")}, unique() { return this; } }`;
+  if (index.definition.expression !== undefined) {
+    extra.push(`expression: ${JSON.stringify(index.definition.expression)}`);
+  }
+  if (extra.length === 0) return call;
+  return `{ ...${call}, ${extra.join(", ")} }`;
 }
 
 /**
@@ -985,6 +1058,7 @@ function schemaText(
     readonly triggers: readonly string[];
     readonly views: readonly string[];
   },
+  importExt: PullImportExt,
 ): string {
   const lines = ['import { schema } from "okmodel/pg";'];
   if (extensions.length > 0) lines.push('import { extension } from "okmodel/ext";');
@@ -992,7 +1066,7 @@ function schemaText(
   const sorted = [...imports].sort((left, right) => compare(left.name, right.name));
   for (const item of sorted) {
     lines.push(
-      `import { ${item.name} } from ${JSON.stringify(importSpecifier(schemaFile, item.file))};`,
+      `import { ${item.name} } from ${JSON.stringify(importSpecifier(schemaFile, item.file, importExt))};`,
     );
   }
   const tables = sorted.map((item) => item.name).join(", ");
@@ -1057,11 +1131,14 @@ function importLine(needsTable: boolean, needsIndex: boolean, needsSql: boolean)
  *
  * @param fromFile - Absolute path of the importing file
  * @param toFile - Absolute path of the imported file
- * @returns A relative specifier that starts with `.` and ends with `.ts`
+ * @param importExt - `ts` keeps `.ts`. `js` rewrites it to `.js`. `none` drops it
+ * @returns A relative specifier that starts with `.`
  */
-function importSpecifier(fromFile: string, toFile: string): string {
+function importSpecifier(fromFile: string, toFile: string, importExt: PullImportExt): string {
   let spec = relative(dirname(fromFile), toFile).replaceAll("\\", "/");
   if (!spec.startsWith(".")) spec = `./${spec}`;
+  if (importExt === "js") return spec.slice(0, -".ts".length) + ".js";
+  if (importExt === "none") return spec.slice(0, -".ts".length);
   return spec;
 }
 
@@ -1166,8 +1243,55 @@ function kindLabel(kind: string): string {
   if (kind === "defaultPrivilege") return "default privileges";
   if (kind === "eventTrigger") return "event triggers";
   if (kind === "policy") return "policies";
+  if (kind === "rowLevelSecurity") return "row level security";
   if (kind.endsWith("s")) return kind;
   return `${kind}s`;
+}
+
+const ROW_LEVEL_REASON = "pull does not write enable or force row level security";
+
+/**
+ * One enable line per table that has a policy, and a force line when any of
+ * those policies recorded `FORCE ROW LEVEL SECURITY`.
+ *
+ * Introspection stores both facts on the policy. The files do not, so check
+ * after baseline must not be the first place the operator hears about them.
+ * Keys are not catalog identities: `skippedKeys` must not treat a column as
+ * skipped because it shares a name with this note.
+ */
+function appendRowLevelSecurity(source: Catalog, skipped: PullSkip[]): void {
+  const tables = new Map<string, { schema: string; force: boolean }>();
+  for (const object of source.objects) {
+    if (object.kind !== "policy") continue;
+    const namespace = object.identity.parent.namespace;
+    const schema = namespace.form === "static" ? namespace.name : "public";
+    const name = object.identity.parent.name;
+    const current = tables.get(`${schema}\0${name}`);
+    if (current === undefined) {
+      tables.set(`${schema}\0${name}`, { schema, force: object.definition.force });
+    } else if (object.definition.force) {
+      current.force = true;
+    }
+  }
+  for (const [key, info] of tables) {
+    const name = key.slice(info.schema.length + 1);
+    const table = qualify(info.schema, name);
+    skipped.push({
+      key: `row-level-security\0${info.schema}\0${name}\0enable`,
+      kind: "rowLevelSecurity",
+      label: `${name} enable`,
+      reason: ROW_LEVEL_REASON,
+      sql: `alter table ${table} enable row level security`,
+    });
+    if (!info.force) continue;
+    skipped.push({
+      key: `row-level-security\0${info.schema}\0${name}\0force`,
+      kind: "rowLevelSecurity",
+      label: `${name} force`,
+      reason: ROW_LEVEL_REASON,
+      sql: `alter table ${table} force row level security`,
+    });
+  }
 }
 
 function counted(count: number, one: string, many: string): string {
@@ -1298,9 +1422,8 @@ function prefixed(source: string, prefix: string): string | undefined {
 }
 
 function freshIdent(sql: string, used: Set<string>): string {
-  let name = jsIdent(sql);
-  if (name === "table" || name === "columns") name = `${name}Name`;
-  const base = name;
+  const base = avoidImportBinding(jsIdent(sql));
+  let name = base;
   let salt = 2;
   // Folded so `Tasks` and `tasks` cannot share a binding (row types collide).
   while (used.has(name.toLowerCase())) {

@@ -31,6 +31,8 @@ export type ParsedCli = {
   readonly provision: boolean;
   readonly replace: readonly string[];
   readonly schemas: readonly string[];
+  /** `okm pull --import-ext`. `ts` when the flag is absent. */
+  readonly importExt: "ts" | "js" | "none";
   readonly url: string | undefined;
   readonly lockTimeoutMs: number | undefined;
   readonly statementTimeoutMs: number | undefined;
@@ -220,6 +222,7 @@ export function parseCli(argv: readonly string[]): ParsedCli {
     provision: values.provision === true,
     replace: stringList(values.replace),
     schemas: schemasOf(values.schema),
+    importExt: importExtOf(stringValue(values["import-ext"])),
     url: stringValue(values.url),
     lockTimeoutMs: milliseconds(values["lock-timeout"], "--lock-timeout"),
     statementTimeoutMs: milliseconds(values["statement-timeout"], "--statement-timeout"),
@@ -309,6 +312,7 @@ function blank(flags: { readonly help: boolean; readonly json: boolean }): Parse
     provision: false,
     replace: [],
     schemas: [],
+    importExt: "ts",
     url: undefined,
     lockTimeoutMs: undefined,
     statementTimeoutMs: undefined,
@@ -532,6 +536,15 @@ function milliseconds(value: unknown, flag: string): number | undefined {
     throw usage(`${flag} needs a number of milliseconds.`, `Pass ${flag} <milliseconds>.`);
   }
   return parsed;
+}
+
+function importExtOf(value: string | undefined): "ts" | "js" | "none" {
+  if (value === undefined || value === "ts") return "ts";
+  if (value === "js" || value === "none") return value;
+  throw usage(
+    "--import-ext accepts ts, js, or none.",
+    "Pass --import-ext ts, --import-ext js, or --import-ext none.",
+  );
 }
 
 function schemasOf(value: unknown): readonly string[] {

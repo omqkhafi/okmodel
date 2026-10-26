@@ -457,6 +457,11 @@ export const COMMANDS: readonly CommandSpec[] = [
         multiple: true,
         hint: "<name> selects a Postgres schema. Repeat it, or separate names with a comma.",
       },
+      {
+        name: "import-ext",
+        type: "string",
+        hint: "ts, js, or none. Extension on relative imports. The default is ts.",
+      },
     ],
   }),
   spec({
