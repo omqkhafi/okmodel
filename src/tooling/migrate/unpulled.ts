@@ -1,14 +1,16 @@
 /**
  * Columns and constraints `okm pull` listed and did not write.
  *
- * The record is `.okm/pull.json`. Push refuses a plan that drops one of them
- * (OKM1897). Check omits them, so an ok report does not list those drops.
+ * The record is `.okm/pull.json` at the project root, including when `--out`
+ * writes the schema somewhere else. Push refuses a plan that drops one of
+ * them (OKM1897). Check omits them, so an ok report does not list those drops.
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { identityKey } from "../../contracts/catalog/identity.js";
+import { identitySequenceName } from "../../contracts/catalog/identifier.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
 import { OkmError } from "../../contracts/error.js";
 import { dropObjectSql } from "../../dialects/pg/ddl.js";
@@ -80,13 +82,25 @@ export function unpulledKeys(objects: readonly UnpulledObject[]): ReadonlySet<st
 /**
  * Drops live columns and constraints pull did not write.
  *
+ * An identity column also drops the sequence it owns. That sequence is not
+ * in the record. It is omitted with the column, so check does not list it.
+ *
  * @param live - Introspected catalog
  * @param keys - {@link unpulledKeys}
  * @returns `live` when nothing matches
  */
 export function withoutUnpulled(live: Catalog, keys: ReadonlySet<string>): Catalog {
   if (keys.size === 0) return live;
-  const objects = live.objects.filter((object) => !keys.has(identityKey(object.identity)));
+  const sequences = new Set<string>();
+  for (const object of live.objects) {
+    if (object.kind !== "column" || object.definition.identity === undefined) continue;
+    if (!keys.has(identityKey(object.identity))) continue;
+    sequences.add(identitySequenceName(object.identity.parent.name, object.identity.name));
+  }
+  const objects = live.objects.filter((object) => {
+    if (keys.has(identityKey(object.identity))) return false;
+    return object.kind !== "sequence" || !sequences.has(object.identity.name);
+  });
   if (objects.length === live.objects.length) return live;
   return { version: live.version, objects };
 }

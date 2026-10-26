@@ -63,7 +63,7 @@ export type PullResult = {
  * may be repeated. `--out` is the directory that receives `schema.ts` and
  * `tables/`. Without it, the project's schema path and tables directory are
  * used. A tables directory that the config omits is `tables` beside the
- * schema file.
+ * schema file. `.okm/pull.json` is always written at the project root.
  *
  * @param cwd - Project directory
  * @param argv - Arguments after `pull`
@@ -109,7 +109,8 @@ export async function pullProject(
     }
     commitPullFiles(emitted.files, "Pull");
     const skipped = [...emitted.skipped, ...read.outside];
-    if (flags.out === undefined) writeUnpulled(cwd, skipped);
+    // The record stays at the project root. `--out` only moves the schema files.
+    writeUnpulled(cwd, skipped);
     return {
       text: formatPullReport(
         emitted.counts,
