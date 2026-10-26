@@ -51,6 +51,42 @@ postgresTest(
   120_000,
 );
 
+postgresTest(
+  gate,
+  "a citext check stays citext when the extension is already in another schema",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = mkdtempSync(join(tmpdir(), "okm-citext-ext-"));
+    const sql = openPostgres(database.url);
+    try {
+      await sql.unsafe("create schema ext");
+      await sql.unsafe("create extension citext schema ext");
+      await sql.unsafe("grant usage on schema ext to public");
+      writeFileSync(join(cwd, "okmodel.config.ts"), configText(database.url));
+      writeFileSync(join(cwd, "schema.ts"), schemaText());
+      const pushed = await cli(cwd, ["push"]);
+      expect(pushed.toLowerCase()).not.toContain("does not exist");
+      const defined = await sql<{ definition: string }[]>`
+        select pg_get_constraintdef(oid) as definition
+        from pg_constraint
+        where conname = 'people_email_ok_check'
+      `;
+      expect(defined[0]?.definition ?? "").toContain("::citext");
+      expect(defined[0]?.definition ?? "").not.toContain("::text");
+      const checked = await cli(cwd, ["check"]);
+      expect(checked).not.toContain("OKM1520");
+      expect(checked.trimEnd().endsWith("ok")).toBe(true);
+      const again = await cli(cwd, ["push"]);
+      expect(again).toMatch(/nothing to apply|no changes/);
+    } finally {
+      await sql.end({ timeout: 5 });
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  120_000,
+);
+
 function schemaText(): string {
   const pg = JSON.stringify(join(root, "src/dialects/pg/index.ts"));
   const ext = JSON.stringify(join(root, "src/dialects/pg/ext/citext.ts"));

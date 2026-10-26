@@ -1039,6 +1039,7 @@ async function reprintCheckOnce(
     types,
     extensions,
   );
+  const restoreSearchPath = await revealExtensionSchemas(runner, extensions);
   try {
     const defs =
       columns.length > 0
@@ -1063,7 +1064,11 @@ async function reprintCheckOnce(
   } catch (error) {
     throw readOnlyReprint(error) ?? error;
   } finally {
-    await runDrops(runner, [`drop table if exists pg_temp.${table}`, ...standIns]);
+    try {
+      await runDrops(runner, [`drop table if exists pg_temp.${table}`, ...standIns]);
+    } finally {
+      await restoreSearchPath();
+    }
   }
 }
 
@@ -1194,6 +1199,7 @@ async function reprintIndexOnce(
     types,
     extensions,
   );
+  const restoreSearchPath = await revealExtensionSchemas(runner, extensions);
   try {
     const defs =
       columns.length > 0
@@ -1233,7 +1239,11 @@ async function reprintIndexOnce(
   } catch (error) {
     throw readOnlyReprint(error) ?? error;
   } finally {
-    await runDrops(runner, [`drop table if exists pg_temp.${table}`, ...standIns]);
+    try {
+      await runDrops(runner, [`drop table if exists pg_temp.${table}`, ...standIns]);
+    } finally {
+      await restoreSearchPath();
+    }
   }
 }
 
@@ -1289,6 +1299,7 @@ export async function reprintTriggerWhen(
     types,
     extensions,
   );
+  const restoreSearchPath = await revealExtensionSchemas(runner, extensions);
   try {
     const defs =
       columns.length > 0
@@ -1319,11 +1330,15 @@ export async function reprintTriggerWhen(
     if (mapped !== undefined) throw mapped;
     return undefined;
   } finally {
-    await runDrops(runner, [
-      `drop table if exists pg_temp.${table}`,
-      `drop function if exists pg_temp.${fn}()`,
-      ...standIns,
-    ]);
+    try {
+      await runDrops(runner, [
+        `drop table if exists pg_temp.${table}`,
+        `drop function if exists pg_temp.${fn}()`,
+        ...standIns,
+      ]);
+    } finally {
+      await restoreSearchPath();
+    }
   }
 }
 
@@ -1369,6 +1384,7 @@ async function reprintDomainCheckOnce(
   if (redirected !== undefined) return redirected.value;
   const domain = scratchName("okm_expr_domain");
   const standIns = await createStandIns(runner, [base], types, extensions);
+  const restoreSearchPath = await revealExtensionSchemas(runner, extensions);
   try {
     await runner.query(
       `create domain pg_temp.${domain} as ${standInType(base, types, extensions)} check (${expression})`,
@@ -1383,7 +1399,11 @@ async function reprintDomainCheckOnce(
   } catch (error) {
     throw readOnlyReprint(error) ?? error;
   } finally {
-    await runDrops(runner, [`drop domain if exists pg_temp.${domain}`, ...standIns]);
+    try {
+      await runDrops(runner, [`drop domain if exists pg_temp.${domain}`, ...standIns]);
+    } finally {
+      await restoreSearchPath();
+    }
   }
 }
 
@@ -1438,6 +1458,7 @@ async function reprintGeneratedOnce(
     types,
     extensions,
   );
+  const restoreSearchPath = await revealExtensionSchemas(runner, extensions);
   try {
     const defs = [
       ...columns.map(
@@ -1457,7 +1478,11 @@ async function reprintGeneratedOnce(
   } catch (error) {
     throw readOnlyReprint(error) ?? error;
   } finally {
-    await runDrops(runner, [`drop table if exists pg_temp.${table}`, ...standIns]);
+    try {
+      await runDrops(runner, [`drop table if exists pg_temp.${table}`, ...standIns]);
+    } finally {
+      await restoreSearchPath();
+    }
   }
 }
 
@@ -1550,6 +1575,46 @@ async function extensionTypeExists(
     `${quoteIdent(schema)}.${quoteIdent(type)}`,
   ]);
   return text(rows[0] ?? {}, "reg").length > 0;
+}
+
+/**
+ * Puts each extension schema on `search_path` for one reprint.
+ *
+ * A column of `"ext"."citext"` still binds `''` as `text` when `ext` is not
+ * on the path, so the stored check is not the citext comparison `okm push`
+ * writes after it moves the extension. The previous path is restored even
+ * when the reprint fails.
+ *
+ * @param runner - Database connection
+ * @param extensions - Type name to the schema that owns it for this reprint
+ * @returns Restores the path captured before the change
+ */
+async function revealExtensionSchemas(
+  runner: CatalogQuery,
+  extensions: ReadonlyMap<string, string>,
+): Promise<() => Promise<void>> {
+  if (extensions.size === 0) return async () => {};
+  const rows = await runner.query(`select current_setting('search_path') as path`);
+  const current = text(rows[0] ?? {}, "path");
+  const extra = [...new Set(extensions.values())].filter((schema) => !pathLists(current, schema));
+  if (extra.length === 0) return async () => {};
+  const next = `${extra.map((schema) => quoteIdent(schema)).join(", ")}, ${current}`;
+  await runner.query(`select set_config('search_path', $1, false)`, [next]);
+  return async () => {
+    await runner.query(`select set_config('search_path', $1, false)`, [current]);
+  };
+}
+
+function pathLists(path: string, schema: string): boolean {
+  return path.split(",").some((part) => unquotedPathName(part) === schema);
+}
+
+function unquotedPathName(part: string): string {
+  const trimmed = part.trim();
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    return trimmed.slice(1, -1).replaceAll('""', '"');
+  }
+  return trimmed;
 }
 
 async function installedExtensionSchema(
