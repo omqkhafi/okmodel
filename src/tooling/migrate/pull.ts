@@ -18,7 +18,7 @@ import type { Casing } from "../../dialects/pg/casing.js";
 import { cliNotice } from "../cli/notices.js";
 import { introspectSchema, type CatalogQuery } from "../../dialects/pg/introspect.js";
 import { catalog } from "../../contracts/catalog/build.js";
-import { staticNamespace } from "../../contracts/catalog/identity.js";
+import { identityKey, staticNamespace } from "../../contracts/catalog/identity.js";
 import type {
   Catalog,
   CatalogObject,
@@ -40,6 +40,7 @@ import {
   type PullSkip,
 } from "./pull-emit.js";
 import { planRoutines } from "./pull-routines.js";
+import { writeUnpulled } from "./unpulled.js";
 import { verifyPulled } from "./pull-verify.js";
 import { loadConfig } from "./project.js";
 
@@ -104,6 +105,7 @@ export async function pullProject(
     }
     commitPullFiles(emitted.files, "Pull");
     const skipped = [...emitted.skipped, ...read.outside];
+    if (flags.out === undefined) writeUnpulled(cwd, skipped);
     return {
       text: formatPullReport(
         emitted.counts,
@@ -292,7 +294,7 @@ function mergePulledSchemas(
         !selectedTarget(object.definition.references.parent, selected, selectedTables)
       ) {
         outside.push({
-          key: `outside-fk\0${part.schema}\0${object.identity.parent.name}\0${object.identity.name}`,
+          key: identityKey(object.identity),
           kind: "constraint",
           label: `${object.identity.parent.name}.${object.identity.name}`,
           reason: "references a table outside the selected schemas",

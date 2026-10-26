@@ -37,6 +37,12 @@ import { loadHeadSnapshot, loadMigrations } from "./files.js";
 import { readReference, referenceInserts, type ReferenceTable } from "./reference.js";
 import { expandProvisioned, installSnapshot, provisionMark } from "./snapshot.js";
 import { planStatements, type PlanStep } from "./plan.js";
+import {
+  readUnpulled,
+  refuseUnpulledDrops,
+  unpulledDropLabels,
+  type UnpulledObject,
+} from "./unpulled.js";
 import type { StoredMigration } from "./files.js";
 import { finishQuiet } from "./lost.js";
 import type { StepBoundary } from "./step-engine.js";
@@ -560,6 +566,7 @@ export async function pushProject(
       : {}),
     ...catalogSchema(config.namespace),
     ...batchSizeField(config.backfill?.batchSize),
+    unpulled: readUnpulled(cwd),
   });
   if (report.applied.length === 0 && (report.restamped ?? []).length === 0) {
     return `target ${target.name}\nno changes\n`;
@@ -588,6 +595,7 @@ type PushRequest = {
   readonly backfillPauseMs?: number;
   readonly backfillStatementTimeoutMs?: number;
   readonly batchSize?: number;
+  readonly unpulled: readonly UnpulledObject[];
 };
 
 /**
@@ -676,6 +684,7 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
       });
       const weakened = lintPlan(plan, live, author).filter((item) => item.code === "OKM1550");
       if (weakened.length > 0) throw lintRefusal(weakened, PUSH_RLS_FIX);
+      refuseUnpulledDrops(unpulledDropLabels(plan.steps, live, request.unpulled, schema));
       planSteps = plan.steps;
     } finally {
       await finishQuiet(() => sql.end({ timeout: 5 }));

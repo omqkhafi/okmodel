@@ -1842,6 +1842,15 @@
     "docs": "docs/errors/OKM1896.md"
   },
   {
+    "code": "OKM1897",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "okm push would drop a column or constraint that okm pull listed under not pulled yet.",
+    "fix": "Those columns and constraints stay in the database. Pull did not write them, so push does not drop them.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1897.md"
+  },
+  {
     "code": "OKM2200",
     "kind": "invalid",
     "category": "input",

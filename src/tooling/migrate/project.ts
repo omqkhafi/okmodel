@@ -64,6 +64,7 @@ import {
 } from "./policy.js";
 import { refuseAmbiguousConfigs } from "./discover.js";
 import { asProject, CONFIG_FILE, projectPath, type ProjectContext } from "./paths.js";
+import { readUnpulled, unpulledKeys } from "./unpulled.js";
 import { formatPlanJson } from "./plan-json.js";
 import {
   formatPlan,
@@ -327,7 +328,13 @@ export async function checkProject(
   const { assertSchemaMajor, assertSchemaExtensions } = await import("./server-requirements.js");
   const directory = projectPath(cwd, opened.config.migrations ?? "migrations");
   await assertSchemaMajor(target.url, opened.built);
-  await assertAuthorDrift(target.url, opened.built.catalog, opened.config.roles, allowPooler);
+  await assertAuthorDrift(
+    target.url,
+    opened.built.catalog,
+    opened.config.roles,
+    allowPooler,
+    unpulledKeys(readUnpulled(cwd)),
+  );
   await assertSchemaExtensions(target.url, opened.built, directory);
   await rawOnlineCheck(cwd, opened.config, target.url, allowPooler);
   return finish({ findings });

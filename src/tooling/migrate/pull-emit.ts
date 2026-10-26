@@ -483,7 +483,9 @@ function planTable(
     const label = `${table.identity.name}.${column.identity.name}`;
     if (column === identityColumn) {
       const renamed = sqlNameCall(casing, field, column.identity.name, label, renames);
-      columnLines.push(`    ${jsKey(field)}: t.identity()${renamed},`);
+      const call =
+        column.definition.dataType === "integer" ? "t.integerIdentity()" : "t.identity()";
+      columnLines.push(`    ${jsKey(field)}: ${call}${renamed},`);
       emitted.add(column.identity.name);
       continue;
     }
@@ -694,7 +696,7 @@ function planTable(
       identityColumn !== undefined &&
       sequence.identity.name ===
         identitySequence(table.identity.name, identityColumn.identity.name) &&
-      sequence.definition.dataType === "bigint" &&
+      sequence.definition.dataType === identityColumn.definition.dataType &&
       sequence.definition.start === "1" &&
       sequence.definition.increment === "1" &&
       sequence.definition.cycle === false;
@@ -748,7 +750,7 @@ function identityPrimary(
       !column.definition.nullable &&
       primaryColumns.length === 1 &&
       primaryColumns[0] === column.identity.name &&
-      column.definition.dataType === "bigint",
+      (column.definition.dataType === "bigint" || column.definition.dataType === "integer"),
   );
 }
 
@@ -756,8 +758,9 @@ function identityPrimary(
  * SQL column names `planTable` will write, keyed by table name.
  *
  * A foreign key to a name outside this set is not emitted. `t.identity()` is
- * only the bigint generated-always primary key, so an integer identity key
- * is absent and the key that points at it is listed instead of built.
+ * the bigint form and `t.integerIdentity()` is the integer form. Both are
+ * generated always and the only primary key. Any other identity is absent,
+ * and a foreign key that points at it is listed instead of built.
  */
 function pulledColumnNames(
   tables: readonly TableObject[],
@@ -947,7 +950,7 @@ function arrayDims(dataType: string): number {
 
 function columnReason(column: ColumnObject): string {
   if (column.definition.identity !== undefined) {
-    return "t.identity() is generated always, bigint, and the only primary key";
+    return "t.identity() and t.integerIdentity() are generated always and the only primary key";
   }
   if (column.definition.generated !== undefined && column.definition.generated.stored !== true) {
     return "generated columns are stored";

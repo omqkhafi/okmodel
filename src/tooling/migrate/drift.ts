@@ -6,7 +6,9 @@
  * view is reprinted on this server first, so a `pg_get_viewdef` spelling is
  * not drift. A btree index expression is reprinted the same way. Any remaining
  * statement is OKM1520. `okm_meta`, `okm_history`,
- * and `okm_backfill` are omitted by the planner.
+ * and `okm_backfill` are omitted by the planner. Columns and constraints
+ * `okm pull` left under "not pulled yet" are omitted too, so an ok report
+ * does not list those drops.
  */
 
 import postgres, { type Sql } from "postgres";
@@ -32,10 +34,13 @@ import {
 import { sealViews } from "../../dialects/pg/view/scratch.js";
 import type { RolesInput } from "../../dialects/pg/role/index.js";
 import { planMigration } from "./plan.js";
+import { withoutUnpulled } from "./unpulled.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { driverUrl } from "./driver-url.js";
 import { assertDirectConnection } from "./policy.js";
 import { probeStableBackend } from "./pooler-probe.js";
+
+const NO_UNPULLED: ReadonlySet<string> = new Set();
 
 /**
  * Refuses when the connected database differs from the schema.
@@ -43,12 +48,15 @@ import { probeStableBackend } from "./pooler-probe.js";
  * @param url - Target URL
  * @param author - Schema catalog, including roles when the config names them
  * @param roles - `defineConfig({ roles })`, when set
+ * @param allowPooler - When true, a pooler URL is accepted
+ * @param unpulled - Identity keys pull listed and did not write
  */
 export async function assertAuthorDrift(
   url: string,
   author: Catalog,
   roles?: RolesInput,
   allowPooler = false,
+  unpulled: ReadonlySet<string> = NO_UNPULLED,
 ): Promise<void> {
   assertDirectConnection(url, allowPooler);
   const schema = authorSchema(author);
@@ -89,7 +97,7 @@ export async function assertAuthorDrift(
     // policy leaves the live policies in place. rlsTenancy declares policies
     // and still drifts when they differ.
     const plan = planMigration({
-      before: withoutUnmanagedPolicies(live, authorOnServer),
+      before: withoutUnpulled(withoutUnmanagedPolicies(live, authorOnServer), unpulled),
       after: authorOnServer,
       name: "check",
       schema,
