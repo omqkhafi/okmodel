@@ -140,7 +140,12 @@ export type LoweredStep = Omit<DdlStep, "kind"> & {
  */
 export function sealLowered(steps: readonly DdlStep[]): readonly LoweredStep[] {
   for (const step of steps) {
-    if (step.sql.trim().length === 0) {
+    if (
+      typeof step !== "object" ||
+      step === null ||
+      typeof step.sql !== "string" ||
+      step.sql.trim().length === 0
+    ) {
       throw new OkmError("OKM1559", "The dialect returned a statement with no SQL.", {
         fix: { summary: "Each lowered statement has to contain SQL." },
       });
@@ -161,6 +166,25 @@ export function sealLowered(steps: readonly DdlStep[]): readonly LoweredStep[] {
     }
   }
   return steps as readonly LoweredStep[];
+}
+
+/**
+ * Accepts a lowering only when it is at least one trusted statement.
+ *
+ * A missing result, an empty list, or a step with no SQL is OKM1559. An
+ * empty list used to drop the change.
+ *
+ * @param lowered - Whatever {@link DdlDialect.lower} returned
+ * @returns The sealed steps
+ * @throws OkmError OKM1559
+ */
+export function requireLowered(lowered: unknown): readonly LoweredStep[] {
+  if (!Array.isArray(lowered) || lowered.length === 0) {
+    throw new OkmError("OKM1559", "The dialect returned no statement for a change.", {
+      fix: { summary: "The lowering for this change has to return at least one statement." },
+    });
+  }
+  return sealLowered(lowered as readonly DdlStep[]);
 }
 
 /**

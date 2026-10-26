@@ -56,6 +56,30 @@ postgresTest(
       expect(lied.message).toContain("create-table");
     }
 
+    const missingSql = caught(() =>
+      planMigration(
+        { before, after, name: "fields" },
+        {
+          ...postgresDialect,
+          lower: () => [{ kind: "create-table", class: "expand" } as never],
+        },
+      ),
+    );
+    expect(missingSql).toBeInstanceOf(OkmError);
+    if (missingSql instanceof OkmError) expect(missingSql.code).toBe("OKM1559");
+
+    const notAList = caught(() =>
+      planMigration(
+        { before, after, name: "shape" },
+        {
+          ...postgresDialect,
+          lower: (() => undefined) as never,
+        },
+      ),
+    );
+    expect(notAList).toBeInstanceOf(OkmError);
+    if (notAList instanceof OkmError) expect(notAList.code).toBe("OKM1559");
+
     const blank = caught(() =>
       planMigration(
         { before, after, name: "blank" },

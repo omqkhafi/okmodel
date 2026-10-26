@@ -17,7 +17,7 @@ import {
 import { identityKey } from "../../contracts/catalog/identity.js";
 import type { Catalog, CatalogObject, ExtensionObject } from "../../contracts/catalog/types.js";
 import type { DriverConnection } from "../../contracts/driver.js";
-import type { DdlDialect, DdlStep } from "../../dialects/ddl.js";
+import { requireLowered, type DdlDialect, type DdlStep } from "../../dialects/ddl.js";
 
 /** Migrations the preflight reads. Only the statement text is used. */
 type MigrationSql = {
@@ -338,11 +338,13 @@ function alterExtension(
       );
     }
     steps.push(
-      ...dialect.lower({
-        op: "move-extension",
-        name: after.identity.name,
-        schema: after.definition.schema,
-      }),
+      ...requireLowered(
+        dialect.lower({
+          op: "move-extension",
+          name: after.identity.name,
+          schema: after.definition.schema,
+        }),
+      ),
     );
   }
   const previous = before.definition.version;
@@ -360,7 +362,9 @@ function alterExtension(
     );
   }
   steps.push(
-    ...dialect.lower({ op: "update-extension", name: after.identity.name, version: next }),
+    ...requireLowered(
+      dialect.lower({ op: "update-extension", name: after.identity.name, version: next }),
+    ),
   );
   return steps;
 }

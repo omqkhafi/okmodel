@@ -48,7 +48,7 @@ import { omitManagedObjects } from "./managed.js";
 import { stepsForExistingTable, type SafeStep } from "./safe.js";
 import { sqlQuoteOpen } from "./sql-lex.js";
 import { canonicalTypeName } from "./type-name.js";
-import { sealLowered, type DdlDialect, type DdlStep } from "../../dialects/ddl.js";
+import { requireLowered, type DdlDialect, type DdlStep } from "../../dialects/ddl.js";
 import { ddlStep as step } from "../../dialects/ddl-step.js";
 import { visibleExtensionType } from "../../dialects/extension-type.js";
 import { postgresDialect } from "./postgres-dialect.js";
@@ -677,12 +677,7 @@ function askDialect(dialect: DdlDialect, catalog: Catalog): void {
  * @throws OkmError OKM1559 when the result is empty, has no SQL, or the class disagrees with the kind
  */
 function take(lowered: readonly DdlStep[]): readonly PlanStep[] {
-  if (lowered.length === 0) {
-    throw new OkmError("OKM1559", "The dialect returned no statement for a change.", {
-      fix: { summary: "The lowering for this change has to return at least one statement." },
-    });
-  }
-  return sealLowered(lowered);
+  return requireLowered(lowered);
 }
 
 /**
@@ -695,7 +690,7 @@ function take(lowered: readonly DdlStep[]): readonly PlanStep[] {
  * @returns Those steps, or none
  */
 function takeOptional(lowered: readonly DdlStep[]): readonly PlanStep[] {
-  if (lowered.length === 0) return [];
+  if (Array.isArray(lowered) && lowered.length === 0) return [];
   return take(lowered);
 }
 
