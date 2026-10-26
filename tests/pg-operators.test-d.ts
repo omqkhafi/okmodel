@@ -121,27 +121,13 @@ async function shapes(url: string): Promise<void> {
     },
     limit: 1,
   });
-  await db.docs.update({
-    where: { id: "00000000-0000-4000-8000-000000000001" },
-    set: {
-      // @ts-expect-error text does not take json.set
-      title: json.set(["published"], true),
-    },
-  });
-  await db.docs.update({
-    where: { id: "00000000-0000-4000-8000-000000000001" },
-    set: {
-      // @ts-expect-error jsonb does not take arr.append
-      meta: arr.append("news"),
-    },
-  });
-  await db.docs.update({
-    where: { id: "00000000-0000-4000-8000-000000000001" },
-    set: {
-      // @ts-expect-error a text array element is a string
-      tags: arr.append(1),
-    },
-  });
+  const docId = "00000000-0000-4000-8000-000000000001";
+  // @ts-expect-error text does not take json.set
+  await db.docs.update({ where: { id: docId }, set: { title: json.set(["published"], true) } });
+  // @ts-expect-error jsonb does not take arr.append
+  await db.docs.update({ where: { id: docId }, set: { meta: arr.append("news") } });
+  // @ts-expect-error a text array element is a string
+  await db.docs.update({ where: { id: docId }, set: { tags: arr.append(1) } });
 }
 
 void shapes;

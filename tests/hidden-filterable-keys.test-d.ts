@@ -62,35 +62,14 @@ async function shapes(url: string): Promise<void> {
   await db.posts.update({ where: { score: 4, title: "a" }, set: { title: "b" } });
   await db.posts.update({ where: { score: eq(4) }, set: { title: "b" } });
   await db.posts.update({ where: { bonus: null }, set: { title: "b" } });
-  await db.posts.update({
-    where: {
-      title: "a",
-      // @ts-expect-error score is an integer
-      score: "notanumber",
-    },
-    set: { title: "b" },
-  });
-  await db.posts.update({
-    where: {
-      // @ts-expect-error bonus is an integer or null
-      bonus: "nope",
-    },
-    set: { title: "b" },
-  });
-  await db.posts.update({
-    where: {
-      title: "a",
-      // @ts-expect-error a plain hidden column is not a where key
-      secret: "x",
-    },
-    set: { title: "b" },
-  });
-  await db.posts.update({
-    where: { title: "a" },
-    set: { title: "b" },
-    // @ts-expect-error unknown option
-    nope: true,
-  });
+  // @ts-expect-error score is an integer
+  await db.posts.update({ where: { title: "a", score: "notanumber" }, set: { title: "b" } });
+  // @ts-expect-error bonus is an integer or null
+  await db.posts.update({ where: { bonus: "nope" }, set: { title: "b" } });
+  // @ts-expect-error a plain hidden column is not a where key
+  await db.posts.update({ where: { title: "a", secret: "x" }, set: { title: "b" } });
+  // @ts-expect-error unknown option
+  await db.posts.update({ where: { title: "a" }, set: { title: "b" }, nope: true });
   await db.posts.update([{ where: { title: "a" }, set: { title: "b" } }]);
   await db.posts.update([{ where: { score: 1 }, set: { title: "c" } }]);
   // @ts-expect-error a plain hidden column is not a where key

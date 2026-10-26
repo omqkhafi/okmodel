@@ -95,8 +95,7 @@ for (const driver of ["postgresjs", "pg", "bun"] as const) {
               await tx.notes.find({ limit: 1 });
             }),
           );
-          await Bun.sleep(300);
-          await killApp(admin);
+          await killLocked(admin);
           const mid = await waiting;
           expect(kindOf(mid)).toBe("unavailable");
           await admin.unsafe("rollback");
@@ -116,7 +115,7 @@ for (const driver of ["postgresjs", "pg", "bun"] as const) {
           await db.close();
         }
         if (driver === "postgresjs") expect(globalThis.setImmediate).toBe(schedule);
-        await Bun.sleep(50);
+        await drainImmediate();
         expect(crashes).toEqual([]);
         expect(warnings).not.toContain("MaxListenersExceededWarning");
       } finally {
@@ -205,17 +204,35 @@ async function killWhen(admin: ReturnType<typeof openPostgres>, needle: string):
   throw new Error(`no okmodel backend matched ${needle}`);
 }
 
-async function killApp(admin: ReturnType<typeof openPostgres>): Promise<void> {
-  const rows = await admin<{ pid: string }[]>`
-    select pid::text as pid
-    from pg_stat_activity
-    where application_name = 'okmodel'
-      and datname = current_database()
-      and pid <> pg_backend_pid()
-  `;
-  const pid = rows[0]?.pid;
-  if (pid === undefined) throw new Error("no okmodel backend");
-  await admin.unsafe(`select pg_terminate_backend(${pid})`);
+/** Kills the okmodel backend once it is waiting on the lock, not after a fixed sleep. */
+async function killLocked(admin: ReturnType<typeof openPostgres>): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const rows = await admin<{ pid: string }[]>`
+      select pid::text as pid
+      from pg_stat_activity
+      where application_name = 'okmodel'
+        and datname = current_database()
+        and pid <> pg_backend_pid()
+        and wait_event_type = 'Lock'
+    `;
+    const pid = rows[0]?.pid;
+    if (pid !== undefined) {
+      await admin.unsafe(`select pg_terminate_backend(${pid})`);
+      return;
+    }
+    await Bun.sleep(20);
+  }
+  throw new Error("lost backend: no okmodel backend waited on Lock");
+}
+
+/** Two turns, so a postgres.js `setImmediate` write can settle before the crash check. */
+async function drainImmediate(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
 }
 
 async function rejection(pending: Promise<unknown>): Promise<unknown> {

@@ -169,10 +169,10 @@ async function oneValue(
   omit: readonly string[] | undefined,
 ): Promise<{ readonly row: Record<string, unknown>; readonly issues: ValidationIssue[] }> {
   if (!isRecord(input)) failShape("insert expects an object or a list of objects.");
-  if (isBranded(input)) {
+  if (isBranded(input, model)) {
     const row = copyRow(input);
     keep(row, pick, omit);
-    return { row: seal ? sealRow(row) : row, issues: [] };
+    return { row: seal ? sealRow(row, model) : row, issues: [] };
   }
   const row = acceptKeys(model, op, input, strict);
   keep(row, pick, omit);
@@ -208,7 +208,7 @@ async function oneValue(
   }
   const rowChecked = await checkRules(gate.row, op, row, undefined);
   issues.push(...rowChecked.issues);
-  if (seal && issues.length === 0) return { row: sealRow(row), issues };
+  if (seal && issues.length === 0) return { row: sealRow(row, model), issues };
   return { row, issues };
 }
 
@@ -584,13 +584,13 @@ function copyRow(value: object): Record<string, unknown> {
   return row;
 }
 
-function sealRow(row: Record<string, unknown>): Record<string, unknown> {
-  Object.defineProperty(row, BRAND, { value: true });
+function sealRow(row: Record<string, unknown>, model: TableModel): Record<string, unknown> {
+  Object.defineProperty(row, BRAND, { value: model });
   return Object.freeze(row);
 }
 
-function isBranded(value: object): boolean {
-  return Object.hasOwn(value, BRAND) && (value as Record<symbol, unknown>)[BRAND] === true;
+function isBranded(value: object, model: TableModel): boolean {
+  return Object.hasOwn(value, BRAND) && (value as Record<symbol, unknown>)[BRAND] === model;
 }
 
 function findColumn(model: TableModel, field: string): ColumnModel | undefined {

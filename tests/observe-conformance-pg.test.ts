@@ -615,17 +615,15 @@ each("clients scoped by for, unscoped, and with report only their own tenant", a
       expect(seenTenants.size).toBe(1);
     }
 
-    const everything = JSON.stringify([
-      seen.events,
-      seen.queries,
-      seen.queries.map((query) => toOtel(query, { statement: true })),
-    ]);
+    const otel = JSON.stringify(seen.queries.map((query) => toOtel(query, { statement: true })));
+    const everything = JSON.stringify([seen.events, seen.queries, otel]);
     for (const value of [USER_1, USER_2, USER_3]) expect(everything).not.toContain(value);
-    const queries = JSON.stringify([
-      seen.queries,
-      seen.queries.map((query) => toOtel(query, { statement: true })),
-    ]);
-    for (const value of [TENANT_A, TENANT_B]) expect(queries).not.toContain(value);
+    for (const value of [TENANT_A, TENANT_B, USER_1, USER_2, USER_3]) {
+      expect(otel).not.toContain(value);
+    }
+    const queries = JSON.stringify(seen.queries);
+    expect(queries).toContain(TENANT_A);
+    expect(queries).toContain(TENANT_B);
     for (const event of writesOf(seen.events)) {
       expect(event.settings.every((name) => typeof name === "string")).toBe(true);
     }

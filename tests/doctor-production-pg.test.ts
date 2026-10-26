@@ -465,11 +465,24 @@ postgresTest(
     } finally {
       await sql.end({ timeout: 5 });
     }
+    const owner = openPostgres(fx.empty.url);
+    try {
+      await owner.unsafe("drop extension if exists vector");
+    } finally {
+      await owner.end({ timeout: 5 });
+    }
     const empty = login(fx, "timed", fx.empty.url);
     const dir = targetsProject(
       { production: { url: empty.url, protected: true } },
       "",
       vectorSchema(),
+    );
+    // An empty migrations directory is the initial migration, which does not
+    // refuse an extension the server can create. This migration does not create vector.
+    writeFileSync(join(dir, "migrations", "0001_present.sql"), "-- class: expand\n-- no steps\n");
+    writeFileSync(
+      join(dir, "migrations", "0001_present.catalog.json"),
+      '{"version":1,"objects":[]}\n',
     );
     const failing = production(dir, [], empty.secrets);
     expect(failing.code).toBe(1);

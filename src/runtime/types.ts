@@ -134,6 +134,21 @@ type ClosedWhere<W, Fields> = [ExtraKeys<NonNullable<W>, keyof Fields>] extends 
 /** Keys of `T` outside `Keys`. Distributes, so one `or()` branch cannot hide a key. */
 type ExtraKeys<T, Keys extends PropertyKey> = T extends unknown ? Exclude<keyof T, Keys> : never;
 
+/**
+ * `unknown` when `version` is exactly `"any"` or exactly `number`.
+ *
+ * `"any" | number` is `never`. The integer update and the claim are separate
+ * targets, and a union of them still accepts that value once `lock` and
+ * `limit` are present. The `update` parameter intersects this.
+ */
+type OneVersion<T> = T extends { readonly version: infer V }
+  ? [V] extends ["any"]
+    ? unknown
+    : [V] extends [number]
+      ? unknown
+      : never
+  : unknown;
+
 /** The `where` value on a fresh call object. */
 type WhereOfTarget<T> = T extends { readonly where: infer W } ? W : undefined;
 
@@ -393,6 +408,42 @@ type PageTop<O> = [ExtraKeys<O, PageKey>] extends [never]
   ? unknown
   : Record<ExtraKeys<O, PageKey>, never>;
 
+/** `find` option names, including a transaction lock. */
+type FindKey =
+  | "distinct"
+  | "distinctOn"
+  | "ignore"
+  | "include"
+  | "limit"
+  | "lock"
+  | "offset"
+  | "orderBy"
+  | "route"
+  | "search"
+  | "select"
+  | "signal"
+  | "timeout"
+  | "wait"
+  | "where";
+
+/** `one` option names. `limit`, `offset`, and `search` are not among them. */
+type OneKey =
+  | "ignore"
+  | "include"
+  | "lock"
+  | "orderBy"
+  | "route"
+  | "select"
+  | "signal"
+  | "timeout"
+  | "wait"
+  | "where";
+
+/** `unknown` when `O` stays inside `Keys`. Otherwise the extra keys are `never`. */
+type Top<O, Keys extends PropertyKey> = [ExtraKeys<O, Keys>] extends [never]
+  ? unknown
+  : Record<ExtraKeys<O, Keys>, never>;
+
 /** Read seals plus an unknown top-level `page` option. */
 type PageSeal<
   S extends QuerySchema,
@@ -456,12 +507,16 @@ type ExistsFilterTarget<S extends QuerySchema, K extends keyof S["~byName"], W> 
   readonly where?: FilterWhereOf<S, K, W>;
 };
 
-/** One `update` object whose `where` includes `hidden({ filterable: true })`. */
-type UpdateFilterTarget<S extends QuerySchema, K extends keyof S["~byName"], W> = Omit<
+/** The `set` value on a fresh update. */
+type SetOfTarget<T> = T extends { readonly set: infer S } ? S : undefined;
+
+/** One `update` object whose `where` and `set` have no key outside the accepted set. */
+type UpdateFilterTarget<S extends QuerySchema, K extends keyof S["~byName"], W, Set> = Omit<
   Extract<UpdateArg<S, K>, { readonly set: unknown }>,
-  "where"
+  "where" | "set"
 > & {
   readonly where?: FilterWhereOf<S, K, W>;
+  readonly set: ClosedWhere<Set, UpdateSet<S, K>>;
 };
 
 /** One `delete` object whose `where` includes `hidden({ filterable: true })`. */
@@ -1198,6 +1253,22 @@ export type UpdateSet<S extends QuerySchema, K extends keyof S["~byName"]> = {
     | WriteOp<NonNullable<UpdateOf<S, K>[F]>>;
 };
 
+/**
+ * Rows from `version: "any"`.
+ *
+ * Omitted `returning`, and `returning: true`, keep the row. A field list keeps
+ * those fields only.
+ */
+type ClaimedRow<S extends QuerySchema, K extends keyof S["~byName"], Opt> = [Opt] extends [
+  undefined,
+]
+  ? Show<RowOf<S, K>>
+  : Opt extends { readonly returning: infer R }
+    ? [R] extends [true]
+      ? Show<RowOf<S, K>>
+      : Show<Selected<RowOf<S, K>, R>>
+    : Show<RowOf<S, K>>;
+
 /** Conflict handling on `insert` (spec §11). */
 export type OnConflict<S extends QuerySchema, K extends keyof S["~byName"]> =
   | "error"
@@ -1207,6 +1278,23 @@ export type OnConflict<S extends QuerySchema, K extends keyof S["~byName"]> =
       readonly update: readonly (keyof UpdateOf<S, K> & string)[];
     }
   | { readonly on: string | readonly string[]; readonly return: true };
+
+/** `onConflict` on `insert`. A versioned table, or a union that includes one, has no `update` form. */
+type InsertConflict<S extends QuerySchema, K extends keyof S["~byName"]> = S["~byName"][K] extends {
+  readonly "~versioned": true;
+}
+  ? Exclude<OnConflict<S, K>, { readonly update: unknown }>
+  : UnionVersion<S, K> extends { readonly version: number }
+    ? Exclude<OnConflict<S, K>, { readonly update: unknown }>
+    : OnConflict<S, K>;
+
+/** `insert` options. `onConflict` update is omitted when any named table is versioned. */
+type TableInsertOptions<S extends QuerySchema, K extends keyof S["~byName"]> = Omit<
+  InsertOptions<S, K>,
+  "onConflict"
+> & {
+  readonly onConflict?: InsertConflict<S, K>;
+};
 
 /** Options for `insert`. */
 export type InsertOptions<S extends QuerySchema, K extends keyof S["~byName"]> = {
@@ -1299,13 +1387,11 @@ type AllowedUpdate<
   | {
       readonly where?: WhereOf<S, K>;
       readonly set: AllowedSet<S, K, Allow>;
-      readonly version?: number;
     }
   | readonly {
       readonly id?: unknown;
       readonly where?: WhereOf<S, K>;
       readonly set: AllowedSet<S, K, Allow>;
-      readonly version?: number;
     }[];
 
 /** Allowed update with `version` required (versioned tables, D305). */
@@ -1332,8 +1418,8 @@ type AllowedUpdateVersioned<
  * `lock: "skip"` with `limit` claims that many matching rows and leaves rows
  * another transaction already holds. It is not valid on a list.
  *
- * `version` is optional on this alias. {@link TableApi.update} picks the
- * required-version form when the table is `versioned()` (D305).
+ * A non-versioned table has no `version` key (OKM1120). {@link TableApi.update}
+ * picks the required-version form when any named table is `versioned()`.
  * `version: "any"` is accepted only with `lock: "skip"` and `limit`.
  */
 export type UpdateTarget<S extends QuerySchema, K extends keyof S["~byName"]> =
@@ -1342,15 +1428,11 @@ export type UpdateTarget<S extends QuerySchema, K extends keyof S["~byName"]> =
       readonly set: UpdateSet<S, K>;
       readonly limit?: number;
       readonly lock?: "skip";
-      /** Version read from the row. Required when the table is `versioned()`. */
-      readonly version?: number;
     }
   | readonly {
       readonly id?: unknown;
       readonly where?: WhereOf<S, K>;
       readonly set: UpdateSet<S, K>;
-      /** Version read from the row. Required when the table is `versioned()`. */
-      readonly version?: number;
     }[];
 
 /**
@@ -1369,12 +1451,13 @@ type VersionAnyArg<
   S extends QuerySchema,
   K extends keyof S["~byName"],
   W,
+  Set,
 > = S["~byName"][K] extends {
   readonly "~versioned": true;
 }
   ? {
       readonly where?: FilterWhereOf<S, K, W>;
-      readonly set: UpdateSet<S, K>;
+      readonly set: ClosedWhere<Set, UpdateSet<S, K>>;
       readonly limit: number;
       readonly lock: "skip";
       readonly version: "any";
@@ -1399,24 +1482,52 @@ type UpdateTargetVersioned<S extends QuerySchema, K extends keyof S["~byName"]> 
       readonly version: number;
     }[];
 
-/** One object `update`. `where` is not a union, so a fresh object rejects an unknown key. */
-type UpdateObject<S extends QuerySchema, K extends keyof S["~byName"]> = S["~byName"][K] extends {
+/** `true` when `T` has more than one constituent. A single name is `false`. */
+type IsUnion<T> = (T extends unknown ? (argument: T) => void : never) extends (
+  argument: infer U,
+) => void
+  ? [T] extends [U]
+    ? false
+    : true
+  : false;
+
+/**
+ * `{ version: number }` when a union names any versioned table.
+ *
+ * One table name skips this. The object form already branches on that table.
+ */
+type UnionVersion<S extends QuerySchema, K> =
+  IsUnion<K> extends true
+    ? [
+        K extends keyof S["~byName"]
+          ? S["~byName"][K] extends { readonly "~versioned": true }
+            ? true
+            : false
+          : false,
+      ] extends [false]
+      ? unknown
+      : { readonly version: number }
+    : unknown;
+
+/** `update` result. A versioned table, or a union that includes one, has no `.all()`. */
+type UpdateWrite<S extends QuerySchema, K extends keyof S["~byName"], T> = S["~byName"][K] extends {
   readonly "~versioned": true;
 }
-  ? {
-      readonly where?: Untagged<FiltersOf<S, K>>;
-      readonly set: UpdateSet<S, K>;
-      readonly limit?: number;
-      readonly lock?: "skip";
-      readonly version: number;
-    }
-  : {
-      readonly where?: Untagged<FiltersOf<S, K>>;
-      readonly set: UpdateSet<S, K>;
-      readonly limit?: number;
-      readonly lock?: "skip";
-      readonly version?: number;
-    };
+  ? Omit<Write<T>, "all">
+  : UnionVersion<S, K> extends { readonly version: number }
+    ? Omit<Write<T>, "all">
+    : Write<T>;
+
+/** One object `update`. `where` is not a union, so a fresh object rejects an unknown key. */
+type UpdateObject<S extends QuerySchema, K extends keyof S["~byName"]> = {
+  readonly where?: Untagged<FiltersOf<S, K>>;
+  readonly set: UpdateSet<S, K>;
+  readonly limit?: number;
+  readonly lock?: "skip";
+} & (S["~byName"][K] extends { readonly "~versioned": true }
+  ? { readonly version: number }
+  : unknown) &
+  UnionVersion<S, K>;
 
 /** A list `update`. `where` includes a filterable hidden column. */
 type UpdateList<S extends QuerySchema, K extends keyof S["~byName"]> = S["~byName"][K] extends {
@@ -1428,21 +1539,43 @@ type UpdateList<S extends QuerySchema, K extends keyof S["~byName"]> = S["~byNam
       readonly set: UpdateSet<S, K>;
       readonly version: number;
     }[]
-  : readonly {
+  : readonly ({
       readonly id?: unknown;
       readonly where?: FilterFiltersOf<S, K> | Or<FilterFiltersOf<S, K>>;
       readonly set: UpdateSet<S, K>;
-      readonly version?: number;
+    } & UnionVersion<S, K>)[];
+
+/** `update` target: required `version` when any named table is versioned, else {@link UpdateTarget}. */
+/**
+ * Object or list when a union names a versioned table.
+ *
+ * Built only for that union, so a single table keeps {@link UpdateTarget}.
+ */
+type UpdateTargetMixed<S extends QuerySchema, K extends keyof S["~byName"]> =
+  | {
+      readonly where?: WhereOf<S, K>;
+      readonly set: UpdateSet<S, K>;
+      readonly limit?: number;
+      readonly lock?: "skip";
+      readonly version: number;
+    }
+  | readonly {
+      readonly id?: unknown;
+      readonly where?: WhereOf<S, K>;
+      readonly set: UpdateSet<S, K>;
+      readonly version: number;
     }[];
 
-/** `update` target: required `version` on versioned tables, else {@link UpdateTarget}. */
+/** `update` target: required `version` when any named table is versioned, else {@link UpdateTarget}. */
 type UpdateArg<S extends QuerySchema, K extends keyof S["~byName"]> = S["~byName"][K] extends {
   readonly "~versioned": true;
 }
   ? UpdateTargetVersioned<S, K>
-  : UpdateTarget<S, K>;
+  : UnionVersion<S, K> extends { readonly version: number }
+    ? UpdateTargetMixed<S, K>
+    : UpdateTarget<S, K>;
 
-/** `{ allow }` update target: required `version` on versioned tables. */
+/** `{ allow }` update target: required `version` when any named table is versioned. */
 type AllowedUpdateArg<
   S extends QuerySchema,
   K extends keyof S["~byName"],
@@ -1522,40 +1655,40 @@ export interface TableExtras<S extends QuerySchema, K extends keyof S["~byName"]
 /** Methods on one table. */
 export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & string, L = unknown> = {
   find<const O extends FindOptions<S, K> & L & { readonly limit: number }>(
-    options: O & ReadSeal<S, K, O, false>,
+    options: O & ReadSeal<S, K, O, false> & Top<O, FindKey>,
   ): Read<readonly ResultRow<S, K, O>[]>;
   find<const O extends RelationFind<S, K, false, L> & { readonly limit: number }>(
-    options: O & RelationSeal<S, K, O, false>,
+    options: O & RelationSeal<S, K, O, false> & Top<O, FindKey>,
   ): Read<readonly ResultRow<S, K, O>[]>;
   find<const O extends FindFilterOptions<S, K, L> & { readonly limit: number }>(
-    options: O & ReadSeal<S, K, O, true>,
+    options: O & ReadSeal<S, K, O, true> & Top<O, FindKey>,
   ): Read<readonly ResultRow<S, K, O>[]>;
   find<const O extends RelationFind<S, K, true, L> & { readonly limit: number }>(
-    options: O & RelationSeal<S, K, O, true>,
+    options: O & RelationSeal<S, K, O, true> & Top<O, FindKey>,
   ): Read<readonly ResultRow<S, K, O>[]>;
   find<const O extends FindFilterOptions<S, K, L>>(
-    options: O & ReadSeal<S, K, O, true>,
+    options: O & ReadSeal<S, K, O, true> & Top<O, FindKey>,
   ): Unbounded<S, "find", Read<readonly ResultRow<S, K, O>[]>>;
   find<const O extends FindOptions<S, K> & L>(
-    options: O & ReadSeal<S, K, O, false>,
+    options: O & ReadSeal<S, K, O, false> & Top<O, FindKey>,
   ): Unbounded<S, "find", Read<readonly ResultRow<S, K, O>[]>>;
   find<const O extends RelationFind<S, K, false, L>>(
-    options: O & RelationSeal<S, K, O, false>,
+    options: O & RelationSeal<S, K, O, false> & Top<O, FindKey>,
   ): Unbounded<S, "find", Read<readonly ResultRow<S, K, O>[]>>;
   find<const O extends RelationFind<S, K, true, L>>(
-    options: O & RelationSeal<S, K, O, true>,
+    options: O & RelationSeal<S, K, O, true> & Top<O, FindKey>,
   ): Unbounded<S, "find", Read<readonly ResultRow<S, K, O>[]>>;
   one<const O extends ReadOptions<S, K>>(
-    options?: O & ReadSeal<S, K, O, false>,
+    options?: O & ReadSeal<S, K, O, false> & Top<O, OneKey>,
   ): Read<ResultRow<S, K, O> | null>;
   one<const O extends RelationOne<S, K, false>>(
-    options?: O & RelationSeal<S, K, O, false>,
+    options?: O & RelationSeal<S, K, O, false> & Top<O, OneKey>,
   ): Read<ResultRow<S, K, O> | null>;
   one<const O extends ReadFilterOptions<S, K>>(
-    options?: O & ReadSeal<S, K, O, true>,
+    options?: O & ReadSeal<S, K, O, true> & Top<O, OneKey>,
   ): Read<ResultRow<S, K, O> | null>;
   one<const O extends RelationOne<S, K, true>>(
-    options?: O & RelationSeal<S, K, O, true>,
+    options?: O & RelationSeal<S, K, O, true> & Top<O, OneKey>,
   ): Read<ResultRow<S, K, O> | null>;
   /**
    * One page of rows and the cursor for the next.
@@ -1648,11 +1781,11 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     data: RequiredInsert<InsertOf<S, K>> &
       OptionalInsert<InsertOf<S, K>> &
       Partial<Pick<RowOf<S, K>, Allow[number]>>,
-    options: InsertOptions<S, K> & { readonly allow: Allow },
+    options: TableInsertOptions<S, K> & { readonly allow: Allow },
   ): Write<Show<RowOf<S, K>>>;
   insert(
     data: RequiredInsert<InsertOf<S, K>> & OptionalInsert<InsertOf<S, K>>,
-    options?: InsertOptions<S, K>,
+    options?: TableInsertOptions<S, K>,
   ): Write<Show<RowOf<S, K>>>;
   /**
    * Inserts a list in one transaction. An unknown key is OKM1120.
@@ -1669,7 +1802,7 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     data: readonly (RequiredInsert<InsertOf<S, K>> &
       OptionalInsert<InsertOf<S, K>> &
       Partial<Pick<RowOf<S, K>, "id" & keyof RowOf<S, K>>>)[],
-    options: InsertOptions<S, K> & { readonly allow: readonly ["id"] },
+    options: TableInsertOptions<S, K> & { readonly allow: readonly ["id"] },
   ): Write<readonly Show<RowOf<S, K>>[]>;
   /**
    * Inserts a list in one transaction. An unknown key is OKM1120.
@@ -1679,7 +1812,7 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
    */
   insert(
     data: readonly (RequiredInsert<InsertOf<S, K>> & OptionalInsert<InsertOf<S, K>>)[],
-    options?: InsertOptions<S, K>,
+    options?: TableInsertOptions<S, K>,
   ): Write<readonly Show<RowOf<S, K>>[]>;
   /**
    * Updates matching rows, or a per-row list in one statement. `where` is required.
@@ -1695,32 +1828,32 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   >(
     target: AllowedUpdateArg<S, K, Allow>,
     options: Opt,
-  ): [Opt["returning"]] extends [true] ? Write<readonly Show<RowOf<S, K>>[]> : Write<WriteCount>;
+  ): [Opt["returning"]] extends [true]
+    ? UpdateWrite<S, K, readonly Show<RowOf<S, K>>[]>
+    : UpdateWrite<S, K, WriteCount>;
   update(
     target: UpdateObject<S, K>,
     options: WriteOptions<S, K> & { readonly returning: true },
-  ): Write<readonly Show<RowOf<S, K>>[]>;
-  update(target: UpdateObject<S, K>, options?: WriteOptions<S, K>): Write<WriteCount>;
+  ): UpdateWrite<S, K, readonly Show<RowOf<S, K>>[]>;
+  update(target: UpdateObject<S, K>, options?: WriteOptions<S, K>): UpdateWrite<S, K, WriteCount>;
   update(
     target: UpdateList<S, K>,
     options: WriteOptions<S, K> & { readonly returning: true },
-  ): Write<readonly Show<RowOf<S, K>>[]>;
-  update(target: UpdateList<S, K>, options?: WriteOptions<S, K>): Write<WriteCount>;
-  update<const T extends ExactConstraint<T, UpdateFilterTarget<S, K, WhereOfTarget<T>>>>(
-    target: T,
-    options: WriteOptions<S, K> & { readonly returning: true },
-  ): Write<readonly Show<RowOf<S, K>>[]>;
+  ): UpdateWrite<S, K, readonly Show<RowOf<S, K>>[]>;
+  update(target: UpdateList<S, K>, options?: WriteOptions<S, K>): UpdateWrite<S, K, WriteCount>;
   update<
     const T extends ExactConstraint<
       T,
-      UpdateFilterTarget<S, K, WhereOfTarget<T>> | VersionAnyArg<S, K, WhereOfTarget<T>>
+      | UpdateFilterTarget<S, K, WhereOfTarget<T>, SetOfTarget<T>>
+      | VersionAnyArg<S, K, WhereOfTarget<T>, SetOfTarget<T>>
     >,
+    const Opt extends WriteOptions<S, K> | undefined = undefined,
   >(
-    target: T,
-    options?: WriteOptions<S, K>,
+    target: T & OneVersion<T>,
+    options?: Opt,
   ): [T] extends [{ readonly version: "any" }]
-    ? Write<readonly Show<RowOf<S, K>>[]>
-    : Write<WriteCount>;
+    ? UpdateWrite<S, K, readonly ClaimedRow<S, K, Opt>[]>
+    : UpdateWrite<S, K, WriteCount>;
   /**
    * Last signature, so `Parameters` reads {@link UpdateArg}.
    *
@@ -1732,7 +1865,7 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     target: UpdateArg<S, K>,
     options: WriteOptions<S, K> | undefined,
     _parameters: 0,
-  ): Write<WriteCount>;
+  ): UpdateWrite<S, K, WriteCount>;
   /**
    * Deletes matching rows. `where` is required.
    *
@@ -1897,7 +2030,7 @@ type TxApi<S extends QuerySchema, Root extends boolean> = {
    * A failure rolls everything back and the error carries `batchIndex`. Inside a
    * transaction it runs on a savepoint, so the transaction survives a failure.
    */
-  batch<const Ops extends readonly Write<unknown>[]>(
+  batch<const Ops extends readonly Omit<Write<unknown>, "all">[]>(
     ops: Ops,
     options?: CallOptions,
   ): Promise<BatchResults<Ops>>;

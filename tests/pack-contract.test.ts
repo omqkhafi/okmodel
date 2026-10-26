@@ -25,6 +25,7 @@ test("a stray packed file, then a postinstall script, fails the pack contract", 
     const stray = await run(repo, root, []);
     expect(stray.code).not.toBe(0);
     expect(stray.stderr).toContain("src/leak.ts");
+    expect(stray.stderr).toContain("bun ./scripts/pack-contract.ts --update");
 
     rmSync(join(root, "src", "leak.ts"));
     writeManifest(root, { postinstall: "echo pwned" });
@@ -87,6 +88,7 @@ test("bin and main are snapshotted and their file contents are not", async () =>
     const moved = await run(repo, root, []);
     expect(moved.code).not.toBe(0);
     expect(moved.stderr).toContain("bin differs");
+    expect(moved.stderr).toContain("bun ./scripts/pack-contract.ts --update");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -120,6 +122,7 @@ test("a changed chunk hash passes, and a new or removed chunk fails", async () =
     const added = await run(repo, root, []);
     expect(added.code).not.toBe(0);
     expect(added.stderr).toContain("dist/shared/*.js");
+    expect(added.stderr).toContain("bun ./scripts/pack-contract.ts --update");
 
     rmSync(join(shared, "dddddddd.js"));
     rmSync(join(shared, "bbbbbbbb.js"));
