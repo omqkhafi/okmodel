@@ -68,7 +68,7 @@ postgresTest(
       const installed = await admin<{ n: string }[]>`
         select extname as n from pg_extension where extname = 'amcheck'
       `;
-      expect(installed).toEqual([]);
+      expect(installed).toHaveLength(0);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
       await admin.end({ timeout: 5 }).catch(() => undefined);

@@ -142,7 +142,7 @@ export function integerIdentity(): ColumnBuilder<number, IdentityFlags> {
   return openColumn({
     ...identityFlags(),
     baseType: "integer",
-    encode: (value) => integerToken(value, -2_147_483_648, 2_147_483_647, "integer"),
+    encode: (value: number) => integerToken(value, -2_147_483_648, 2_147_483_647, "integer"),
     decode: (wire) => decodeBounded(wire, -2_147_483_648, 2_147_483_647, "integer"),
   }) as unknown as ColumnBuilder<number, IdentityFlags>;
 }

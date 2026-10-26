@@ -51,7 +51,7 @@ postgresTest(
           expect(failure.name).not.toBe("DriverError");
         }
         const kept = await admin<{ n: string }[]>`select id::text as n from keep`;
-        expect(kept).toEqual([]);
+        expect(kept).toHaveLength(0);
       }
 
       const notes = schema({
