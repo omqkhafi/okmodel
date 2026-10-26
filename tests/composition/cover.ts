@@ -111,25 +111,26 @@ export function allPairs(): readonly string[] {
 }
 
 function complete(id: string, uncovered: ReadonlySet<string>): CompositionCase {
-  const partial: PartialCase = {};
+  // A mutable map. `CompositionCase` is readonly, and a union key cannot be assigned.
+  const partial: Record<string, string | boolean> = {};
   for (const side of id.split("|")) {
     const eq = side.indexOf("=");
-    const key = side.slice(0, eq) as keyof CompositionCase;
-    partial[key] = parseValue(key, side.slice(eq + 1));
+    const key = side.slice(0, eq);
+    partial[key] = parseValue(key as keyof CompositionCase, side.slice(eq + 1));
   }
   for (const key of KEYS) {
     if (partial[key] !== undefined) continue;
-    let best = FACTOR_VALUES[key][0];
+    let best: string | boolean = FACTOR_VALUES[key][0];
     let bestScore = -1;
     for (const value of FACTOR_VALUES[key]) {
-      const trial = { ...partial, [key]: value };
+      const trial = { ...partial, [key]: value } as PartialCase;
       const score = scoreAssigned(trial, uncovered);
       if (score > bestScore) {
         best = value;
         bestScore = score;
       }
     }
-    partial[key] = best as CompositionCase[typeof key];
+    partial[key] = best;
   }
   return partial as CompositionCase;
 }

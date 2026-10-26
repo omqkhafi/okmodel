@@ -52,7 +52,15 @@ export const KNOWN_EVICTION: readonly {
 }[] = [];
 
 type Open = (url: string) => DriverPool;
-type Connect = typeof connectPostgresJs;
+
+/** Fields every driver `connect` accepts. Their `ssl` option types are not the same. */
+type ConnectOptions = {
+  readonly schema: typeof app;
+  readonly searchPath: string;
+  readonly max: number;
+};
+
+type Connect = (url: string, options: ConnectOptions) => RootClient;
 
 const DRIVERS: readonly {
   readonly name: string;
@@ -62,10 +70,18 @@ const DRIVERS: readonly {
   {
     name: "postgres.js",
     open: (url) => openPostgresJs({ url, max: 1 }),
-    connect: connectPostgresJs,
+    connect: (url, options) => connectPostgresJs(url, options),
   },
-  { name: "node-postgres", open: (url) => openPg({ url, max: 1 }), connect: connectPg },
-  { name: "bun", open: (url) => openBun({ url, max: 1 }), connect: connectBun },
+  {
+    name: "node-postgres",
+    open: (url) => openPg({ url, max: 1 }),
+    connect: (url, options) => connectPg(url, options),
+  },
+  {
+    name: "bun",
+    open: (url) => openBun({ url, max: 1 }),
+    connect: (url, options) => connectBun(url, options),
+  },
 ];
 
 class Text {
@@ -160,7 +176,7 @@ async function proveTx(connect: Connect): Promise<void> {
   });
 }
 
-async function explicitTx(db: TxDb): Promise<void> {
+async function explicitTx(db: RootClient): Promise<void> {
   let pid = "";
   try {
     await db.tx(async (tx) => {
@@ -175,7 +191,7 @@ async function explicitTx(db: TxDb): Promise<void> {
   await expectTxClean(db, pid, "91001");
 }
 
-async function failedTx(db: TxDb): Promise<void> {
+async function failedTx(db: RootClient): Promise<void> {
   let pid = "";
   try {
     await db.tx(async (tx) => {
@@ -195,7 +211,7 @@ async function failedTx(db: TxDb): Promise<void> {
   expect(await db.notes.find({ where: { id: "b" }, limit: 1 })).toHaveLength(1);
 }
 
-async function expectTxClean(db: TxDb, pid: string, lock: "91001" | "91002"): Promise<void> {
+async function expectTxClean(db: TxHandle, pid: string, lock: "91001" | "91002"): Promise<void> {
   // A session advisory lock shows up in `pg_locks` until release runs
   // `pg_advisory_unlock_all`.
   const probe =
@@ -206,7 +222,7 @@ async function expectTxClean(db: TxDb, pid: string, lock: "91001" | "91002"): Pr
   expect(state?.value).toBe(`${pid} true false 1`);
 }
 
-async function readPid(tx: TxDb): Promise<string> {
+async function readPid(tx: TxHandle): Promise<string> {
   const [row] = await raw(tx.notes, Text, "read", fragment`select pg_backend_pid()::text as value`);
   if (row === undefined || row.value === "") throw new Error("pid probe returned no row");
   return row.value;
@@ -233,11 +249,8 @@ async function cells(conn: DriverConnection, text: string): Promise<readonly str
   return row.map((value) => (value === null || value === undefined ? "" : String(value)));
 }
 
-/** The slice of a client this file calls. Typed loosely across drivers. */
-type TxDb = {
-  readonly connected: Promise<void>;
-  close(): Promise<void>;
-  tx<T>(fn: (tx: TxDb) => Promise<T>): Promise<T>;
+/** Tables the transaction callback uses. It has no pool `close`. */
+type TxHandle = {
   readonly notes: {
     insert(row: { readonly id: string; readonly title: string }): Promise<unknown>;
     find(options: {
@@ -245,4 +258,11 @@ type TxDb = {
       readonly limit: number;
     }): Promise<readonly unknown[]>;
   };
+};
+
+/** The root client this file calls. */
+type RootClient = TxHandle & {
+  readonly connected: Promise<void>;
+  close(): Promise<void>;
+  tx<T>(fn: (tx: TxHandle) => Promise<T>): Promise<T>;
 };
