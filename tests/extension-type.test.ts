@@ -5,7 +5,7 @@
 
 import { expect, test } from "bun:test";
 
-import { visibleExtensionType } from "../src/dialects/pg/extension-type.js";
+import { visibleExtensionType } from "../src/dialects/extension-type.js";
 
 test("visibleExtensionType drops the install schema and keeps an array", () => {
   expect(visibleExtensionType("extensions.ltree", "extensions")).toBe("ltree");

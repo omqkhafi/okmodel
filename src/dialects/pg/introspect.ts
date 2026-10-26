@@ -28,7 +28,7 @@ import {
 } from "../../contracts/catalog/view.js";
 import { VIEW_DEPENDENCIES, viewDependencyEdges } from "./view/depend.js";
 import { quoteIdent, typeRef } from "./ddl.js";
-import { visibleExtensionType } from "./extension-type.js";
+import { visibleExtensionType } from "../extension-type.js";
 import { quoteLiteral } from "./quote.js";
 import { withUnvalidatedNotNull } from "../../contracts/catalog/not-null.js";
 import { unvalidatedNotNullSql } from "./not-null.js";
@@ -1590,14 +1590,15 @@ const ENUMS = `
 `;
 
 /**
- * Extensions installed in this schema, named by the caller, or used by an
- * object in this schema.
+ * Extensions installed in this schema, named by the caller, or used by a
+ * column type or an index operator class in this schema.
  *
  * A type such as `ltree` and an operator class such as `gin_trgm_ops` are
  * members of the extension. The column or index that uses them may live in
  * `public` while the extension is installed in `extensions`. The dependency
  * check needs that extension row or it reports the column depends on an
- * extension which is not in the catalog.
+ * extension which is not in the catalog. A function language is not a column
+ * type: `plpgsql` stays out.
  */
 const EXTENSIONS = `
   select e.extname as name, n.nspname as schema, e.extrelocatable as relocatable,
@@ -1608,34 +1609,36 @@ const EXTENSIONS = `
     or e.extname in (select jsonb_array_elements_text($2::text::jsonb))
     or exists (
       select 1
-      from pg_depend d
-      join pg_depend m
-        on m.classid = d.refclassid
-       and m.objid = d.refobjid
-       and m.refclassid = 'pg_extension'::regclass
-       and m.deptype = 'e'
-       and m.refobjid = e.oid
-      where d.deptype in ('n', 'a')
-        and case d.classid
-          when 'pg_class'::regclass
-            then (select c.relnamespace from pg_class c where c.oid = d.objid)
-          when 'pg_attrdef'::regclass
-            then (
-              select c.relnamespace from pg_attrdef a
-              join pg_class c on c.oid = a.adrelid
-              where a.oid = d.objid
-            )
-          when 'pg_constraint'::regclass
-            then (
-              select c.relnamespace from pg_constraint k
-              join pg_class c on c.oid = k.conrelid
-              where k.oid = d.objid
-            )
-          when 'pg_proc'::regclass
-            then (select p.pronamespace from pg_proc p where p.oid = d.objid)
-          when 'pg_type'::regclass
-            then (select t.typnamespace from pg_type t where t.oid = d.objid)
-        end = (select oid from pg_namespace where nspname = $1)
+      from pg_attribute a
+      join pg_class c on c.oid = a.attrelid
+      join pg_namespace ns on ns.oid = c.relnamespace
+      join pg_type ty on ty.oid = a.atttypid
+      left join pg_type el on el.oid = ty.typelem
+      join pg_depend member
+        on member.classid = 'pg_type'::regclass
+       and member.deptype = 'e'
+       and member.refclassid = 'pg_extension'::regclass
+       and member.refobjid = e.oid
+       and (member.objid = ty.oid or member.objid = el.oid)
+      where ns.nspname = $1
+        and c.relkind in ('r', 'p')
+        and a.attnum > 0
+        and not a.attisdropped
+        and not exists (select 1 from pg_inherits i where i.inhrelid = c.oid)
+    )
+    or exists (
+      select 1
+      from pg_index i
+      join pg_class tbl on tbl.oid = i.indrelid
+      join pg_namespace ns on ns.oid = tbl.relnamespace
+      join pg_depend member
+        on member.classid = 'pg_opclass'::regclass
+       and member.deptype = 'e'
+       and member.refclassid = 'pg_extension'::regclass
+       and member.refobjid = e.oid
+       and member.objid = any (i.indclass)
+      where ns.nspname = $1
+        and not exists (select 1 from pg_inherits inh where inh.inhrelid = tbl.oid)
     )
 `;
 

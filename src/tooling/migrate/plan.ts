@@ -50,7 +50,7 @@ import { sqlQuoteOpen } from "./sql-lex.js";
 import { canonicalTypeName } from "./type-name.js";
 import { sealLowered, type DdlDialect, type DdlStep } from "../../dialects/ddl.js";
 import { ddlStep as step } from "../../dialects/ddl-step.js";
-import { visibleExtensionType } from "../../dialects/pg/extension-type.js";
+import { visibleExtensionType } from "../../dialects/extension-type.js";
 import { postgresDialect } from "./postgres-dialect.js";
 import { assertNoChains, type Replacement } from "./values.js";
 
