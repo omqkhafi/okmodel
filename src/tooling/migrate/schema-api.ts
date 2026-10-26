@@ -11,7 +11,11 @@ import { catalogError } from "../../contracts/error.js";
 import { canonicalJson, type Json } from "../../contracts/catalog/json.js";
 import { parseCatalog, serializeCatalog } from "../../contracts/catalog/document.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
-import { isPostgresMajor, type PostgresMajor } from "../../dialects/pg/floor.js";
+import {
+  isPostgresMajor,
+  minPostgresDefinition,
+  type PostgresMajor,
+} from "../../dialects/pg/floor.js";
 import { emulationOf } from "../capabilities/check.js";
 import { POSTGRES_FEATURES } from "../capabilities/postgres.js";
 import type { EmulatedNote } from "../capabilities/types.js";
@@ -78,22 +82,28 @@ export type { RequiredExtension };
  *   `describe(describe(schema))` keeps a declared floor. `describe({ catalog })`
  *   does not: a floor no feature implies falls back to the project floor.
  *   `uuidv7()` is in the catalog, so that call still reports 18.
+ *   A carried `minPostgres` outside 15–18 is OKM1020. An omitted floor still falls back.
  * @returns A description `JSON.stringify` can store
  */
 export function describe(schema: {
   readonly catalog: Catalog;
   readonly requires?: { readonly postgres?: string } | undefined;
-  readonly minPostgres?: PostgresMajor;
+  readonly minPostgres?: unknown;
+  readonly tenancy?: { readonly strategy?: string } | undefined;
+  readonly requirements?: { readonly features?: readonly string[] } | undefined;
 }): SchemaDescription {
   const source = schemaCatalog(schema);
   const document = JSON.parse(serializeCatalog(source)) as Json;
   const computed = schemaMinPostgres(source, declaredFloor(schema.requires));
   const carried = schema.minPostgres;
+  if (carried !== undefined && !isPostgresMajor(carried)) {
+    catalogError("OKM1020", minPostgresDefinition());
+  }
   const floor = isPostgresMajor(carried)
     ? (Math.max(carried, computed) as PostgresMajor)
     : computed;
   const extensions = requiredExtensions(source);
-  const features = featuresUsed(source);
+  const features = withColumnTenancy(featuresUsed(source), schema);
   const requirements: SchemaRequirements = {
     emulated: emulationOf(features, POSTGRES_FEATURES),
     extensions,
@@ -132,6 +142,30 @@ export function buildCatalog(description: SchemaDescription): Catalog {
     catalogError("OKM1027", "Catalog document is not an object.");
   }
   return parseCatalog(JSON.stringify(body));
+}
+
+/**
+ * Keeps `tenancy.column` when the schema uses column tenancy.
+ *
+ * The strategy is not a catalog object, so a catalog-only describe does not
+ * invent the feature. A description that already lists it keeps it.
+ *
+ * @param features - Features read from the catalog
+ * @param schema - Caller value, a schema result or a previous description
+ * @returns The feature list, sorted when the feature was added
+ */
+function withColumnTenancy(
+  features: readonly string[],
+  schema: {
+    readonly tenancy?: { readonly strategy?: string } | undefined;
+    readonly requirements?: { readonly features?: readonly string[] } | undefined;
+  },
+): readonly string[] {
+  const column =
+    schema.tenancy?.strategy === "column" ||
+    schema.requirements?.features?.includes("tenancy.column") === true;
+  if (!column || features.includes("tenancy.column")) return features;
+  return [...features, "tenancy.column"].sort();
 }
 
 /**

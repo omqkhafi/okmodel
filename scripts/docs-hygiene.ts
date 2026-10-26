@@ -21,6 +21,7 @@ import {
   docsFiles,
   npmIgnoreText,
   packedTextPaths,
+  walkFiles,
   type DocClass,
 } from "./docs-pack.js";
 import { capabilityDocProblems } from "./docs-capabilities.js";
@@ -66,6 +67,7 @@ export function hygieneProblems(root: string, version: string): readonly string[
     ...publicPageProblems(root),
     ...hiddenCharProblems(root),
     ...skillProblems(root),
+    ...casingProblems(root),
     ...exampleTypecheckProblems(),
   ];
 }
@@ -291,6 +293,47 @@ function ignoreProblems(root: string): readonly string[] {
     return ["docs-pack: docs/.npmignore does not match the internal list"];
   }
   return [];
+}
+
+/** Phrases that describe a casing mode this repository does not have. */
+const BANNED_CASING = ["snake-legacy", 'casing: "preserve"'] as const;
+
+/**
+ * Retired casing phrases in one file.
+ *
+ * @param text - File text
+ * @param file - Path printed in the problem line
+ * @returns One line per phrase that appears
+ */
+export function bannedCasingPhrases(text: string, file: string): readonly string[] {
+  const problems: string[] = [];
+  for (const phrase of BANNED_CASING) {
+    if (text.includes(phrase)) problems.push(`${file}: ${phrase}`);
+  }
+  return problems;
+}
+
+/**
+ * Refuses retired casing spellings in the handbook and the packed docs.
+ *
+ * The default is verbatim. These phrases are not examples of it.
+ *
+ * @param root - Repository root
+ * @returns Problem lines
+ */
+function casingProblems(root: string): readonly string[] {
+  const problems: string[] = [];
+  const files = [
+    ...docsFiles(root).map((rel) => `docs/${rel}`),
+    ...walkFiles(join(root, "site/content"), join(root, "site/content")).map(
+      (rel) => `site/content/${rel}`,
+    ),
+  ];
+  for (const rel of files) {
+    if (!rel.endsWith(".md") && !rel.endsWith(".mdx") && !rel.endsWith(".json")) continue;
+    problems.push(...bannedCasingPhrases(readFileSync(join(root, rel), "utf8"), rel));
+  }
+  return problems;
 }
 
 function skillProblems(root: string): readonly string[] {

@@ -46,7 +46,7 @@ description: "database is one target named default. targets replaces it."
 | A name that is not configured | OKM1845. `Target <name> is not configured.` |
 | No target, on those commands or on `okm migrate status` | OKM1845. `No target is configured.` |
 | `okm migrate status` | Prints every target, in name order. The columns are `target`, `version`, `catalog`, `state`, and `protected` (`true` or `false`). `--target` keeps one name. Several targets do not need `--target`. |
-| `okm check`, several targets, no `--target` | Skips the database comparison. An unknown `--target` is still OKM1845. A protection mismatch is still OKM1852. |
+| `okm check`, several targets, no `--target` | Skips the database comparison and prints `server checks skipped: N targets, pass --target <name>`. That skips the server major check and the extension check. An unknown `--target` is still OKM1845. A protection mismatch is still OKM1852. |
 | `okm check` or `okm migrate plan`, no target | Does not throw OKM1845. Plan prints without a database. |
 | `okm migrate plan`, several targets, no `--target` | Prints the plan. It does not throw OKM1853. A protection mismatch is still OKM1852. |
 

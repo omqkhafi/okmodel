@@ -765,9 +765,9 @@ Project traits: `trait(name, { fields, presets, methods, requires })`, the same 
 - **A miss is not a conflict.** A `where` that matches nothing returns `{ count: 0 }`. A matched row at a different version throws `OkmError` category `conflict` (no new error kind) and writes nothing. The message names the fields and the version that was sent, and the fix is to reread and retry. `returning` includes the new version. Without `returning` the result is `{ count }`. A `version: "any"` claim that matches nothing returns `[]`.
 - **What composes.** A per-row list, `returning`, column and composite tenancy, `lock: "skip"` with `limit`, and `onConflict: "ignore"` or `{ on, return: true }`. A claim that passes an integer `version` updates rows that are free and still at that version. Locked rows are skipped. A conflict is raised only when nothing was updated and a free row matches at a different version. `version: "any"` with `lock: "skip"` and `limit` skips that check. The statement selects the primary key with `ORDER BY` that key, `LIMIT`, and `FOR UPDATE SKIP LOCKED`, then `UPDATE ... FROM` that set and repeats the caller's predicate, so the lock runs once and the write never changes more than `limit` rows. It sets `version` to `version + 1` and returns those rows, including the new version. A miss is an empty array, not `conflict`. Run it in `READ COMMITTED` (the default). Under `REPEATABLE READ` or `SERIALIZABLE` the same race can raise SQLSTATE 40001 (kind `serialization`) instead of dropping the row. First-or-create does not change the existing row, so it does not bump `version`. A new row starts at 1. Delivery of a claimed row is at least once: the handler has to be idempotent. A hot queue whose heartbeat rewrites the row on a short interval fits a table that is not `versioned()`.
 - **What does not.** `onConflict: { on, update }` is OKM1120: an upsert does not check the version you read. `.all()` is OKM1120: one version cannot describe every row. Passing `version` on a table that is not `versioned()` is OKM1120. Omitting `version` on a versioned table is OKM1120. `version: "any"` without `lock: "skip"` and `limit` is OKM1120. An unrecognised version string is OKM1120. A `version` key in `set` is OKM1120. Changing a path-tenancy parent column in the same update is OKM1120. `delete`, `archive`, and `restore` do not check or bump `version`.
-- **A queue.** Claim with `version: "any"`. Heartbeat, complete, and fail fence on `id`, `status: "running"`, and `attempt`, and each passes the `version` from the worker's own last write. Rescue is another `version: "any"` claim. A hot heartbeat belongs on a table that is not `versioned()`.
+- **A queue.** Claim with `version: "any"`. Heartbeat, complete, and fail fence on `id`, `status: "running"`, and `attempt`, and each passes the `version` from the worker's own last write. Rescue is another `version: "any"` claim. A job that dies before its first heartbeat has `heartbeatAt` null, so the rescue matches that only when `claimedAt` is already stale, and the rescue writes a new `heartbeatAt` so a second rescuer does not claim the same row. A hot heartbeat belongs on a table that is not `versioned()`.
 
-```ts no-check="queue sketch; jobs, inc, and the timestamp values are defined by the caller"
+```ts no-check="queue sketch; jobs, or, inc, and the timestamp values are defined by the caller"
 const [job] = await db.jobs.update({
   where: { status: "pending" },
   set: { status: "running", attempt: inc(1), claimedAt, owner },
@@ -791,8 +791,11 @@ await db.jobs.update({
   version: beat.version,
 });
 await db.jobs.update({
-  where: { status: "running", heartbeatAt: lt(staleBefore) },
-  set: { status: "running", attempt: inc(1), claimedAt, owner },
+  where: or([
+    { status: "running", heartbeatAt: null, claimedAt: lt(staleBefore) },
+    { status: "running", heartbeatAt: lt(staleBefore) },
+  ]),
+  set: { status: "running", attempt: inc(1), claimedAt, heartbeatAt, owner },
   limit: 1,
   lock: "skip",
   version: "any",

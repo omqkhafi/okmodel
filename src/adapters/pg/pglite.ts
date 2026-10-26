@@ -5,7 +5,7 @@
  * running cannot be aborted. `@electric-sql/pglite` is a peer of this entry.
  */
 
-import { PGlite, type QueryOptions } from "@electric-sql/pglite";
+import type { PGlite, QueryOptions } from "@electric-sql/pglite";
 
 import type {
   DescribeField,
@@ -45,42 +45,57 @@ export type PgliteConfig = DriverPoolConfig & {
  * @returns The pool
  */
 export async function open(config: PgliteConfig = {}): Promise<DriverPool> {
-  const wire = await import("./pglite-wire.js");
-  const db = new PGlite({
-    dataDir: config.dataDir ?? "memory://",
-    parsers: wire.parsers,
-    serializers: wire.serializers,
-  });
-  await db.waitReady;
   const acquireMs = config.timeouts?.acquire;
   const slot = new Slot();
   const notices = noticeBuffer();
-  const queryOptions: QueryOptions = {
-    rowMode: "array",
-    parsers: wire.parsers,
-    serializers: wire.serializers,
-    onNotice(notice) {
-      notices.push(notice);
-    },
-  };
   let closed = false;
   let inflight = 0;
-  const session = new PgliteSession(
-    db,
-    queryOptions,
-    notices,
-    () => {
-      inflight += 1;
-    },
-    () => {
-      inflight = Math.max(0, inflight - 1);
-    },
-    (error) => wire.fail(error),
-  );
+  let starting: Promise<Started> | undefined;
+  let extensionNames: readonly string[] = [];
+
+  function prepareExtensions(names: readonly string[]): Promise<void> {
+    if (starting !== undefined) return Promise.resolve();
+    extensionNames = names;
+    return Promise.resolve();
+  }
+
+  function boot(): Promise<Started> {
+    starting ??= import("./pglite-boot.js").then(async (boot) => {
+      const opened = await boot.openPglite(
+        config.dataDir ?? "memory://",
+        notices.push,
+        await boot.loadContrib(extensionNames),
+      );
+      return {
+        db: opened.db,
+        session: new PgliteSession(
+          opened.db,
+          opened.options,
+          notices,
+          () => {
+            inflight += 1;
+          },
+          () => {
+            inflight = Math.max(0, inflight - 1);
+          },
+          opened.fail,
+        ),
+      };
+    });
+    return starting;
+  }
 
   async function lease(): Promise<DriverConnection> {
     if (closed) return rejectClosed();
     await slot.acquire(acquireMs);
+    let started: Started;
+    try {
+      started = await boot();
+    } catch (error) {
+      slot.release();
+      throw error;
+    }
+    const { session } = started;
     let released = false;
     return {
       execute: (text, params, options) => {
@@ -109,7 +124,7 @@ export async function open(config: PgliteConfig = {}): Promise<DriverPool> {
     };
   }
 
-  return {
+  const pool: DriverPool = {
     capabilities: PGLITE_CAPABILITIES,
     execute(text, params, options) {
       const refused = noTimeout(options);
@@ -117,7 +132,7 @@ export async function open(config: PgliteConfig = {}): Promise<DriverPool> {
       return runCall(closed, options, async (watch) => {
         await slot.acquire(acquireMs);
         try {
-          return await session.query(text, params, watch);
+          return await (await boot()).session.query(text, params, watch);
         } finally {
           slot.release();
         }
@@ -137,13 +152,13 @@ export async function open(config: PgliteConfig = {}): Promise<DriverPool> {
     async describe(text): Promise<DescribeResult> {
       await slot.acquire(acquireMs);
       try {
-        return await describeOnPglite(db, text);
+        return await describeOnPglite((await boot()).db, text);
       } finally {
         slot.release();
       }
     },
     async listen(channel, onNotify) {
-      const unlisten = await db.listen(channel, onNotify);
+      const unlisten = await (await boot()).db.listen(channel, onNotify);
       return async () => {
         await unlisten();
       };
@@ -153,10 +168,14 @@ export async function open(config: PgliteConfig = {}): Promise<DriverPool> {
     },
     async close() {
       closed = true;
-      await db.close();
+      if (starting === undefined) return;
+      await (await starting).db.close();
     },
   };
+  return Object.assign(pool, { prepareExtensions });
 }
+
+type Started = { readonly db: PGlite; readonly session: PgliteSession };
 
 type WireMessage = {
   readonly name: string;
@@ -328,18 +347,18 @@ class PgliteSession implements BatchSession {
 }
 
 type NoticeBuffer = {
-  push(notice: {
+  push: (notice: {
     severity?: string | undefined;
     code?: string | undefined;
     message?: string | undefined;
-  }): void;
+  }) => void;
   take(): readonly Notice[];
 };
 
 function noticeBuffer(): NoticeBuffer {
   let notices: Notice[] | undefined;
   return {
-    push(notice) {
+    push: (notice) => {
       const severity = notice.severity ?? "";
       const message = notice.message ?? "";
       const code = notice.code !== undefined && notice.code.length > 0 ? notice.code : undefined;

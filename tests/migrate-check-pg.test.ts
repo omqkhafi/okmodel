@@ -164,6 +164,34 @@ postgresTest(
 
 postgresTest(
   gate,
+  "ltree in schema extensions applies and accepts a path",
+  async () => {
+    await withProject(async ({ cwd, url }) => {
+      const sql = openPostgres(url);
+      try {
+        const ready = await sql<{ ok: boolean }[]>`
+          select exists (select 1 from pg_available_extensions where name = 'ltree') as ok
+        `;
+        if (ready[0]?.ok !== true) throw new Error("ltree is not available on this server");
+        writeLtreeSchema(cwd);
+        await cli(cwd, ["generate", "ltree"]);
+        expect((await capture(["migrate", "check"], cwd)).startsWith("ok 1 migrations\n")).toBe(
+          true,
+        );
+        await cli(cwd, ["migrate", "apply"]);
+        await sql`insert into places (path) values ('top.science')`;
+        const rows = await sql<{ path: string }[]>`select path::text as path from places`;
+        expect(rows.map((row) => row.path)).toEqual(["top.science"]);
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
+    });
+  },
+  90_000,
+);
+
+postgresTest(
+  gate,
   "a pending migration that drops the column and then the extension passes check and apply (N-98)",
   async () => {
     await withProject(async ({ cwd, url }) => {
@@ -768,6 +796,22 @@ function writeTrigramSchema(cwd: string): void {
       "export const app = schema({",
       '  tables: [table("docs", { id: t.id(), body: t.text() }, { indexes: (c) => [trigram.gin(c.body.name)] })],',
       "  extensions: [trigram],",
+      "});",
+      "",
+    ].join("\n"),
+  );
+}
+
+function writeLtreeSchema(cwd: string): void {
+  const source = (path: string): string => JSON.stringify(join(root, path));
+  writeFileSync(
+    join(cwd, "schema.ts"),
+    [
+      `import { schema, t, table } from ${source("src/dialects/pg/index.ts")};`,
+      `import { extension } from ${source("src/dialects/pg/ext/index.ts")};`,
+      "export const app = schema({",
+      '  tables: [table("places", { id: t.identity(), path: t.ltree() })],',
+      '  extensions: [extension("ltree", { schema: "extensions" })],',
       "});",
       "",
     ].join("\n"),

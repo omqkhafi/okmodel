@@ -58,6 +58,45 @@ export function ensureExtensionSchemaSql(sql: string, namespace: string): string
   return `create schema if not exists ${quoteIdent(statement.schema)}`;
 }
 
+/**
+ * Session `search_path` update after `CREATE EXTENSION … SCHEMA`.
+ *
+ * The type lives in that schema. A later statement in this session, including
+ * one in a new transaction, still has to resolve it. The catalog namespace is
+ * already on the path.
+ *
+ * @param sql - One plan step
+ * @param namespace - Catalog schema, or the scratch schema during check
+ * @returns `set_config` for the session, or `undefined`
+ */
+export function extensionSearchPathSql(sql: string, namespace: string): string | undefined {
+  const statement = extensionStatement(sql);
+  if (statement?.kind !== "create" || statement.schema === undefined) return undefined;
+  if (statement.schema === namespace) return undefined;
+  const literal = `'${quoteIdent(statement.schema).replaceAll("'", "''")}'`;
+  return `select set_config('search_path', current_setting('search_path') || ', ' || ${literal}, false)`;
+}
+
+/**
+ * Appends an extension schema to the session search path once.
+ *
+ * @param connection - Reserved connection
+ * @param sql - The step that just ran
+ * @param namespace - Catalog schema for this target
+ * @param seen - Statements already appended on this connection
+ */
+export async function rememberExtensionSchema(
+  connection: DriverConnection,
+  sql: string,
+  namespace: string,
+  seen: Set<string>,
+): Promise<void> {
+  const text = extensionSearchPathSql(sql, namespace);
+  if (text === undefined || seen.has(text)) return;
+  seen.add(text);
+  await connection.execute(text);
+}
+
 /** One statement that creates, drops, or alters an extension. */
 export type ExtensionStatement =
   | { readonly kind: "create"; readonly name: string; readonly schema?: string }

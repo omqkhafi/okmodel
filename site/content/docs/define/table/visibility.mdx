@@ -10,7 +10,7 @@ None of the three flags is stored in the catalog, so none of them changes a migr
 
 ### Hidden
 
-`.hidden()` takes one option, `filterable`. Omit it and the column is off the row. `true` opens `where` and `orderBy` at runtime. The column stays off the row either way. Insert and update can still set it. A value bound for the column is `[redacted]` in `inspect()` and `explain()`, on reads and writes.
+`.hidden()` takes one option, `filterable`. Omit it and the column is off the row. `true` opens `where` and `orderBy` in the type and at runtime. The column stays off the row either way. Insert and update can still set it. A value bound for the column is `[redacted]` in `inspect()` and `explain()`, on reads and writes.
 
 #### .hidden()
 

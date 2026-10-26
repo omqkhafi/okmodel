@@ -10,7 +10,7 @@ Install and update guidance is in [Using OKModel safely](docs/using-okmodel-safe
 
 ## Supported versions
 
-OKModel supports the current 0.x minor and the previous minor. Today that is 0.10.x and 0.9.x.
+OKModel supports the current 0.x minor and the previous minor. The 0.10 release supports 0.10.x and the previous minor, 0.9.x.
 
 | Version | Supported |
 | ------- | --------- |

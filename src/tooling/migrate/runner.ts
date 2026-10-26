@@ -21,7 +21,7 @@ import {
   type BackfillSpec,
 } from "./backfill.js";
 import type { PlanStep } from "./plan.js";
-import { ensureExtensionSchemaSql } from "./extensions.js";
+import { ensureExtensionSchemaSql, rememberExtensionSchema } from "./extensions.js";
 import { sessionFailure } from "./lost.js";
 import { migrationJournalGrants } from "./managed.js";
 import { postgresStepEngine } from "./pg-probe.js";
@@ -104,6 +104,9 @@ export type TargetRunReport = {
 
 const BACKOFF_MS = 50;
 
+/** Role and extension schemas remembered for one apply connection. */
+type RunSession = { setRole?: string; extensionSchemas?: Set<string> };
+
 const KEY_TYPES = `select a.attname, format_type(a.atttypid, a.atttypmod)
  from pg_attribute a
  where a.attrelid = $1::regclass
@@ -125,7 +128,7 @@ const KEY_TYPES = `select a.attname, format_type(a.atttypid, a.atttypmod)
 export async function runTarget(
   connection: DriverConnection,
   run: TargetRun,
-  session: { setRole?: string },
+  session: RunSession,
 ): Promise<TargetRunReport> {
   const applied: string[] = [];
   for (let index = 0; index < run.units.length; index += 1) {
@@ -358,7 +361,7 @@ async function runUnit(
   connection: DriverConnection,
   unit: RunnableUnit,
   run: TargetRun,
-  session: { setRole?: string },
+  session: RunSession,
 ): Promise<void> {
   const only = unit.steps.length === 1 ? unit.steps[0] : undefined;
   if (only?.step.backfill !== undefined) {
@@ -404,7 +407,7 @@ async function runCommitted(
   unit: RunnableUnit,
   item: RunnableStep,
   run: TargetRun,
-  session: { setRole?: string },
+  session: RunSession,
 ): Promise<void> {
   const step = committedOf(unit, item);
   await resumeCommittedStep(
@@ -453,7 +456,7 @@ async function executePlanStep(
   connection: DriverConnection,
   item: RunnableStep,
   run: TargetRun,
-  session: { setRole?: string },
+  session: RunSession,
 ): Promise<void> {
   // Create every managed role as the connecting user first. SET ROLE to
   // the migration role waits until a later non-role step so a second
@@ -472,6 +475,12 @@ async function executePlanStep(
     const ensure = ensureExtensionSchemaSql(item.step.sql, run.schema ?? "public");
     if (ensure !== undefined) await connection.execute(ensure);
     await connection.execute(item.step.sql);
+    await rememberExtensionSchema(
+      connection,
+      item.step.sql,
+      run.schema ?? "public",
+      (session.extensionSchemas ??= new Set()),
+    );
     await assertSchemaUsageLanded(connection, item.step.sql);
   } else if (!existed) await connection.execute(createRoleOnce(item.step.sql));
   if (created !== undefined && created === run.migrationRole && !existed) {

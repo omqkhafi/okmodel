@@ -130,7 +130,6 @@ None of the 30 runs was a re-run (`run_attempt` is 1 on each).
 | lint / static / Lint | 9 | 2s | 3s | 3s |
 | package / checks / Are the types wrong | 9 | 2s | 3s | 3s |
 | package / checks / Setup Bun | 9 | 2s | 2s | 2s |
-| runtimes / portable / Setup Deno | 8 | 2s | 2s | 2s |
 | temporal / node 24 / Set up job | 9 | 2s | 2s | 2s |
 | temporal / node 26 / Set up job | 9 | 2s | 2s | 2s |
 | test / columns / Build | 9 | 2s | 4s | 4s |

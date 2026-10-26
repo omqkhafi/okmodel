@@ -115,6 +115,7 @@ export async function testing<const S extends TestingSchema>(
   const pool = await options.driver;
   const applied = options.migrate !== false;
   if (applied) {
+    await loadDeclaredExtensions(pool, schema.catalog);
     for (const statement of renderCatalog(schema.catalog, "public")) {
       if (statement.trim().length === 0) continue;
       try {
@@ -266,6 +267,26 @@ function readIdent(
   const match = /^[A-Za-z_][A-Za-z0-9_$]*/.exec(text);
   if (match === null) return undefined;
   return { value: match[0], consumed: match[0].length };
+}
+
+/**
+ * Asks a PGlite pool to load the contrib bundles this catalog declares.
+ *
+ * Other drivers do not have the hook. A missing bundle is skipped here;
+ * `CREATE EXTENSION` still fails when the server cannot install it.
+ *
+ * @param pool - Driver from `open()`
+ * @param catalog - Schema catalog about to be applied
+ */
+async function loadDeclaredExtensions(pool: DriverPool, catalog: Catalog): Promise<void> {
+  const prepare = (pool as { prepareExtensions?: (names: readonly string[]) => Promise<void> })
+    .prepareExtensions;
+  if (prepare === undefined) return;
+  const names: string[] = [];
+  for (const object of catalog.objects) {
+    if (object.kind === "extension") names.push(object.identity.name);
+  }
+  if (names.length > 0) await prepare(names);
 }
 
 function sqlstateOf(error: unknown): string | undefined {

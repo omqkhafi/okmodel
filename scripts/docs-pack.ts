@@ -281,7 +281,14 @@ export function docsFiles(root: string): readonly string[] {
   return walkFiles(join(root, "docs"), join(root, "docs"));
 }
 
-function walkFiles(dir: string, base: string): readonly string[] {
+/**
+ * Every file under `dir`, relative to `base`, forward slashes, sorted.
+ *
+ * @param dir - Directory to read
+ * @param base - Prefix stripped from each path
+ * @returns Relative paths. Empty when `dir` is missing
+ */
+export function walkFiles(dir: string, base: string): readonly string[] {
   if (!existsSync(dir)) return [];
   const files: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {

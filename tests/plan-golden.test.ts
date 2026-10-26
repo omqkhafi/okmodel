@@ -10,13 +10,21 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { DdlStep } from "../src/dialects/ddl.js";
+import { STEP_KINDS } from "../src/dialects/step-class.js";
 import { formatPlanJson } from "../src/tooling/migrate/plan-json.js";
-import { formatPlan, planMigration, type PlanRequest } from "../src/tooling/migrate/plan.js";
+import {
+  formatPlan,
+  parsePlan,
+  planMigration,
+  type MigrationPlan,
+  type PlanRequest,
+} from "../src/tooling/migrate/plan.js";
 
 const directory = join(import.meta.dir, "fixtures", "plan-goldens");
 
 type Golden = {
-  readonly request: PlanRequest;
+  readonly source?: "parse";
+  readonly request?: PlanRequest;
   readonly text: string;
   readonly json: string;
   readonly steps: readonly {
@@ -41,8 +49,8 @@ test("plan goldens match formatPlan, plan JSON, and the step list", () => {
     let json = "";
     let steps: Golden["steps"] = [];
     try {
-      const plan = planMigration(golden.request);
-      text = formatPlan(plan);
+      const plan = planned(golden);
+      text = golden.source === "parse" ? golden.text : formatPlan(plan);
       json = formatPlanJson(plan, []);
       steps = slim(plan.steps);
     } catch (error) {
@@ -55,6 +63,23 @@ test("plan goldens match formatPlan, plan JSON, and the step list", () => {
   }
   expect(failures).toEqual([]);
 });
+
+test("every step kind has a golden", () => {
+  const seen = new Set<string>();
+  for (const name of names) {
+    const golden = JSON.parse(readFileSync(join(directory, name), "utf8")) as Golden;
+    for (const step of planned(golden).steps) {
+      if (step.kind !== undefined) seen.add(step.kind);
+    }
+  }
+  expect(STEP_KINDS.filter((kind) => !seen.has(kind))).toEqual([]);
+});
+
+function planned(golden: Golden): MigrationPlan {
+  if (golden.source === "parse") return parsePlan(golden.text);
+  if (golden.request === undefined) throw new Error("plan golden has no request");
+  return planMigration(golden.request);
+}
 
 function slim(steps: readonly DdlStep[]): Golden["steps"] {
   return steps.map((step) => ({

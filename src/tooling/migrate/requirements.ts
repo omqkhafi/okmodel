@@ -15,6 +15,7 @@ import {
   UUIDV7_POSTGRES,
   type PostgresMajor,
 } from "../../dialects/pg/floor.js";
+import { isUuidV7Default } from "../capabilities/used.js";
 import { OPCLASS_EXTENSIONS } from "./opclass-extensions.js";
 
 /**
@@ -95,7 +96,7 @@ export function requiredExtensions(catalog: Catalog): readonly RequiredExtension
 
 function usesUuidV7(catalog: Catalog): boolean {
   for (const object of catalog.objects) {
-    if (object.kind === "column" && object.definition.defaultExpression === "uuidv7()") {
+    if (object.kind === "column" && isUuidV7Default(object.definition.defaultExpression)) {
       return true;
     }
   }
