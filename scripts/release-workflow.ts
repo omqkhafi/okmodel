@@ -2,9 +2,9 @@
  * Checks `.github/workflows/release.yml` for the release v2 rules.
  *
  * Every third-party `uses:` is a 40-hex commit. The workflow grants
- * `contents: read` at the top. `id-token: write` and `contents: write` appear
- * only on the publish job. `pull_request_target` is absent. No npm token is
- * named.
+ * `contents: read` at the top. `id-token: write`, `contents: write`, and
+ * `issues: write` appear only on the publish job. `pull_request_target` is
+ * absent. No npm token is named.
  *
  *   bun ./scripts/release-workflow.ts
  */
@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { repoRoot } from "./root.js";
 
 /** Permissions that may appear only on the publish job. */
-const PUBLISH_ONLY = ["id-token", "contents"] as const;
+const PUBLISH_ONLY = ["id-token", "contents", "issues"] as const;
 
 /**
  * `uses:` values that are not a local path and not a 40-hex pin.
@@ -97,6 +97,9 @@ export function releaseWorkflowProblems(yaml: string): readonly string[] {
   }
   if (permissionValue(publishPerms, "contents") !== "write") {
     problems.push("publish job is missing contents: write");
+  }
+  if (permissionValue(publishPerms, "issues") !== "write") {
+    problems.push("publish job is missing issues: write");
   }
   const steps = Array.isArray(publish.steps) ? publish.steps : [];
   const publishStep = steps.find(

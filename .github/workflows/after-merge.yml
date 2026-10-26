@@ -27,14 +27,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Read pinned Bun
-        id: bun-pin
-        run: echo "version=$(tr -d '[:space:]' < .bun-version)" >> "$GITHUB_OUTPUT"
+      - name: Require pinned Bun
+        run: |
+          set -euo pipefail
+          pin="$(tr -d '[:space:]' < .bun-version)"
+          if [ -z "$pin" ]; then
+            echo ".bun-version is missing or empty" >&2
+            exit 1
+          fi
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: ${{ steps.bun-pin.outputs.version }}
+          bun-version-file: .bun-version
 
       - name: Plan
         id: plan
@@ -374,14 +379,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Read pinned Bun
-        id: bun-pin
-        run: echo "version=$(tr -d '[:space:]' < .bun-version)" >> "$GITHUB_OUTPUT"
+      - name: Require pinned Bun
+        run: |
+          set -euo pipefail
+          pin="$(tr -d '[:space:]' < .bun-version)"
+          if [ -z "$pin" ]; then
+            echo ".bun-version is missing or empty" >&2
+            exit 1
+          fi
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: ${{ steps.bun-pin.outputs.version }}
+          bun-version-file: .bun-version
 
       - name: Open or update one issue
         env:

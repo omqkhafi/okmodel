@@ -3,16 +3,12 @@
  *
  * npm 11.15.0 or newer and Node 22.14.0 or newer are required. Provenance is
  * requested explicitly. A prerelease version is staged under the `next` tag,
- * because npm refuses a prerelease without an explicit tag. No npm token is
- * read. Trusted publishing supplies the OIDC token.
+ * because npm refuses a prerelease without an explicit tag. That version is
+ * read from the tarball's `package/package.json`, not from the checkout.
+ * No npm token is read. Trusted publishing supplies the OIDC token.
  *
  *   bun ./scripts/stage-publish.ts ./packed/okmodel.tgz
  */
-
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
-import { repoRoot } from "./root.js";
 
 /** Oldest npm that implements `npm stage`. */
 export const NPM_FLOOR = "11.15.0";
@@ -66,14 +62,38 @@ export function stagePublishCommand(tarball: string, version: string): readonly 
   return args;
 }
 
-function readVersion(root: string): string {
-  const parsed: unknown = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+/**
+ * `version` from `package/package.json` inside a packed tarball.
+ *
+ * The checkout manifest can differ from the tarball the publish job staged.
+ * The tag follows the packed file.
+ *
+ * @param tarball - Packed file, such as `./packed/okmodel.tgz`
+ * @returns The version string
+ */
+export function readPackedVersion(tarball: string): string {
+  const proc = Bun.spawnSync(["tar", "-xOzf", tarball, "package/package.json"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  if (proc.exitCode !== 0) {
+    throw new Error(
+      `could not read package/package.json from ${tarball}\n${proc.stderr.toString()}`,
+    );
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(proc.stdout.toString());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`${tarball} package.json is not valid JSON: ${message}`, { cause: error });
+  }
   if (typeof parsed !== "object" || parsed === null || !("version" in parsed)) {
-    throw new Error("package.json has no version");
+    throw new Error(`${tarball} package.json has no version`);
   }
   const version = parsed.version;
   if (typeof version !== "string" || version.length === 0) {
-    throw new Error("package.json version is not a string");
+    throw new Error(`${tarball} package.json version is not a string`);
   }
   return version;
 }
@@ -104,7 +124,7 @@ if (import.meta.main) {
     );
     process.exit(1);
   }
-  const args = stagePublishCommand(tarball, readVersion(repoRoot()));
+  const args = stagePublishCommand(tarball, readPackedVersion(tarball));
   const proc = Bun.spawnSync([...args], { stdout: "inherit", stderr: "inherit" });
   process.exit(proc.exitCode ?? 1);
 }

@@ -3,7 +3,8 @@
  */
 
 import { expect, test } from "bun:test";
-import { readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { POSTGRES_VERSIONS } from "../packages/harness/src/version.js";
@@ -32,6 +33,7 @@ import { repoRoot } from "../scripts/root.js";
 import {
   NPM_FLOOR,
   NODE_FLOOR,
+  readPackedVersion,
   stagePublishCommand,
   versionBelow,
 } from "../scripts/stage-publish.js";
@@ -136,6 +138,37 @@ test("stage publish uses an explicit path and the next tag for a prerelease", ()
   expect(versionBelow("24.0.0", NODE_FLOOR)).toBe(false);
 });
 
+test("the next tag follows the tarball version, not the checkout", () => {
+  const dir = mkdtempSync(join(tmpdir(), "okm-stage-"));
+  try {
+    const pkg = join(dir, "package");
+    mkdirSync(pkg);
+    writeFileSync(
+      join(pkg, "package.json"),
+      `${JSON.stringify({ name: "okmodel", version: "0.10.0-next.4" })}\n`,
+    );
+    const tarball = join(dir, "okmodel.tgz");
+    const packed = Bun.spawnSync(["tar", "-czf", tarball, "-C", dir, "package"]);
+    expect(packed.exitCode).toBe(0);
+    expect(readPackedVersion(tarball)).toBe("0.10.0-next.4");
+    expect(stagePublishCommand("./packed/okmodel.tgz", readPackedVersion(tarball))).toContain(
+      "next",
+    );
+    writeFileSync(
+      join(pkg, "package.json"),
+      `${JSON.stringify({ name: "okmodel", version: "0.10.0" })}\n`,
+    );
+    const stable = join(dir, "stable.tgz");
+    const repacked = Bun.spawnSync(["tar", "-czf", stable, "-C", dir, "package"]);
+    expect(repacked.exitCode).toBe(0);
+    expect(stagePublishCommand("./packed/okmodel.tgz", readPackedVersion(stable))).not.toContain(
+      "--tag",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("the release workflow is SHA-pinned and scopes publish permissions", () => {
   const release = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
   expect(releaseWorkflowProblems(release)).toEqual([]);
@@ -152,9 +185,11 @@ test("npm smoke waits out registry processing and skips bun's manifest cache", (
     "okmodel@0.8.0",
     "postgres",
   ]);
-  expect(readFileSync(join(root, "docs/release.md"), "utf8")).toContain(
-    "at most 31 times, 30 seconds apart",
-  );
+  const releaseDoc = readFileSync(join(root, "docs/release.md"), "utf8");
+  expect(releaseDoc).toContain("at most 31 times, 30 seconds apart");
+  expect(releaseDoc).toContain("issues: write");
+  expect(releaseDoc).toContain("The snapshot does not pin the contents of those files.");
+  expect(releaseDoc).toContain("It does not wait for the npm smoke.");
 });
 
 test("published package problem names a missing version and missing provenance", () => {
@@ -235,7 +270,9 @@ test("the site deploys only after a successful release of a stable tag", () => {
   expect(yaml).toContain("bun ./scripts/deploy-ref.ts --confirm");
   expect(readFileSync(join(root, ".bun-version"), "utf8").trim()).toBe("1.4.3");
   expect(yaml).toContain(".bun-version");
-  expect(yaml).toContain("bun-version: ${{ steps.bun-pin.outputs.version }}");
+  expect(yaml).toContain("bun-version-file: .bun-version");
+  expect(yaml).toContain(".bun-version is missing or empty");
+  expect(yaml).not.toContain("steps.bun-pin.outputs.version");
   expect(yaml).toContain("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1");
   expect(yaml).toContain("oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2");
   expect(yaml).not.toContain("type: choice");
@@ -327,8 +364,20 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(ci).not.toContain("tests/harness.test.ts");
   expect(ci).not.toMatch(/push:\n {4}branches:\n {6}- main\n/);
   expect(ci).toContain("pull_request:");
-  expect(ci).toContain("cancel-in-progress: true");
+  expect(ci).toContain("types: [opened, synchronize, reopened, edited]");
+  expect(ci).toContain(
+    "cancel-in-progress: ${{ github.event.action != 'edited' || github.event.changes.title }}",
+  );
   expect(ci).toContain("group: ci-${{ github.event.pull_request.number }}");
+  expect(ci).toContain("github.event.action != 'edited' || github.event.changes.title");
+  expect(ci).toContain("bun ./scripts/ci-gate-mirror.ts");
+  expect(ci).toContain(
+    "hashFiles('src/**', 'package.json', 'bun.lock', '.bun-version', 'tsconfig.build.json', 'scripts/write-bin-wrappers.ts', 'packages/harness/src/driver-run.ts')",
+  );
+  expect(ci).toContain('git show "$base:.bun-version"');
+  const pullJob = ci.slice(ci.indexOf("name: lint / pull request"));
+  expect(pullJob).toContain('git show "$base:.bun-version"');
+  expect(pullJob).toContain("base .bun-version is missing or empty");
   expect(ci).toMatch(/name: gate \/ check[\s\S]*?if: always\(\)/);
   expect(ci).toContain("bun ./scripts/ci-gate.ts");
   expect(ci).toContain("--site ${{ needs.changes.outputs.site == 'true' && '1' || '0' }}");
@@ -346,6 +395,10 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(prMeta).not.toContain("opened");
   expect(prMeta).not.toContain("milestoned");
   expect(prMeta).toContain("bun ./scripts/pr-labels.ts");
+  expect(prMeta).toContain("bun-version-file: .bun-version");
+  expect(prMeta).toContain(".bun-version is missing or empty");
+  expect(prMeta).not.toContain("head.sha");
+  expect(prMeta).not.toContain("steps.bun-pin.outputs.version");
   const gateNeeds = ci.slice(ci.indexOf("name: gate / check"));
   for (const slice of ["changes", "lint", "types", "build", "test", "size", "pull", "suite"]) {
     expect(gateNeeds).toContain(slice);

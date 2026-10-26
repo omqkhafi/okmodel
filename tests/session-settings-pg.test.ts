@@ -415,7 +415,8 @@ postgresTest(
         );
         const begin = pool.log.findIndex((text) => /^begin/i.test(text));
         expect(pool.log[begin + 1]).toMatch(SET);
-        expect(replicaUrl("a")).toContain("55433");
+        const replicaPort = process.env.OKM_REPLICA_A_PORT ?? "55433";
+        expect(replicaUrl("a")).toContain(`:${replicaPort}/`);
       } finally {
         await db.close();
         await pool.close();

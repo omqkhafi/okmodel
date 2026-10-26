@@ -1,4 +1,8 @@
 {
+  "bin": {
+    "okm": "./dist/okm.js",
+    "okmodel": "./dist/okmodel.js"
+  },
   "exports": {
     ".": {
       "import": "./dist/contracts/index.js",
@@ -1044,5 +1048,6 @@
     "schemas/cli-1/schema.json",
     "schemas/cli-1/seed.json",
     "skills/okmodel/SKILL.md"
-  ]
+  ],
+  "main": null
 }

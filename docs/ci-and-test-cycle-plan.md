@@ -23,7 +23,9 @@ Postgres 18 (four shards and the pooler proof) runs when those paths change.
 A label does not start it. The tarball does not run on a pull request.
 
 The title `type(scope): summary` is the only pull request rule. The workflow
-derives `type:` and `area:` from it and from the paths.
+derives `type:` and `area:` from it and from the paths. A title edit starts
+this run again. A body edit does not: `gate / check` repeats the last
+conclusion for that commit.
 
 ## After merge
 

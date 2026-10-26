@@ -39,22 +39,18 @@ export function changedTestCommand(base: string): readonly string[] {
 }
 
 /**
- * Merge-base of `HEAD` and `origin/main`, else `main`, else `HEAD`.
- *
- * @param root - Repository root
- * @returns The commit `--changed` should use
- */
-/**
  * Warning when the running Bun is not the version in `.bun-version`.
  *
- * An empty string means the versions match. The check does not fail.
+ * A leading `v` on the pin is ignored, so `v1.4.3` matches Bun `1.4.3`.
+ * The check does not fail.
  *
- * @param local - `Bun.version`
+ * @param local - `Bun.version`, without a leading `v`
  * @param pinned - The trimmed contents of `.bun-version`
  * @returns The warning line, or undefined when they match
  */
 export function bunPinWarning(local: string, pinned: string): string | undefined {
-  if (local === pinned) return undefined;
+  const pin = pinned.replace(/^v/, "");
+  if (local === pin) return undefined;
   return `verify:fast: local Bun ${local} differs from the pinned ${pinned} in .bun-version`;
 }
 
@@ -77,6 +73,12 @@ export function warnBunPin(root: string): void {
   if (warning !== undefined) console.error(warning);
 }
 
+/**
+ * Merge-base of `HEAD` and `origin/main`, else `main`, else `HEAD`.
+ *
+ * @param root - Repository root
+ * @returns The commit `--changed` should use
+ */
 export function verifyFastBase(root: string): string {
   for (const ref of ["origin/main", "main"]) {
     const base = mergeBase(root, ref);
