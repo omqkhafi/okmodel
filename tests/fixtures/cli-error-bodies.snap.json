@@ -1851,6 +1851,15 @@
     "docs": "docs/errors/OKM1897.md"
   },
   {
+    "code": "OKM1898",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "okm push would drop columns and tables that hold rows.",
+    "fix": "Keep the column or table, or pass --allow-data-loss when those rows can go.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1898.md"
+  },
+  {
     "code": "OKM2200",
     "kind": "invalid",
     "category": "input",

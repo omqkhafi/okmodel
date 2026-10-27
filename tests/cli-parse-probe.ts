@@ -102,13 +102,16 @@ check("differing --config is refused", () => {
 check("guard flags ignore the environment", () => {
   process.env.OKM_ALLOW_PROTECTED = "1";
   process.env.OKM_ALLOW_POOLER = "1";
+  process.env.OKM_ALLOW_DATA_LOSS = "1";
   process.env.OKM_REPLACE = "a.b.c=d";
   const parsed = parseCli(["push"]);
   expect(parsed.allowProtected === false, "allow-protected");
   expect(parsed.allowPooler === false, "allow-pooler");
+  expect(parsed.allowDataLoss === false, "allow-data-loss");
   expect(parsed.replace.length === 0, "replace");
   delete process.env.OKM_ALLOW_PROTECTED;
   delete process.env.OKM_ALLOW_POOLER;
+  delete process.env.OKM_ALLOW_DATA_LOSS;
   delete process.env.OKM_REPLACE;
 });
 

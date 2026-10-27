@@ -37,6 +37,7 @@ import { loadHeadSnapshot, loadMigrations } from "./files.js";
 import { readReference, referenceInserts, type ReferenceTable } from "./reference.js";
 import { expandProvisioned, installSnapshot, provisionMark } from "./snapshot.js";
 import { planStatements, type PlanStep } from "./plan.js";
+import { assertNoDataLoss, dataLossObjects, lossesIn, type DataLossObject } from "./data-loss.js";
 import {
   readUnpulled,
   refuseUnpulledDrops,
@@ -180,6 +181,8 @@ export type ApplyReport = {
   readonly restamped?: readonly string[];
   /** Set when the runner issued `SET ROLE` at session start. */
   readonly setRole?: string;
+  /** Data-loss objects this push applied. Printed as `dropped <label>`. */
+  readonly dropped?: readonly string[];
 };
 
 /** `lock_timeout` apply sets when neither a flag nor `timeouts.lock` names one. */
@@ -568,6 +571,7 @@ export async function pushProject(
     ...catalogSchema(config.namespace),
     ...batchSizeField(config.backfill?.batchSize),
     unpulled: readUnpulled(cwd),
+    allowDataLoss: flags.allowDataLoss === true,
   });
   if (report.applied.length === 0 && (report.restamped ?? []).length === 0) {
     return `target ${target.name}\nno changes\n`;
@@ -597,6 +601,8 @@ type PushRequest = {
   readonly backfillStatementTimeoutMs?: number;
   readonly batchSize?: number;
   readonly unpulled: readonly UnpulledObject[];
+  /** When true, a drop of a populated column or table is applied. */
+  readonly allowDataLoss?: boolean;
 };
 
 /**
@@ -655,6 +661,7 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
       ...(searchPath !== undefined ? { connection: { search_path: searchPath } } : {}),
     });
     let planSteps: readonly PlanStep[] = [];
+    let losses: readonly DataLossObject[] = [];
     try {
       const runner = catalogQuery(sql);
       if (schema !== "public") {
@@ -669,6 +676,7 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
         await introspectSchema(runner, schema, schema, {
           ...liveIntrospectOptions(request.roles, author),
           ...(unpulled.size > 0 ? { omit: unpulled } : {}),
+          refuseReserved: true,
         }),
       );
       const invalid = await invalidIndexReport(runner, schema);
@@ -691,6 +699,7 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
       if (weakened.length > 0) throw lintRefusal(weakened, PUSH_RLS_FIX);
       refuseUnpulledDrops(unpulledDropLabels(plan.steps, live, request.unpulled, schema));
       planSteps = plan.steps;
+      losses = dataLossObjects(plan.steps, live, schema);
     } finally {
       await finishQuiet(() => sql.end({ timeout: 5 }));
     }
@@ -741,11 +750,25 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
           : {}),
         ...(request.migrationRole !== undefined ? { migrationRole: request.migrationRole } : {}),
         ...(request.schema !== undefined ? { schema: request.schema } : {}),
+        ...(request.allowDataLoss !== true && losses.length > 0
+          ? {
+              beforeStatements: async (held, unit) => {
+                await assertNoDataLoss(
+                  held,
+                  schema,
+                  lossesIn(
+                    unit.steps.map((item) => item.step),
+                    losses,
+                  ),
+                );
+              },
+            }
+          : {}),
       },
       session,
     );
     await grantAppMeta(connection, request.appRole, session);
-    return report;
+    return losses.length === 0 ? report : { ...report, dropped: losses.map((item) => item.label) };
   } finally {
     if (locked) {
       await finishQuiet(() =>
@@ -868,7 +891,8 @@ export function formatApplyText(report: ApplyReport): string {
   if (report.applied.length === 0) {
     return `target ${report.target}\n${role}${restamped}nothing to apply\n`;
   }
-  return `target ${report.target}\n${role}${restamped}${report.applied.map((id) => `applied ${id}`).join("\n")}\n`;
+  const dropped = (report.dropped ?? []).map((label) => `dropped ${label}\n`).join("");
+  return `target ${report.target}\n${role}${restamped}${dropped}${report.applied.map((id) => `applied ${id}`).join("\n")}\n`;
 }
 
 /**

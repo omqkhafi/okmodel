@@ -93,6 +93,13 @@ export type TargetRun = {
   readonly afterBatch?: (batch: BackfillBatch) => void | Promise<void>;
   /** Test failpoint. A stop leaves the committed step where a crash would. */
   readonly failAt?: StepBoundary;
+  /**
+   * Runs after `begin` and before the unit's statements.
+   *
+   * `okm push` probes live rows here so the answer shares the transaction
+   * that would drop them. A throw rolls the unit back.
+   */
+  readonly beforeStatements?: (connection: DriverConnection, unit: RunnableUnit) => Promise<void>;
 };
 
 /** What {@link runTarget} finished on this target. */
@@ -379,6 +386,7 @@ async function runUnit(
     try {
       await connection.execute("begin");
       began = true;
+      if (run.beforeStatements !== undefined) await run.beforeStatements(connection, unit);
       for (const item of unit.steps) {
         current = item.index;
         await executePlanStep(connection, item, run, session);

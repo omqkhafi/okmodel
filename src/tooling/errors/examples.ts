@@ -107,6 +107,7 @@ import { assertLocked, assertSignature, staleLockCodes } from "../describe/lock.
 import { discoverRawCalls } from "../describe/scan.js";
 import { schemaAdvice } from "../migrate/schema-rules.js";
 import { testingObjectConflict } from "../testing/conflict.js";
+import { refuseDataLoss } from "../migrate/data-loss.js";
 import { refuseUnpulledDrops } from "../migrate/unpulled.js";
 import { parseCli } from "../cli/parse.js";
 
@@ -2148,6 +2149,16 @@ thrown(
   },
   () => {
     refuseUnpulledDrops([]);
+  },
+);
+
+thrown(
+  "OKM1898",
+  () => {
+    refuseDataLoss(["notes.extra"]);
+  },
+  () => {
+    refuseDataLoss([]);
   },
 );
 
