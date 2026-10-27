@@ -56,6 +56,8 @@ export async function checkout(held: HeldPool): Promise<DriverConnection> {
       const guarded = pending.catch((error: unknown) => {
         if (isConnectionLost(error) || lost || pgClosed(error)) {
           lost = true;
+          // An ErrorResponse leaves `_queryable` true. The pool would reuse it.
+          Reflect.set(client, "_queryable", false);
           if (isConnectionLost(error)) throw error;
           throw Object.assign(new DriverError("CONNECTION_CLOSED", { cause: error }), {
             code: "CONNECTION_CLOSED",
@@ -106,6 +108,8 @@ export async function checkout(held: HeldPool): Promise<DriverConnection> {
       } finally {
         counters.reserved = Math.max(0, counters.reserved - 1);
         events.removeListener("error", onError);
+        // The socket can die after the query settled and before release.
+        if (!lost && socketDead(client)) lost = true;
         client.release(lost);
       }
     },
@@ -119,10 +123,30 @@ export async function checkout(held: HeldPool): Promise<DriverConnection> {
  * @returns `true` when the client is no longer queryable
  */
 function pgClosed(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
   return (
-    error instanceof Error &&
-    error.message === "Client has encountered a connection error and is not queryable"
+    error.message === "Client has encountered a connection error and is not queryable" ||
+    error.message === "Connection terminated" ||
+    error.message === "Connection terminated unexpectedly"
   );
+}
+
+/**
+ * A client the pool must not check out again.
+ *
+ * node-postgres leaves `_queryable` true after an ErrorResponse. A destroyed
+ * stream or an ending client is already gone.
+ *
+ * @param client - The checked-out client
+ * @returns `true` when release should destroy it
+ */
+function socketDead(client: PoolClient): boolean {
+  if (Reflect.get(client, "_queryable") === false) return true;
+  if (Reflect.get(client, "_ending") === true) return true;
+  const connection: unknown = Reflect.get(client, "connection");
+  if (typeof connection !== "object" || connection === null) return false;
+  const stream: unknown = Reflect.get(connection, "stream");
+  return typeof stream === "object" && stream !== null && Reflect.get(stream, "destroyed") === true;
 }
 
 async function reset(session: WireSession, client: PoolClient): Promise<void> {
