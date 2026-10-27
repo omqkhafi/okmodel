@@ -3,7 +3,8 @@
  *
  * The guard is the push transaction, so these cases go through `run()` once.
  * An empty table, a rename, an added object, and a dropped constraint are
- * applied. A column that carried a unique constraint is still refused.
+ * applied. `dropped <object>` is printed only with `--allow-data-loss`.
+ * A column that carried a unique constraint is still refused.
  * OKM1897 stays the code when `.okm/pull.json` still lists the drop.
  */
 
@@ -70,13 +71,36 @@ postgresTest(
       writeFileSync(join(cwd, "schema.ts"), keptSchema());
       await seed(database.url, populatedSql(false));
       const pushed = await cli(cwd, ["push"]);
-      expect(droppedLabels(pushed)).toEqual(expectLabels());
+      expect(droppedLabels(pushed)).toEqual([]);
       expect(pushed).toContain("applied push-1");
       expect(await columnNames(database.url, "notes")).toEqual(["id", "body"]);
       expect(await columnNames(database.url, "acct")).toEqual(["name"]);
       expect(await columnNames(database.url, "tiny")).toEqual(["name"]);
       expect(await tableExists(database.url, "shop")).toBe(false);
       expect(await constraintNames(database.url, "emails")).not.toContain("emails_email_key");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  120_000,
+);
+
+postgresTest(
+  gate,
+  "an empty column drops without the flag and prints nothing extra",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = mkdtempSync(join(tmpdir(), "okm-loss-empty-col-"));
+    try {
+      writeDatabase(cwd, database.url);
+      writeFileSync(join(cwd, "schema.ts"), emptyColumnSchema());
+      await seed(database.url, `create table notes (id int primary key, extra text);`);
+      const pushed = await cli(cwd, ["push"]);
+      expect(droppedLabels(pushed)).toEqual([]);
+      expect(pushed).not.toContain("dropped ");
+      expect(pushed).toContain("applied push-1");
+      expect(await columnNames(database.url, "notes")).toEqual(["id"]);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
       await database.close();
@@ -293,6 +317,19 @@ function emailsSchema(keepEmail: boolean): string {
     "export const app = schema({",
     "  tables: [",
     `    table("emails", { ${columns} }),`,
+    "  ],",
+    "});",
+    "",
+  ].join("\n");
+}
+
+function emptyColumnSchema(): string {
+  const pg = JSON.stringify(join(root, "src/dialects/pg/index.ts"));
+  return [
+    `import { schema, table, t } from ${pg};`,
+    "export const app = schema({",
+    "  tables: [",
+    '    table("notes", { id: t.integer().primaryKey() }),',
     "  ],",
     "});",
     "",

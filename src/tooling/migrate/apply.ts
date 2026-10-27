@@ -181,7 +181,7 @@ export type ApplyReport = {
   readonly restamped?: readonly string[];
   /** Set when the runner issued `SET ROLE` at session start. */
   readonly setRole?: string;
-  /** Data-loss objects this push applied. Printed as `dropped <label>`. */
+  /** Data-loss objects applied with `--allow-data-loss`. Printed as `dropped <label>`. */
   readonly dropped?: readonly string[];
 };
 
@@ -768,7 +768,10 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
       session,
     );
     await grantAppMeta(connection, request.appRole, session);
-    return losses.length === 0 ? report : { ...report, dropped: losses.map((item) => item.label) };
+    if (request.allowDataLoss === true && losses.length > 0) {
+      return { ...report, dropped: losses.map((item) => item.label) };
+    }
+    return report;
   } finally {
     if (locked) {
       await finishQuiet(() =>
