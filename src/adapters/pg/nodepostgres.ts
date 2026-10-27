@@ -36,21 +36,6 @@ export {
 } from "../capabilities.js";
 export { DriverError } from "../error.js";
 
-const clientPools = new WeakSet<DriverPool>();
-
-/**
- * Marks a pool opened for a client.
- *
- * A read that finds a dead socket is tried once. A pool from raw {@link open}
- * is not marked, so a statement the server killed while it was running is not
- * started again.
- *
- * @param pool - The pool `connect` just opened
- */
-export function markClientPool(pool: DriverPool): void {
-  clientPools.add(pool);
-}
-
 /** Options for {@link open}. */
 export type NodePostgresConfig = DriverPoolConfig & {
   /** Connection URL for this endpoint. */
@@ -207,29 +192,12 @@ export function open(config: NodePostgresConfig): DriverPool {
   const checkout = (): Promise<DriverConnection> =>
     closed ? rejectClosed() : import("./nodepostgres-extra.js").then((mod) => mod.checkout(held));
 
-  let driver!: DriverPool;
-  driver = {
+  return {
     capabilities: NODE_POSTGRES_CAPABILITIES,
     execute(text, params, options) {
       return runCall(closed, options, async (watch) => {
-        if (watch === undefined) {
-          try {
-            return await root.query(text, params, undefined);
-          } catch (error) {
-            // The pool can hand back a client whose backend is already gone.
-            // The first statement then fails with 57P01, and the pool drops
-            // that client. One read is tried again. A raw pool is not marked,
-            // so a statement killed while it ran is not started again.
-            // Both checks load on the failure, so a successful read does not.
-            if (!clientPools.has(driver) || root.depth() !== 0) throw error;
-            const [{ isConnectionFailure }, { retryableRead }] = await Promise.all([
-              import("../../contracts/connection.js"),
-              import("./retryable-read.js"),
-            ]);
-            if (!isConnectionFailure(error) || !retryableRead(text)) throw error;
-            return root.query(text, params, undefined);
-          }
-        }
+        // A dead idle client fails this call. node-postgres does not retry it.
+        if (watch === undefined) return root.query(text, params, undefined);
         const client = await connectClient(pool, acquireMs, counters);
         // The call timed out while it waited for a pool slot. Release the
         // client without a query so a backlog of aborted checkouts cannot
@@ -295,7 +263,6 @@ export function open(config: NodePostgresConfig): DriverPool {
       await pool.end();
     },
   };
-  return driver;
 }
 
 export function send(

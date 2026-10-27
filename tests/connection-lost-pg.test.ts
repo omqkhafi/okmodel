@@ -146,6 +146,8 @@ postgresTest(
           await admin.unsafe(
             `select pg_terminate_backend(pid) from pg_stat_activity where application_name = 'okmodel' and datname = current_database() and pid <> pg_backend_pid()`,
           );
+          // node-postgres does not retry. Drop the killed client, then read.
+          await discardKilledClient(db);
           await db.notes.find({ limit: 1 });
         }
       } finally {
@@ -158,6 +160,21 @@ postgresTest(
   },
   60_000,
 );
+
+/**
+ * Removes a killed idle client before the next read is asserted.
+ *
+ * The pool may already have dropped the socket, and that read succeeds.
+ * Otherwise the first statement is `unavailable`, which releases the client
+ * so the pool does not hand it out again.
+ *
+ * @param db - The client whose idle connection was just killed
+ */
+async function discardKilledClient(db: Db): Promise<void> {
+  const error = await rejection(db.notes.find({ limit: 1 }));
+  if (error === undefined) return;
+  expect(kindOf(error)).toBe("unavailable");
+}
 
 postgresTest(
   gate,
