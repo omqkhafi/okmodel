@@ -30,7 +30,11 @@ export type FeatureEntry = {
   readonly cost?: string;
   /** Portable alternative when the feature is refused, one line. */
   readonly alternative?: string;
-  /** Refusal code (OKM1860–OKM1879) when `support` is `refused`. */
+  /**
+   * Refusal code when `support` is `refused`.
+   *
+   * OKM1861 and OKM1868–OKM1879 are accepted. Any other value is OKM1860.
+   */
   readonly code?: string;
   /** Literal test title that proves this entry. */
   readonly proof: string;

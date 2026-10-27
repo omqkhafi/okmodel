@@ -10,8 +10,18 @@ import { CAPABILITY_NAMES } from "../../adapters/capabilities.js";
 import { OkmError } from "../../contracts/error.js";
 import type { CapabilityGate, EmulatedNote, FeatureEntry, Registry } from "./types.js";
 
+/**
+ * Handbook anchor for one refusal code.
+ *
+ * @param code - `OKM1860`, or a reserved refusal code the entry named
+ * @returns The errors page for that code
+ */
+function refusalDocs(code: string): string {
+  return `https://okm.omqkhafi.dev/docs/reference/errors#${code.toLowerCase()}`;
+}
+
 /** Doctor page for a feature the dialect refuses. */
-export const FEATURE_REFUSAL_DOCS = "https://okm.omqkhafi.dev/docs/reference/errors#okm1860";
+export const FEATURE_REFUSAL_DOCS = refusalDocs("OKM1860");
 
 /**
  * Notes for emulated features in `features`. Does not throw.
@@ -135,22 +145,23 @@ export function gateCoverageProblems(
 function refuse(dialect: string, feature: string, entry: FeatureEntry): never {
   const since = entry.since === undefined ? "" : ` First supported in ${entry.since}.`;
   const alternative = entry.alternative ?? "Use a feature this dialect provides.";
-  throw new OkmError(refusalCode(entry), `${dialect} refuses ${feature}.${since}`, {
-    fix: { summary: `${alternative} ${FEATURE_REFUSAL_DOCS}` },
+  const code = refusalCode(entry);
+  throw new OkmError(code, `${dialect} refuses ${feature}.${since}`, {
+    fix: { summary: `${alternative} ${refusalDocs(code)}` },
   });
 }
 
 /**
- * Code the registry entry names, when it is a feature-refusal code.
+ * Code the registry entry names, when it is a reserved feature-refusal code.
  *
- * Anything else stays OKM1860. OKM1861 and OKM1868–OKM1879 are reserved
- * refusal codes and are not separate doctor pages.
+ * OKM1861 and OKM1868–OKM1879 are accepted. Anything else stays OKM1860.
+ * The fix links to that code's page. The same set exits 5.
  *
  * @param entry - Refused registry row
  * @returns The entry code, or OKM1860
  */
 function refusalCode(entry: FeatureEntry): string {
   const code = entry.code;
-  if (typeof code === "string" && /^OKM18(?:6[0-9]|7[0-9])$/.test(code)) return code;
+  if (typeof code === "string" && /^OKM1861$|^OKM186[89]$|^OKM187\d$/.test(code)) return code;
   return "OKM1860";
 }
