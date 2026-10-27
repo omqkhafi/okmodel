@@ -197,4 +197,4 @@ A unique constraint and a unique index are different objects. A constraint belon
 
 ### Tenant tables
 
-On a tenant table the schema puts the tenant key first, unless this index calls `.global("reason")` or the table sets `tenantIndexes: false`. `.scoped()` puts the key first anyway. A unique index is then unique inside one tenant: two tenants may store the same value. See [tenancy](/docs/define/schema/tenancy).
+On a tenant table an ordinary index leads with the tenant key, unless this index calls `.global("reason")` or the table sets `tenantIndexes: false`. `.scoped()` puts the key first on that ordinary index. A unique index is then unique inside one tenant: two tenants may store the same value. A `using` index is not prefixed. The default and `.scoped()` both throw OKM1706 when the columns do not already lead with the tenant key: `Index on notes starts with title. A using tail is not prefixed.` `.global("reason")` is the call that works. Putting the tenant key first in the declaration does not prefix a `using` tail. An index that already leads with the key is left as written. See [tenancy](/docs/define/schema/tenancy).

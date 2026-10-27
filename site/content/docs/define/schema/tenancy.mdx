@@ -129,7 +129,7 @@ export default schema({
 });
 ```
 
-`email` is unique inside one tenant: the index is `(tenantId, email)`. `title` stays a global index. `indexes: false` on `columnTenancy()` turns the prefix off. `tenantIndexes: false` turns it off for one table, and `.scoped()` turns it back on for one index. An empty `.global()` reason is OKM1060: `index().global() needs a reason.`
+`email` is unique inside one tenant: the index is `(tenantId, email)`. `title` stays a global index. `indexes: false` on `columnTenancy()` turns the prefix off. `tenantIndexes: false` turns it off for one table, and `.scoped()` turns it back on for one ordinary index. A `using` index is not prefixed that way: the default and `.scoped()` throw OKM1706 (`A using tail is not prefixed.`), and `.global("reason")` is the call that works. An empty `.global()` reason is OKM1060: `index().global() needs a reason.`
 
 A project whose indexes already start with the key sees no migration. An index that does not is replaced once: `okm generate` writes `CREATE INDEX CONCURRENTLY` for the new index, then `DROP INDEX CONCURRENTLY` for the old one. That is not a blocking rebuild. `okm migrate check` accepts it. The next `okm generate` writes nothing.
 

@@ -750,7 +750,7 @@ A stream with no `limit` and no `.all(reason)` is refused.
 
 ### Unknown keys
 
-An unknown key on `insert`, `update`, upsert / `onConflict`, first-or-create, or standalone `insert.validate`, `insert.check`, and `update.validate` is OKM1120. The message names the key and the table. Typos are no longer dropped silently. Guarded, sealed, and computed fields keep their existing codes (OKM1190 and the rest).
+An unknown key on `insert`, `update`, upsert / `onConflict`, first-or-create, `insert.validate`, `insert.check`, `insert.pick(...).validate`, `insert.pick(...).check`, `insert.omit(...).validate`, `insert.omit(...).check`, `update.validate`, or `insert["~standard"].validate` is OKM1120. The message names the key and the table. `insert.check`, `pick(...).check`, and `omit(...).check` return rule issues and do not throw OKM1200 for a failed rule. An unknown key throws on those calls too, and the rule issues are lost. The Standard Schema `validate` throws that OKM1120. It does not return `{ issues }` for an unknown key. A failed rule on that surface still returns `{ issues }`. Typos are no longer dropped silently. Guarded, sealed, and computed fields keep their existing codes (OKM1190 and the rest).
 
 <Callout type="error" title="OKM1120">
 `Field nope is not on notes.` Use a field from the catalog.
