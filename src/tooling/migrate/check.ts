@@ -340,7 +340,9 @@ async function replayHistory(
     return { failures: [], skips: outcome.skips, reprints: outcome.reprints };
   }
   return {
-    failures: [historyFailure(history, outcome.stop.index, outcome.stop.back)],
+    failures: [
+      historyFailure(history, outcome.stop.index, outcome.stop.back, outcome.stop.extensions),
+    ],
     skips: outcome.skips,
     reprints: outcome.reprints,
   };
@@ -380,11 +382,22 @@ function historyFailure(
   history: readonly HistoryEntry[],
   index: number,
   back: MigrationPlan,
+  extensions?: readonly { readonly name: string; readonly want: string; readonly have: string }[],
 ): CheckFailure {
   const migration = history[index];
   const id = migration?.id ?? "migration";
   const fork = migration === undefined ? undefined : forkMessage(history, index);
   if (fork !== undefined) return { code: HISTORY_CODE, message: fork, fix: FORK_FIX };
+  if (extensions !== undefined && extensions.length > 0) {
+    const named = extensions
+      .map((item) => `Extension ${item.name} needs ${item.want}. The server has ${item.have}.`)
+      .join(" ");
+    return {
+      code: "OKM1812",
+      message: `${id}: ${named} Run okm ext check.`,
+      fix: "Run okm ext check. Install a version the declaration accepts, or change the pin.",
+    };
+  }
   const steps = back.steps.map((step) => step.sql).join("\n");
   return {
     code: HISTORY_CODE,

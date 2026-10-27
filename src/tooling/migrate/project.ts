@@ -757,7 +757,7 @@ export async function loadConfig(project: string | ProjectContext): Promise<Migr
   const { configPath } = resolved;
   if (!existsSync(configPath)) {
     throw tagOutcome(
-      new OkmError("invalid", `Missing ${configPath}.`, {
+      new OkmError("OKM1895", `Missing ${configPath}.`, {
         fix: {
           summary: `Create ${configPath}, or pass --config <path>.`,
         },

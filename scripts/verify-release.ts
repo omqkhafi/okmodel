@@ -167,6 +167,11 @@ export async function assessRecorded(
 /**
  * Why a file list is not the recorded list.
  *
+ * Chunk hashes are normalized before the compare. {@link packedFileDiff}
+ * runs each path through `normalizePackedPath`, which replaces a content-hash
+ * chunk basename with `*`, then compares the count of each normalized name.
+ * Two lists with the same files and different chunk hashes match.
+ *
  * @param actual - Paths in the tarball, without the `package/` prefix
  * @param recorded - Paths in the release record
  * @returns The problem, or undefined when the lists match

@@ -107,17 +107,25 @@ export class PartialCleanupError extends Error {
   readonly detail: string;
   /** Fix shown to the operator. */
   readonly fix: string;
+  /**
+   * Replaces "partial index will be dropped and rebuilt" when set.
+   *
+   * A build that belongs to another session says to wait.
+   */
+  readonly next?: string;
 
   /**
    * @param detail - Text appended to the failure message
    * @param fix - Operator fix
    * @param cause - The drop or the still-running build
+   * @param next - Line that replaces the drop-and-rebuild action
    */
-  constructor(detail: string, fix: string, cause?: unknown) {
+  constructor(detail: string, fix: string, cause?: unknown, next?: string) {
     super(detail.trim());
     this.name = "PartialCleanupError";
     this.detail = detail;
     this.fix = fix;
+    if (next !== undefined) this.next = next;
     if (cause !== undefined) this.cause = cause;
   }
 }
@@ -405,6 +413,9 @@ function presentFailure(
   let fix = wrapped.fix;
   if (cleanup !== undefined) {
     message = `${sentence(message)}${cleanup.detail}`;
+    if (cleanup.next !== undefined) {
+      message = message.replaceAll("partial index will be dropped and rebuilt", cleanup.next);
+    }
     fix = { summary: cleanup.fix };
   } else if (indexLabel !== undefined && wrapped.kind === "unavailable") {
     message = `${sentence(message)} Index ${indexLabel} may be INVALID.`;

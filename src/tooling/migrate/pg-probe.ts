@@ -335,7 +335,38 @@ async function cleanupStep(
   }
   const quoted = quoteIdent(parsed.name);
   const repair = indexRepair(qualifiedName(parsed.schema, parsed.name));
-  const busy = await connection.execute(
+  if (await indexBuildInProgress(connection, parsed)) throw waitForIndex(quoted);
+  await connection.execute("select set_config('lock_timeout', $1, false)", [
+    String(step.lockTimeoutMs),
+  ]);
+  try {
+    if (await indexBuildInProgress(connection, parsed)) throw waitForIndex(quoted);
+    await connection.execute(
+      `drop index concurrently if exists ${qualifiedName(parsed.schema, parsed.name)}`,
+    );
+  } catch (error) {
+    if (error instanceof PartialCleanupError) throw error;
+    if (await indexBuildInProgress(connection, parsed)) throw waitForIndex(quoted);
+    throw new PartialCleanupError(` Index ${quoted} is INVALID.`, repair, error);
+  }
+}
+
+/**
+ * Another session is creating this index.
+ *
+ * `pg_stat_activity` matches the build statement. `pg_stat_progress_create_index`
+ * matches a build that has a progress row. Either one means the index is not
+ * ours to drop.
+ *
+ * @param connection - Session that would drop the index
+ * @param parsed - Index the failed step was creating
+ * @returns `true` when another backend is building it
+ */
+async function indexBuildInProgress(
+  connection: DriverConnection,
+  parsed: IndexShape,
+): Promise<boolean> {
+  const activity = await connection.execute(
     `select a.pid::text
      from pg_stat_activity a
      where a.pid <> pg_backend_pid()
@@ -343,19 +374,33 @@ async function cleanupStep(
        and (a.query ~* $1 or a.query ~ $2)`,
     [bareIndexBuild(parsed.name), quotedIndexBuild(parsed.name)],
   );
-  if (busy.rows.length > 0) {
-    throw new PartialCleanupError(` Index ${quoted} is INVALID.`, repair);
-  }
-  await connection.execute("select set_config('lock_timeout', $1, false)", [
-    String(step.lockTimeoutMs),
-  ]);
-  try {
-    await connection.execute(
-      `drop index concurrently if exists ${qualifiedName(parsed.schema, parsed.name)}`,
-    );
-  } catch (error) {
-    throw new PartialCleanupError(` Index ${quoted} is INVALID.`, repair, error);
-  }
+  if (activity.rows.length > 0) return true;
+  const progress = await connection.execute(
+    `select 1
+     from pg_stat_progress_create_index p
+     join pg_class c on c.oid = p.index_relid
+     left join pg_namespace n on n.oid = c.relnamespace
+     where p.pid <> pg_backend_pid()
+       and c.relname = $1
+       and ($2::text is null or n.nspname = $2)`,
+    [parsed.name, parsed.schema ?? null],
+  );
+  return progress.rows.length > 0;
+}
+
+/**
+ * Advice when another session is still building the index.
+ *
+ * @param quoted - Quoted index name
+ * @returns A cleanup error that does not name DROP INDEX
+ */
+function waitForIndex(quoted: string): PartialCleanupError {
+  return new PartialCleanupError(
+    ` Index ${quoted} is being built by another session.`,
+    "Wait and apply again.",
+    undefined,
+    "wait and apply again",
+  );
 }
 
 type IndexShape = {

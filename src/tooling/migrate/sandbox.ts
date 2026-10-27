@@ -51,10 +51,19 @@ export type CheckMigration = {
   readonly steps: readonly PlanStep[];
 };
 
+/** Installed extension version against the version the catalog pins. */
+export type ExtensionMismatch = {
+  readonly name: string;
+  readonly want: string;
+  readonly have: string;
+};
+
 /** The first migration whose replay does not match its catalog. */
 export type ReplayStop = {
   readonly index: number;
   readonly back: MigrationPlan;
+  /** Set when every back step is an extension version update. */
+  readonly extensions?: readonly ExtensionMismatch[];
 };
 
 /** Replay result. `skips` are statements check did not execute. */
@@ -139,11 +148,44 @@ export async function replayCheckHistory(
         name: migration.id,
       });
       if (back.steps.length === 0) continue;
-      stop = { index, back };
+      const extensions = extensionVersionDrift(live, sealed, back);
+      stop = extensions.length > 0 ? { index, back, extensions } : { index, back };
       return;
     }
   });
   return stop === undefined ? { skips, reprints } : { skips, reprints, stop };
+}
+
+/**
+ * Version pins that are the whole difference between the replay and the catalog.
+ *
+ * A plan that also changes a table stays ordinary history drift. Only an
+ * `update-extension` plan is named as OKM1812.
+ *
+ * @param live - Catalog introspection read after the replay
+ * @param sealed - Stored catalog, expressions reprinted
+ * @param back - Plan from the live catalog to the stored catalog
+ * @returns One row per pinned extension whose installed version differs
+ */
+function extensionVersionDrift(
+  live: Catalog,
+  sealed: Catalog,
+  back: MigrationPlan,
+): readonly ExtensionMismatch[] {
+  if (!back.steps.every((step) => step.kind === "update-extension")) return [];
+  const have = new Map<string, string>();
+  for (const object of live.objects) {
+    if (object.kind !== "extension" || object.definition.version === undefined) continue;
+    have.set(object.identity.name, object.definition.version);
+  }
+  const found: ExtensionMismatch[] = [];
+  for (const object of sealed.objects) {
+    if (object.kind !== "extension" || object.definition.version === undefined) continue;
+    const installed = have.get(object.identity.name);
+    if (installed === undefined || installed === object.definition.version) continue;
+    found.push({ name: object.identity.name, want: object.definition.version, have: installed });
+  }
+  return found;
 }
 
 /**
@@ -659,6 +701,15 @@ async function assertNoDependents(sql: Sql, name: string, scratch: string): Prom
        and m.refclassid = 'pg_extension'::regclass and m.deptype = 'e'
      join pg_extension e on e.oid = m.refobjid and e.extname = $1
      where d.deptype in ('n', 'a')
+       and not exists (
+         select 1 from pg_depend self
+         where self.classid = d.classid
+           and self.objid = d.objid
+           and self.objsubid = d.objsubid
+           and self.refclassid = 'pg_extension'::regclass
+           and self.refobjid = e.oid
+           and self.deptype = 'e'
+       )
        and case d.classid
          when 'pg_class'::regclass
            then (select c.relnamespace from pg_class c where c.oid = d.objid)
@@ -699,6 +750,12 @@ async function rememberCreated(sql: Sql, scratch: string, session: Session): Pro
       [created.name],
     );
     const home = cell(rows[0], "schema") ?? created.schema;
+    // Created in the scratch schema: it is not a hosted extension. DROP has
+    // to run, or a later check still sees the extension introspection found.
+    if (home === scratch) {
+      session.hosted.set(created.name, null);
+      continue;
+    }
     session.hosted.set(created.name, {
       home,
       present: true,

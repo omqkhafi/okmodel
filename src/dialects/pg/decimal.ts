@@ -82,7 +82,7 @@ export function double(): ColumnBuilder<number, PlainFlags> {
  * @returns The same spelling when it is a numeric literal
  */
 export function encodeNumericString(value: string): string {
-  if (!numericText().test(value)) {
+  if (typeof value !== "string" || !numericText().test(value)) {
     rejected(`numeric ${value} must be a decimal literal, for example 1, -2.5, or 1e-3.`);
   }
   return value;

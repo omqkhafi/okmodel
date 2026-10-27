@@ -13,6 +13,7 @@ import { OkmError } from "../src/contracts/error.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
 import { repoRoot } from "../scripts/root.js";
+import { POSTGRES_FEATURES } from "../src/tooling/capabilities/postgres.js";
 import { CHECK_REPLAY_LIMIT, CHECK_SCHEMA_PREFIX } from "../src/tooling/migrate/check.js";
 import { run } from "../src/tooling/migrate/commands.js";
 
@@ -215,12 +216,162 @@ postgresTest(
         expect(await scratchSchemas(cwd)).toEqual([]);
         expect(await capture(["migrate", "apply"], cwd)).toContain("applied 0002_drop-citext");
         expect(await extensionPlacement(sql)).toEqual([]);
+        expect(await capture(["migrate", "check"], cwd)).toStartWith(
+          `ok 2 migrations\n${CHECK_REPLAY_LIMIT}\n`,
+        );
+        expect((await capture(["check"], cwd)).endsWith("ok\n")).toBe(true);
       } finally {
         await sql.end({ timeout: 5 });
       }
     });
   },
   90_000,
+);
+
+postgresTest(
+  gate,
+  "a hand-written index expression is not drift after apply (N-53)",
+  async () => {
+    const cases = [
+      {
+        name: "upper",
+        expression: 'using gin ("a" GIN_TRGM_OPS)',
+        columns: ["a"],
+        extension: true,
+      },
+      {
+        name: "btree",
+        expression: 'using btree ("a" text_pattern_ops, "n" int4_ops)',
+        columns: ["a", "n"],
+        extension: false,
+      },
+      {
+        name: "comment",
+        expression: 'using btree ("a" text_pattern_ops) /* gin_trgm_ops */',
+        columns: ["a"],
+        extension: false,
+      },
+    ];
+    for (const item of cases) {
+      await withProject(async ({ cwd, url }) => {
+        const sql = openPostgres(url);
+        try {
+          if (item.extension) {
+            const ready = await sql<{ ok: boolean }[]>`
+              select exists (select 1 from pg_available_extensions where name = 'pg_trgm') as ok
+            `;
+            if (ready[0]?.ok !== true) throw new Error("pg_trgm is not available on this server");
+          }
+          writeHandIndex(cwd, item.expression, item.columns, item.extension);
+          await cli(cwd, ["generate", "init"]);
+          await cli(cwd, ["migrate", "apply"]);
+          expect((await capture(["check"], cwd)).endsWith("ok\n")).toBe(true);
+          expect(await capture(["migrate", "check"], cwd)).toStartWith(
+            `ok 1 migrations\n${CHECK_REPLAY_LIMIT}\n`,
+          );
+        } finally {
+          await sql.end({ timeout: 5 });
+        }
+      });
+    }
+  },
+  120_000,
+);
+
+postgresTest(
+  gate,
+  "migrate check names an extension version mismatch (N-101)",
+  async () => {
+    await withProject(async ({ cwd, url }) => {
+      const sql = openPostgres(url);
+      try {
+        const versions = await sql<{ version: string }[]>`
+          select version
+          from pg_available_extension_versions
+          where name = 'citext'
+          order by version
+        `;
+        const newest = versions.at(-1)?.version;
+        const older = versions.map((row) => row.version).find((version) => version !== newest);
+        if (older === undefined || newest === undefined || !/^\d+(?:\.\d+)*$/.test(older)) {
+          throw new Error("citext needs two versions to show a pin mismatch");
+        }
+        writeCitextPin(cwd, newest);
+        await cli(cwd, ["generate", "init"]);
+        await sql.unsafe(`create extension citext version '${older}'`);
+        const error = await rejected(["migrate", "check"], cwd);
+        expect(error.code).toBe("OKM1812");
+        expect(error.message).toContain(`needs ${newest}`);
+        expect(error.message).toContain(`has ${older}`);
+        expect(error.message).toContain("okm ext check");
+        expect(error.fix.summary).toContain("okm ext check");
+        expect(error.message).not.toContain("Regenerate the migration");
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
+    });
+  },
+  90_000,
+);
+
+postgresTest(
+  gate,
+  "migrate apply honors minPostgres (N-115)",
+  async () => {
+    await withProject(async ({ cwd, url }) => {
+      const sql = openPostgres(url);
+      try {
+        const rows = await sql<{ n: string }[]>`select current_setting('server_version_num') as n`;
+        const major = Math.floor(Number(rows[0]?.n ?? "0") / 10_000);
+        if (major >= 18) return;
+        writeMinPostgres(cwd, 18);
+        await cli(cwd, ["generate", "init"]);
+        const error = await rejected(["migrate", "apply"], cwd);
+        expect(error.code).toBe("OKM1802");
+        const found = await sql<{ name: string | null }[]>`
+          select to_regclass('public.u')::text as name
+        `;
+        expect(found[0]?.name ?? null).toBeNull();
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
+    });
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
+  "migrate apply refuses a registry entry with its code (N-115)",
+  async () => {
+    await withProject(async ({ cwd }) => {
+      writeSchema(cwd, `table("u", { id: t.identity(), meta: t.jsonb() })`);
+      await cli(cwd, ["generate", "init"]);
+      const entry = POSTGRES_FEATURES["type.jsonb"] as {
+        support: string;
+        since?: string;
+        alternative?: string;
+        code?: string;
+      };
+      const saved = { ...entry };
+      try {
+        Object.assign(entry, {
+          support: "refused",
+          since: "99",
+          alternative: "Store the value as text.",
+          code: "OKM1861",
+        });
+        const error = await rejected(["migrate", "apply"], cwd);
+        expect(error.code).toBe("OKM1861");
+      } finally {
+        for (const key of Object.keys(entry)) {
+          delete entry[key as keyof typeof entry];
+        }
+        Object.assign(entry, saved);
+      }
+    });
+  },
+  60_000,
 );
 
 postgresTest(
@@ -845,6 +996,60 @@ function writeCitextSchema(cwd: string, options?: { readonly id?: boolean }): vo
       "export const app = schema({",
       `  tables: [table("people", { ${id}email: t.citext() })],`,
       "  extensions: [citext()],",
+      "});",
+      "",
+    ].join("\n"),
+  );
+}
+
+function writeHandIndex(
+  cwd: string,
+  expression: string,
+  columns: readonly string[],
+  extension: boolean,
+): void {
+  const source = (path: string): string => JSON.stringify(join(root, path));
+  const lines = [
+    `import { schema, t, table } from ${source("src/dialects/pg/index.ts")};`,
+    `import { buildIndex } from ${source("src/dialects/pg/table.ts")};`,
+  ];
+  if (extension) lines.push(`import { pgTrgm } from ${source("src/dialects/pg/ext/pg-trgm.ts")};`);
+  lines.push(
+    `const ix = buildIndex({ columns: ${JSON.stringify(columns)}, expression: ${JSON.stringify(expression)} });`,
+    "export const app = schema({",
+    '  tables: [table("docs", { id: t.id(), a: t.text(), n: t.integer() }, { indexes: () => [ix] })],',
+    extension ? "  extensions: [pgTrgm()]," : "",
+    "});",
+    "",
+  );
+  writeFileSync(join(cwd, "schema.ts"), lines.filter((line) => line.length > 0).join("\n"));
+}
+
+function writeCitextPin(cwd: string, version: string): void {
+  const source = (path: string): string => JSON.stringify(join(root, path));
+  writeFileSync(
+    join(cwd, "schema.ts"),
+    [
+      `import { schema, t, table } from ${source("src/dialects/pg/index.ts")};`,
+      `import { citext } from ${source("src/dialects/pg/ext/citext.ts")};`,
+      "export const app = schema({",
+      '  tables: [table("people", { id: t.identity(), email: t.citext() })],',
+      `  extensions: [citext({ version: ${JSON.stringify(version)} })],`,
+      "});",
+      "",
+    ].join("\n"),
+  );
+}
+
+function writeMinPostgres(cwd: string, major: number): void {
+  const source = (path: string): string => JSON.stringify(join(root, path));
+  writeFileSync(
+    join(cwd, "schema.ts"),
+    [
+      `import { schema, t, table } from ${source("src/dialects/pg/index.ts")};`,
+      "export const app = schema({",
+      `  minPostgres: ${String(major)},`,
+      '  tables: [table("u", { id: t.uuid().primaryKey() })],',
       "});",
       "",
     ].join("\n"),

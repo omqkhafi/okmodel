@@ -61,7 +61,18 @@ const ROW = "ROW EXCLUSIVE";
  * @throws OkmError OKM1559 when a step breaks that contract
  */
 export function lowerPostgres(change: LogicalChange): readonly LoweredStep[] {
-  return sealLowered(lowerChange(change));
+  try {
+    return sealLowered(lowerChange(change));
+  } catch (error) {
+    if (error instanceof OkmError) throw error;
+    if (error instanceof TypeError) {
+      throw new OkmError("OKM1559", "Postgres lowering was given a change it cannot read.", {
+        cause: error,
+        fix: { summary: "Pass a complete logical change to the Postgres lowering." },
+      });
+    }
+    throw error;
+  }
 }
 
 function lowerChange(change: LogicalChange): readonly DdlStep[] {
