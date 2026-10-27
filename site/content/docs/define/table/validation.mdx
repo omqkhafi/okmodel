@@ -420,7 +420,7 @@ export async function add(url: string, title: string) {
 
 #### insert.check
 
-`insert.check(row)` runs the same checks and returns the issues. It does not throw OKM1200.
+`insert.check(row)` runs the same checks. A failed rule returns the issues and does not throw OKM1200. An unknown key throws OKM1120 (`Field csrf is not on posts. Accepted names: displayName, id.`) before those issues are returned, so the rule issues are lost. The same refusal is on `insert.validate`, `insert.pick(...).validate`, `insert.pick(...).check`, `insert.omit(...).validate`, `insert.omit(...).check`, `update.validate`, and `insert["~standard"].validate`. The Standard Schema `validate` throws that OKM1120. It does not return `{ issues }` for an unknown key. A failed rule on that surface still returns `{ issues }`.
 
 ```ts title="check.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -441,7 +441,7 @@ export async function issues(url: string, title: string) {
 
 #### pick
 
-`insert.pick(...fields)` checks only the named fields. `validate` returns those fields frozen. `check` returns the issues.
+`insert.pick(...fields)` checks only the named fields. `validate` returns those fields frozen. `check` returns the issues for a failed rule. An unknown key throws OKM1120 on both, and `check` does not return the rule issues.
 
 ```ts title="pick.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -463,7 +463,7 @@ export async function titleOnly(url: string, title: string) {
 
 #### omit
 
-`insert.omit(...fields)` checks every field except those.
+`insert.omit(...fields)` checks every field except those. `validate` and `check` throw OKM1120 on an unknown key. `check` returns rule issues only when every key is a field.
 
 ```ts title="omit.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -485,7 +485,7 @@ export async function withoutTitle(url: string, body: string) {
 
 #### update.validate
 
-`update.validate` checks a patch. A body with `set` checks `set`. Update has no `check`, `pick`, or `omit`.
+`update.validate` checks a patch. A body with `set` checks `set`. An unknown key in the patch, or in `set`, throws OKM1120. Update has no `check`, `pick`, or `omit`.
 
 ```ts title="rename.ts"
 import { connect } from "okmodel/pg/postgresjs";

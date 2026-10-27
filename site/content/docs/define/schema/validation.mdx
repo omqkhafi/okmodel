@@ -146,7 +146,7 @@ export default schema({
 
 ### together
 
-`insert.validate` checks the row and returns it frozen. A later `insert` of that value skips the rules. `insert.check` returns the issues and does not throw.
+`insert.validate` checks the row and returns it frozen. A later `insert` of that value skips the rules. `insert.check` returns the issues for a failed rule and does not throw OKM1200 for that failure. An unknown key throws OKM1120 on `insert.validate`, `insert.check`, `insert.pick(...).validate`, `insert.pick(...).check`, `insert.omit(...).validate`, `insert.omit(...).check`, `update.validate`, and `insert["~standard"].validate`, and the rule issues are not returned. The Standard Schema `validate` throws that OKM1120. It does not return `{ issues }` for an unknown key.
 
 ```ts title="together.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -175,5 +175,5 @@ A write that would validate, when `okmodel/validate` was not imported, is ``Vali
 </Callout>
 
 <Callout type="error" title="OKM1200">
-A failed `validate` is `Validation failed: title title_required.` The message names the first field and its key. `check` returns the issues instead.
+A failed `validate` is `Validation failed: title title_required.` The message names the first field and its key. `check` returns those rule issues. An unknown key on `check` throws OKM1120, and the rule issues are lost.
 </Callout>

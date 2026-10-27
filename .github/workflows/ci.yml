@@ -1,7 +1,9 @@
 name: CI
 
-# Pull requests only. `gate / check` is the required status. It always runs
-# (`if: always()`). A push to main and the nightly run live in after-merge.yml.
+# Pull requests only. `gate / check` is the required status. It runs after
+# success or failure (`if: always() && !cancelled()`). A cancelled run,
+# including one concurrency replaced, does not record a failed gate. A push
+# to main and the nightly run live in after-merge.yml.
 #
 # The gate is format, lint, typecheck, the build, tests for files changed
 # since the merge base, the runtime-entry size ceiling, and the title lint.
@@ -429,7 +431,7 @@ jobs:
         site,
         pack,
       ]
-    if: always()
+    if: ${{ always() && !cancelled() }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
