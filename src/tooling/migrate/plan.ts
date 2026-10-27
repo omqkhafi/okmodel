@@ -48,7 +48,12 @@ import { omitManagedObjects } from "./managed.js";
 import { stepsForExistingTable, type SafeStep } from "./safe.js";
 import { sqlQuoteOpen } from "./sql-lex.js";
 import { canonicalTypeName } from "./type-name.js";
-import { requireLowered, type DdlDialect, type DdlStep } from "../../dialects/ddl.js";
+import {
+  requireLowered,
+  type DdlDialect,
+  type DdlEmulatedNote,
+  type DdlStep,
+} from "../../dialects/ddl.js";
 import { ddlStep as step } from "../../dialects/ddl-step.js";
 import { visibleExtensionType } from "../../dialects/extension-type.js";
 import { postgresDialect } from "./postgres-dialect.js";
@@ -138,6 +143,12 @@ export type MigrationPlan = {
   readonly name: string;
   readonly class: MigrationClass;
   readonly steps: readonly PlanStep[];
+  /**
+   * Emulation notes the dialect returned.
+   *
+   * Absent when the dialect returned none. A migration file does not record it.
+   */
+  readonly emulation?: readonly DdlEmulatedNote[];
 };
 
 /** What the planner needs besides the two catalogs. */
@@ -200,20 +211,25 @@ type EnumEdit =
  *
  * `dialect` lowers logical changes and answers feature questions.
  * The default is Postgres. Callers that omit it keep the Postgres plan.
+ * A missing method, a null dialect, or a feature `support` does not accept
+ * is OKM1559 or OKM1860. Notes from `refuseUnsupported` stay on the plan.
  *
  * @param input - Catalogs, declared renames, and `--replace` flags
  * @param dialect - DDL lowering. Defaults to Postgres
  * @returns Steps in apply order, with one class for the plan
+ * @throws OkmError OKM1559 when `dialect` cannot be called, OKM1860 when it refuses a feature of either catalog
  */
 export function planMigration(
   input: PlanRequest,
   dialect: DdlDialect = postgresDialect,
 ): MigrationPlan {
+  requireDialect(dialect);
   const request: PlanRequest = {
     ...input,
     before: omitManagedObjects(input.before),
     after: omitManagedObjects(input.after),
   };
+  const emulation = askDialect(dialect, [request.before, request.after]);
   const schema = request.schema ?? "public";
   const batchSize = resolveBatchSize(request.batchSize);
   const renames = request.renames ?? [];
@@ -628,16 +644,15 @@ export function planMigration(
     name: request.name ?? "migration",
     class: overall(steps),
     steps,
+    ...(emulation.length > 0 ? { emulation } : {}),
   };
 }
 
 /**
  * Plans a new statement after the dialect has accepted the catalog.
  *
- * A refused feature throws OKM1860 from the dialect. {@link planMigration}
- * does not ask: history replay, drift, and `okm migrate check` compare
- * catalogs that were already planned. `okm generate`, `okm migrate plan`,
- * and `okm push` call this.
+ * {@link planMigration} asks the dialect about both catalogs, so this is the
+ * same plan. `okm generate`, `okm migrate plan`, and `okm push` call it.
  *
  * @param input - Catalogs, declared renames, and `--replace` flags
  * @param dialect - DDL lowering. Defaults to Postgres
@@ -647,23 +662,73 @@ export function planStatements(
   input: PlanRequest,
   dialect: DdlDialect = postgresDialect,
 ): MigrationPlan {
-  askDialect(dialect, omitManagedObjects(input.after));
   return planMigration(input, dialect);
 }
 
 /**
- * Asks the dialect which features `catalog` uses.
+ * Refuses a dialect the planner cannot call.
  *
- * A refused feature throws OKM1860 from the dialect. Native features do not
- * change the plan. The planner does not import the feature registry.
+ * @param dialect - Value passed as the lowering object
+ * @throws OkmError OKM1559 when a required method is missing
+ */
+function requireDialect(dialect: DdlDialect): void {
+  if (
+    dialect === null ||
+    typeof dialect !== "object" ||
+    typeof dialect.name !== "string" ||
+    typeof dialect.support !== "function" ||
+    typeof dialect.featuresUsed !== "function" ||
+    typeof dialect.refuseUnsupported !== "function" ||
+    typeof dialect.lower !== "function"
+  ) {
+    throw new OkmError("OKM1559", "The planner was given a dialect it cannot call.", {
+      fix: {
+        summary: "Pass a dialect with name, support, featuresUsed, refuseUnsupported, and lower.",
+      },
+    });
+  }
+}
+
+/**
+ * Asks the dialect which features the catalogs use.
+ *
+ * `refuseUnsupported` runs first, so a refusal code it throws is kept.
+ * `support` is then the same question: a key it does not call native or
+ * emulated is OKM1860 even when `refuseUnsupported` stayed quiet. Notes it
+ * returns are kept. The planner does not import the feature registry; the
+ * dialect object does.
  *
  * @param dialect - Lowering object for this plan
- * @param catalog - Catalog after managed tables are omitted
+ * @param catalogs - Catalogs after managed tables are omitted
+ * @returns Emulation notes, empty when the dialect returned none
+ * @throws OkmError OKM1559 when the feature list is not an array, OKM1860 when a feature is refused
  */
-function askDialect(dialect: DdlDialect, catalog: Catalog): void {
-  const features = dialect.featuresUsed(catalog);
-  const refused = features.filter((feature) => dialect.support(feature) === "refused");
-  dialect.refuseUnsupported(refused.length > 0 ? refused : features);
+function askDialect(dialect: DdlDialect, catalogs: readonly Catalog[]): readonly DdlEmulatedNote[] {
+  const seen = new Set<string>();
+  const features: string[] = [];
+  for (const catalog of catalogs) {
+    const used = dialect.featuresUsed(catalog);
+    if (!Array.isArray(used)) {
+      throw new OkmError("OKM1559", "The dialect returned features the planner cannot read.", {
+        fix: { summary: "featuresUsed has to return an array of feature keys." },
+      });
+    }
+    for (const feature of used) {
+      if (typeof feature !== "string" || seen.has(feature)) continue;
+      seen.add(feature);
+      features.push(feature);
+    }
+  }
+  const notes = dialect.refuseUnsupported(features);
+  for (const feature of features) {
+    const support = dialect.support(feature);
+    if (support !== "native" && support !== "emulated") {
+      throw new OkmError("OKM1860", `${dialect.name} refuses ${feature}.`, {
+        fix: { summary: "Use a feature this dialect provides." },
+      });
+    }
+  }
+  return Array.isArray(notes) ? notes : [];
 }
 
 /**

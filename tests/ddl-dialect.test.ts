@@ -1,7 +1,6 @@
 /**
- * A new statement asks the dialect about features. A replay does not.
- * The planner does not read the registry. A lowered step has SQL, a kind,
- * and the class of that kind.
+ * The planner asks the dialect about features of both catalogs.
+ * A lowered step has SQL, a kind, the class of that kind, and SQL that matches.
  */
 
 import { expect, test } from "bun:test";
@@ -34,7 +33,7 @@ test("postgres support is native for a registry key and absent otherwise", () =>
   expect(postgresDialect.lower({ op: "pending" })).toEqual([]);
 });
 
-test("a new statement asks the dialect and a replay does not", () => {
+test("a plan asks the dialect about the catalogs it diffs", () => {
   const asked: string[] = [];
   const before = schema({ tables: [] }).catalog;
   const after = schema({
@@ -49,8 +48,9 @@ test("a new statement asks the dialect and a replay does not", () => {
   };
   const direct = planMigration({ before, after, name: "create" });
   const replay = planMigration({ before, after, name: "create" }, dialect);
-  expect(asked).toEqual([]);
+  expect(asked).toContain("schema.core");
   expect(replay).toEqual(direct);
+  asked.length = 0;
   const through = planStatements({ before, after, name: "create" }, dialect);
   expect(asked).toContain("schema.core");
   expect(through).toEqual(direct);
@@ -212,7 +212,7 @@ test("one logical function create can lower to two physical steps", () => {
   expect(parsed.class).toBe(plan.class);
 });
 
-test("a dialect that refuses a used feature is OKM1860 only for a new statement", () => {
+test("a dialect that refuses a used feature is OKM1860 for the plan", () => {
   const after = schema({
     tables: [table("tasks", { id: t.integer().primaryKey() })],
   }).catalog;
@@ -231,16 +231,11 @@ test("a dialect that refuses a used feature is OKM1860 only for a new statement"
       return postgresDialect.refuseUnsupported(features);
     },
   };
-  const replay = planMigration(
-    { before: schema({ tables: [] }).catalog, after, name: "refuse" },
-    dialect,
-  );
-  expect(replay.steps.length).toBeGreaterThan(0);
-  expect(() =>
-    planStatements({ before: schema({ tables: [] }).catalog, after, name: "refuse" }, dialect),
-  ).toThrow(OkmError);
+  const request = { before: schema({ tables: [] }).catalog, after, name: "refuse" };
+  expect(() => planMigration(request, dialect)).toThrow(OkmError);
+  expect(() => planStatements(request, dialect)).toThrow(OkmError);
   try {
-    planStatements({ before: schema({ tables: [] }).catalog, after, name: "refuse" }, dialect);
+    planStatements(request, dialect);
   } catch (error) {
     expect(error).toBeInstanceOf(OkmError);
     expect((error as OkmError).code).toBe("OKM1860");

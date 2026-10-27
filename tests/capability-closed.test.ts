@@ -145,7 +145,7 @@ test("a schema the profile refuses fails in the planner", () => {
       return [];
     },
   };
-  expect(planMigration({ name: "probe", before: after, after }, dialect).steps).toEqual([]);
+  expect(() => planMigration({ name: "probe", before: after, after }, dialect)).toThrow(OkmError);
   expect(() => planStatements({ name: "probe", before: after, after }, dialect)).toThrow(OkmError);
 });
 
