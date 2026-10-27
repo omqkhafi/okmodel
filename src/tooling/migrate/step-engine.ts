@@ -412,9 +412,12 @@ function presentFailure(
   }
   let fix = wrapped.fix;
   if (cleanup !== undefined) {
-    message = `${sentence(message)}${cleanup.detail}`;
     if (cleanup.next !== undefined) {
       message = message.replaceAll("partial index will be dropped and rebuilt", cleanup.next);
+    }
+    const extra = cleanup.detail.trim();
+    if (extra.length > 0 && !message.includes(extra)) {
+      message = `${sentence(message)}${cleanup.detail}`;
     }
     fix = { summary: cleanup.fix };
   } else if (indexLabel !== undefined && wrapped.kind === "unavailable") {

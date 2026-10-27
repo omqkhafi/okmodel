@@ -30,6 +30,9 @@ import { stepSqlHash } from "../src/tooling/migrate/step-engine.js";
 
 const empty = schema({ tables: [] }).catalog;
 
+const INDEX_BUILD_WAIT =
+  'Index "mine" is being built by another session. Wait for it to finish, then apply again.';
+
 const probeSql = "select note = 'a;b' and note = '-- probe: no'";
 
 test("a probe round-trips, including a quoted semicolon, a comment-like string, and CRLF", () => {
@@ -241,9 +244,10 @@ test("cleanup matches this index and not another build on the same table", async
   );
   expect(stopped).toBeInstanceOf(PartialCleanupError);
   if (stopped instanceof PartialCleanupError) {
-    expect(stopped.detail).toContain('Index "mine" is being built by another session.');
-    expect(stopped.fix).toBe("Wait and apply again.");
+    expect(stopped.detail).toContain(INDEX_BUILD_WAIT);
+    expect(stopped.fix).toBe(INDEX_BUILD_WAIT);
     expect(stopped.fix).not.toContain("DROP INDEX");
+    expect(stopped.detail.split(INDEX_BUILD_WAIT).length - 1).toBe(1);
   }
 });
 
@@ -266,7 +270,7 @@ test("cleanup waits when only pg_stat_progress_create_index shows the build", as
   );
   expect(stopped).toBeInstanceOf(PartialCleanupError);
   if (stopped instanceof PartialCleanupError) {
-    expect(stopped.fix).toBe("Wait and apply again.");
+    expect(stopped.fix).toBe(INDEX_BUILD_WAIT);
   }
   expect(seen.some((text) => text.startsWith("drop index concurrently"))).toBe(false);
 });
@@ -293,8 +297,72 @@ test("cleanup checks again immediately before the drop", async () => {
     ).cleanup(),
   );
   expect(stopped).toBeInstanceOf(PartialCleanupError);
-  if (stopped instanceof PartialCleanupError) expect(stopped.fix).toBe("Wait and apply again.");
+  if (stopped instanceof PartialCleanupError) expect(stopped.fix).toBe(INDEX_BUILD_WAIT);
   expect(seen.some((text) => text.startsWith("drop index concurrently"))).toBe(false);
+});
+
+test("another session's index build is one sentence, once", async () => {
+  const sql = 'create index concurrently mine on "app"."tasks" (id)';
+  const committed: CommittedStep = {
+    migrationId: "0002_idx",
+    stepIndex: 0,
+    kind: "create-index",
+    sql,
+    sqlHash: stepSqlHash(sql),
+    stepClass: "expand",
+    catalogHash: "hash",
+    finishes: false,
+  };
+  const connection = {
+    execute(text: string) {
+      if (text.includes("indisvalid")) return Promise.resolve(done([["f", null, "app"]]));
+      if (text.includes("pg_stat_activity")) return Promise.resolve(done([["42"]]));
+      return Promise.resolve(done([]));
+    },
+    batch: () => Promise.resolve([]),
+    release: () => Promise.resolve(),
+  } as DriverConnection;
+  const error = await rejection(
+    resumeCommittedStep(
+      committed,
+      {
+        async read() {
+          return {
+            migrationId: "0002_idx",
+            stepIndex: 0,
+            kind: "create-index",
+            sqlHash: stepSqlHash(sql),
+            state: "failed",
+            attempt: 1,
+          };
+        },
+        async start() {},
+        async fail() {},
+        async complete() {},
+      },
+      postgresStepEngine(connection, { kind: "create-index", sql, lockTimeoutMs: 1_000 }, () =>
+        Promise.reject(new Error('could not create index "mine"')),
+      ),
+      {
+        retries: 0,
+        wrap: (caught) =>
+          new OkmError(
+            "invalid",
+            'Migration 0002_idx failed at step 1: could not create index "mine"',
+            {
+              cause: caught,
+            },
+          ),
+      },
+    ),
+  );
+  expect(error).toBeInstanceOf(OkmError);
+  if (error instanceof OkmError) {
+    expect(error.message.split(INDEX_BUILD_WAIT).length - 1).toBe(1);
+    expect(error.fix.summary).toBe(INDEX_BUILD_WAIT);
+    expect(error.message).not.toContain("partial index will be dropped and rebuilt");
+    expect(error.message).not.toContain("DROP INDEX");
+  }
 });
 
 test("a concurrent index failure ends the driver sentence with a period", async () => {
