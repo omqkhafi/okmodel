@@ -174,9 +174,9 @@ postgresTest(
 
 postgresTest(
   gate,
-  't.id({ default: "uuidv4" }), defaults.id "uuidv4", and a column choice apply on every major',
+  't.id({ default: "uuidv4" }) and defaults.id "uuidv4" apply on every major',
   async () => {
-    for (const source of [UUIDV4, SCHEMA_DEFAULT, COLUMN_WINS]) {
+    for (const source of [UUIDV4, SCHEMA_DEFAULT]) {
       await inDatabase(source, async ({ cwd, sql }) => {
         await run(["generate"], { cwd, stdout: () => undefined });
         await run(["migrate", "apply"], { cwd, stdout: () => undefined });
@@ -184,6 +184,25 @@ postgresTest(
         await usesTheDefault(sql);
       });
     }
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
+  "a column uuidv4 wins over defaults.id uuidv7, and apply still honors minPostgres",
+  async () => {
+    await inDatabase(COLUMN_WINS, async ({ cwd, sql, major }) => {
+      await run(["generate"], { cwd, stdout: () => undefined });
+      if (major < 18) {
+        expect((await failure(() => applyIn(cwd))).code).toBe("OKM1802");
+        await expectNothingCreated(sql);
+        return;
+      }
+      await applyIn(cwd);
+      await expectColumnDefault(sql, "gen_random_uuid()");
+      await usesTheDefault(sql);
+    });
   },
   60_000,
 );

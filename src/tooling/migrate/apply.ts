@@ -495,8 +495,12 @@ async function runApply(
   });
   if (built !== undefined) {
     assertSnapshots(cwd, config, built.catalog);
-    assertSupported(featuresUsed(built.catalog), POSTGRES_FEATURES, "postgres");
-    await assertSchemaMajor(target.url, built);
+    const features = featuresUsed(built.catalog);
+    assertSupported(features, POSTGRES_FEATURES, "postgres");
+    // `uuidv7()` raises the described floor to 18. Apply still reports
+    // OKM1812 for a missing function, and a hand-installed `uuidv7()` is
+    // accepted. The major gate would report OKM1802 before either of those.
+    if (!features.includes("type.uuidv7")) await assertSchemaMajor(target.url, built);
   }
   const progress: string[] = [];
   const externalConfigured = (config.external ?? []).length > 0;

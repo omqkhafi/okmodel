@@ -306,19 +306,30 @@ export async function sealIndexExpressions(
       objects.push(object);
       continue;
     }
-    const reprinted = await reprintIndex(
-      runner,
-      object.definition.expression,
-      columnsByParent.get(object.identity.parent.name) ?? [],
-      types,
-      {
-        unique: object.definition.unique,
-        ...(object.definition.predicate !== undefined
-          ? { predicate: object.definition.predicate }
-          : {}),
-      },
-      extensions,
-    );
+    let reprinted;
+    try {
+      reprinted = await reprintIndex(
+        runner,
+        object.definition.expression,
+        columnsByParent.get(object.identity.parent.name) ?? [],
+        types,
+        {
+          unique: object.definition.unique,
+          ...(object.definition.predicate !== undefined
+            ? { predicate: object.definition.predicate }
+            : {}),
+        },
+        extensions,
+      );
+    } catch (error) {
+      // A pending `using` tail names an operator class the migration has not
+      // installed yet. Keep the author text so check still reports the drift.
+      if (usingTailClosed(object.definition.expression, error)) {
+        objects.push(object);
+        continue;
+      }
+      throw error;
+    }
     const predicate =
       object.definition.predicate === undefined
         ? undefined
@@ -347,6 +358,29 @@ export async function sealIndexExpressions(
     });
   }
   return changed ? { version: source.version, objects } : source;
+}
+
+/**
+ * A `using` tail whose access method or operator class is not installed yet.
+ *
+ * Check compares the author catalog before the migration that creates the
+ * extension has run. Creating the scratch index then fails with sqlstate
+ * 42704. The author text stays, and the plan still reports that drift.
+ *
+ * @param expression - Index expression, or a `using` tail
+ * @param error - Failure from the scratch index
+ * @returns Whether the tail should be left as the author wrote it
+ */
+function usingTailClosed(expression: string, error: unknown): boolean {
+  if (!/^using\s/i.test(expression)) return false;
+  const message = error instanceof Error ? error.message : "";
+  if (/does not exist/i.test(message)) return true;
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "42704"
+  );
 }
 
 /**
