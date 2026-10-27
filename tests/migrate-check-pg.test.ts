@@ -321,8 +321,8 @@ postgresTest(
     await withProject(async ({ cwd, url }) => {
       const sql = openPostgres(url);
       try {
-        const rows = await sql<{ n: string }[]>`show server_version_num`;
-        const major = Math.floor(Number(rows[0]?.n ?? "0") / 10000);
+        const rows = await sql<{ n: string }[]>`select current_setting('server_version_num') as n`;
+        const major = Math.floor(Number(rows[0]?.n ?? "0") / 10_000);
         if (major >= 18) return;
         writeMinPostgres(cwd, 18);
         await cli(cwd, ["generate", "init"]);
