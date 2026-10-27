@@ -8,12 +8,14 @@
  * `exists`, include, `descendants`, and `aggregate` accept a filterable hidden
  * column in `where` and `orderBy` where the call does.
  * `groupBy` and `min` still exclude them.
- * `hidden({ filterable: false })` and a boolean flag still compile. Literal
- * `true` is the only value that sets the filter bit.
+ * `hidden({ filterable })` accepts only literal `true`. `false` and a boolean
+ * variable are type errors. Literal `true` is the only value that sets the filter bit.
+ * `aggregate({ where })` accepts a comparison on that column.
  */
 
 import {
   eq,
+  gt,
   id,
   integer,
   many,
@@ -25,14 +27,12 @@ import {
 } from "../src/dialects/pg/index.js";
 import { connect } from "../src/runtime/pg/postgresjs.js";
 
-function flagged(flag: boolean) {
-  return table("flags", {
-    id: id(),
-    closed: text().hidden({ filterable: false }),
-    dynamic: text().hidden({ filterable: flag }),
-    opened: integer().hidden({ filterable: true }),
-  });
-}
+const flag: boolean = true;
+
+const flags = table("flags", {
+  id: id(),
+  opened: integer().hidden({ filterable: true }),
+});
 
 const replies = table("replies", {
   id: id(),
@@ -54,7 +54,7 @@ const posts = table(
   { relations: { replies: many("replies") } },
 );
 
-const app = schema({ tables: [posts, replies, flagged(true)] });
+const app = schema({ tables: [posts, replies, flags] });
 
 async function shapes(url: string): Promise<void> {
   const db = connect(url, { schema: app });
@@ -130,12 +130,10 @@ async function shapes(url: string): Promise<void> {
   });
 
   await db.flags.count({ where: { opened: 1 } });
-  await db.flags.count({
-    where: {
-      // @ts-expect-error filterable: false does not add a where key
-      closed: "x",
-    },
-  });
+  // @ts-expect-error hidden({ filterable }) accepts only literal true
+  text().hidden({ filterable: false });
+  // @ts-expect-error a boolean variable is not literal true
+  text().hidden({ filterable: flag });
 
   await db.posts.find({ where: { score: 1, title: "a" }, limit: 1 });
   await db.posts.find({
@@ -195,6 +193,14 @@ async function shapes(url: string): Promise<void> {
   });
   await db.posts.descendants("a", { where: { score: 1 }, orderBy: { score: "asc" } });
   await db.posts.aggregate({ where: { score: 1, title: "a" }, count: true });
+  await db.posts.aggregate({ where: { score: gt(1) }, count: true });
+  await db.posts.aggregate({ where: { score: eq(1), title: "a" }, count: true });
+  await db.posts.aggregate({
+    where: { score: gt(1) },
+    groupBy: ["title"],
+    count: true,
+    limit: 1,
+  });
   await db.posts.find({
     where: { score: 1 },
     orderBy: { score: "asc" },

@@ -24,6 +24,7 @@ import type {
 import { BUNSQL_CAPABILITIES } from "../capabilities.js";
 import { DriverError } from "../error.js";
 import { driverErrors, mapFailure, rejectClosed } from "../failure.js";
+import { closedSocketError } from "./bun-closed.js";
 import { runCall, type Watch } from "./call.js";
 import { noTimeout } from "./no-inflight-timeout.js";
 import { noticeBuffer, WireSession, type WireQuery } from "./session.js";
@@ -34,6 +35,7 @@ export {
   readCapability,
 } from "../capabilities.js";
 export { DriverError };
+export { isBunClosedMessage } from "./bun-closed.js";
 
 /** TLS values Bun.sql accepts that this adapter forwards. */
 export type BunSqlTls =
@@ -299,8 +301,18 @@ export function open(config: BunSqlConfig): DriverPool {
 export function send(sql: SQL, text: string, params: readonly WireValue[] | undefined): WireQuery {
   const refused = refuseInt8(params);
   if (refused !== undefined) return refused;
-  if (params === undefined || params.length === 0) return sql.unsafe(text).raw();
-  return sql.unsafe(text, [...params]).raw();
+  try {
+    if (params === undefined || params.length === 0) return sql.unsafe(text).raw();
+    return sql.unsafe(text, [...params]).raw();
+  } catch (error) {
+    return rejected(closedSocketError(error));
+  }
+}
+
+function rejected(error: unknown): WireQuery {
+  const query = Promise.reject(error) as WireQuery;
+  query.catch(() => undefined);
+  return query;
 }
 
 /**
@@ -350,13 +362,8 @@ export async function reserve(
     // reserve that fails before the reserved-handle guard still classifies
     // as unavailable (B-03). Kept off the shared mapDriverError path so the
     // postgres.js incremental gate does not grow.
-    if (
-      error instanceof Error &&
-      (error.message === "Connection closed" ||
-        error.message === "connection must be a PostgresSQLConnection")
-    ) {
-      throw new DriverError(error.message, { cause: error, sqlstate: "08006" });
-    }
+    const closed = closedSocketError(error);
+    if (closed !== error) throw closed;
     throw await mapFailure(error);
   } finally {
     counters.waiting = Math.max(0, counters.waiting - 1);

@@ -591,16 +591,13 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
    * still refuses it. `filterable: true` keeps the column in those two
    * clauses and off the row.
    *
-   * @param options - `filterable` allows the column in `where` and `orderBy`
+   * @param options - `filterable: true` allows the column in `where` and `orderBy`. Only the literal `true` typechecks
    * @returns The same column, hidden
    */
   hidden(): ColumnBuilder<TValue, FlagTrue<TFlags, "hidden">>;
   hidden(options: {
     readonly filterable: true;
   }): ColumnBuilder<TValue, FlagTrue<TFlags, "hidden"> & { readonly "~filter": true }>;
-  hidden(options: {
-    readonly filterable?: boolean;
-  }): ColumnBuilder<TValue, FlagTrue<TFlags, "hidden">>;
   hidden(options?: {
     readonly filterable?: boolean;
   }): ColumnBuilder<TValue, FlagTrue<TFlags, "hidden">> {

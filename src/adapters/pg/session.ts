@@ -109,7 +109,13 @@ export class WireSession implements BatchSession {
     if (this.isClosed()) return rejectClosed();
     const start = this.notices.start();
     this.onEnter();
-    const pending = this.send(text, params);
+    let pending: WireQuery;
+    try {
+      pending = this.send(text, params);
+    } catch (error) {
+      this.onLeave();
+      return rejectMapped(error, text);
+    }
     if (watch === undefined) {
       return pending.then(
         (result) => {
@@ -119,9 +125,7 @@ export class WireSession implements BatchSession {
         },
         (error: unknown) => {
           this.onLeave();
-          return driverErrors().then((errors) =>
-            Promise.reject(errors.mapDriverError(stampQuery(error, text))),
-          );
+          return rejectMapped(error, text);
         },
       );
     }
@@ -206,16 +210,25 @@ function stampQuery(error: unknown, text: string): unknown {
   return error;
 }
 
+function rejectMapped(error: unknown, text: string): Promise<never> {
+  return driverErrors().then(async (errors) => {
+    const { closedSocketError } = await import("./bun-closed.js");
+    throw errors.mapDriverError(stampQuery(closedSocketError(error), text));
+  });
+}
+
 async function classify(error: unknown, watch: Watch): Promise<never> {
   const errors = await driverErrors();
-  if (error instanceof errors.DriverError) return Promise.reject(error);
-  const why = typeof error === "string" ? error : watch.reason();
-  if (why === "timeout") {
-    return Promise.reject(errors.timedOut(typeof error === "string" ? undefined : error));
+  if (typeof error === "string") {
+    if (error === "timeout") throw errors.timedOut();
+    throw errors.cancelled();
   }
-  const code = errors.errorField(error, "code") ?? errors.errorField(error, "errno");
-  if (why === "cancelled" || code === "57014") {
-    return Promise.reject(errors.cancelled(typeof error === "string" ? undefined : error));
-  }
-  return Promise.reject(errors.mapDriverError(error));
+  const { closedSocketError } = await import("./bun-closed.js");
+  const stamped = closedSocketError(error);
+  if (stamped instanceof errors.DriverError) throw stamped;
+  const why = watch.reason();
+  if (why === "timeout") throw errors.timedOut(error);
+  const code = errors.errorField(stamped, "code") ?? errors.errorField(stamped, "errno");
+  if (why === "cancelled" || code === "57014") throw errors.cancelled(error);
+  throw errors.mapDriverError(stamped);
 }
