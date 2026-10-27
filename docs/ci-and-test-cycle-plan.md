@@ -5,12 +5,15 @@ status. The heavy jobs run after merge.
 
 ## Required status
 
-`gate / check` is the only required status on a pull request. It always runs
-(`if: always()`). It depends on the pull request jobs and fails when any
-needed job failed, was cancelled, or was skipped while the path rules say it
-must pass. The CI workflow has no path or branch filters that would leave the
-required check Pending. A skipped Postgres suite is a pass only when the diff
-does not touch `src/dialects`, `src/runtime`, or `src/tooling/migrate`.
+`gate / check` is the only required status on a pull request. It runs after
+success or failure (`if: always() && !cancelled()`). A cancelled workflow,
+including one concurrency replaced, does not record a failed gate. When the
+workflow was not cancelled, the gate depends on the pull request jobs and
+fails when any needed job failed, was cancelled, or was skipped while the
+path rules say it must pass. The CI workflow has no path or branch filters
+that would leave the required check Pending. A skipped Postgres suite is a
+pass only when the diff does not touch `src/dialects`, `src/runtime`, or
+`src/tooling/migrate`.
 
 ## Pull request
 
