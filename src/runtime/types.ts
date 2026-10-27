@@ -1069,6 +1069,18 @@ type TreeFilterOptions<S extends QuerySchema, K extends keyof S["~byName"], W, O
   readonly orderBy?: ClosedWhere<Ord, OrderBy<FilterableOf<S, K>>>;
 };
 
+/**
+ * `aggregate` options whose `where` includes `hidden({ filterable: true })`.
+ *
+ * A later overload. A call the row `where` already accepts does not build it.
+ */
+type AggregateFilterOptions<S extends QuerySchema, K extends keyof S["~byName"], W> = Omit<
+  AggregateOptions<S, K>,
+  "where"
+> & {
+  readonly where?: FilterWhereOf<S, K, W>;
+};
+
 /** `aggregate` options. A hidden field is refused at runtime. */
 export type AggregateOptions<S extends QuerySchema, K extends keyof S["~byName"]> = CallOptions & {
   readonly where?: WhereOf<S, K>;
@@ -1783,6 +1795,51 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   ): Query<readonly AggregateRow<RowOf<S, K>, O>[]>;
   aggregate<const O extends AggregateOptions<S, K> & NamedAggregateOptions<S, K>>(
     options: O & AggWhere<S, K, O> & HavingGuard<RowOf<S, K>, O>,
+  ): Unbounded<S, "groupBy", Query<readonly AggregateRow<RowOf<S, K>, O>[]>>;
+  aggregate<
+    const O extends ExactConstraint<
+      O,
+      AggregateFilterOptions<S, K, WhereOfTarget<O>> &
+        (
+          | { readonly limit: number; readonly select?: undefined; readonly having?: CountHaving }
+          | {
+              readonly groupBy?: undefined;
+              readonly select?: undefined;
+              readonly having?: undefined;
+            }
+        )
+    >,
+  >(
+    options: O,
+  ): Query<readonly AggregateRow<RowOf<S, K>, O>[]>;
+  aggregate<
+    const O extends ExactConstraint<
+      O,
+      AggregateFilterOptions<S, K, WhereOfTarget<O>> & {
+        readonly select?: undefined;
+        readonly having?: CountHaving;
+      }
+    >,
+  >(
+    options: O,
+  ): Unbounded<S, "groupBy", Query<readonly AggregateRow<RowOf<S, K>, O>[]>>;
+  aggregate<
+    const O extends ExactConstraint<
+      O,
+      AggregateFilterOptions<S, K, WhereOfTarget<O>> &
+        NamedAggregateOptions<S, K> &
+        ({ readonly limit: number } | { readonly groupBy?: undefined; readonly having?: undefined })
+    >,
+  >(
+    options: O & HavingGuard<RowOf<S, K>, O>,
+  ): Query<readonly AggregateRow<RowOf<S, K>, O>[]>;
+  aggregate<
+    const O extends ExactConstraint<
+      O,
+      AggregateFilterOptions<S, K, WhereOfTarget<O>> & NamedAggregateOptions<S, K>
+    >,
+  >(
+    options: O & HavingGuard<RowOf<S, K>, O>,
   ): Unbounded<S, "groupBy", Query<readonly AggregateRow<RowOf<S, K>, O>[]>>;
   count(
     options?: CallOptions & {
