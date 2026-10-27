@@ -78,6 +78,7 @@ const CODE_EXIT: Readonly<Record<string, ExitCode>> = {
  * @returns The mapped code, or 1
  */
 export function exitCodeForCode(code: string): ExitCode {
+  if (/^OKM1861$|^OKM186[89]$|^OKM187\d$/.test(code)) return 5;
   return CODE_EXIT[code] ?? 1;
 }
 

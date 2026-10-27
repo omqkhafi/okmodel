@@ -10,6 +10,7 @@
  * `query.setOps`.
  */
 
+import { UUIDV7_POSTGRES } from "../../dialects/pg/floor.js";
 import type { FeatureEntry, Registry } from "./types.js";
 
 const native = (proof: string, extra?: Omit<FeatureEntry, "support" | "proof">): FeatureEntry => ({
@@ -27,7 +28,7 @@ export const POSTGRES_FEATURES = {
   "schema.core": native("proof:schema.core"),
   "schema.identity": native("proof:schema.identity"),
   "type.uuid": native("proof:type.uuid"),
-  "type.uuidv7": native("proof:type.uuidv7", { since: "18" }),
+  "type.uuidv7": native("proof:type.uuidv7", { since: String(UUIDV7_POSTGRES) }),
   "type.jsonb": native("proof:type.jsonb"),
   "type.array": native("proof:type.array"),
   "type.range": native("proof:type.range"),

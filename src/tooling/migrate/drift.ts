@@ -284,8 +284,9 @@ export async function sealStoredChecks(runner: CatalogQuery, source: Catalog): P
  *
  * `lower( email )` becomes `lower(email)`, and a pure expression keeps no key
  * column: introspection reads `indkey` above 0, which is empty. A `using`
- * tail is left as written, because that text is rebuilt from the index method
- * rather than `pg_get_expr`. The catalog hash still uses the author text.
+ * tail is created on the server and read back the way introspection prints
+ * it, so a comment or a different spelling is not a permanent change. The
+ * catalog hash still uses the author text.
  *
  * @param runner - Database connection
  * @param source - Catalog whose index expressions may still be author SQL
@@ -302,10 +303,6 @@ export async function sealIndexExpressions(
   let changed = false;
   for (const object of source.objects) {
     if (object.kind !== "index" || object.definition.expression === undefined) {
-      objects.push(object);
-      continue;
-    }
-    if (/^using\s/i.test(object.definition.expression)) {
       objects.push(object);
       continue;
     }
@@ -328,8 +325,9 @@ export async function sealIndexExpressions(
         : reprinted.predicate.length > 0
           ? reprinted.predicate
           : object.definition.predicate;
+    const expression = reprinted.expression.length > 0 ? reprinted.expression : undefined;
     if (
-      reprinted.expression === object.definition.expression &&
+      expression === object.definition.expression &&
       sameColumnNames(reprinted.columns, object.definition.columns) &&
       predicate === object.definition.predicate
     ) {
@@ -337,12 +335,13 @@ export async function sealIndexExpressions(
       continue;
     }
     changed = true;
+    const { expression: _author, ...rest } = object.definition;
     objects.push({
       ...object,
       definition: {
-        ...object.definition,
-        expression: reprinted.expression,
+        ...rest,
         columns: reprinted.columns,
+        ...(expression !== undefined ? { expression } : {}),
         ...(predicate !== undefined ? { predicate } : {}),
       },
     });

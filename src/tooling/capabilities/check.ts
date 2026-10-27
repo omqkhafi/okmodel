@@ -135,7 +135,22 @@ export function gateCoverageProblems(
 function refuse(dialect: string, feature: string, entry: FeatureEntry): never {
   const since = entry.since === undefined ? "" : ` First supported in ${entry.since}.`;
   const alternative = entry.alternative ?? "Use a feature this dialect provides.";
-  throw new OkmError("OKM1860", `${dialect} refuses ${feature}.${since}`, {
+  throw new OkmError(refusalCode(entry), `${dialect} refuses ${feature}.${since}`, {
     fix: { summary: `${alternative} ${FEATURE_REFUSAL_DOCS}` },
   });
+}
+
+/**
+ * Code the registry entry names, when it is a feature-refusal code.
+ *
+ * Anything else stays OKM1860. OKM1861 and OKM1868–OKM1879 are reserved
+ * refusal codes and are not separate doctor pages.
+ *
+ * @param entry - Refused registry row
+ * @returns The entry code, or OKM1860
+ */
+function refusalCode(entry: FeatureEntry): string {
+  const code = entry.code;
+  if (typeof code === "string" && /^OKM18(?:6[0-9]|7[0-9])$/.test(code)) return code;
+  return "OKM1860";
 }

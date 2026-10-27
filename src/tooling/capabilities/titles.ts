@@ -23,6 +23,57 @@ export function collectTestTitles(roots: readonly string[]): ReadonlySet<string>
   return titles;
 }
 
+/**
+ * Drops `//` and block comments that sit outside strings.
+ *
+ * A commented-out `test("...")` is not a proof. Titles inside a string stay.
+ *
+ * @param source - TypeScript source
+ * @returns The source with those comments removed
+ */
+function stripComments(source: string): string {
+  let out = "";
+  let index = 0;
+  while (index < source.length) {
+    const char = source[index];
+    const next = source[index + 1];
+    if (char === "/" && next === "/") {
+      index += 2;
+      while (index < source.length && source[index] !== "\n") index += 1;
+      continue;
+    }
+    if (char === "/" && next === "*") {
+      index += 2;
+      while (index < source.length && !(source[index] === "*" && source[index + 1] === "/")) {
+        index += 1;
+      }
+      index = Math.min(index + 2, source.length);
+      continue;
+    }
+    if (char === "'" || char === '"' || char === "`") {
+      const quote = char;
+      out += char;
+      index += 1;
+      while (index < source.length) {
+        const current = source[index];
+        out += current ?? "";
+        if (current === "\\") {
+          index += 1;
+          if (index < source.length) out += source[index] ?? "";
+          index += 1;
+          continue;
+        }
+        index += 1;
+        if (current === quote) break;
+      }
+      continue;
+    }
+    out += char ?? "";
+    index += 1;
+  }
+  return out;
+}
+
 function walk(directory: string, titles: Set<string>): void {
   for (const name of readdirSync(directory)) {
     if (name === "node_modules" || name === "dist") continue;
@@ -33,7 +84,7 @@ function walk(directory: string, titles: Set<string>): void {
       continue;
     }
     if (!name.endsWith(".ts")) continue;
-    const text = readFileSync(path, "utf8");
+    const text = stripComments(readFileSync(path, "utf8"));
     for (const match of text.matchAll(TITLE)) {
       const title = match[2];
       if (title !== undefined) titles.add(title);

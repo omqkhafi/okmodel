@@ -241,11 +241,60 @@ test("cleanup matches this index and not another build on the same table", async
   );
   expect(stopped).toBeInstanceOf(PartialCleanupError);
   if (stopped instanceof PartialCleanupError) {
-    expect(stopped.detail).toContain('Index "mine" is INVALID.');
-    expect(stopped.fix).toBe(
-      'DROP INDEX CONCURRENTLY "app"."mine". Then run apply again. Finished steps are not repeated.',
-    );
+    expect(stopped.detail).toContain('Index "mine" is being built by another session.');
+    expect(stopped.fix).toBe("Wait and apply again.");
+    expect(stopped.fix).not.toContain("DROP INDEX");
   }
+});
+
+test("cleanup waits when only pg_stat_progress_create_index shows the build", async () => {
+  const sql = 'create index concurrently mine on "app"."tasks" (id)';
+  const seen: string[] = [];
+  const connection = {
+    execute(text: string) {
+      seen.push(text);
+      if (text.includes("pg_stat_progress_create_index")) return Promise.resolve(done([["1"]]));
+      return Promise.resolve(done([]));
+    },
+    batch: () => Promise.resolve([]),
+    release: () => Promise.resolve(),
+  } as DriverConnection;
+  const stopped = await rejection(
+    postgresStepEngine(connection, { kind: "create-index", sql, lockTimeoutMs: 1_000 }, () =>
+      Promise.resolve(),
+    ).cleanup(),
+  );
+  expect(stopped).toBeInstanceOf(PartialCleanupError);
+  if (stopped instanceof PartialCleanupError) {
+    expect(stopped.fix).toBe("Wait and apply again.");
+  }
+  expect(seen.some((text) => text.startsWith("drop index concurrently"))).toBe(false);
+});
+
+test("cleanup checks again immediately before the drop", async () => {
+  const sql = 'create index concurrently mine on "app"."tasks" (id)';
+  let activity = 0;
+  const seen: string[] = [];
+  const connection = {
+    execute(text: string) {
+      seen.push(text);
+      if (text.includes("pg_stat_activity")) {
+        activity += 1;
+        return Promise.resolve(activity >= 2 ? done([["7"]]) : done([]));
+      }
+      return Promise.resolve(done([]));
+    },
+    batch: () => Promise.resolve([]),
+    release: () => Promise.resolve(),
+  } as DriverConnection;
+  const stopped = await rejection(
+    postgresStepEngine(connection, { kind: "create-index", sql, lockTimeoutMs: 1_000 }, () =>
+      Promise.resolve(),
+    ).cleanup(),
+  );
+  expect(stopped).toBeInstanceOf(PartialCleanupError);
+  if (stopped instanceof PartialCleanupError) expect(stopped.fix).toBe("Wait and apply again.");
+  expect(seen.some((text) => text.startsWith("drop index concurrently"))).toBe(false);
 });
 
 test("a concurrent index failure ends the driver sentence with a period", async () => {

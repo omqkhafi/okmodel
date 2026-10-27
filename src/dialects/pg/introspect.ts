@@ -1137,13 +1137,13 @@ export type ReprintedIndex = {
  *
  * `lower( email )` reprints as `lower(email)`. A pure expression has no key
  * column, so `columns` comes back empty even when the declaration named the
- * column the expression uses. A `using` tail is not an expression Postgres
- * prints this way; pass it through unchanged.
+ * column the expression uses. A `using` tail is created as written and read
+ * back through the same access method, operator class, and `pg_get_expr`
+ * text introspection stores, so a comment or a different spelling is not drift.
  *
  * The table is temporary, with a random name, and so is each stand-in for a
- * type in `types`. Nothing is created in the target schema. The index is
- * created as `((expression))`, which is how a btree expression is emitted,
- * then read the way introspection reads `indexprs`.
+ * type in `types`. Nothing is created in the target schema. A btree expression
+ * is created as `((expression))`. A `using` tail is the index definition.
  *
  * @param runner - Database connection
  * @param expression - Index expression, or a `using` tail
@@ -1161,15 +1161,13 @@ export async function reprintIndex(
   options?: { readonly unique?: boolean; readonly predicate?: string },
   extensions: ReadonlyMap<string, string> = NO_EXTENSION_SCHEMAS,
 ): Promise<ReprintedIndex> {
-  if (/^using\s/i.test(expression)) {
-    return { expression, columns: [], predicate: options?.predicate ?? "" };
-  }
   let printed: ReprintedIndex = {
     expression,
     columns: [],
     predicate: options?.predicate ?? "",
   };
   for (let pass = 0; pass < REPRINT_PASSES; pass += 1) {
+    if (printed.expression.length === 0) return printed;
     const next = await reprintIndexOnce(
       runner,
       printed.expression,
@@ -1228,27 +1226,60 @@ async function reprintIndexOnce(
     await runner.query(`create temp table ${table} (${defs})`);
     const unique = options.unique ? "unique " : "";
     const where = options.predicate === undefined ? "" : ` where ${options.predicate}`;
+    const using = /^using\s/i.test(expression);
     await runner.query(
-      `create ${unique}index ${quoteIdent(index)} on pg_temp.${table} ((${expression}))${where}`,
+      using
+        ? `create ${unique}index ${quoteIdent(index)} on pg_temp.${table} ${expression}${where}`
+        : `create ${unique}index ${quoteIdent(index)} on pg_temp.${table} ((${expression}))${where}`,
     );
     const rows = await runner.query(
-      `select pg_get_expr(i.indexprs, i.indrelid) as expression,
-        coalesce(pg_get_expr(i.indpred, i.indrelid), '') as predicate,
-        (
-          select coalesce(string_agg(a.attname, ',' order by cols.ord), '')
-          from unnest(i.indkey) with ordinality as cols(attnum, ord)
-          join pg_attribute a on a.attrelid = i.indrelid and a.attnum = cols.attnum
-          where cols.attnum > 0
-        ) as columns
-       from pg_index i
-       join pg_class idx on idx.oid = i.indexrelid
-       where i.indrelid = $1::regclass and idx.relname = $2`,
+      using
+        ? `select am.amname as am,
+            coalesce(pg_get_expr(i.indexprs, i.indrelid), '') as expression,
+            coalesce(pg_get_expr(i.indpred, i.indrelid), '') as predicate,
+            (
+              select coalesce(string_agg(a.attname, ',' order by cols.ord), '')
+              from unnest(i.indkey) with ordinality as cols(attnum, ord)
+              join pg_attribute a on a.attrelid = i.indrelid and a.attnum = cols.attnum
+              where cols.attnum > 0
+            ) as columns,
+            (
+              select coalesce(string_agg(opc.opcname, ',' order by cols.ord), '')
+              from unnest(i.indclass) with ordinality as cols(opcoid, ord)
+              join pg_opclass opc on opc.oid = cols.opcoid
+            ) as opc,
+            (
+              select coalesce(string_agg(
+                case when opc.opcdefault then '' else opc.opcname end,
+                ',' order by key.ord
+              ), '')
+              from unnest(i.indkey) with ordinality as key(attnum, ord)
+              join unnest(i.indclass) with ordinality as class(opcoid, ord) on class.ord = key.ord
+              join pg_opclass opc on opc.oid = class.opcoid
+              where key.attnum > 0
+            ) as opc_custom
+           from pg_index i
+           join pg_class idx on idx.oid = i.indexrelid
+           join pg_am am on am.oid = idx.relam
+           where i.indrelid = $1::regclass and idx.relname = $2`
+        : `select pg_get_expr(i.indexprs, i.indrelid) as expression,
+            coalesce(pg_get_expr(i.indpred, i.indrelid), '') as predicate,
+            (
+              select coalesce(string_agg(a.attname, ',' order by cols.ord), '')
+              from unnest(i.indkey) with ordinality as cols(attnum, ord)
+              join pg_attribute a on a.attrelid = i.indrelid and a.attnum = cols.attnum
+              where cols.attnum > 0
+            ) as columns
+           from pg_index i
+           join pg_class idx on idx.oid = i.indexrelid
+           where i.indrelid = $1::regclass and idx.relname = $2`,
       [`pg_temp.${table}`, index],
     );
     const row = rows[0] ?? {};
+    const keyColumns = list(text(row, "columns"));
     return {
-      expression: text(row, "expression"),
-      columns: list(text(row, "columns")),
+      expression: using ? indexExpression(row, keyColumns) : text(row, "expression"),
+      columns: keyColumns,
       predicate: text(row, "predicate"),
     };
   } catch (error) {

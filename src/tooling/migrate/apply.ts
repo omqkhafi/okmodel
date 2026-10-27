@@ -28,8 +28,12 @@ import {
   statementOutsideTransaction,
   type BackfillBatch,
 } from "./runner.js";
+import { assertSupported } from "../capabilities/check.js";
+import { POSTGRES_FEATURES } from "../capabilities/postgres.js";
+import { featuresUsed } from "../capabilities/used.js";
 import { assertExtensionsAvailable, extensionSchemaPath } from "./extensions.js";
 import { assertUuidV7Available } from "./engine.js";
+import { assertSchemaMajor } from "./server-requirements.js";
 import { assertSnapshots } from "./export.js";
 import { asProject, projectPath, type ProjectContext } from "./paths.js";
 import { loadBuiltSchema, loadConfig, projectHead } from "./project.js";
@@ -489,7 +493,11 @@ async function runApply(
       return undefined;
     throw error;
   });
-  if (built !== undefined) assertSnapshots(cwd, config, built.catalog);
+  if (built !== undefined) {
+    assertSnapshots(cwd, config, built.catalog);
+    assertSupported(featuresUsed(built.catalog), POSTGRES_FEATURES, "postgres");
+    await assertSchemaMajor(target.url, built);
+  }
   const progress: string[] = [];
   const externalConfigured = (config.external ?? []).length > 0;
   const report = await applyTarget({

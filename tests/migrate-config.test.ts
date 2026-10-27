@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { OkmError } from "../src/contracts/error.js";
+import { errorBody } from "../src/tooling/errors/body.js";
 import { run } from "../src/tooling/migrate/commands.js";
 import { status } from "../src/tooling/migrate/api.js";
 import { repoRoot } from "../scripts/root.js";
@@ -39,10 +40,11 @@ describe("--config", () => {
     const cwd = mkdtempSync(join(tmpdir(), "okm-missing-"));
     try {
       const error = await rejected(["build"], cwd);
-      expect(error.code).toBe("invalid");
+      expect(error.code).toBe("OKM1895");
       expect(error.message).toContain("okmodel.config.ts");
       expect(error.message).not.toContain("okm.config.ts");
       expect(error.fix?.summary).toContain("--config");
+      expect(errorBody(error).docs).toContain("OKM1895");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -52,8 +54,10 @@ describe("--config", () => {
     const cwd = mkdtempSync(join(tmpdir(), "okm-missing-named-"));
     try {
       const error = await rejected(["--config", "nope.config.ts", "build"], cwd);
+      expect(error.code).toBe("OKM1895");
       expect(error.message).toContain("nope.config.ts");
       expect(error.message).not.toContain("okmodel.config.ts");
+      expect(errorBody(error).docs).toContain("OKM1895");
       const programmatic = await status({ cwd, config: "nope.config.ts" }).then(
         () => undefined,
         (caught: unknown) => caught,
