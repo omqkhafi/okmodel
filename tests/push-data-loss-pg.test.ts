@@ -2,8 +2,9 @@
  * `okm push` refuses a plan that would drop rows.
  *
  * The guard is the push transaction, so these cases go through `run()` once.
- * An empty table, a rename, and an added object are applied. OKM1897 stays
- * the code when `.okm/pull.json` still lists the drop.
+ * An empty table, a rename, an added object, and a dropped constraint are
+ * applied. A column that carried a unique constraint is still refused.
+ * OKM1897 stays the code when `.okm/pull.json` still lists the drop.
  */
 
 import { expect } from "bun:test";
@@ -28,15 +29,7 @@ import { run } from "../src/tooling/migrate/commands.js";
 const gate = await loadPostgresGate();
 const root = repoRoot();
 
-const LOSS_LABELS = [
-  "notes.extra",
-  "acct.id",
-  "tiny.id",
-  "acct.acct_pkey",
-  "emails.emails_email_key",
-  "tiny.tiny_pkey",
-  "shop",
-] as const;
+const LOSS_LABELS = ["notes.extra", "acct.id", "tiny.id", "shop"] as const;
 
 postgresTest(
   gate,
@@ -150,7 +143,7 @@ postgresTest(
       useSourceImports(join(cwd, "db"));
       const refused = await refusal(cwd, ["push", "--target", "default"]);
       expect(refused.code).toBe("OKM1898");
-      expect(lossLabels(refused.message)).toEqual(["o.id", "o.o_pkey"]);
+      expect(lossLabels(refused.message)).toEqual(["o.id"]);
       expect(await textValue(main.url, "select v from o")).toBe("keep");
       expect(await columnNames(main.url, "o")).toEqual(["id", "v"]);
     } finally {
@@ -253,6 +246,58 @@ postgresTest(
   },
   120_000,
 );
+
+postgresTest(
+  gate,
+  "a unique constraint with rows drops without the flag and its column still refuses",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = mkdtempSync(join(tmpdir(), "okm-loss-unique-"));
+    try {
+      writeDatabase(cwd, database.url);
+      writeFileSync(join(cwd, "schema.ts"), emailsSchema(true));
+      await seed(
+        database.url,
+        `create table emails (id int primary key, email text unique);
+         insert into emails (id, email) values (1, 'a@b.c');`,
+      );
+      const pushed = await cli(cwd, ["push"]);
+      expect(pushed).not.toContain("OKM1898");
+      expect(pushed).toContain("applied push-1");
+      expect(await constraintNames(database.url, "emails")).not.toContain("emails_email_key");
+      expect(await columnNames(database.url, "emails")).toEqual(["id", "email"]);
+      expect(await textValue(database.url, "select email from emails")).toBe("a@b.c");
+      writeFileSync(join(cwd, "schema-next.ts"), emailsSchema(false));
+      writeDatabase(cwd, database.url, "./schema-next.ts", "okmodel.next.ts");
+      const refused = await refusal(cwd, ["push", "--config", "okmodel.next.ts"]);
+      expect(refused.code).toBe("OKM1898");
+      expect(lossLabels(refused.message)).toEqual(["emails.email"]);
+      expect(refused.message).toContain("--allow-data-loss");
+      expect(await columnNames(database.url, "emails")).toEqual(["id", "email"]);
+      expect(await textValue(database.url, "select email from emails")).toBe("a@b.c");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  120_000,
+);
+
+function emailsSchema(keepEmail: boolean): string {
+  const pg = JSON.stringify(join(root, "src/dialects/pg/index.ts"));
+  const columns = keepEmail
+    ? "id: t.integer().primaryKey(), email: t.text().nullable()"
+    : "id: t.integer().primaryKey()";
+  return [
+    `import { schema, table, t } from ${pg};`,
+    "export const app = schema({",
+    "  tables: [",
+    `    table("emails", { ${columns} }),`,
+    "  ],",
+    "});",
+    "",
+  ].join("\n");
+}
 
 function expectLabels(): string[] {
   return [...LOSS_LABELS];

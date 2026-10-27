@@ -86,7 +86,7 @@ Every command parses the flags in this table. An unknown flag is a usage error, 
 | `--target <name>`, `-t <name>` | `check`, `raw sync`, `migrate plan`, `migrate apply`, `migrate status`, `migrate resolve`, `migrate check`, `migrate baseline`, `push`, `pull`, `seed`, `protect add`, `protect remove`, `ext`, and `doctor`. Who requires it is [Database](/docs/define/config/database). |
 | `--allow-protected` | `migrate apply`, `migrate resolve`, `migrate baseline`, `push`, and `seed`. One invocation. Blocked work is [Protection](/docs/define/config/database#protection). `migrate check` ignores the flag. |
 | `--allow-pooler` | `migrate apply`, `migrate resolve`, `migrate baseline`, `push`, `seed`, `migrate check`, `raw sync`, and `check` when it compares a database. On `doctor --production` it marks a pooler URL as a fail instead of a warning, and changes no connection. Same opt-in as [allowPooler](/docs/define/config#pooler). Either one is enough. |
-| `--allow-data-loss` | `push`. Applies a plan that drops a column, a primary key, a unique constraint, or a table that still has a row. One invocation. No short form. Not read from the environment. |
+| `--allow-data-loss` | `push`. Applies a plan that drops columns and tables that hold rows. One invocation. No short form. Not read from the environment. |
 | `--lock-timeout <milliseconds>` | `migrate apply` and `raw sync`. Overrides [timeouts.lock](/docs/define/config#timeouts). `0` disables it. |
 | `--statement-timeout <milliseconds>` | `migrate apply` and `raw sync`. Overrides [timeouts.statement](/docs/define/config#timeouts). |
 | `--check` | `raw sync`. Writes nothing and exits 1 when the lock or the generated types would change. |
@@ -422,7 +422,7 @@ bunx okm migrate check --provision
 
 Push runs no migration lint, with one exception. A plan that would weaken row-level security (OKM1550: disable or stop forcing it, drop or widen a policy, grant `BYPASSRLS`, or change the owner of a tenant table) is refused before any statement. The refusal is an OKM1510 error that lists the OKM1550 findings. Run `okm generate`, review the migration, then `okm migrate apply` it with `-- okm-allow OKM1550: <reason>` on the step.
 
-A plan that drops a column, a primary key, a unique constraint, or a table is OKM1898 when that table has a row. The check is `select 1 from <table> limit 1` inside the push transaction, before any statement. The refusal names every object and `--allow-data-loss`. That flag applies the plan and prints `dropped <object>` for each one. An empty table, a rename, and an added object are applied. A drop that `.okm/pull.json` already lists stays OKM1897. A reserved column or index name that the record does not list is OKM1122, the same error `okm check` reports.
+A plan that drops columns and tables that hold rows is OKM1898. The check is `select 1 from <table> limit 1` inside the push transaction, before any statement. The refusal names every object and `--allow-data-loss`. That flag applies the plan and prints `dropped <object>` for each one. An empty table, a rename, an added object, and a dropped constraint are applied. A drop that `.okm/pull.json` already lists stays OKM1897. A reserved column or index name that the record does not list is OKM1122, the same error `okm check` reports.
 
 A protected target is OKM1850 until `--allow-protected`. Lock and statement timeouts stay 5000 and 30000 milliseconds. The config and the flags are not applied. A pooler host is refused until [allowPooler](/docs/define/config#pooler) or `--allow-pooler`.
 

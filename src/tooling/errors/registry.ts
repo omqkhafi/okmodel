@@ -1122,9 +1122,8 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   {
     code: "OKM1898",
     title: "Data loss",
-    summary:
-      "okm push would drop a column, a primary key, a unique constraint, or a table that still has a row.",
-    fix: "Keep the column, key, or table, or pass --allow-data-loss when those rows can go.",
+    summary: "okm push would drop columns and tables that hold rows.",
+    fix: "Keep the column or table, or pass --allow-data-loss when those rows can go.",
     since: "0.10",
   },
   {

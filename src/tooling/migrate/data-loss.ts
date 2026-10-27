@@ -1,11 +1,12 @@
 /**
- * Refuses an `okm push` plan that would drop data.
+ * Refuses an `okm push` plan that would drop rows.
  *
- * Data loss is a dropped column, a dropped primary key or unique constraint,
- * or a dropped table, when that table has a row. The row check is
- * `select 1 from <table> limit 1` inside the push transaction, before any
- * statement of the plan. A rename, an added object, and an empty table are
- * not data loss. Objects `.okm/pull.json` already names stay OKM1897.
+ * Data loss is a dropped column or a dropped table when that table has a
+ * row. A dropped primary-key column or unique column is that column drop.
+ * The row check is `select 1 from <table> limit 1` inside the push
+ * transaction, before any statement of the plan. A rename, an added object,
+ * and an empty table are applied. Objects `.okm/pull.json` already names
+ * stay OKM1897.
  */
 
 import type { Catalog, CatalogObject } from "../../contracts/catalog/types.js";
@@ -20,10 +21,9 @@ export type DataLossObject = {
 };
 
 /**
- * Drops in `steps` that lose data when the table has a row.
+ * Drops in `steps` that lose rows when the table has a row.
  *
- * A check, a foreign key, an index, and a sequence are not in the list.
- * Order follows the live catalog.
+ * Only `drop-column` and `drop-table` qualify. Order follows the live catalog.
  *
  * @param steps - Planned statements
  * @param live - Introspected catalog the plan was built from
@@ -37,13 +37,7 @@ export function dataLossObjects(
 ): readonly DataLossObject[] {
   const sqls = new Set<string>();
   for (const step of steps) {
-    if (
-      step.kind === "drop-column" ||
-      step.kind === "drop-constraint" ||
-      step.kind === "drop-table"
-    ) {
-      sqls.add(step.sql);
-    }
+    if (step.kind === "drop-column" || step.kind === "drop-table") sqls.add(step.sql);
   }
   if (sqls.size === 0) return [];
   const found: DataLossObject[] = [];
@@ -130,8 +124,7 @@ export function refuseDataLoss(labels: readonly string[]): void {
     `okm push would drop ${labels.join(", ")}. Pass --allow-data-loss to apply that plan.`,
     {
       fix: {
-        summary:
-          "Keep the column, key, or table, or pass --allow-data-loss when those rows can go.",
+        summary: "Keep the column or table, or pass --allow-data-loss when those rows can go.",
       },
     },
   );
@@ -142,13 +135,7 @@ function lossOf(
   schema: string,
   sqls: ReadonlySet<string>,
 ): DataLossObject | undefined {
-  if (object.kind !== "table" && object.kind !== "column" && object.kind !== "constraint") {
-    return undefined;
-  }
-  if (object.kind === "constraint") {
-    const kind = object.definition.constraintKind;
-    if (kind !== "primaryKey" && kind !== "unique") return undefined;
-  }
+  if (object.kind !== "table" && object.kind !== "column") return undefined;
   const sql = dropObjectSql(object, schema);
   if (sql === undefined || !sqls.has(sql)) return undefined;
   if (object.kind === "table") {

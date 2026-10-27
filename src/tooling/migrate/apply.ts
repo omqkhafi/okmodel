@@ -601,7 +601,7 @@ type PushRequest = {
   readonly backfillStatementTimeoutMs?: number;
   readonly batchSize?: number;
   readonly unpulled: readonly UnpulledObject[];
-  /** When true, a drop of a populated column, key, or table is applied. */
+  /** When true, a drop of a populated column or table is applied. */
   readonly allowDataLoss?: boolean;
 };
 

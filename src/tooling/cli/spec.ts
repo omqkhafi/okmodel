@@ -106,7 +106,7 @@ const allowPooler: FlagSpec = {
 const allowDataLoss: FlagSpec = {
   name: "allow-data-loss",
   type: "boolean",
-  hint: "Drop a column, primary key, unique constraint, or table that still has a row. This invocation only. No short form.",
+  hint: "Drop columns and tables that hold rows. This invocation only. No short form.",
 };
 
 const replace: FlagSpec = {

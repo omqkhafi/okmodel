@@ -1,7 +1,8 @@
 /**
  * Data-loss labels follow the live catalog.
  *
- * A check is not a label. The row probe is one statement per table.
+ * A check, a primary key, and a unique constraint are not labels.
+ * The row probe is one statement per table.
  */
 
 import { expect, test } from "bun:test";
@@ -23,12 +24,10 @@ import {
 const provenance: Provenance = { origin: "file", name: "loss" };
 const namespace = staticNamespace("public");
 
-test("labels are columns, primary keys, unique constraints, and tables", () => {
+test("labels are columns and tables", () => {
   const live = lossCatalog();
   expect(dataLossObjects(dropSteps(live), live, "public").map((item) => item.label)).toEqual([
     "notes.extra",
-    "notes.notes_email_key",
-    "notes.notes_pkey",
     "shop",
   ]);
 });
@@ -61,10 +60,10 @@ test("the row probe is one select per table and names only populated tables", as
   const error = caught as OkmError;
   expect(error.code).toBe("OKM1898");
   expect(error.message).toBe(
-    "okm push would drop notes.extra, notes.notes_email_key, notes.notes_pkey. Pass --allow-data-loss to apply that plan.",
+    "okm push would drop notes.extra. Pass --allow-data-loss to apply that plan.",
   );
   expect(error.fix?.summary).toBe(
-    "Keep the column, key, or table, or pass --allow-data-loss when those rows can go.",
+    "Keep the column or table, or pass --allow-data-loss when those rows can go.",
   );
   expect(lossesIn([{ sql: "absent" }], losses)).toEqual([]);
   expect(() => {
