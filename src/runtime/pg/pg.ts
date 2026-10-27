@@ -8,7 +8,7 @@
 
 import type { DriverPool } from "../../contracts/driver.js";
 import type { QuerySchema } from "../../dialects/pg/model.js";
-import { open, type NodePostgresConfig } from "../../adapters/pg/nodepostgres.js";
+import { markClientPool, open, type NodePostgresConfig } from "../../adapters/pg/nodepostgres.js";
 import { createClient } from "../client.js";
 import type { RoutedClient, TopologyInput, TopologyOptions } from "../topology.js";
 import type { SessionContext } from "../session/index.js";
@@ -68,7 +68,13 @@ export function connect<
   options: NodePostgresConnectOptions<S, C>,
 ): Connected<S, C> | Promise<RoutedClient<S, C>> {
   if (typeof target === "object" && !isPool(target)) {
-    return import("../topology.js").then((mod) => mod.default(target, options, open as never));
+    return import("../topology.js").then((mod) =>
+      mod.default(target, options, ((config: NodePostgresConfig) => {
+        const pool = open(config);
+        markClientPool(pool);
+        return pool;
+      }) as never),
+    );
   }
   const owned = !isPool(target);
   const pool = isPool(target)
@@ -81,6 +87,7 @@ export function connect<
         ...(options.searchPath !== undefined ? { searchPath: options.searchPath } : {}),
         ...(options.ssl !== undefined ? { ssl: options.ssl } : {}),
       });
+  if (!isPool(target)) markClientPool(pool);
   return createClient(options.schema, pool, options, owned);
 }
 

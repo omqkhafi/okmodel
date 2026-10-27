@@ -12,8 +12,16 @@ import type { DriverConnection, WireValue } from "../../contracts/driver.js";
 import { DriverError } from "../error.js";
 import { rejectClosed } from "../failure.js";
 import { runCall, type Watch } from "./call.js";
+import { retryableRead } from "./retryable-read.js";
 import { noTimeout } from "./no-inflight-timeout.js";
-import { bunWrapperDead, releaseReserved, reserve, send, type HeldPool } from "./bunsql.js";
+import {
+  bunWrapperDead,
+  isBunClosedMessage,
+  releaseReserved,
+  reserve,
+  send,
+  type HeldPool,
+} from "./bunsql.js";
 import { refuseWhenLost, resetSession, type Lost } from "./reserved.js";
 import { cursorStream } from "./cursor.js";
 import { WireSession } from "./session.js";
@@ -60,7 +68,7 @@ export async function recover<T>(
   if (!lostQuery(error)) throw error;
   await flushClosed(sql, replaceDead);
   const alreadyDead = closedDuring || socketClosed(error);
-  if ((!clientRead && !alreadyDead) || depth !== 0 || !readStatement(text)) throw error;
+  if ((!clientRead && !alreadyDead) || depth !== 0 || !retryableRead(text)) throw error;
   try {
     return await again();
   } catch (next) {
@@ -79,31 +87,12 @@ export function drainClosed(sql: SQL, replaceDead?: (dead: SQL) => SQL | undefin
   return flushClosed(sql, replaceDead).then(() => undefined);
 }
 
-/**
- * A read, under the same classification the topology uses for its one retry.
- *
- * Transaction control, writes, and locks are not retried.
- *
- * @param text - Statement text
- * @returns `true` when running the statement again cannot repeat a write
- */
-function readStatement(text: string): boolean {
-  const head = text.trimStart().toLowerCase().replace(/\s+/g, " ");
-  if (head.length === 0 || head.includes("pg_advisory")) return false;
-  if (/\sfor (?:no key update|key share|update|share)\b/.test(head)) return false;
-  return !/^(?:insert|update|delete|refresh|with|create|alter|drop|truncate|grant|revoke|comment|vacuum|analyze|reindex|copy|begin|start|commit|rollback|savepoint|release|set|reset)\b/.test(
-    head,
-  );
-}
-
 function lostQuery(error: unknown): boolean {
   return isConnectionFailure(error) || socketClosed(error);
 }
 
 function socketClosed(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  if (bunClosed(error.message)) return true;
-  return error.cause instanceof Error && bunClosed(error.cause.message);
+  return error instanceof Error && bunClosed(error);
 }
 
 /**
@@ -157,14 +146,27 @@ export async function checkout(held: HeldPool): Promise<DriverConnection & { evi
   const guard = <T>(run: () => Promise<T>): Promise<T> =>
     refuseWhenLost(lost, () =>
       run().catch((error: unknown) => {
+        // A commit whose result never arrived is already `outcome_unknown`.
+        // Its cause is the closed socket. Restamping that as 08006 would
+        // report `unavailable` and drop the batch index (the cut-commit case).
+        if (error instanceof DriverError && error.kind !== undefined) {
+          if (error.kind === "outcome_unknown" || bunClosed(error)) lost.on = true;
+          throw error;
+        }
         // Bun.sql sends no code for a handle that is already gone. These two
         // texts are the whole signal. The stamp is a SQLSTATE, which is what
         // the classifier reads.
-        if (error instanceof Error && bunClosed(error.message)) {
+        if (error instanceof Error && bunClosed(error)) {
           // The wrapper is gone. Leaving the handle unmarked put it back in
           // the pool, and the next `begin` failed the same way (#433).
           lost.on = true;
-          throw new DriverError(error.message, { cause: error, sqlstate: "08006" });
+          if (error instanceof DriverError && error.sqlstate === "08006") throw error;
+          const message = isBunClosedMessage(error.message)
+            ? error.message
+            : error.cause instanceof Error && isBunClosedMessage(error.cause.message)
+              ? error.cause.message
+              : error.message;
+          throw new DriverError(message, { cause: error, sqlstate: "08006" });
         }
         throw error;
       }),
@@ -219,11 +221,9 @@ export async function checkout(held: HeldPool): Promise<DriverConnection & { evi
         if (lost.on) {
           // The slot has to be free before the pool can open a new connection.
           // Releasing a closed handle puts it back once; flush spends that failure.
-          try {
-            reserved.release();
-          } catch {
-            // Bun already dropped the handle.
-          }
+          // `release()` can reject asynchronously. A discarded rejection is not
+          // the caller's error, and it must not escape the process.
+          dropReserved(reserved);
           // A pool probe while another checkout holds a session can land on that
           // backend. Drain only when we are the last reservation.
           if (counters.reserved === 0) await flushClosed(held.sql, held.replaceDead);
@@ -232,11 +232,7 @@ export async function checkout(held: HeldPool): Promise<DriverConnection & { evi
             await releaseReserved(reserved);
           } catch {
             // Release itself failed: spend the closed socket so the pool can open another.
-            try {
-              reserved.release();
-            } catch {
-              // Bun already dropped the handle.
-            }
+            dropReserved(reserved);
             if (counters.reserved === 0) await flushClosed(held.sql, held.replaceDead);
           }
         }
@@ -251,6 +247,22 @@ export async function checkout(held: HeldPool): Promise<DriverConnection & { evi
  * @param reserved - The handle about to be reused
  * @returns `true` when the handle reports itself closed
  */
+/**
+ * Returns a closed handle and discards the rejection.
+ *
+ * `release()` may throw, or reject later. Neither is the caller's error.
+ *
+ * @param reserved - The handle Bun.sql should drop
+ */
+function dropReserved(reserved: ReservedSQL): void {
+  try {
+    const done: unknown = reserved.release();
+    if (done instanceof Promise) void done.catch(() => undefined);
+  } catch {
+    // Bun already dropped the handle.
+  }
+}
+
 function reportsClosed(reserved: ReservedSQL): boolean {
   return Reflect.get(reserved, "closed") === true;
 }
@@ -284,10 +296,9 @@ async function flushClosed(
   return false;
 }
 
-function bunClosed(message: string): boolean {
-  return (
-    message === "Connection closed" || message === "connection must be a PostgresSQLConnection"
-  );
+function bunClosed(error: Error): boolean {
+  if (isBunClosedMessage(error.message)) return true;
+  return error.cause instanceof Error && isBunClosedMessage(error.cause.message);
 }
 
 async function reset(session: WireSession, sql: SQL): Promise<void> {

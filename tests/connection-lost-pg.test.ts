@@ -133,6 +133,34 @@ for (const driver of ["postgresjs", "pg", "bun"] as const) {
 
 postgresTest(
   gate,
+  "pg: a read does not reuse a killed idle client",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const admin = openPostgres(database.url);
+    try {
+      await admin.unsafe("create table notes (id int primary key, title text not null)");
+      const db = connectPg(database.url, { schema: app, max: 1 });
+      try {
+        await db.notes.find({ limit: 1 });
+        for (let i = 0; i < 25; i += 1) {
+          await admin.unsafe(
+            `select pg_terminate_backend(pid) from pg_stat_activity where application_name = 'okmodel' and datname = current_database() and pid <> pg_backend_pid()`,
+          );
+          await db.notes.find({ limit: 1 });
+        }
+      } finally {
+        await db.close();
+      }
+    } finally {
+      await admin.end({ timeout: 5 });
+      await database.close();
+    }
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
   "postgres.js does not swallow a TypeError from the application's setImmediate",
   async () => {
     const database = await createIsolatedDatabase();
