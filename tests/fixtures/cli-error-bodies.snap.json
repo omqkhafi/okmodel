@@ -1625,7 +1625,7 @@
     "code": "OKM2005",
     "kind": "invalid",
     "category": "input",
-    "summary": "A limit whose order does not end in a unique key can return a different row set each time.",
+    "summary": "A limit whose order does not end in a unique key can return a different row set each time. Under for(), the tenant key is ignored, so the rest of that unique counts.",
     "fix": "End orderBy with the primary key or a unique column.",
     "retryable": false,
     "safeAlternatives": [
