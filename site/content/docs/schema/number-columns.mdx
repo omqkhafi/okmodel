@@ -1,0 +1,215 @@
+---
+title: "Number columns"
+description: "Integers, numbers, and floats."
+---
+
+A number column is an integer, an exact numeric, or a float.
+
+## Integers
+
+The value is a whole number inside that range.
+
+### Smallint
+
+`t.smallint()` is `smallint`. The range is -32768 to 32767. The TypeScript value is a number. Storage is 2 bytes.
+
+```ts title="smallint.ts"
+import { table, t } from "okmodel/pg";
+
+export const counts = table("counts", {
+  id: t.identity(),
+  flag: t.smallint(), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1210">
+A value that is not an integer in that range is refused when it is encoded.
+</Callout>
+
+### Integer
+
+`t.integer()` is `integer`. The range is -2147483648 to 2147483647. The TypeScript value is a number. Storage is 4 bytes. This is the usual count.
+
+```ts title="integer.ts"
+import { table, t } from "okmodel/pg";
+
+export const counts = table("counts", {
+  id: t.identity(),
+  total: t.integer(), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1210">
+A value that is not an integer in that range is refused when it is encoded.
+</Callout>
+
+### Bigint
+
+`t.bigint()` is `bigint`. The range is -9223372036854775808 to 9223372036854775807. The TypeScript value is a decimal string, so a value past a safe integer stays exact. Storage is 8 bytes. A bare call stays a string. A schema [bigint codec](/docs/schema/codecs-and-row-types#codecs) other than `"string"` needs the same `as` on this column. A [safe integer](#safe-integer) or a [JavaScript bigint](#javascript-bigint) selects the other modes.
+
+```ts title="bigint.ts"
+import { table, t } from "okmodel/pg";
+
+export const counts = table("counts", {
+  id: t.identity(),
+  sequence: t.bigint(), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1210">
+A string that is not a canonical integer is refused when it is encoded. The spelling has no leading zeros, for example `0` or `-12`.
+</Callout>
+
+### Safe integer
+
+`{ as: "number" }` on `t.bigint()` or `t.identity()` makes the TypeScript value a number. It accepts a safe integer only.
+
+```ts title="safe-integer.ts"
+import { table, t } from "okmodel/pg";
+
+export const counts = table("counts", {
+  id: t.identity(),
+  sequence: t.bigint({ as: "number" }), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1210">
+A value outside the safe integer range is refused when it is encoded.
+</Callout>
+
+### JavaScript bigint
+
+`{ as: "bigint" }` on `t.bigint()` or `t.identity()` makes the TypeScript value a JavaScript bigint.
+
+```ts title="javascript-bigint.ts"
+import { table, t } from "okmodel/pg";
+
+export const counts = table("counts", {
+  id: t.identity(),
+  sequence: t.bigint({ as: "bigint" }), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1060">
+Any other `as` on `t.bigint()` or `t.identity()` is refused.
+</Callout>
+
+### Identity
+
+`t.identity()` is `bigint` `GENERATED ALWAYS AS IDENTITY` and a primary key. Insert and update omit it. The range and the `as` modes match [bigint](#bigint). An integer key is `t.integerIdentity()`.
+
+```ts title="identity.ts"
+import { table, t } from "okmodel/pg";
+
+export const counts = table("counts", {
+  id: t.identity(), // [!code focus]
+});
+```
+
+## Numbers
+
+`t.numeric()` is exact. Money, rates, and quantities use it. Postgres `decimal` is this same type. The size is two bytes for each group of four decimal digits, plus 3 to 8 bytes. Leading and trailing zeros are not stored. A bare call stays a string. A schema [numeric codec](/docs/schema/codecs-and-row-types#codecs) of `"number"` needs `{ as: "number" }` on this column.
+
+### Unconstrained
+
+`t.numeric()` is `numeric`. The TypeScript value is a string. Omit precision and scale for an unconstrained numeric. The string keeps every digit.
+
+```ts title="unconstrained.ts"
+import { table, t } from "okmodel/pg";
+
+export const payments = table("payments", {
+  id: t.identity(),
+  amount: t.numeric(), // [!code focus]
+});
+```
+
+### Precision
+
+`t.numeric(precision)` is `numeric(precision)`. Precision is an integer from 1 to 1000.
+
+```ts title="precision.ts"
+import { table, t } from "okmodel/pg";
+
+export const payments = table("payments", {
+  id: t.identity(),
+  amount: t.numeric(12), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1060">
+A precision outside 1 to 1000 is refused.
+</Callout>
+
+### Scale
+
+`t.numeric(precision, scale)` is `numeric(precision, scale)`. Scale is an integer from 0 to that precision.
+
+```ts title="scale.ts"
+import { table, t } from "okmodel/pg";
+
+export const payments = table("payments", {
+  id: t.identity(),
+  amount: t.numeric(12, 2), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1060">
+A scale outside 0 to the precision is refused.
+</Callout>
+
+### Number
+
+`{ as: "number" }` makes the TypeScript value a `number`. The SQL type stays the same. It can lose digits past a JavaScript number. Any other `as` is refused.
+
+```ts title="number.ts"
+import { table, t } from "okmodel/pg";
+
+export const payments = table("payments", {
+  id: t.identity(),
+  amount: t.numeric(12, 2, { as: "number" }), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1060">
+`as` must be `"string"` or `"number"`.
+</Callout>
+
+## Floats
+
+`t.real()` and `t.double()` are binary floating point. A sum of them is not exact. An exact quantity uses [numeric](#numbers). Postgres `float` is this family.
+
+### Real
+
+`t.real()` is `real`, single precision, about 6 decimal digits. The TypeScript value is a number. Storage is 4 bytes.
+
+```ts title="real.ts"
+import { table, t } from "okmodel/pg";
+
+export const samples = table("samples", {
+  id: t.identity(),
+  reading: t.real(), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1210">
+Infinity and NaN are refused when the value is encoded.
+</Callout>
+
+### Double
+
+`t.double()` is `double precision`, about 15 decimal digits. The TypeScript value is a number. Storage is 8 bytes.
+
+```ts title="double.ts"
+import { table, t } from "okmodel/pg";
+
+export const samples = table("samples", {
+  id: t.identity(),
+  reading: t.double(), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1210">
+Infinity and NaN are refused when the value is encoded.
+</Callout>
+
+Next: [Columns](/docs/schema/columns).

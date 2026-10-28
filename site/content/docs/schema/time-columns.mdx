@@ -1,0 +1,123 @@
+---
+title: "Date and time columns"
+description: "Instants, dates, clock times, and spans."
+---
+
+A time column is an instant, a calendar value, or a span.
+
+## Time
+
+The value is a `Temporal` object. The schema [timestamps codec](/docs/schema/codecs-and-row-types#codecs) is `"temporal"`. [Fractional seconds](#fractional-seconds) apply to `timestamptz`, `timestamp`, `time`, and `timetz`.
+
+Bun and Node 26 provide a `Temporal` global. Node 22 and 24 need a polyfill assigned to `globalThis.Temporal` before these columns run. okmodel does not ship one. A missing global is OKM1210.
+
+```ts title="polyfill.ts"
+import { Temporal } from "temporal-polyfill";
+
+globalThis.Temporal = Temporal;
+```
+
+### Instant
+
+`t.timestamptz()` is `timestamptz`. The TypeScript value is `Temporal.Instant`. Postgres stores it in UTC. Storage is 8 bytes. A created time or an event uses it.
+
+```ts title="instant.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  publishedAt: t.timestamptz(), // [!code focus]
+});
+```
+
+### Timestamp
+
+`t.timestamp()` is `timestamp`. The TypeScript value is `Temporal.PlainDateTime`. It stores a civil date and time. Storage is 8 bytes.
+
+```ts title="timestamp.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  editedAt: t.timestamp(), // [!code focus]
+});
+```
+
+### Date
+
+`t.date()` is `date`. The TypeScript value is `Temporal.PlainDate`. It stores a calendar day. Storage is 4 bytes.
+
+```ts title="date.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  day: t.date(), // [!code focus]
+});
+```
+
+### Time of day
+
+`t.time()` is `time`. The TypeScript value is `Temporal.PlainTime`. It stores a clock time. The zone is its own column. Storage is 8 bytes.
+
+```ts title="time-of-day.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  opens: t.time(), // [!code focus]
+});
+```
+
+### Offset
+
+`t.timetz()` is `timetz`. The TypeScript value is `{ time, offset }`. `time` is a `Temporal.PlainTime`. `offset` is `+HH:MM` or `-HH:MM`. A daylight-saving change needs the zone in its own column. Storage is 12 bytes.
+
+```ts title="offset.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  shift: t.timetz(), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1210">
+An offset other than `±HH:MM` is refused when the value is encoded.
+</Callout>
+
+### Interval
+
+`t.interval()` is `interval`. The TypeScript value is `Temporal.Duration`. It stores a span. Storage is 16 bytes. `fields` is one of `year`, `month`, `day`, `hour`, `minute`, `second`, `year to month`, `day to hour`, `day to minute`, `day to second`, `hour to minute`, `hour to second`, `minute to second`.
+
+```ts title="interval.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  length: t.interval("day to second"), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1060">
+Any other `fields` value is refused.
+</Callout>
+
+### Fractional seconds
+
+`precision` is fractional seconds, an integer from 0 to 6. Omit it for full precision. It applies to `t.timestamptz()`, `t.timestamp()`, `t.time()`, and `t.timetz()`.
+
+```ts title="fractional-seconds.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  editedAt: t.timestamp(0), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1060">
+A precision outside 0 to 6 is refused.
+</Callout>
+
+Next: [Columns](/docs/schema/columns).

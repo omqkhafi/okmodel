@@ -1,0 +1,91 @@
+---
+title: "Binary, JSON and ID columns"
+description: "Boolean, bytes, JSON, UUID, and OKID."
+---
+
+These columns store a boolean, bytes, a document, or an id.
+
+## Boolean and binary
+
+| Builder | SQL | TypeScript | Bytes | Postgres |
+| --- | --- | --- | --- | --- |
+| `t.boolean()` | `boolean` | `boolean` | 1 | yes |
+| `t.bytea()` | `bytea` | `Uint8Array` | 1 or 4 + bytes | yes |
+
+`t.boolean()` is true or false. The wire text may be `true`, `false`, `t`, `f`, `1`, or `0`. `t.bytea()` is raw bytes. Up to 126 bytes, the header is 1 byte. A longer value uses a 4-byte header. The wire text is `\x` plus lowercase hex.
+
+```ts title="files.ts"
+import { table, t } from "okmodel/pg";
+
+export const files = table("files", {
+  id: t.identity(),
+  published: t.boolean().default(false), // [!code focus]
+  body: t.bytea(), // [!code focus]
+});
+```
+
+## JSON
+
+| Builder | SQL | TypeScript | Bytes | Postgres |
+| --- | --- | --- | --- | --- |
+| `t.json()` | `json` | the `T` you name, or `unknown` | 1 or 4 + text | yes |
+| `t.jsonb()` | `jsonb` | the `T` you name, or `unknown` | variable | yes |
+
+`T` is the shape you pass. The sample names it. The codec does not check it. `t.jsonb()` is the document you query: Postgres stores it in a binary form and can index it. `t.json()` stores the text, including key order and insignificant space. A bigint inside the value is written as a decimal string. `undefined` and a function are refused.
+
+```ts title="notes.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  meta: t.json<{ source: string }>(), // [!code focus]
+  doc: t.jsonb<{ tags: string[] }>(), // [!code focus]
+});
+```
+
+## UUID
+
+| Builder | SQL | TypeScript | Bytes | Postgres |
+| --- | --- | --- | --- | --- |
+| `t.uuid()` | `uuid` | `string` | 16 | yes |
+| `t.id()` | `uuid` | `string` | 16 | yes |
+
+`t.uuid()` has no default. The text is 8-4-4-4-12 hexadecimal digits, 128 bits. `t.id()` is a primary key. A bare `t.id()` is `uuid`, 16 bytes. The default is covered in [keys](/docs/schema/keys-and-identity#keys). An [OKID](#okid) default is `text`, not this row.
+
+```ts title="notes.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.id(), // [!code focus]
+  authorId: t.uuid(), // [!code focus]
+});
+```
+
+## OKID
+
+`okid` comes from `okmodel/ids`. It is not a Postgres type. `t.id({ default: okid() })` is a primary key of `text` with collation `C`. The client mints one id on insert. The catalog stores no default. Calling `okid()` returns the generator. It does not mint the id at definition time.
+
+A default body is 21 characters on a URL-safe alphabet, so the stored value is 22 bytes. A longer body, or a prefix, follows [text](/docs/schema/text-columns#text): 1 byte plus the string up to 126 bytes, then 4 bytes plus the string.
+
+| Call | Body | Bytes |
+| --- | --- | --- |
+| `okid()` | 21 characters | 22 |
+| `okid(length)` | `length` characters, from 8 to 128 | 1 + the string |
+| `okid({ sortable: true })` | 8 time characters, then random. Length is at least 16. | 1 + the string |
+| `okid({ prefix })` | The prefix, then the body. The prefix is at most 32 characters. | 1 + the string |
+
+`length` is the body. The prefix is extra. `sortable` keeps time order under collation `C`. `lowercase`, `uppercase`, `numbers`, and `symbols` default to included. `lookAlikes: false` drops characters that are easy to confuse.
+
+`schema({ defaults: { id: okid() } })` applies to every bare `t.id()`. A column option wins. See [id default](/docs/schema/keys-and-identity#id-default).
+
+```ts title="users.ts"
+import { okid } from "okmodel/ids";
+import { table, t } from "okmodel/pg";
+
+export const users = table("users", {
+  id: t.id({ default: okid({ prefix: "usr_", sortable: true }) }), // [!code focus]
+  email: t.text(),
+});
+```
+
+Next: [Columns](/docs/schema/columns).

@@ -74,6 +74,11 @@ test("pages sit flat under the capability groups", () => {
   expect(childUrls(schema)).toEqual([
     "/docs/schema/tables",
     "/docs/schema/columns",
+    "/docs/schema/text-columns",
+    "/docs/schema/number-columns",
+    "/docs/schema/time-columns",
+    "/docs/schema/binary-json-id-columns",
+    "/docs/schema/postgres-specific-columns",
     "/docs/schema/defaults",
     "/docs/schema/the-schema",
     "/docs/schema/keys-and-identity",

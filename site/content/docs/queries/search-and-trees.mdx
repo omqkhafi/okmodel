@@ -7,7 +7,7 @@ description: "Search, a tree, and a SQL fragment."
 
 ### Text search
 
-`find({ search })` and `count({ search })` match a [search column](/docs/schema/columns#search). A string is enough when the table has one. Rows come back closest first, then by primary key, unless you pass `orderBy`. `count` uses the same match and does not order.
+`find({ search })` and `count({ search })` match a [search column](/docs/schema/postgres-specific-columns#search). A string is enough when the table has one. Rows come back closest first, then by primary key, unless you pass `orderBy`. `count` uses the same match and does not order.
 
 | `match` | Query |
 | --- | --- |
