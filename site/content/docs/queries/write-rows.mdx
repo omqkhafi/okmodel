@@ -173,7 +173,7 @@ A text column is `inc adds to a number. title is a text column.`
 | `limit` without `lock: "skip"`, or `lock: "skip"` without `limit` | Refused. |
 | `orderBy` | Not accepted. |
 | `wait` on an update | Refused. |
-| `lock: "skip"` on a read | Refused. A read uses `lock: "update"` or `"share"` and `wait: "nowait"` or `"skip"` inside `tx()`. |
+| `lock: "skip"` on a read | Refused. A read uses `lock: "update"` or `"share"` and `wait: "nowait"` or `"skip"` inside [`tx()`](/docs/queries/transactions). |
 | a path-tenancy parent in the same statement | Refused. |
 
 ```ts title="claim.ts"

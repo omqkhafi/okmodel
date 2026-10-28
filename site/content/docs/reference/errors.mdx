@@ -156,7 +156,7 @@ Four codes pass a kind other than that default.
 
 The adapter normalises the driver exception into `DriverError`. postgres.js and node-postgres put the SQLSTATE on `code`. Bun.sql puts `ERR_POSTGRES_SERVER_ERROR` on `code` and the SQLSTATE on `errno`. The copied fields are `sqlstate`, `constraint` (`constraint_name` or `constraint`), `table` (`table_name` or `table`), `column` (`column_name` or `column`), `detail`, and `batchIndex`.
 
-`cancelled()` is the caller's signal. `timedOut()` is a statement, transaction, or batch deadline. `outcomeUnknown()` is a commit whose result never arrived. Those three stay `DriverError` until the client maps them. `acquireTimeout()` is already `OkmError` `OKM1846`. A closed pool is a `DriverError` with SQLSTATE `08006`.
+`cancelled()` is the caller's signal. `timedOut()` is a statement, transaction, or batch deadline. `outcomeUnknown()` is a commit whose result never arrived. Those three stay `DriverError` until the client maps them. What `tx()` does with that outcome is [Transactions](/docs/queries/transactions#retry). `acquireTimeout()` is already `OkmError` `OKM1846`. A closed pool is a `DriverError` with SQLSTATE `08006`.
 
 The client maps that error. An `OkmError` passes through. A driver kind of `timeout`, `cancelled`, or `outcome_unknown` wins over the SQLSTATE. `57014` without one of those kinds is `timeout`, because `cancelled` comes only from the signal.
 

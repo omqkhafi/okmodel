@@ -148,7 +148,7 @@ export async function statuses(url: string) {
 | `timeout` | The time for the whole stream. On a driver that cannot cancel, the check is between batches. |
 | `signal` | Stops the stream. |
 
-`select`, `include`, a preset, and the archive set work as they do on `page()`. A row committed while the stream runs can show up, or not. `tx({ isolation: "repeatable read" })` is one snapshot of the primary, and that transaction holds the connection. On a client with replicas, the first batch chooses the endpoint and later batches stay there.
+`select`, `include`, a preset, and the archive set work as they do on `page()`. A row committed while the stream runs can show up, or not. The snapshot in the next example is a [transaction](/docs/queries/transactions#options). On a client with replicas, the first batch chooses the endpoint and later batches stay there.
 
 #### limit
 
@@ -173,7 +173,7 @@ export async function titles(url: string): Promise<string[]> {
 
 #### snapshot
 
-`.all(reason)` is the whole set. `tx({ isolation: "repeatable read" })` is one snapshot, and that transaction holds the connection.
+`.all(reason)` is the whole set. The call below is one snapshot. What that isolation does is [Transactions](/docs/queries/transactions#options).
 
 ```ts title="stream-all.ts"
 import { connect } from "okmodel/pg/postgresjs";

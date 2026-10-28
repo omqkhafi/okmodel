@@ -188,9 +188,9 @@ A call that sets `timeout` uses that number. A call that sets none takes `timeou
 
 #### transaction
 
-A `tx()` that sets `timeout` uses that number. A `tx()` that sets none takes `timeouts.transaction`. The deadline is set once, and the retries run inside it. The message is `The transaction timed out.`
+A `tx()` that sets `timeout` uses that number. A `tx()` that sets none takes `timeouts.transaction`. The deadline is set once, and the retries run inside it. The message is `The transaction timed out.` What those retries cover is [Transactions](/docs/queries/transactions#retry).
 
-A nested `tx()` accepts no options. The outer deadline still bounds it. Passing `timeout` there is OKM1121: `isolation, retry, timeout, and signal belong to the outermost tx(). A nested tx() is a savepoint on the same transaction.`
+The outer deadline still bounds a nested `tx()`. Options on that call are [Transactions](/docs/queries/transactions#nested).
 
 #### idle
 
@@ -213,5 +213,5 @@ The message is `timeout`. The kind is `invalid`. A call or a `batch()` whose tim
 </Callout>
 
 <Callout type="error" title="OKM1121">
-`tx()` requires `timeout` to be a number of milliseconds above 0. Otherwise the message is `timeout must be a number of milliseconds above 0.`
+`timeout`, when passed to `tx()`, must be a number of milliseconds above 0. The message is `timeout must be a number of milliseconds above 0.`
 </Callout>

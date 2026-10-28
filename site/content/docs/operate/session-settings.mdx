@@ -69,7 +69,7 @@ The names and the values are parameters. The third argument is always `true`: th
 | --- | --- |
 | A single write | A batch of the set statement and the write, in one transaction. |
 | A read | `BEGIN READ ONLY`, then the set statement, then the read. It follows the read's routing, so a replica sets it too. |
-| `tx()` | The set statement is first, before any savepoint. A nested `tx()` never sets again, and a rollback to a savepoint does not cancel it. |
+| `tx()` | The set statement is first, before any savepoint. A nested `tx()` never sets again, and a rollback to a savepoint does not cancel it. The call is [Transactions](/docs/queries/transactions). |
 | `batch()` | The set statement starts the batch. |
 | Neon over HTTP | The set statement is first in the same `transaction([...])` array. |
 

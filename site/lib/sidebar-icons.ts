@@ -8,6 +8,7 @@ import type { LoaderPlugin } from "fumadocs-core/source";
 import {
   Activity,
   ALargeSmall,
+  ArrowLeftRight,
   BadgeCheck,
   Binary,
   Blocks,
@@ -152,6 +153,7 @@ const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/docs/schema/tenancy": Building2,
   "/docs/queries/presets": Bookmark,
   "/docs/queries/search-and-trees": TextSearch,
+  "/docs/queries/transactions": ArrowLeftRight,
   "/docs/queries/shape-results": ChartColumn,
   "/docs/schema/required-rows": Rows3,
   "/docs/queries": Search,
