@@ -331,6 +331,8 @@ bunx okm migrate plan init
 
 A pending file is linted after `okm_history` is read and before any DDL. `lintFrom` is not read. An error finding is OKM1510. Transaction control is the finding OKM1551. Apply accepts that step when it carries `-- okm-allow OKM1551: reason`. An empty reason, or a code the statement did not trigger, is OKM1510. [migrate check](#migrate-check) still refuses the step.
 
+Apply and push refuse OKM1899 before any step when `okm_meta`, `okm_history`, `okm_backfill`, or `okm_steps` already exists in the catalog schema and is not that ledger. The relation is not an ordinary table, or a column the ledger writes is missing. The message names the schema and the table and says another table owns the name.
+
 The summary is `target <name>`, then `set role <role>` when apply issued `SET ROLE`, then `restamped <id>` for a history repair, then `applied <id>` for each file. Nothing applied is `nothing to apply`. A backfill batch is printed as it commits:
 
 ```text
@@ -422,7 +424,7 @@ bunx okm migrate check --provision
 
 Push runs no migration lint, with one exception. A plan that would weaken row-level security (OKM1550: disable or stop forcing it, drop or widen a policy, grant `BYPASSRLS`, or change the owner of a tenant table) is refused before any statement. The refusal is an OKM1510 error that lists the OKM1550 findings. Run `okm generate`, review the migration, then `okm migrate apply` it with `-- okm-allow OKM1550: <reason>` on the step.
 
-A plan that drops columns and tables that hold rows is OKM1898. The check is `select 1 from <table> limit 1` inside the push transaction, before any statement. The refusal names every object and `--allow-data-loss`. That flag applies the plan and prints `dropped <object>` for each one. An empty table, a rename, an added object, and a dropped constraint are applied. Dropping an empty column or table without the flag applies and prints nothing extra. A drop that `.okm/pull.json` already lists stays OKM1897. A reserved column or index name that the record does not list is OKM1122, the same error `okm check` reports.
+A plan that drops columns and tables that hold rows is OKM1898. The check is `select 1 from <table> limit 1` inside the push transaction, before any statement. The refusal names every object and `--allow-data-loss`. That flag applies the plan and prints `dropped <object>` for each one. An empty table, a rename, an added object, and a dropped constraint are applied. Dropping an empty column or table without the flag applies and prints nothing extra. A drop that `.okm/pull.json` already lists stays OKM1897. A reserved column or index name that the record does not list is OKM1122, the same error `okm check` reports. A ledger name that already belongs to another table is OKM1899, before any step. The message names the schema and the table.
 
 A protected target is OKM1850 until `--allow-protected`. Lock and statement timeouts stay 5000 and 30000 milliseconds. The config and the flags are not applied. A pooler host is refused until [allowPooler](/docs/define/config#pooler) or `--allow-pooler`.
 

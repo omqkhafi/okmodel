@@ -42,6 +42,7 @@ import { readReference, referenceInserts, type ReferenceTable } from "./referenc
 import { expandProvisioned, installSnapshot, provisionMark } from "./snapshot.js";
 import { planStatements, type PlanStep } from "./plan.js";
 import { assertNoDataLoss, dataLossObjects, lossesIn, type DataLossObject } from "./data-loss.js";
+import { assertLedgerTables } from "./ledger.js";
 import {
   readUnpulled,
   refuseUnpulledDrops,
@@ -317,7 +318,8 @@ export function applyUnits(
  * before its statement and deletes that row in the same transaction as its
  * history row. The next apply probes. When cleanup of an INVALID index
  * fails, the error names the index and `DROP INDEX CONCURRENTLY`. Any other
- * failure stops at that step.
+ * failure stops at that step. A ledger name that already belongs to another
+ * table is OKM1899 before any of that.
  *
  * @param request - Target, flags, and the migrations to consider
  * @returns The target and the migration ids that ran
@@ -358,6 +360,7 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
     await assertExtensionsAvailable(connection, request.migrations);
     await assertUuidV7Available(connection, request.migrations);
     await enterCatalogSchema(connection, request.schema ?? "public");
+    await assertLedgerTables(connection);
     const state = request.snapshot === undefined ? undefined : await targetState(connection);
     if (request.snapshot !== undefined && state !== undefined) {
       if (state.kind === "empty") {
@@ -620,6 +623,8 @@ type PushRequest = {
 /**
  * Plans from the connected catalog and applies or re-stamps under one lock.
  *
+ * A ledger name that already belongs to another table is OKM1899 before any step.
+ *
  * @param request - Target, schema catalog, and push options
  * @returns Apply report for {@link formatApplyText}
  */
@@ -661,6 +666,7 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
     if (extensionPath !== undefined) {
       await connection.execute(`set search_path to ${extensionPath}`);
     }
+    await assertLedgerTables(connection);
     await ensureMigrationTables((sql) => connection.execute(sql));
     const history = await readHistory(connection);
     const pushId = nextSequenceId("push", history.ids);

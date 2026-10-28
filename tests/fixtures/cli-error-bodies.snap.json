@@ -1860,6 +1860,15 @@
     "docs": "docs/errors/OKM1898.md"
   },
   {
+    "code": "OKM1899",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A migration ledger name already belongs to another table.",
+    "fix": "Rename that table, or drop it. okm keeps its migration ledger under this name.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1899.md"
+  },
+  {
     "code": "OKM2200",
     "kind": "invalid",
     "category": "input",
