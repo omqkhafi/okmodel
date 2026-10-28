@@ -1,0 +1,65 @@
+---
+title: Protected targets and roles
+description: A config flag, a fingerprint store, and grants an agent login cannot outrun.
+---
+
+Protection is the union of two records. Either one is enough. Grants are the boundary a determined agent cannot step over without a richer role. A session flag is not a privilege: the session can change it.
+
+## Two records
+
+Project config sets `protected: true` on a target. `--allow-protected` is that invocation only. It does not change the config, and nothing reads it from the environment. Which commands that flag lifts are on [Database](/docs/reference/config-database).
+
+The user store is `$XDG_CONFIG_HOME/okm/protected.json`, or `~/.config/okm/protected.json` when `XDG_CONFIG_HOME` is unset. On Windows the file is `%APPDATA%\okm\protected.json`. There is no environment variable that moves this file.
+
+[`okm protect add`](/docs/reference/cli#protect) records the selected target. `okm protect list` prints the stored fingerprints. `okm protect remove` deletes the selected target's fingerprint and requires a terminal. Without one it exits 4. Removing `protected: true` from the project config does not delete a stored fingerprint.
+
+The fingerprint is `hostDb`, the SHA-256 of lower-cased `host:port/database`. The user, the password, and the query string are not part of it. `identity` is null. This build does not read `pg_control_system()`. The store holds those hashes, not URLs. Command output does not print the URL.
+
+A state-changing command against a stored fingerprint exits 4 when the process has no terminal, including when the invocation passed `--allow-protected`. Project-config protection is unchanged: `--allow-protected` still lifts contract, push, seed, backfill, and history repair for that invocation. [`okm migrate check`](/docs/reference/cli#migrate-check) still refuses a protected target, and the flag does not lift it. `drop` and `rollback` are not commands. They stay policy refusals: there is no down migration.
+
+Protection covers the target. A destructive or unsafe migration step is covered by the migration file instead. The step runs only when a `-- okm-allow CODE: reason` line sits on it, and `okm check` lists those lines. Apply lints pending files before any statement, so the line is the acknowledgement and a protected target still needs a terminal on top of it. The lint codes are the [Errors](/docs/reference/errors) index.
+
+The refusal names the match: `project config`, `store fingerprint`, or `project config and store fingerprint`.
+
+A terminal is friction, not proof of a human. A program that can open a terminal, or that runs as the same OS user, can write the store, delete the file, or set `protected: false` in the project. No local scheme is unforgeable against an agent running as that user. The structural refusal stops accidents and naive injection. A database role that cannot run the statement stops a determined same-user agent. `connect()` does not read protection.
+
+## Least privilege for an agent
+
+An agent that can log in should not use the role that owns the schema. Privileges are grants.
+
+PostgreSQL 15, 16, 17, and 18 all provide `pg_read_all_data`. Use it for read-only inspection. Give `okm migrate apply` a different role that has `CREATE` on the schema. Do not set `default_transaction_read_only`. A session can run `SET default_transaction_read_only = off` and the grant is unchanged.
+
+### Read-only inspection
+
+`okm_agent_reader` can `SELECT` every table. It cannot create objects. Point the agent's login at a role that is a member of this one, and at nothing else.
+
+```sql title="reader.sql"
+CREATE ROLE okm_agent_reader NOLOGIN;
+GRANT pg_read_all_data TO okm_agent_reader;
+```
+
+### Migrator
+
+`okm_agent_migrator` is the role for `okm migrate apply`. `CREATE` on the schema lets it create objects there. It is not the reader. A human runs apply with a login that is a member of this role. The agent login is not.
+
+```sql title="migrator.sql"
+CREATE ROLE okm_agent_migrator NOLOGIN;
+GRANT CREATE ON SCHEMA public TO okm_agent_migrator;
+GRANT pg_read_all_data TO okm_agent_migrator;
+```
+
+Replace `public` with the schema `defineConfig` uses. The migrator must own that schema before it grants to other roles, or apply fails with [OKM1825](/docs/reference/errors#okm1825). When the plan also creates an application role, a superuser or a role with `CREATEROLE` still has to establish membership. An application login that is a superuser, the owner, or `BYPASSRLS` is [OKM1707](/docs/reference/errors#okm1707) under row-level security. Managed roles in the config are on [Roles](/docs/reference/config-roles).
+
+A role that lacks `CREATE` still cannot apply DDL when someone passes `--allow-protected`. Protection stops the accident. The grant stops the statement. The two are complements, and neither one is a session flag.
+
+## Check the login
+
+[`okm doctor --production`](/docs/reference/cli#doctor---production) reports what the role in the target URL can do. A superuser or `BYPASSRLS` login fails (OKM1707), and a login that owns the tables warns, because that is right for the migrator and wrong for the app role. With `roles` set in the config it also runs the role health check. Run it once per login: the migrator's URL warns about ownership by design, and the app's URL must not. The checklist is [Production checklist](/docs/operate/production-checklist).
+
+The package copy is [`docs/protection.md`](https://github.com/omqkhafi/okmodel/blob/main/docs/protection.md) and [`docs/roles.md`](https://github.com/omqkhafi/okmodel/blob/main/docs/roles.md) on main.
+
+| Next | You use it for |
+| --- | --- |
+| [Production checklist](/docs/operate/production-checklist) | `requireMeta`, the pooler probe, and the doctor sample. |
+| [protect](/docs/reference/cli#protect) | `add`, `list`, and `remove`. |
+| [Database](/docs/reference/config-database) | Which classes `--allow-protected` lifts. |

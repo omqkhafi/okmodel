@@ -1,0 +1,175 @@
+---
+title: Failures
+description: What a failed migration step leaves in okm_history and okm_steps, and how to resume.
+---
+
+`okm migrate apply` records a finished step in `okm_history` and an in-flight step in `okm_steps`. A step that can share a transaction rolls back with its history row. A step that committed outside that transaction is probed or left for a person. The command that records the person's decision is [migrate resolve](/docs/reference/cli#migrate-resolve). Status lines are [migrate status](/docs/reference/cli#migrate-status).
+
+## Two tables
+
+`okm_history` is the only record of a step that finished.
+
+| Column | |
+| --- | --- |
+| `migration_id` | The migration file. |
+| `step_index` | 0-based. |
+| `class` | `expand`, `contract`, or `unclassified`. |
+| `catalog_hash` | The catalog hash recorded for that step. |
+| `applied_at` | When the step was recorded. |
+
+`okm_steps` exists only while a step that already committed is still in flight. A step that rolls back with its transaction leaves no row here.
+
+| Column | |
+| --- | --- |
+| `migration_id`, `step_index` | The same pair as history. |
+| `kind` | The step kind, or `raw-sql`. |
+| `sql_hash` | SHA-256 of the statement text, LF line endings, trimmed. |
+| `state` | `started`, `failed`, or `retry`. |
+| `attempt` | Starts at 1. |
+| `started_at`, `finished_at` | `finished_at` is null until the step fails or is marked retry. |
+| `runner` | The host that started the attempt. |
+| `error_code`, `error_text` | `error_text` is at most 500 characters. |
+
+The primary key of both tables is `(migration_id, step_index)`.
+
+The step id is `migrationId:stepIndex`. `0002_add_orders:2` is step index 2 of that migration. `okm migrate status` prints that id and says which command to run. `failed at step N` in that line is 0-based, the same N as the id. Apply's own `Migration <id> failed at step N` is 1-based.
+
+Renaming `okm_steps` or `okm_history` in the schema is [OKM1899](/docs/reference/errors#okm1899). The name is the ledger.
+
+## Where the runner stops
+
+| What happened | What is recorded | What you do |
+| --- | --- | --- |
+| The statement was inside the migration transaction and it failed. | Nothing. The transaction rolls back, and so does the history row. | Fix the migration and run `okm migrate apply` again. |
+| The statement committed, and this kind has a built-in probe. | An `okm_steps` row. | Run `okm migrate apply` again. The probe decides. |
+| The statement committed, and the kind has no probe. | An `okm_steps` row. The next apply stops. | Finish the work, then [`okm migrate resolve`](/docs/reference/cli#migrate-resolve). |
+| The connection dropped after the server committed and before the client heard. | The same as a committed statement. | Probe if the kind has one. Otherwise resolve. |
+
+A built-in probe reads the catalog. It does not re-run the statement to find out.
+
+| Kind | What the probe reads |
+| --- | --- |
+| `create-index` with `CONCURRENTLY` | `pg_index.indisvalid` and `pg_stat_progress_create_index`. Valid is applied. In progress is unknown. Absent is not applied. |
+| `drop-index` with `CONCURRENTLY` | `pg_class`. Absent is applied. Still listed is not applied. |
+| `add-constraint` | `pg_constraint` and `convalidated`. Valid is applied. |
+| `validate-constraint` | `pg_constraint.convalidated`. |
+| `add-enum-value` | `pg_enum`. |
+
+Any other kind is unknown unless the step declares `-- probe:`.
+
+The SQL text is part of the decision for a concurrent index. A hash that does not match the row is [OKM1556](/docs/reference/errors#okm1556). Apply does not guess.
+
+An index build still running in another session is unknown. The message is `Index <name> is being built by another session. Wait for it to finish, then apply again.`
+
+## The step table
+
+The table is generated from `STEP_KINDS`, `postgresHasProbe`, and `unitMode`. The package file keeps it between markers. This page copies that table.
+
+| Kind | Transactional | Built-in probe | Resume | Code |
+| --- | --- | --- | --- | --- |
+| `create-table` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-table` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `add-column` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `add-column-required` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-column` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `set-column-type` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `set-not-null` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-not-null` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `set-default` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-default` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `add-identity` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-identity` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `set-identity-always` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `set-identity-by-default` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `add-constraint` | yes | yes | rolls back with the history row; a committed copy follows the probe | OKM1553 |
+| `validate-constraint` | yes | yes | rolls back with the history row; a committed copy follows the probe | OKM1553 |
+| `drop-constraint` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-not-null-check` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `rename-constraint` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `widen-check` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `narrow-check` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `create-index` | no when CONCURRENTLY | when CONCURRENTLY | a plain statement rolls back; CONCURRENTLY follows the probe, and partial drops the index and rebuilds | OKM1553, OKM1556 |
+| `drop-index` | no when CONCURRENTLY | when CONCURRENTLY | a plain statement rolls back; CONCURRENTLY follows the probe | OKM1553, OKM1556 |
+| `rename-index` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `create-sequence` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-sequence` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `create-enum` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `recreate-enum` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `add-enum-value` | no | yes | follows the probe: applied writes history, absent runs the statement, unknown stops | OKM1553, OKM1556 |
+| `rename-enum` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-enum` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `set-enum-column` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `create-domain` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-domain` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `add-domain-check` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `validate-domain-check` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-domain-check` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `rename-domain-check` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `create-extension` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-extension` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `update-extension` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `move-extension` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `create-function` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-function` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `replace-function` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `create-trigger` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-trigger` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `create-view` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-view` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `replace-view` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `create-matview` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-matview` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `refresh-matview` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `create-role` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `alter-role` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `grant` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `revoke` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `grant-default` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `revoke-default` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `rename-table` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `rename-column` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `rename-sequence` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `backfill-expand` | no | no | continues from the last key in okm_backfill; no okm_steps row | — |
+| `backfill-contract` | no | no | continues from the last key in okm_backfill; no okm_steps row | — |
+| `enable-rls` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `create-policy` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-policy` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `disable-rls` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `raw-sql` | yes, unless the statement cannot share a transaction | when CONCURRENTLY | rolls back when the statement can share a transaction; a concurrent index follows the probe; any other committed statement stops until a declared probe or a person marks retry | OKM1553, OKM1556, OKM1557 |
+
+
+`create-index` and `drop-index` are transactional when the statement is not `CONCURRENTLY`. `raw-sql` is transactional unless the statement cannot share a transaction. The resume cell is what the next apply does.
+
+## A declared probe
+
+A step with no built-in probe can name one in its header.
+
+```sql title="probe.sql"
+-- probe: SELECT to_regclass('public.orders') IS NOT NULL
+-- transactional: false
+CREATE TABLE public.orders (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY);
+```
+
+The probe is one read-only `SELECT` (or `WITH … SELECT`). It returns exactly one boolean. True means the step has already been applied. False means it has not. `NULL`, more than one row, a non-boolean, or an error is unknown, never applied. Apply runs it inside `begin read only` and rolls the transaction back. The text is not part of the statement hash.
+
+A built-in probe for the step's kind still wins. The declared line is not consulted.
+
+There is no cleanup for a declared probe. A raw step has to be atomic. If a crash can leave a partial result, the author repairs that through `okm migrate resolve` after looking at the database. `okm migrate resolve --applied` uses the declared probe, so that step no longer needs `--accept-unverified`. A probe that is not applied is still [OKM1554](/docs/reference/errors#okm1554).
+
+[OKM1557](/docs/reference/errors#okm1557) refuses a committed step that has no built-in probe and no `-- probe:`. [OKM1558](/docs/reference/errors#okm1558) refuses a probe that is empty, is not one read-only `SELECT`, has more than one statement, or sits on a step that stays inside a transaction. `-- okm-allow OKM1557: reason` records that a failure of that step needs a person. An empty reason does not silence the finding.
+
+## Resolve
+
+`okm migrate resolve <migration>:<step> --applied` writes the history row and deletes the `okm_steps` row. When the kind has a probe, or the step declares one, a probe that says the step is not applied is [OKM1554](/docs/reference/errors#okm1554). When no probe exists, the command is [OKM1555](/docs/reference/errors#okm1555) until `--accept-unverified`.
+
+`okm migrate resolve <migration>:<step> --retry` sets the row to `retry`. The next apply probes first when a probe exists, and otherwise runs the statement again.
+
+There is no skip. A protected target is a history repair and needs `--allow-protected`. The invocation and the JSON fields are on [migrate resolve](/docs/reference/cli#migrate-resolve).
+
+The package copy is [`docs/migration-failure.md`](https://github.com/omqkhafi/okmodel/blob/main/docs/migration-failure.md) on main.
+
+| Next | You use it for |
+| --- | --- |
+| [Checks and lint](/docs/migrations/checks-and-lint) | Catch a replay failure before apply. |
+| [Backfill](/docs/migrations/backfill) | A step that resumes from `okm_backfill` instead of `okm_steps`. |
+| [migrate resolve](/docs/reference/cli#migrate-resolve) | `--applied`, `--retry`, and `--accept-unverified`. |

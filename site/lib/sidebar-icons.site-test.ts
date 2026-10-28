@@ -28,6 +28,38 @@ test("pages sit flat under the capability groups", () => {
   expect(urls).toContain("/docs/ai/skills");
   expect(urls).toContain("/docs/ai/llm");
   expect(urls).not.toContain("/docs/ai/mcp");
+  const byFolder = new Map(folders.map((folder) => [folder.name, folder]));
+  const operate = byFolder.get("Operate");
+  const migrations = byFolder.get("Migrations");
+  if (operate === undefined || migrations === undefined) throw new Error("missing group");
+  const childUrls = (folder: (typeof folders)[number]): string[] =>
+    folder.children.flatMap((child) => (child.type === "page" ? [child.url] : []));
+  expect(childUrls(operate)).toEqual([
+    "/docs/operate/using-okmodel-safely",
+    "/docs/operate/production-checklist",
+    "/docs/operate/testing",
+    "/docs/operate/protected-targets-and-roles",
+    "/docs/operate/connect",
+    "/docs/operate/target",
+    "/docs/operate/drivers",
+    "/docs/operate/session-and-pool",
+    "/docs/operate/query-limits",
+    "/docs/operate/startup-check",
+    "/docs/operate/replicas-and-topology",
+    "/docs/operate/session-settings",
+    "/docs/operate/observers",
+    "/docs/operate/opentelemetry",
+    "/docs/operate/errors",
+  ]);
+  expect(childUrls(migrations)).toEqual([
+    "/docs/migrations/adopt-existing-database",
+    "/docs/migrations/from-drizzle",
+    "/docs/migrations/checks-and-lint",
+    "/docs/migrations/backfill",
+    "/docs/migrations/type-change",
+    "/docs/migrations/failures",
+    "/docs/migrations/environments",
+  ]);
 });
 
 test("every public page except the landing has a sidebar icon", () => {
