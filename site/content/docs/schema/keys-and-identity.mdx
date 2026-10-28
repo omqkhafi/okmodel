@@ -1,7 +1,11 @@
 ---
-title: "Keys"
-description: "One table has one primary key."
+title: "Keys and identity"
+description: "One table has one primary key. Identity is the id default and the generators."
 ---
+Keys identify a row. The id default is what a bare t.id() means, and a column option wins. Generators replace that function when you connect, once for each missing field.
+
+## Keys
+
 <Callout type="info" title="Where this fits">
 Start here. [Columns](/docs/schema/columns) are the other fields.
 </Callout>
@@ -113,7 +117,7 @@ An empty reason is `unique() global needs a reason.` `{ global: true }` with no 
 
 Needs PostgreSQL 18 or higher.
 
-`t.id()` is a uuid primary key. The schema [id default](/docs/schema/id-default) is what a bare call means. A column option wins. [OKID](/docs/schema/columns#okid) is `t.id({ default: okid() })`, stored as `text`.
+`t.id()` is a uuid primary key. The schema [id default](/docs/schema/keys-and-identity#id-default) is what a bare call means. A column option wins. [OKID](/docs/schema/columns#okid) is `t.id({ default: okid() })`, stored as `text`.
 
 | Call | What fills it | Insert |
 | --- | --- | --- |
@@ -194,3 +198,183 @@ export const notes = table("notes", {
 <Callout type="error" title="OKM1060">
 A default other than `uuidv7`, `uuidv4`, `none`, or a client generator is refused.
 </Callout>
+
+## Id default
+
+`defaults` has one field, `id`. It replaces a bare `t.id()`. A column that passes `default` is left alone. `"none"` is that column option. It is not a schema value.
+
+The id is omitted from insert for a database default and for a client generator. `"none"` is required on insert and still omitted from update.
+
+### omitted
+
+Omitted and `{}` store `gen_random_uuid()`. `"uuidv4"` stores the same function. It is built in from Postgres 13, so a bare `t.id()` works on every supported major. Random ids are fine for most tables. A large write-heavy table can pick `uuidv7`: the ids are time-ordered and the index stays local. That function needs Postgres 18.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.id(), // [!code focus]
+  title: t.text(),
+});
+
+export default schema({
+  tables: [notes],
+});
+```
+
+### uuidv7
+
+`"uuidv7"` stores `uuidv7()`. Keep the previous default with `defaults: { id: "uuidv7" }`.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.id(),
+  title: t.text(),
+});
+
+export default schema({
+  tables: [notes],
+  defaults: { id: "uuidv7" }, // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1812">
+`uuidv7()` needs PostgreSQL 18 or higher. A [minPostgres](/docs/schema/the-schema#minimum-postgres) floor below 18 is `uuidv7() needs PostgreSQL 18 or higher. minPostgres: 18.` An omitted floor does not name a version, so an explicit `uuidv7()` stays until apply.
+</Callout>
+
+### Default uuidv4
+
+`"uuidv4"` stores `gen_random_uuid()`, the same expression a bare `t.id()` stores. That function is built in from Postgres 13.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.id(),
+  title: t.text(),
+});
+
+export default schema({
+  tables: [notes],
+  defaults: { id: "uuidv4" }, // [!code focus]
+});
+```
+
+### client
+
+A generator from `okmodel/ids` runs on insert. The catalog stores no default. Changing an OKID prefix, length, or sortable flag does not change the catalog hash. The SQL type does: `okid()` is `text`, and `uuidv4` or `uuidv7` stay `uuid`.
+
+#### uuid
+
+`uuidv4` and `uuidv7` stay `uuid`. The client `uuidv7` mints a time-ordered id, so a server older than Postgres 18 can still use one.
+
+```ts title="schema.ts"
+import { uuidv7 } from "okmodel/ids";
+import { schema, table, t } from "okmodel/pg";
+
+const sessions = table("sessions", {
+  id: t.id(),
+  name: t.text(),
+});
+
+export default schema({
+  tables: [sessions],
+  defaults: { id: uuidv7 }, // [!code focus]
+});
+```
+
+#### okid
+
+`okid()` is `text` with collation `C`. Calling it returns the generator. It does not mint the id here. Length, prefix, and sortable are on [OKID](/docs/schema/columns#okid).
+
+```ts title="schema.ts"
+import { okid } from "okmodel/ids";
+import { schema, table, t } from "okmodel/pg";
+
+const users = table("users", {
+  id: t.id(),
+  name: t.text(),
+});
+
+export default schema({
+  tables: [users],
+  defaults: { id: okid({ prefix: "usr_" }) }, // [!code focus]
+});
+```
+
+### Column option
+
+A column option wins. A bare `t.id()` takes the schema default. `t.id({ default: "uuidv4" })` stays `gen_random_uuid()` and stays `uuid`.
+
+```ts title="schema.ts"
+import { okid } from "okmodel/ids";
+import { schema, table, t } from "okmodel/pg";
+
+const users = table("users", {
+  id: t.id(), // [!code focus]
+  name: t.text(),
+});
+
+const sessions = table("sessions", {
+  id: t.id({ default: "uuidv4" }), // [!code focus]
+  name: t.text(),
+});
+
+export default schema({
+  tables: [users, sessions],
+  defaults: { id: okid({ prefix: "usr_" }) },
+});
+```
+
+<Callout type="warning" title="OKM1060">
+Anything other than an object is `schema() defaults must be an object.` Another key is `schema() defaults.createdAt is not a schema default. Accepted names: id.` Another value, including `"none"`, is `schema() defaults.id must be "uuidv7", "uuidv4", or a client generator.`
+</Callout>
+
+## Id generators
+
+`generators` replaces a built-in client generator by name. The names are `uuidv4`, `uuidv7`, and `okid`. Each replacement returns a string. A [generator](/docs/schema/defaults#generator) runs when insert omits the field.
+
+| Key | Insert |
+| --- | --- |
+| omitted | Calls the function stored on the column. |
+| `uuidv4` | Calls the function you passed, for a `uuidv4` generator. |
+| `uuidv7` | Calls the function you passed, for a `uuidv7` generator. |
+| `okid` | Calls the function you passed, for an `okid` generator. |
+
+The function takes no arguments. One function covers every column of that name. A bare `t.id()` that took that generator from the schema [id default](/docs/schema/keys-and-identity#id-default) uses it too. Each missing field calls the function once.
+
+### Generator uuidv7
+
+Insert stores this string when `id` is omitted.
+
+```ts title="db.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { uuidv7 } from "okmodel/ids";
+
+const notes = table("notes", {
+  id: t.uuid().default(uuidv7),
+  title: t.text(),
+});
+const app = schema({ tables: [notes] });
+
+export async function add(url: string, title: string) {
+  await using db = connect(url, {
+    schema: app,
+    generators: {
+      uuidv7: () => "00000000-0000-7000-8000-000000000000", // [!code focus]
+    },
+  });
+  return db.notes.insert({ title });
+}
+```
+
+<Callout type="info" title="Left alone">
+A function you wrote and passed to `.default()` keeps its own call. A bare `t.id()` stores `gen_random_uuid()`. `t.id({ default: "uuidv7" })` stores `uuidv7()`, which needs Postgres 18. Pick that for a large write-heavy table: the ids are time-ordered and the index stays local. Random ids are fine elsewhere.
+</Callout>
+
+| Next | You use it for |
+| --- | --- |
+| [References](/docs/schema/references) | A column that points at a row in another table. |

@@ -15,6 +15,9 @@ test("a docs path negotiates to its markdown twin", () => {
   );
   expect(markdownTwinPath("/docs/schema/tables")).toBe("/llms.mdx/docs/schema/tables.md");
   expect(markdownTwinPath("/docs/schema/the-schema")).toBe("/llms.mdx/docs/schema/the-schema.md");
+  expect(markdownTwinPath("/docs/schema/codecs-and-row-types")).toBe(
+    "/llms.mdx/docs/schema/codecs-and-row-types.md",
+  );
   expect(markdownTwinPath("/docs/queries")).toBe("/llms.mdx/docs/queries.md");
   expect(markdownTwinPath("/docs/queries/read-rows")).toBe("/llms.mdx/docs/queries/read-rows.md");
   expect(markdownTwinPath("/docs/queries/write-rows")).toBe("/llms.mdx/docs/queries/write-rows.md");

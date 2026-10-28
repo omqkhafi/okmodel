@@ -3,13 +3,13 @@ title: "Indexes"
 description: "indexes receives column handles and returns an array of index calls."
 ---
 <Callout type="info" title="Where this fits">
-The columns exist. This page adds an index the planner can use. A unique constraint stays on [Keys](/docs/schema/keys-and-identity). A rule the row must pass is a [check](/docs/schema/checks).
+The columns exist. This page adds an index the planner can use. A unique constraint stays on [Keys](/docs/schema/keys-and-identity#keys). A rule the row must pass is a [check](/docs/schema/checks).
 </Callout>
 
 `indexes` is a function. It receives one handle per column and returns an array of `index()` calls. `schema()` stores those indexes. A return value that is not an array is OKM1060: `Table notes indexes must return an array.`
 
 <Callout type="info" title="SQL name">
-The handle's `name` is the SQL name `schema()` will store. A [casing](/docs/schema/casing) of `"snake"` has already been applied by the time the catalog is written.
+The handle's `name` is the SQL name `schema()` will store. A [casing](/docs/schema/names-and-casing#casing) of `"snake"` has already been applied by the time the catalog is written.
 </Callout>
 
 <Callout type="error" title="OKM1060">
@@ -105,7 +105,7 @@ export const notes = table(
 
 #### casing
 
-[Casing](/docs/schema/casing) `"snake"` rewrites a name you did not set. `publishedAt` is stored as `published_at`, and the index is `notes_published_at_idx`.
+[Casing](/docs/schema/names-and-casing#casing) `"snake"` rewrites a name you did not set. `publishedAt` is stored as `published_at`, and the index is `notes_published_at_idx`.
 
 ```ts title="casing.ts"
 import { index, schema, table, t } from "okmodel/pg";
@@ -192,9 +192,9 @@ export const notes = table(
 ```
 
 <Callout type="warning" title="Not a constraint">
-A unique constraint and a unique index are different objects. A constraint belongs on [keys](/docs/schema/keys-and-identity). A foreign key waits for that constraint. `.unique()` here does not create it.
+A unique constraint and a unique index are different objects. A constraint belongs on [keys](/docs/schema/keys-and-identity#keys). A foreign key waits for that constraint. `.unique()` here does not create it.
 </Callout>
 
 ### Tenant tables
 
-On a tenant table an ordinary index leads with the tenant key, unless this index calls `.global("reason")` or the table sets `tenantIndexes: false`. `.scoped()` puts the key first on that ordinary index. A unique index is then unique inside one tenant: two tenants may store the same value. A `using` index is not prefixed. The default and `.scoped()` both throw OKM1706 when the columns do not already lead with the tenant key: `Index on notes starts with title. A using tail is not prefixed.` `.global("reason")` is the call that works. Putting the tenant key first in the declaration does not prefix a `using` tail. An index that already leads with the key is left as written. See [tenancy](/docs/schema/tenancy-schema).
+On a tenant table an ordinary index leads with the tenant key, unless this index calls `.global("reason")` or the table sets `tenantIndexes: false`. `.scoped()` puts the key first on that ordinary index. A unique index is then unique inside one tenant: two tenants may store the same value. A `using` index is not prefixed. The default and `.scoped()` both throw OKM1706 when the columns do not already lead with the tenant key: `Index on notes starts with title. A using tail is not prefixed.` `.global("reason")` is the call that works. Putting the tenant key first in the declaration does not prefix a `using` tail. An index that already leads with the key is left as written. See [tenancy](/docs/schema/tenancy#on-the-schema).

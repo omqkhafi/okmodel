@@ -82,7 +82,7 @@ test("uuidv7's floor is named in the refusal and on the minPostgres page", () =>
   const error = capture(() => build({ minPostgres: UUIDV7_POSTGRES - 1, tables: [sessions] }));
   expect(error.message).toContain(String(UUIDV7_POSTGRES));
   expect(error.message).toContain("minPostgres");
-  const page = readFileSync(join(repoRoot(), "site/content/docs/schema/min-postgres.mdx"), "utf8");
+  const page = readFileSync(join(repoRoot(), "site/content/docs/schema/the-schema.mdx"), "utf8");
   expect(page).toContain("uuidv7");
   expect(page).toContain(`Needs PostgreSQL ${String(UUIDV7_POSTGRES)} or higher.`);
 });

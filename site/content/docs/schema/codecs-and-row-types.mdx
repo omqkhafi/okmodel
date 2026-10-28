@@ -1,7 +1,11 @@
 ---
-title: "Codecs"
-description: "The TypeScript value. The SQL type stays the same."
+title: "Codecs and row types"
+description: "The TypeScript value of a column, and how row types are produced."
 ---
+Codecs choose the TypeScript value of a column, and the SQL type stays. Row types are the interfaces schema() emits for each table, or the types the checker keeps. One schema can set both.
+
+## Codecs
+
 `codecs` chooses the TypeScript value of `t.bigint()`, `t.identity()`, and `t.numeric()`. The SQL type stays `bigint` or `numeric`. A time column is already `Temporal`. Omit a key and that codec stays at its default.
 
 The column `as` is what types the value. While the schema codec is `"string"`, a column may pass another `as`. When the schema codec is `"number"` or `"bigint"`, every column of that type must pass the same `as`. A bare column was built as `"string"`.
@@ -157,3 +161,104 @@ export default schema({
   },
 });
 ```
+
+## Row types
+
+`types` is stored on the schema. Queries still infer a row from `schema()`. `okm build` writes `.okm/types.d.ts` for either value, and `okm generate` writes that same file. The header is `Mode: emitted` or `Mode: inferred`. The interfaces do not change with the mode.
+
+A table named `notes` becomes `Notes`, `NotesInsert`, and `NotesUpdate`. The file then maps those names on `Rows`, `Inserts`, and `Updates`, in the order of the [tables](/docs/schema/the-schema#tables) list. Two names that emit one interface are refused there.
+
+`t.jsonb<{ published?: boolean }>()` keeps that argument in the file. The type parameter is erased at runtime, so the text is read from the schema source. A bare `t.jsonb()` is `jsonb<unknown>`. When either form appears, the file starts with `export type jsonb<T> = T`. `t.json<T>()` is the same, with `json`.
+
+<Callout type="info" title="Not the catalog">
+This flag is not part of the catalog hash. Swapping `"emitted"` and `"inferred"` does not change it.
+</Callout>
+
+### emitted
+
+Omitted means `"emitted"`. This is the mode a file imports when it should not re-check the schema.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+export const app = schema({
+  tables: [notes],
+});
+
+export const mode = app.types;
+```
+
+`"emitted"` stores the same value.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+export const app = schema({
+  tables: [notes],
+  types: "emitted", // [!code focus]
+});
+
+export const mode = app.types;
+```
+
+### inferred
+
+`"inferred"` stores that mode. The client and `Row`, `Insert`, and `Update` still read the schema. Use this when the checker should see the schema, not the written interfaces.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+export const app = schema({
+  tables: [notes],
+  types: "inferred", // [!code focus]
+});
+
+export const mode = app.types;
+```
+
+### Types together
+
+Two tables, a typed `jsonb`, and the default mode. `okm build` writes `Notes` and `Comments`, each with an insert and an update, then `Rows`, `Inserts`, and `Updates`.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+  meta: t.jsonb<{ published?: boolean }>(), // [!code focus]
+});
+
+const comments = table("comments", {
+  id: t.identity(),
+  noteId: t.bigint().references("notes"),
+  body: t.text(),
+});
+
+export default schema({
+  tables: [notes, comments],
+});
+```
+
+<Callout type="warning" title="OKM1060">
+Any other value is `schema() types local must be emitted or inferred.` The type only allows `"emitted"` and `"inferred"`, so this is also a type error.
+</Callout>
+
+| Next | You use it for |
+| --- | --- |
+| [Required rows](/docs/schema/required-rows) | Rows inserted when the key is missing. |

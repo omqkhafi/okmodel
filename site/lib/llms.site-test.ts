@@ -61,6 +61,28 @@ test("sitemap and robots advertise the handbook", () => {
   expect(urls).toContain(`${SITE_ORIGIN}/docs/queries/typed-raw-sql`);
   expect(urls).toContain(`${SITE_ORIGIN}/docs/queries/presets`);
   expect(urls).toContain(`${SITE_ORIGIN}/docs/queries/request-filters`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/schema/tables`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/schema/the-schema`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/schema/keys-and-identity`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/schema/validation`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/schema/names-and-casing`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/schema/traits`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/schema/tenancy`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/schema/codecs-and-row-types`);
+  for (const removed of [
+    "validation-schema",
+    "traits-schema",
+    "tenancy-schema",
+    "casing",
+    "codecs",
+    "row-types",
+    "the-schema-tables",
+    "min-postgres",
+    "id-default",
+    "id-generators",
+  ]) {
+    expect(urls.includes(`${SITE_ORIGIN}/docs/schema/${removed}`), removed).toBe(false);
+  }
   expect(urls).toContain(`${SITE_ORIGIN}/docs/ai/skills`);
 
   expect(urls).toContain(`${SITE_ORIGIN}/.well-known/agent-skills/index.json`);

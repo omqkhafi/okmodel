@@ -239,7 +239,7 @@ A reserved name is a type error. On a trait, `trait()` throws OKM1040 at the cal
 
 ### Traits
 
-A trait can add presets. They see the trait's columns. The table's own names are already in the map, so a trait that repeats one is OKM1040: `Preset pending on notes is defined by table notes and by trait flagged.` Two traits that share a name are `Preset pending on notes is defined by trait flagged and by trait other.` Schema traits apply first. See [traits](/docs/schema/traits).
+A trait can add presets. They see the trait's columns. The table's own names are already in the map, so a trait that repeats one is OKM1040: `Preset pending on notes is defined by table notes and by trait flagged.` Two traits that share a name are `Preset pending on notes is defined by trait flagged and by trait other.` Schema traits apply first. See [traits](/docs/schema/traits#on-one-table).
 
 ```ts title="trait.ts"
 import { connect } from "okmodel/pg/postgresjs";

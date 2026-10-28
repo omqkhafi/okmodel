@@ -32,7 +32,10 @@ test("pages sit flat under the capability groups", () => {
   const operate = byFolder.get("Operate");
   const migrations = byFolder.get("Migrations");
   const queries = byFolder.get("Queries");
-  if (operate === undefined || migrations === undefined || queries === undefined) throw new Error("missing group");
+  const schema = byFolder.get("Schema");
+  if (operate === undefined || migrations === undefined || queries === undefined || schema === undefined) {
+    throw new Error("missing group");
+  }
   const childUrls = (folder: (typeof folders)[number]): string[] =>
     folder.children.flatMap((child) => (child.type === "page" ? [child.url] : []));
   expect(childUrls(operate)).toEqual([
@@ -51,6 +54,30 @@ test("pages sit flat under the capability groups", () => {
     "/docs/operate/observers",
     "/docs/operate/opentelemetry",
     "/docs/operate/errors",
+  ]);
+  expect(childUrls(schema)).toEqual([
+    "/docs/schema/tables",
+    "/docs/schema/columns",
+    "/docs/schema/defaults",
+    "/docs/schema/the-schema",
+    "/docs/schema/keys-and-identity",
+    "/docs/schema/references",
+    "/docs/schema/relations",
+    "/docs/schema/indexes",
+    "/docs/schema/checks",
+    "/docs/schema/validation",
+    "/docs/schema/visibility",
+    "/docs/schema/names-and-casing",
+    "/docs/schema/traits",
+    "/docs/schema/tenancy",
+    "/docs/schema/enums-arrays-picklists",
+    "/docs/schema/codecs-and-row-types",
+    "/docs/schema/required-rows",
+    "/docs/schema/views",
+    "/docs/schema/functions",
+    "/docs/schema/triggers",
+    "/docs/schema/extensions",
+    "/docs/schema/several-catalogs",
   ]);
   expect(childUrls(queries)).toEqual([
     "/docs/queries",

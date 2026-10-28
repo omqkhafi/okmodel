@@ -60,7 +60,7 @@ export default schema({
 
 ### plpgsql
 
-`"plpgsql"` needs `dependsOn`. Postgres does not record dependencies inside that body. A table is an object dependency. `{ table, column }` is a column dependency. `column` is the SQL name. With [casing](/docs/schema/casing) `"snake"`, `updatedAt` is `updated_at`.
+`"plpgsql"` needs `dependsOn`. Postgres does not record dependencies inside that body. A table is an object dependency. `{ table, column }` is a column dependency. `column` is the SQL name. With [casing](/docs/schema/names-and-casing#casing) `"snake"`, `updatedAt` is `updated_at`.
 
 ```ts title="plpgsql.ts"
 import { fn } from "okmodel/fn";
@@ -216,7 +216,7 @@ export default schema({
 
 ### together
 
-A definer, arguments, a column dependency, and a [trigger](/docs/schema/triggers) that calls it. [Casing](/docs/schema/casing) `"snake"` makes the column `updated_at`.
+A definer, arguments, a column dependency, and a [trigger](/docs/schema/triggers) that calls it. [Casing](/docs/schema/names-and-casing#casing) `"snake"` makes the column `updated_at`.
 
 ```ts title="together.ts"
 import { fn, trigger } from "okmodel/fn";

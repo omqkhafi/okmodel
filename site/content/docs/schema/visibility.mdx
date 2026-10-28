@@ -3,7 +3,7 @@ title: "Visibility"
 description: "Three flags. They do not change the SQL type."
 ---
 <Callout type="info" title="Where this fits">
-The SQL type stays. Hidden, sensitive, and guarded change the row the client sees and the fields a write may set. [Validation](/docs/schema/validation) rejects a value the type still accepts.
+The SQL type stays. Hidden, sensitive, and guarded change the row the client sees and the fields a write may set. [Validation](/docs/schema/validation#on-a-table) rejects a value the type still accepts.
 </Callout>
 
 None of the three flags is stored in the catalog, so none of them changes a migration.
@@ -140,8 +140,8 @@ export async function promote(url: string, email: string) {
 
 #### Stays closed
 
-A sealed trait field stays OKM1190. The message says the trait sets it. Insert of the [tenant key](/docs/schema/tenancy-schema) is OKM1190. An update or a `where` on that key is OKM1704. `allow` does not open either.
+A sealed trait field stays OKM1190. The message says the trait sets it. Insert of the [tenant key](/docs/schema/tenancy#on-the-schema) is OKM1190. An update or a `where` on that key is OKM1704. `allow` does not open either.
 
 <Callout type="info" title="Filled elsewhere">
-[`timestamps()`](/docs/schema/traits) and [`archivable()`](/docs/schema/traits) mark their columns guarded and sealed. Input cannot set those columns.
+[`timestamps()`](/docs/schema/traits#on-one-table) and [`archivable()`](/docs/schema/traits#on-one-table) mark their columns guarded and sealed. Input cannot set those columns.
 </Callout>
