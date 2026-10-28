@@ -52,8 +52,8 @@ test("pages sit flat under the capability groups", () => {
     "/docs/operate/opentelemetry",
     "/docs/operate/errors",
   ]);
-  expect(queries.index?.url).toBe("/docs/queries");
   expect(childUrls(queries)).toEqual([
+    "/docs/queries",
     "/docs/queries/read-rows",
     "/docs/queries/write-rows",
     "/docs/queries/shape-results",
