@@ -231,6 +231,37 @@ test("with() checks every value against its type before any statement", async ()
   }
 });
 
+test("OKM1709 says an int and a for every other setting type", async () => {
+  const pool = await fresh();
+  const db = await connect(pool, { schema: plain, session: ctx });
+  try {
+    const int = thrown(() => db.with({ userId: USER_A, level: "nope" as never }));
+    expect(int.message).toBe("with() level is not an int.");
+    expect(int.fix.summary).toBe("Pass an int for level.");
+    const uuidError = thrown(() => db.with({ userId: "nope" }));
+    expect(uuidError.message).toBe("with() userId is not a uuid.");
+    expect(uuidError.fix.summary).toBe("Pass a uuid for userId.");
+    const textError = thrown(() => db.with({ userId: USER_A, role: 1 as never }));
+    expect(textError.message).toBe("with() role is not a text.");
+    expect(textError.fix.summary).toBe("Pass a text for role.");
+    const boolError = thrown(() => db.with({ userId: USER_A, admin: "yes" as never }));
+    expect(boolError.message).toBe("with() admin is not a bool.");
+    expect(boolError.fix.summary).toBe("Pass a bool for admin.");
+  } finally {
+    await db.close();
+  }
+});
+
+function thrown(run: () => unknown): OkmError {
+  try {
+    run();
+  } catch (error) {
+    if (error instanceof OkmError) return error;
+    throw error;
+  }
+  throw new Error("expected a throw");
+}
+
 test("a client that never called with() refuses a statement before it reaches the driver", async () => {
   const pool = await fresh();
   let statements = 0;
