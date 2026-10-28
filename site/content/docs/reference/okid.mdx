@@ -8,7 +8,7 @@ description: "okid() is a client generator. The id column is text with collation
 `okid` comes from `okmodel/ids`. Calling it returns the generator. Insert calls that generator once when the field is omitted and stores the string. The catalog stores no default.
 
 <Callout type="info" title="Where this fits">
-The column form is on [columns](/docs/define/table/columns#okid). A schema-wide id is the [id default](/docs/define/schema/defaults). [`generators`](/docs/define/connect/generators) replaces the function on `connect`.
+The column form is on [columns](/docs/schema/columns#okid). A schema-wide id is the [id default](/docs/schema/id-default). [`generators`](/docs/schema/id-generators) replaces the function on `connect`.
 </Callout>
 
 ### Format
@@ -49,7 +49,7 @@ A bad option throws when the generator runs. A fractional length is `okid: lengt
 
 ### Column
 
-`t.id({ default: okid() })` is a primary key. Insert omits the field. Update cannot set it. A bare `t.id()` stays `uuid` until the schema [id default](/docs/define/schema/defaults) is an `okid` generator. A column option wins.
+`t.id({ default: okid() })` is a primary key. Insert omits the field. Update cannot set it. A bare `t.id()` stays `uuid` until the schema [id default](/docs/schema/id-default) is an `okid` generator. A column option wins.
 
 `.default(okid())` on another string column fills that column in the client. The SQL type and collation stay as declared. Collation `C` is set when the generator name on `t.id` is `okid`.
 
@@ -90,7 +90,7 @@ The catalog stores `text` and collation `C`. Create SQL includes `collate "C"` a
 
 A change of SQL type or collation does. The plan emits `set data type text collate "C"`. A type change adds `using "id"::text`. A database default that goes away is `drop default`.
 
-Storage follows [text](/docs/define/table/columns#text). A 21-character body is 22 bytes.
+Storage follows [text](/docs/schema/columns#text). A 21-character body is 22 bytes.
 
 ### Generators
 

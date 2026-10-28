@@ -1,0 +1,17 @@
+{
+  "title": "Operate",
+  "pages": [
+    "using-okmodel-safely",
+    "connect",
+    "target",
+    "drivers",
+    "session-and-pool",
+    "query-limits",
+    "startup-check",
+    "replicas-and-topology",
+    "session-settings",
+    "observers",
+    "opentelemetry",
+    "errors"
+  ]
+}

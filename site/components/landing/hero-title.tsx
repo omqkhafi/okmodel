@@ -39,7 +39,7 @@ export function HeroTitle({ command }: { readonly command: string }) {
     <div className="flex flex-col items-center">
       <div className="okm-settle" style={settle(0)}>
         <Link
-          href="/docs/define/schema"
+          href="/docs/schema/the-schema"
           className="group inline-flex w-fit items-center rounded-full border border-fd-border bg-fd-card px-4 py-1.5 text-xs text-fd-muted-foreground transition-colors hover:bg-fd-secondary/60"
         >
           <span className="font-medium text-fd-foreground">{HERO_PILL}</span>

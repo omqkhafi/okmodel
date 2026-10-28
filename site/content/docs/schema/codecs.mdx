@@ -1,0 +1,159 @@
+---
+title: "Codecs"
+description: "The TypeScript value. The SQL type stays the same."
+---
+`codecs` chooses the TypeScript value of `t.bigint()`, `t.identity()`, and `t.numeric()`. The SQL type stays `bigint` or `numeric`. A time column is already `Temporal`. Omit a key and that codec stays at its default.
+
+The column `as` is what types the value. While the schema codec is `"string"`, a column may pass another `as`. When the schema codec is `"number"` or `"bigint"`, every column of that type must pass the same `as`. A bare column was built as `"string"`.
+
+| Codec | Values | Default |
+| --- | --- | --- |
+| `bigint` | `"string"`, `"number"`, `"bigint"` | `"string"` |
+| `numeric` | `"string"`, `"number"` | `"string"` |
+| `timestamps` | `"temporal"` | `"temporal"` |
+
+### bigint
+
+`t.bigint()` and `t.identity()` share this codec. `"number"` is a safe integer. A value outside that range is OKM1210. See [bigint](/docs/schema/columns#bigint).
+
+#### string
+
+Omitted and `"string"` are a decimal string. The SQL value stays exact past a safe integer.
+
+```ts title="bigint-string.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const payments = table("payments", {
+  id: t.identity(),
+  cents: t.bigint(), // [!code focus]
+});
+
+export default schema({ tables: [payments] });
+```
+
+#### number
+
+`"number"` is a safe integer. The column passes the same `as`.
+
+```ts title="bigint-number.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const payments = table("payments", {
+  id: t.identity({ as: "number" }), // [!code focus]
+  cents: t.bigint({ as: "number" }), // [!code focus]
+});
+
+export default schema({
+  tables: [payments],
+  codecs: { bigint: "number" }, // [!code focus]
+});
+```
+
+#### native
+
+`"bigint"` is a JavaScript bigint.
+
+```ts title="bigint-native.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const payments = table("payments", {
+  id: t.identity({ as: "bigint" }),
+  cents: t.bigint({ as: "bigint" }), // [!code focus]
+});
+
+export default schema({
+  tables: [payments],
+  codecs: { bigint: "bigint" }, // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1060">
+A bare column under `"number"` or `"bigint"` is `Schema codecs.bigint is number, and payments.cents was built as string. Set as: "number" on that column.` Any other schema value is `schema() codecs.bigint date must be string, number, or bigint.`
+</Callout>
+
+### numeric
+
+`t.numeric()` is exact. `{ as: "number" }` can lose digits past a JavaScript number. See [numeric](/docs/schema/columns#numbers).
+
+#### string
+
+Omitted and `"string"` keep every digit.
+
+```ts title="numeric-string.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const payments = table("payments", {
+  id: t.identity(),
+  amount: t.numeric(12, 2), // [!code focus]
+});
+
+export default schema({ tables: [payments] });
+```
+
+#### number
+
+`"number"` needs `{ as: "number" }` on the column. Precision and scale stay the SQL type.
+
+```ts title="numeric-number.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const payments = table("payments", {
+  id: t.identity(),
+  amount: t.numeric(12, 2, { as: "number" }), // [!code focus]
+});
+
+export default schema({
+  tables: [payments],
+  codecs: { numeric: "number" }, // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1060">
+A bare column under `"number"` is `Schema codecs.numeric is number, and payments.amount was built as string. Set as: "number" on that column.` Any other schema value is `schema() codecs.numeric bigint must be string or number.`
+</Callout>
+
+### timestamps
+
+`"temporal"` is the only value. Omitting it is the same. A time column has no `as`. `t.timestamptz()` is `Temporal.Instant`. See [time](/docs/schema/columns#time).
+
+```ts title="timestamps.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const payments = table("payments", {
+  id: t.identity(),
+  paidAt: t.timestamptz(), // [!code focus]
+});
+
+export default schema({
+  tables: [payments],
+  codecs: { timestamps: "temporal" }, // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1060">
+Any other value is `schema() codecs.timestamps date must be temporal.`
+</Callout>
+
+### together
+
+One schema can set every codec. Each bigint column matches `"bigint"`. The numeric column matches `"number"`.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const payments = table("payments", {
+  id: t.identity({ as: "bigint" }),
+  cents: t.bigint({ as: "bigint" }), // [!code focus]
+  amount: t.numeric(12, 2, { as: "number" }), // [!code focus]
+  paidAt: t.timestamptz(),
+});
+
+export default schema({
+  tables: [payments],
+  codecs: {
+    bigint: "bigint", // [!code focus]
+    numeric: "number", // [!code focus]
+    timestamps: "temporal", // [!code focus]
+  },
+});
+```

@@ -1,0 +1,526 @@
+---
+title: "Validation"
+description: "A field's rules live in one place. They run when validation is enabled."
+---
+<Callout type="info" title="Where this fits">
+The column has a type. A rule here rejects a value that type still allows. It runs only when validation is on and the engine has loaded. [References](/docs/schema/references) point a column at another table.
+</Callout>
+
+A field's rules live in one place. Insert and update run them when validation is on and `okmodel/validate` is loaded. An unknown write key is OKM1120 and names the key and the table. A read does not. `{ validate: false }` skips that call. A delete does not validate. The same insert and update handles work inside `batch()`: rules run before the plan executes, and a failing rule rolls the whole batch back with OKM1200, `issues`, and `batchIndex`.
+
+### Inline
+
+`.validate()` stores a list of [built-in](#trim) rules on the column, or one [Standard Schema](#standard-schema).
+
+```ts title="notes.ts"
+import { table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.varchar(200).validate([v.trim(), v.min(1, "title_required")]), // [!code focus]
+  email: t.text().validate([v.lowercase(), v.email("email_invalid")]), // [!code focus]
+});
+```
+
+### Section
+
+`validate` is the section. Each key is a field, and `$row` is the whole row. Every value is a list of rules. A key that is not a column is OKM1060. A value that is not a list is OKM1060. A `$row` rule sees the row after the field transforms.
+
+```ts title="rows.ts"
+import { table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+    status: t.text().picklist(["draft", "active"]),
+    qty: t.integer(),
+  },
+  {
+    validate: { // [!code focus]
+      title: [v.min(1, "title_required")], // [!code focus]
+      $row: [ // [!code focus]
+        v.rule( // [!code focus]
+          (row: { readonly status?: string; readonly qty?: number }) => // [!code focus]
+            row.status !== "active" || (row.qty ?? 0) > 0, // [!code focus]
+          "qty", // [!code focus]
+          "qty_required", // [!code focus]
+        ), // [!code focus]
+      ], // [!code focus]
+    }, // [!code focus]
+  },
+);
+```
+
+<Callout type="error" title="OKM1030">
+The same field in `.validate()` and in this section is refused. `okm check` reports it, and so does the first validated call.
+</Callout>
+
+### Built-in
+
+`v` comes from `okmodel/validate`. Importing it loads the engine. `trim` and `lowercase` run before the checks. A string is changed, and that changed value is what the write stores. Any other value is left as it is. `message` on an issue is the key you pass, not display text.
+
+<Callout type="error" title="OKM1201">
+A write that validates without `okmodel/validate` imported is refused. `okm check` reports it.
+</Callout>
+
+#### trim
+
+`v.trim()` takes no argument. It removes leading and trailing whitespace from a string. The write stores that trimmed string.
+
+```ts title="trim.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text().validate([v.trim()]), // [!code focus]
+});
+const app = schema({ tables: [notes], validation: true });
+
+export async function add(url: string) {
+  await using db = connect(url, { schema: app });
+  const row = await db.notes.insert.validate({ title: "  hello  " });
+  return row.title;
+}
+```
+
+#### lowercase
+
+`v.lowercase()` takes no argument. It lowercases a string. A non-string is unchanged. The write stores the lowercased string.
+
+```ts title="lower.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+const notes = table("notes", {
+  id: t.identity(),
+  email: t.text().validate([v.lowercase()]), // [!code focus]
+});
+const app = schema({ tables: [notes], validation: true });
+
+export async function add(url: string) {
+  await using db = connect(url, { schema: app });
+  const row = await db.notes.insert.validate({ email: "A@B.C" });
+  return row.email;
+}
+```
+
+#### email
+
+`v.email(key)` takes the issue key. A string must have one `@`, a dot after it, and no spaces. Any other value fails. The issue path is the field name.
+
+```ts title="email.ts"
+import { table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+export const people = table("people", {
+  id: t.identity(),
+  email: t.text().validate([v.email("email_invalid")]), // [!code focus]
+});
+```
+
+#### min
+
+`v.min(n, key)` takes the minimum and the issue key. A string is measured in code points and must be at least `n`. A number must be at least `n`. Any other value fails. The issue path is the field name.
+
+```ts title="min.ts"
+import { table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.text().validate([v.min(1, "title_required")]), // [!code focus]
+  qty: t.integer().validate([v.min(1, "qty_min")]), // [!code focus]
+});
+```
+
+#### rule
+
+`v.rule(fn, path, key)` takes the predicate, the issue path, and the issue key. `false` records `key` at `path`. That path is the segment you pass. It is not the field name plus the segment. On a field, `fn` receives the field value. On [`$row`](#section), `fn` receives the row after the field transforms.
+
+```ts title="reserved.ts"
+import { table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.text().validate([
+    v.rule((value: string) => value !== "admin", "title", "reserved"), // [!code focus]
+  ]),
+});
+```
+
+#### onInsert
+
+`v.onInsert()` with no argument is a marker, not a check. Rules before it run on insert and update. Rules after it run only on insert, until the next `onInsert()` or `onUpdate()`. A transform after the marker changes the stored value only on insert. A Standard Schema in the list is not limited by the marker.
+
+Pass one rule and only that rule is limited to insert. Rules after that call are not.
+
+```ts title="insert-phase.ts"
+import { table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.text().validate([
+    v.min(1, "title_required"),
+    v.onInsert(), // [!code focus]
+    v.min(2, "insert_min"), // [!code focus]
+  ]),
+});
+```
+
+```ts title="insert-one.ts"
+import { table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.text().validate([
+    v.onInsert(v.min(2, "insert_min")), // [!code focus]
+    v.min(1, "title_required"),
+  ]),
+});
+```
+
+#### onUpdate
+
+`v.onUpdate()` with no argument is a marker. Rules after it run only on update, until the next marker. Pass one rule and only that rule is limited to update. Rules after that call are not.
+
+```ts title="update-phase.ts"
+import { table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.text().validate([
+    v.min(1, "title_required"),
+    v.onUpdate(), // [!code focus]
+    v.min(4, "update_min"), // [!code focus]
+  ]),
+});
+```
+
+```ts title="update-min.ts"
+import { table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.text().validate([v.onUpdate(v.min(4, "update_min"))]), // [!code focus]
+});
+```
+
+#### Column checks
+
+The column type adds a check when validation is on. You do not pass a rule for it. Guarded, generated, and identity columns are not checked.
+
+```ts title="columns.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.varchar(8), // [!code focus]
+  status: t.text().picklist(["draft", "active"]), // [!code focus]
+  qty: t.integer(), // [!code focus]
+  cost: t.numeric(8, 2), // [!code focus]
+  score: t.double(), // [!code focus]
+  token: t.uuid(), // [!code focus]
+  meta: t.jsonb(), // [!code focus]
+});
+```
+
+| Column | What fails | Issue |
+| --- | --- | --- |
+| required on insert, or null | not nullable, and the column can be written. A default lets insert omit it. Passing null on a not-null column fails too, including one with a default | `required` |
+| `t.varchar(n)`, `t.char(n)` | longer than `n` code points | `too_long` |
+| `.picklist(values)` | a value that is not one of the strings. `{ check: false }` skips the database CHECK and this check still runs | `picklist` |
+| `t.smallint()`, `t.integer()`, `t.bigint()` | outside that type's range. A safe integer, a bigint, or a digit string is accepted | `integer_range` |
+| `t.numeric(precision, scale)` | outside that precision and scale. A bare `t.numeric()` accepts a decimal | `precision` |
+| `t.real()`, `t.double()` | a value that is not a finite number | `precision` |
+| `t.uuid()` | a string that is not `8-4-4-4-12` hex | `uuid` |
+| `t.json()`, `t.jsonb()` | a value JSON cannot store | `json` |
+
+<Callout type="error" title="OKM1200">
+A failed check throws. The text is `Validation failed:` then the path and the key. `issues` lists `{ path, message }` in column order, then `$row`. `message` is the key. A hidden or sensitive value is not written into the issue. A list prefixes each path with the row index.
+</Callout>
+
+### Standard Schema
+
+`.validate()` takes one Standard Schema instead of a list. `~standard.version` is 1, and `~standard.validate` checks the value. Zod, Valibot, and any other library with that shape work. A result of `{ value }` replaces the field. Each issue message is kept, and a path on the issue is added after the field.
+
+In the [section](#section) the schema sits inside that field's list.
+
+```ts title="zod.ts" no-check="zod is installed by the application"
+import { z } from "zod";
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.text().validate(z.string().trim().min(1)), // [!code focus]
+});
+```
+
+```ts title="valibot.ts" no-check="valibot is installed by the application"
+import * as v from "valibot";
+import { table, t } from "okmodel/pg";
+
+export const people = table("people", {
+  id: t.identity(),
+  email: t.text().validate(v.pipe(v.string(), v.email())), // [!code focus]
+});
+```
+
+### Flag
+
+`validation` overrides the [schema](/docs/schema/validation-schema) for this table. A value that is not a boolean or `{ enabled, onRead, style }` is refused.
+
+#### omitted
+
+Leave it off the table. The table uses the schema flag, including `onRead` and `style`.
+
+```ts title="inherit.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+export const app = schema({
+  tables: [notes],
+  validation: true, // [!code focus]
+});
+```
+
+#### true
+
+On for this table. `onRead` and `style` stay the schema's. `true` does not reset them.
+
+```ts title="switch.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+  },
+  { validation: true }, // [!code focus]
+);
+```
+
+#### false
+
+Off for this table, even when the schema is on. `onRead` and `style` are still copied, and the rules do not run. A stored rule still makes a write demand `okmodel/validate`. That write is OKM1201 when the import is missing.
+
+```ts title="off.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+  },
+  { validation: false }, // [!code focus]
+);
+```
+
+#### enabled
+
+Inside the object, omit `enabled` and the table is on. `true` is on. Any other value is off. `onRead` and `style` stay the schema's when you omit them.
+
+```ts title="enabled.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+  },
+  { validation: { enabled: true } }, // [!code focus]
+);
+```
+
+#### onRead
+
+`true` is the only value that sets it. Omit it and the schema's value stays. The flag is stored. Insert and update run the rules. A read does not.
+
+```ts title="on-read.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+  },
+  { validation: { onRead: true } }, // [!code focus]
+);
+```
+
+#### style
+
+`"inline"` is [`.validate()`](#inline). `"section"` is the [`validate` option](#section). Anything else is refused: `validation.style must be inline or section.` Leave `style` unset and either place is allowed. The same field in both places is still OKM1030.
+
+<Callout type="info" title="One style">
+A column rule under `"section"`, or a section rule under `"inline"`, is OKM1030.
+</Callout>
+
+```ts title="section-style.ts"
+import { table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+  },
+  {
+    validation: { style: "section" }, // [!code focus]
+    validate: { title: [v.min(1, "title_required")] },
+  },
+);
+```
+
+### Run
+
+Import `okmodel/validate`. A write that would validate without that import is OKM1201. `okm check` reports it too. These members exist on the table only when its validation is on.
+
+#### insert.validate
+
+`insert.validate(row)` checks the row and returns it frozen. A later `insert` of that value skips the rules. A list is checked the same way.
+
+```ts title="run.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.varchar(200).validate([v.trim(), v.min(1, "title_required")]),
+});
+const app = schema({ tables: [notes], validation: true });
+
+export async function add(url: string, title: string) {
+  await using db = connect(url, { schema: app });
+  const row = await db.notes.insert.validate({ title }); // [!code focus]
+  return db.notes.insert(row);
+}
+```
+
+#### insert.check
+
+`insert.check(row)` runs the same checks. A failed rule returns the issues and does not throw OKM1200. An unknown key throws OKM1120 (`Field csrf is not on posts. Accepted names: displayName, id.`) before those issues are returned, so the rule issues are lost. The same refusal is on `insert.validate`, `insert.pick(...).validate`, `insert.pick(...).check`, `insert.omit(...).validate`, `insert.omit(...).check`, `update.validate`, and `insert["~standard"].validate`. The Standard Schema `validate` throws that OKM1120. It does not return `{ issues }` for an unknown key. A failed rule on that surface still returns `{ issues }`.
+
+```ts title="check.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.varchar(200).validate([v.min(1, "title_required")]),
+});
+const app = schema({ tables: [notes], validation: true });
+
+export async function issues(url: string, title: string) {
+  await using db = connect(url, { schema: app });
+  return db.notes.insert.check({ title }); // [!code focus]
+}
+```
+
+#### pick
+
+`insert.pick(...fields)` checks only the named fields. `validate` returns those fields frozen. `check` returns the issues for a failed rule. An unknown key throws OKM1120 on both, and `check` does not return the rule issues.
+
+```ts title="pick.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.varchar(200).validate([v.min(1, "title_required")]),
+  body: t.text(),
+});
+const app = schema({ tables: [notes], validation: true });
+
+export async function titleOnly(url: string, title: string) {
+  await using db = connect(url, { schema: app });
+  return db.notes.insert.pick("title").validate({ title }); // [!code focus]
+}
+```
+
+#### omit
+
+`insert.omit(...fields)` checks every field except those. `validate` and `check` throw OKM1120 on an unknown key. `check` returns rule issues only when every key is a field.
+
+```ts title="omit.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.varchar(200).validate([v.min(1, "title_required")]),
+  body: t.text(),
+});
+const app = schema({ tables: [notes], validation: true });
+
+export async function withoutTitle(url: string, body: string) {
+  await using db = connect(url, { schema: app });
+  return db.notes.insert.omit("title").validate({ body }); // [!code focus]
+}
+```
+
+#### update.validate
+
+`update.validate` checks a patch. A body with `set` checks `set`. An unknown key in the patch, or in `set`, throws OKM1120. Update has no `check`, `pick`, or `omit`.
+
+```ts title="rename.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.varchar(200).validate([v.min(1, "title_required")]),
+});
+const app = schema({ tables: [notes], validation: true });
+
+export async function rename(url: string, title: string) {
+  await using db = connect(url, { schema: app });
+  return db.notes.update.validate({ set: { title } }); // [!code focus]
+}
+```
+
+#### validate: false
+
+`{ validate: false }` on insert or update skips the rules. Codecs still run. Delete ignores the option.
+
+```ts title="skip.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.varchar(200).validate([v.min(1, "title_required")]),
+});
+const app = schema({ tables: [notes], validation: true });
+
+export async function raw(url: string, title: string) {
+  await using db = connect(url, { schema: app });
+  return db.notes.insert({ title }, { validate: false }); // [!code focus]
+}
+```

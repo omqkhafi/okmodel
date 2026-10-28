@@ -1,7 +1,7 @@
 /**
- * Docs sidebar. The tree comes from `meta.json`. Start, Define, Reference,
- * and AI Resources are unwrapped, so each page is a row under its numbered
- * label. `/docs` itself is omitted; the header tab already opens it.
+ * Docs sidebar. The tree comes from `meta.json`. Each group is a folder, and
+ * only the group that contains the current page is open. `/docs` itself is
+ * omitted; the header tab already opens it.
  */
 
 "use client";
@@ -16,18 +16,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo, useState, type ReactNode } from "react";
 
-/** Section folders whose children belong directly under the numbered label. */
-const FLAT_SECTIONS = new Set([
-  "start",
-  "Start",
-  "define",
-  "Define",
-  "reference",
-  "Reference",
-  "ai",
-  "AI Resources",
-]);
-
 /**
  * Whether a node is a folder.
  *
@@ -35,50 +23,6 @@ const FLAT_SECTIONS = new Set([
  */
 function isFolder(node: PageTree.Node): node is PageTree.Folder {
   return node.type === "folder";
-}
-
-/**
- * Whether this folder is a learning-path section, not a nested topic.
- *
- * @param node - Folder node
- */
-function isSectionFolder(node: PageTree.Folder): boolean {
-  if (typeof node.name === "string" && FLAT_SECTIONS.has(node.name)) return true;
-  const id = node.$id ?? "";
-  const last = id.split("/").pop() ?? id;
-  return FLAT_SECTIONS.has(last);
-}
-
-/**
- * Replace a section folder with its pages, in order.
- *
- * @param node - Section folder
- */
-function sectionPages(node: PageTree.Folder): PageTree.Node[] {
-  const pages: PageTree.Node[] = [];
-  if (node.index) pages.push(node.index);
-  for (const child of node.children) {
-    if (node.index && child.type === "page" && child.url === node.index.url) continue;
-    pages.push(child);
-  }
-  return pages;
-}
-
-/**
- * Lift Start so the sidebar lists routes, not folders.
- *
- * @param tree - Fumadocs page tree
- */
-export function flattenSectionFolders(tree: PageTree.Root): PageTree.Root {
-  const children: PageTree.Node[] = [];
-  for (const node of tree.children) {
-    if (isFolder(node) && isSectionFolder(node)) {
-      children.push(...sectionPages(node));
-    } else {
-      children.push(node);
-    }
-  }
-  return { ...tree, children };
 }
 
 /**
@@ -244,14 +188,13 @@ function GroupBody({
  * @param onNavigate - Called after a link click
  */
 export function DocsTreeNav({
-  tree: rawTree,
+  tree,
   onNavigate,
 }: {
   tree: PageTree.Root;
   onNavigate?: () => void;
 }): ReactNode {
   const pathname = usePathname();
-  const tree = useMemo(() => flattenSectionFolders(rawTree), [rawTree]);
   const folders = useMemo(
     () =>
       tree.children.flatMap((node, index) =>
@@ -319,12 +262,11 @@ export function DocsTreeNav({
 
 /**
  * Version row. The string is the root package version, inlined at build.
- * A prerelease is marked `next`; a release is marked `latest`.
+ * It stays so the sidebar can name the package version and open the changelog.
  */
 function VersionRow() {
   const version = process.env.NEXT_PUBLIC_OKMODEL_VERSION ?? "";
   if (version.length === 0) return null;
-  const channel = version.includes("-") ? "next" : "latest";
   return (
     <Link
       href="/changelog"
@@ -332,9 +274,6 @@ function VersionRow() {
     >
       <BranchIcon className="size-3.5 shrink-0 opacity-55" />
       <span className="truncate font-mono text-xs">v{version}</span>
-      <span className="border border-dashed border-fd-foreground/20 px-1.5 py-0.5 font-mono text-[9px] tracking-[0.16em] uppercase">
-        {channel}
-      </span>
     </Link>
   );
 }

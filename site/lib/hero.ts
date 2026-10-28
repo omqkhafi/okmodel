@@ -80,7 +80,7 @@ export const HERO_SCENARIOS: ReadonlyArray<HeroMigrateSpec> = [
     label: "Add a column",
     name: "add_body",
     note: "a nullable column is one expand step, and there is nothing to lint",
-    href: "/docs/define/table/columns",
+    href: "/docs/schema/columns",
     edits: [
       {
         find: "  authorId: t.bigint(),\n",
@@ -95,7 +95,7 @@ export const HERO_SCENARIOS: ReadonlyArray<HeroMigrateSpec> = [
     label: "Require a value",
     name: "require_title",
     note: "required becomes a check, a validate, then set not null, and the linter points at the validate",
-    href: "/docs/define/table/columns",
+    href: "/docs/schema/columns",
     edits: [{ find: "t.text().nullable()", replace: "t.text()" }],
   },
   {
@@ -105,7 +105,7 @@ export const HERO_SCENARIOS: ReadonlyArray<HeroMigrateSpec> = [
     label: "Add a unique key",
     name: "unique_name",
     note: "the unique index is built concurrently, then attached to the table",
-    href: "/docs/define/table/keys",
+    href: "/docs/schema/keys-and-identity",
     edits: [{ find: "  name: t.text(),", replace: "  name: t.text().unique()," }],
   },
   {
@@ -115,7 +115,7 @@ export const HERO_SCENARIOS: ReadonlyArray<HeroMigrateSpec> = [
     label: "Add a foreign key",
     name: "link_author",
     note: "the foreign key goes in NOT VALID and is validated in a second step",
-    href: "/docs/define/table/references",
+    href: "/docs/schema/references",
     edits: [{ find: "authorId: t.bigint()", replace: 'authorId: t.bigint().references("authors")' }],
   },
   {
@@ -125,7 +125,7 @@ export const HERO_SCENARIOS: ReadonlyArray<HeroMigrateSpec> = [
     label: "Add an index",
     name: "index_author",
     note: "the index is built concurrently, outside a transaction, so writes keep flowing",
-    href: "/docs/define/table/indexes",
+    href: "/docs/schema/indexes",
     edits: [
       { find: 'import { schema, table, t }', replace: 'import { index, schema, table, t }' },
       {
@@ -141,7 +141,7 @@ export const HERO_SCENARIOS: ReadonlyArray<HeroMigrateSpec> = [
     label: "Rename a column",
     name: "rename_title",
     note: "renamedFrom makes it a rename, not a drop and add, and the linter flags it for readers of the old name",
-    href: "/docs/define/table/names",
+    href: "/docs/schema/names-and-casing",
     edits: [
       {
         find: "title: t.text().nullable()",
@@ -156,7 +156,7 @@ export const HERO_SCENARIOS: ReadonlyArray<HeroMigrateSpec> = [
     label: "Add a picklist",
     name: "add_status",
     note: "the picklist becomes a check, and the emitted type narrows to the two values",
-    href: "/docs/define/table/shape",
+    href: "/docs/schema/enums-arrays-picklists",
     edits: [
       {
         find: "  authorId: t.bigint(),\n",
@@ -172,7 +172,7 @@ export const HERO_SCENARIOS: ReadonlyArray<HeroMigrateSpec> = [
     label: "Drop a table",
     name: "drop_notes",
     note: "a drop is a contract step, and the linter stops it until you allow it with a reason",
-    href: "/docs/define/config#migrations",
+    href: "/docs/reference/config#migrations",
     edits: [
       {
         find: `const notes = table("notes", {
@@ -194,7 +194,7 @@ export const HERO_SCENARIOS: ReadonlyArray<HeroMigrateSpec> = [
     label: "Timestamps",
     name: "add_timestamps",
     note: "one trait adds createdAt and updatedAt, with defaults, and the row type gains both",
-    href: "/docs/define/schema/traits",
+    href: "/docs/schema/traits-schema",
     edits: [
       {
         find: 'import { schema, table, t } from "okmodel/pg";',
@@ -213,7 +213,7 @@ export const HERO_SCENARIOS: ReadonlyArray<HeroMigrateSpec> = [
     label: "Soft delete",
     name: "archivable_notes",
     note: "archivable adds the columns and the partial index, and every read then skips archived rows",
-    href: "/docs/define/table/traits",
+    href: "/docs/schema/traits",
     edits: [
       {
         find: 'import { schema, table, t } from "okmodel/pg";',
@@ -232,7 +232,7 @@ export const HERO_SCENARIOS: ReadonlyArray<HeroMigrateSpec> = [
     label: "Enum",
     name: "add_enum",
     note: "a Postgres enum type is created first, then the column that uses it",
-    href: "/docs/define/table/shape",
+    href: "/docs/schema/enums-arrays-picklists",
     edits: [
       {
         find: "  authorId: t.bigint(),\n",
@@ -248,7 +248,7 @@ export const HERO_SCENARIOS: ReadonlyArray<HeroMigrateSpec> = [
     label: "View",
     name: "add_view",
     note: "a view is part of the schema, so it is planned, ordered after its tables, and read through the client",
-    href: "/docs/define/schema/views",
+    href: "/docs/schema/views",
     edits: [
       {
         find: 'import { schema, table, t } from "okmodel/pg";',
@@ -273,7 +273,7 @@ export default schema({ tables: [authors, notes], views: [titled] });`,
     label: "Tenant column",
     name: "tenant_notes",
     note: "a tenant table gets its key in the primary key, and every statement the client writes carries it",
-    href: "/docs/define/schema/tenancy",
+    href: "/docs/schema/tenancy-schema",
     base: HERO_EMPTY_SCHEMA,
     edits: [
       {
@@ -299,7 +299,7 @@ export default schema({
     label: "Row-level security",
     name: "tenant_rls",
     note: "the database enables and forces row-level security, so it refuses a statement that forgets the tenant",
-    href: "/docs/define/schema/tenancy",
+    href: "/docs/schema/tenancy-schema",
     base: HERO_EMPTY_SCHEMA,
     edits: [
       {

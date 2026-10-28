@@ -1,53 +1,33 @@
 /**
- * Sidebar routes stay flat under the numbered labels, and every page has an icon.
+ * Sidebar groups are the capability folders, and every page has an icon.
  */
 
 import { expect, test } from "bun:test";
-import type * as PageTree from "fumadocs-core/page-tree";
 
-import { flattenSectionFolders } from "../components/chrome/docs-sidebar";
 import { hasSidebarIcon } from "./sidebar-icons";
 import { source } from "./source";
 
-test("section folders become the routes under their label", () => {
-  const tree = {
-    name: "Docs",
-    children: [
-      { type: "page", name: "Documentation", url: "/docs" },
-      { type: "separator", name: "01 Start" },
-      {
-        type: "folder",
-        name: "Start",
-        $id: "start",
-        children: [{ type: "page", name: "Let's start", url: "/docs/start" }],
-      },
-    ],
-  } as PageTree.Root;
-
-  const flat = flattenSectionFolders(tree);
-  expect(flat.children.map((node) => (node.type === "page" ? node.url : node.type === "separator" ? node.name : node.type))).toEqual([
-    "/docs",
-    "01 Start",
-    "/docs/start",
+test("pages sit flat under the capability groups", () => {
+  const folders = source.getPageTree().children.flatMap((node) => (node.type === "folder" ? [node] : []));
+  expect(folders.map((folder) => folder.name)).toEqual([
+    "Get started",
+    "Schema",
+    "Queries",
+    "Migrations",
+    "Operate",
+    "Reference",
+    "AI Resources",
   ]);
-});
-
-test("reference and coding agents sit under their labels", () => {
-  const flat = flattenSectionFolders(source.getPageTree());
-  const labels = flat.children.map((node) => (node.type === "page" ? node.url : node.name));
-  expect(labels).toContain("03 Migrate");
-  expect(labels).toContain("/docs/migrate/from-drizzle");
-  expect(labels).toContain("/docs/migrate/from-existing");
-  expect(labels).toContain("04 Reference");
-  expect(labels).toContain("/docs/reference/cli");
-  expect(labels).toContain("/docs/reference/errors");
-  expect(labels).toContain("/docs/reference/okid");
-  expect(labels).toContain("/docs/reference/environment-variables");
-  expect(labels).toContain("05 Coding agents");
-  expect(labels).toContain("/docs/ai/skills");
-  expect(labels).toContain("/docs/ai/llm");
-  expect(labels).not.toContain("Reference");
-  expect(labels).not.toContain("/docs/ai/mcp");
+  for (const folder of folders) {
+    expect(folder.children.every((child) => child.type === "page")).toBe(true);
+  }
+  const urls = folders.flatMap((folder) => folder.children.flatMap((child) => (child.type === "page" ? [child.url] : [])));
+  expect(urls).toContain("/docs/reference/cli");
+  expect(urls).toContain("/docs/reference/errors");
+  expect(urls).toContain("/docs/migrations/from-drizzle");
+  expect(urls).toContain("/docs/ai/skills");
+  expect(urls).toContain("/docs/ai/llm");
+  expect(urls).not.toContain("/docs/ai/mcp");
 });
 
 test("every public page except the landing has a sidebar icon", () => {

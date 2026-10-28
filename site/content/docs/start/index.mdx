@@ -86,7 +86,7 @@ export const notes = table("notes", {
 });
 ```
 
-`t.identity()` is a `bigint`, generated always. Insert omits `id`. The default codec is a string. A key of more than one column is the `primaryKey` option. [Keys](/docs/define/table/keys).
+`t.identity()` is a `bigint`, generated always. Insert omits `id`. The default codec is a string. A key of more than one column is the `primaryKey` option. [Keys](/docs/schema/keys-and-identity).
 
 </Step>
 
@@ -122,7 +122,7 @@ export default defineConfig({
 });
 ```
 
-`okm push` loads `okmodel.config.ts` from the project directory. The file default-exports `defineConfig`. A file that does not is refused. A module that is not a `schema()` is refused: `<path> must export a schema().` Other options are on [Config](/docs/define/config).
+`okm push` loads `okmodel.config.ts` from the project directory. The file default-exports `defineConfig`. A file that does not is refused. A module that is not a `schema()` is refused: `<path> must export a schema().` Other options are on [Config](/docs/reference/config).
 
 </Step>
 
@@ -142,7 +142,7 @@ A protected target refuses push (OKM1850). No schema change prints `no changes`.
 <Step>
 ### Connect
 
-`connect` takes the direct URL and the schema. The process keeps `db`. Direct asserts the URL. Safe refuses an empty `DATABASE_URL`. The options are on [Connect](/docs/define/connect).
+`connect` takes the direct URL and the schema. The process keeps `db`. Direct asserts the URL. Safe refuses an empty `DATABASE_URL`. The options are on [Connect](/docs/operate/connect).
 
 <Tabs items={["Direct", "Safe"]}>
 
@@ -185,7 +185,7 @@ That's it! You're now ready to use okmodel in your application.
 | Next | You use it for |
 | --- | --- |
 | [Basic Usage](/docs/start/basic-usage) | One example per client call: insert, find, update, and delete. |
-| [Using OKModel safely](/docs/start/safely) | Pin the lockfile, wait before updating, and read provenance. |
+| [Using OKModel safely](/docs/operate/using-okmodel-safely) | Pin the lockfile, wait before updating, and read provenance. |
 </Step>
 
 </Steps>
