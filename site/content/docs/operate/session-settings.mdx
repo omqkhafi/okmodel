@@ -63,7 +63,7 @@ Each unit of work is one transaction. The first statement of that transaction is
 select set_config($1, $2, true), set_config($3, $4, true)
 ```
 
-The names and the values are parameters. The third argument is always `true`: the setting is local to the transaction. It is gone after commit and after rollback, so a pooler in transaction mode cannot hand one client's value to the next. There is no option for a session-level setting.
+The names and the values are parameters. The third argument is always `true`: the setting is local to the transaction. It is gone after commit and after rollback, so a pooler in transaction mode cannot hand one client's value to the next. There is no option for a session-level setting. The prelude is part of the call. `onQuery` does not report it as a separate event, and the same is true of `BEGIN`, `COMMIT`, and `RESET ALL`.
 
 | Where | What happens |
 | --- | --- |
