@@ -61,11 +61,11 @@ The row estimate on `okm migrate plan` (`about N rows, about M batches`) is disp
 
 ## What is not built
 
-Iterating tenants is schema-per-tenant and database-per-tenant (M5). A backfill on a table with column tenancy is one pass over the whole table.
+Iterating tenants is schema-per-tenant and database-per-tenant, which are not in this version. A backfill on a table with column tenancy is one pass over the whole table.
 
-The control database arrives with the multi-target runner in M5. This version stores the checkpoint on the target.
+A separate control database is not in this version. This version stores the checkpoint on the target.
 
-Bounded concurrency, canary, and class flags are M5. `okm migrate apply` runs one target.
+Bounded concurrency, a canary, and class flags are not in this version. `okm migrate apply` runs one target.
 
 The package copy is [`docs/backfill.md`](https://github.com/omqkhafi/okmodel/blob/main/docs/backfill.md) on main.
 

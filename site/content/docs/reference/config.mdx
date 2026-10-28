@@ -258,7 +258,7 @@ The host is lowercased before the check. The message is `Refusing pooler host <h
 | `connect()` | Not refused. |
 
 <Callout type="warning" title="OKM1854">
-Apply, push, seed, provision, and a one-database `okm check` read `pg_backend_pid()` eight times on the reserved session and hold another backend between reads so a LIFO pooler cannot reuse one server. `okm migrate check` does the same inside the scratch replay. The reads are not one transaction. Two or more distinct pids are OKM1854. The same opt-in that skips the host check skips the probe.
+Apply, push, seed, provision, and a one-database `okm check` read `pg_backend_pid()` eight times on the reserved session. The probe does not hold another backend between reads. `okm migrate check` reads `pg_backend_pid()` eight times inside the scratch replay and does not hold another backend between those reads either. The reads are not one transaction. Two or more distinct pids are OKM1854. The same opt-in that skips the host check skips the probe.
 </Callout>
 
 Connection pool size is [`max`](/docs/operate/session-and-pool#max).

@@ -119,8 +119,19 @@ test("the four corrected statements are what the pages say", () => {
     "The statement timeout is `backfill.statementTimeoutMs`, then the apply statement timeout (`timeouts.statement` or `--statement-timeout`), then 30000.";
   expect(production).toContain(notice);
   expect(checklist).toContain(notice);
+  const doctor = page("site/content/docs/reference/cli.mdx");
+  const pooler = page("site/content/docs/reference/config.mdx");
+  const decisions = page("docs/okmodel-decisions.md");
   expect(production).toContain(connection);
   expect(checklist).toContain(connection);
+  expect(doctor).toContain(connection);
+  expect(pooler).toContain("The probe does not hold another backend between reads.");
+  expect(pooler).not.toContain("hold another backend between reads so");
+  expect(decisions).toContain(
+    "**Amended by D320 (a failed connection may append a driver token).**",
+  );
+  expect(decisions).toContain("Amends D315.");
+  expect(decisions).not.toContain("with no driver text");
   expect(backfill).toContain(timeout);
   expect(backfillPage).toContain(timeout);
   expect(database).toContain("also read `pg_backend_pid()` eight times (`assertStableBackend`)");
@@ -129,6 +140,26 @@ test("the four corrected statements are what the pages say", () => {
     expect(text).not.toContain("only lints and prints");
     expect(text).not.toContain("no driver text");
     expect(text).not.toContain("pg_backend_pid()` twice");
+  }
+});
+
+test("the new handbook pages do not carry roadmap labels", () => {
+  const pages = [
+    "site/content/docs/operate/production-checklist.mdx",
+    "site/content/docs/operate/testing.mdx",
+    "site/content/docs/operate/protected-targets-and-roles.mdx",
+    "site/content/docs/migrations/checks-and-lint.mdx",
+    "site/content/docs/migrations/backfill.mdx",
+    "site/content/docs/migrations/failures.mdx",
+    "site/content/docs/migrations/environments.mdx",
+    "site/content/docs/reference/compatibility.mdx",
+  ];
+  for (const path of pages) {
+    const text = page(path);
+    expect(text, path).not.toMatch(/\bM\d+\b/);
+    expect(text, path).not.toMatch(/\bP\d+\b/);
+    const bare = [...text.matchAll(/\bD\d+\b/g)].map((match) => match[0] ?? "");
+    expect(bare, path).toEqual([]);
   }
 });
 

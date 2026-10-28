@@ -34,7 +34,7 @@ The first line stays `ok N migrations`. Skipped statements and OKM1552 warnings 
 
 `okm migrate check --provision` installs the head snapshot into one scratch schema and replays the history into another. Each side is its own transaction and ends with `ROLLBACK`. Both schemas start with `okm_check_` and are dropped at the end, including after a failure. Type names are normalised before the comparison. A difference is [OKM1521](/docs/reference/errors#okm1521) and names the object. The default command does not do this. A protected target is still refused, and `--allow-protected` does not apply.
 
-Tenant targets and schema-per-tenant checking are M5.
+Tenant targets and schema-per-tenant checking are not in this version.
 
 ## In a workflow
 

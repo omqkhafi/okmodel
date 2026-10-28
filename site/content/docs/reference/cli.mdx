@@ -241,7 +241,7 @@ bunx okm doctor OKM1520
 
 ### doctor --production
 
-`okm doctor --production` reads one target and reports findings. Every query runs in one `READ ONLY` transaction on one fresh session, and the command makes no network call beyond the target database. Several targets and no `--target` is OKM1853 (exit 2), not a skip. It takes no error code and cannot be combined with `--bundle`. The output names the target as ``target `<name>` ``. It never prints the URL, host, user, or password, and a failed connection is `Could not read target` with exit 5.
+`okm doctor --production` reads one target and reports findings. Every query runs in one `READ ONLY` transaction on one fresh session, and the command makes no network call beyond the target database. Several targets and no `--target` is OKM1853 (exit 2), not a skip. It takes no error code and cannot be combined with `--bundle`. The output names the target as ``target `<name>` ``. It never prints the URL, host, user, or password. A failed connection says ``Could not read target `<name>` `` and exits 5. When the driver message contains `ECONNREFUSED`, `ENOTFOUND`, `ETIMEDOUT`, `ECONNRESET`, `EHOSTUNREACH`, `28P01`, `28000`, `3D000`, or `57P03`, that token is appended in parentheses.
 
 ```sh
 bunx okm doctor --production --target production
