@@ -31,7 +31,8 @@ test("pages sit flat under the capability groups", () => {
   const byFolder = new Map(folders.map((folder) => [folder.name, folder]));
   const operate = byFolder.get("Operate");
   const migrations = byFolder.get("Migrations");
-  if (operate === undefined || migrations === undefined) throw new Error("missing group");
+  const queries = byFolder.get("Queries");
+  if (operate === undefined || migrations === undefined || queries === undefined) throw new Error("missing group");
   const childUrls = (folder: (typeof folders)[number]): string[] =>
     folder.children.flatMap((child) => (child.type === "page" ? [child.url] : []));
   expect(childUrls(operate)).toEqual([
@@ -50,6 +51,16 @@ test("pages sit flat under the capability groups", () => {
     "/docs/operate/observers",
     "/docs/operate/opentelemetry",
     "/docs/operate/errors",
+  ]);
+  expect(queries.index?.url).toBe("/docs/queries");
+  expect(childUrls(queries)).toEqual([
+    "/docs/queries/read-rows",
+    "/docs/queries/write-rows",
+    "/docs/queries/shape-results",
+    "/docs/queries/search-and-trees",
+    "/docs/queries/typed-raw-sql",
+    "/docs/queries/presets",
+    "/docs/queries/request-filters",
   ]);
   expect(childUrls(migrations)).toEqual([
     "/docs/migrations/adopt-existing-database",

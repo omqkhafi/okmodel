@@ -1,0 +1,380 @@
+---
+title: "Shape results"
+description: "Aggregate, include, windows, and period."
+---
+
+`aggregate`, `include`, windows, and `bucket` shape a read.
+
+### Aggregate
+
+`aggregate` counts, sums, averages, and finds extremes. `select` names each aggregate, and `having` keeps the groups whose aggregates match.
+
+| Input | Result |
+| --- | --- |
+| no `groupBy` | One row. |
+| `groupBy` | One row per group. Needs `limit`, or `.all(reason)`. |
+| `sum`, `avg`, `min`, `max` | A list of field names. |
+| `count: true` | The row count. |
+| `countDistinct` | A list of field names. Different non-null values, as `countDistinct.<field>`. |
+| `select` | `{ name: { sum: "field" } }`. One function per entry, and the result key is `name`. |
+
+#### count
+
+With no `groupBy` the result is one row.
+
+```ts title="count.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const tasks = table("tasks", {
+  id: t.identity(),
+  status: t.text(),
+  amount: t.integer(),
+});
+const app = schema({ tables: [tasks] });
+
+export async function totals(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.tasks.aggregate({ count: true }); // [!code focus]
+}
+```
+
+#### grouped
+
+`groupBy` needs `limit`, or `.all(reason)`. `sum` and `countDistinct` are lists of field names. `countDistinct` skips NULL, so a group with only NULLs counts 0.
+
+```ts title="aggregate.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const tasks = table("tasks", {
+  id: t.identity(),
+  status: t.text(),
+  amount: t.integer(),
+});
+const app = schema({ tables: [tasks] });
+
+export async function byStatus(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.tasks.aggregate({
+    groupBy: ["status"],
+    count: true,
+    sum: ["amount"], // [!code focus]
+    countDistinct: ["amount"], // [!code focus]
+    limit: 20,
+  });
+}
+```
+
+<Callout type="error" title="OKM1101">
+`aggregate() with groupBy needs a limit.`
+</Callout>
+
+#### named
+
+`select` gives each aggregate its own flat result key. An entry is one of `count: true`, `countDistinct`, `sum`, `avg`, `min`, or `max`, with one field. The list forms work in the same call. A name that is a group field, `count`, `sum`, `avg`, `min`, `max`, or `countDistinct` is OKM1120.
+
+```ts title="named.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const tasks = table("tasks", {
+  id: t.identity(),
+  status: t.text(),
+  amount: t.integer().nullable(),
+});
+const app = schema({ tables: [tasks] });
+
+export async function byStatus(url: string) {
+  await using db = connect(url, { schema: app });
+  const rows = await db.tasks.aggregate({
+    groupBy: ["status"],
+    select: { // [!code focus]
+      tasks: { count: true }, // [!code focus]
+      revenue: { sum: "amount" }, // [!code focus]
+      smallest: { min: "amount" }, // [!code focus]
+      largest: { max: "amount" }, // [!code focus]
+    }, // [!code focus]
+    limit: 20,
+  });
+  return rows.map((row) => `${row.status}: ${row.tasks} tasks, ${row.revenue ?? 0} total`);
+}
+```
+
+#### having
+
+`having` keeps the groups whose aggregates match. It is the `where` predicate form over `count` and the names in `select`, and it needs `groupBy`. It takes `eq`, `not`, `lt`, `lte`, `gt`, `gte`, `between`, `inList`, `notIn`, and `or()`. A text `min` or `max` also takes the text patterns. A NULL aggregate matches no comparison, and `null` matches it. A list-form aggregate has no name, so `having` cannot reach it.
+
+```ts title="having.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t, gt, gte, or } from "okmodel/pg";
+
+const tasks = table("tasks", {
+  id: t.identity(),
+  status: t.text(),
+  amount: t.integer().nullable(),
+});
+const app = schema({ tables: [tasks] });
+
+export async function busyStatuses(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.tasks.aggregate({
+    groupBy: ["status"],
+    select: { revenue: { sum: "amount" } },
+    having: or([{ count: gte(10) }, { revenue: gt(1000) }]), // [!code focus]
+    limit: 20,
+  });
+}
+```
+
+<Callout type="error" title="OKM1120">
+`having needs groupBy.`
+</Callout>
+
+#### orderBy
+
+A grouped `aggregate` orders by a `groupBy` field, a bucket `as`, `count`, or a name in `select`. Each key takes `"asc"`, `"desc"`, or `{ dir, nulls }`. Without `nulls`, ascending puts NULLs last and descending puts them first. A group with no non-NULL values has a NULL `sum`, `avg`, `min`, and `max`, so name the end you want.
+
+```ts title="order-groups.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const tasks = table("tasks", {
+  id: t.identity(),
+  status: t.text(),
+  amount: t.integer().nullable(),
+});
+const app = schema({ tables: [tasks] });
+
+export async function biggestFirst(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.tasks.aggregate({
+    groupBy: ["status"],
+    select: { revenue: { sum: "amount" } },
+    orderBy: { revenue: { dir: "desc", nulls: "last" } }, // [!code focus]
+    limit: 20,
+  });
+}
+```
+
+### Include
+
+`limit` on a to-many `include` is the first N related rows of each parent.
+
+| Option | Result |
+| --- | --- |
+| `limit` | Per parent, inside one lateral join. |
+| `orderBy` | Order inside that parent. The primary key follows, ascending, for any key you did not name. |
+| omitted `orderBy` | The primary key. |
+| no related rows | `[]`. |
+| `select`, a nested include, a preset | Apply. A `select` that names a hidden column drops that column and does not error. |
+| `matches`, `relevance` | Apply inside the include. |
+| `search` | Stays on `find` and `count`. |
+| a window in `select` | Not in this version. |
+
+#### simple
+
+`limit` is the first related rows of each parent.
+
+```ts title="include-limit.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { many, schema, table, t } from "okmodel/pg";
+
+const posts = table(
+  "posts",
+  { id: t.identity(), title: t.text() },
+  { relations: { comments: many("comments", "postId") } },
+);
+const comments = table("comments", {
+  id: t.identity(),
+  postId: t.bigint().references("posts"),
+  body: t.text(),
+});
+const app = schema({ tables: [posts, comments] });
+
+export async function thread(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.posts.find({
+    limit: 20,
+    include: { comments: { limit: 3 } }, // [!code focus]
+  });
+}
+```
+
+#### complex
+
+`orderBy` sorts inside that parent. `select` names the fields.
+
+```ts title="include.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { many, schema, table, t } from "okmodel/pg";
+
+const posts = table(
+  "posts",
+  { id: t.identity(), title: t.text() },
+  { relations: { comments: many("comments", "postId") } },
+);
+const comments = table("comments", {
+  id: t.identity(),
+  postId: t.bigint().references("posts"),
+  body: t.text(),
+  score: t.integer(),
+});
+const app = schema({ tables: [posts, comments] });
+
+export async function latest(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.posts.find({
+    limit: 20,
+    include: {
+      comments: { orderBy: { score: "desc" }, limit: 3, select: ["id", "body"] }, // [!code focus]
+    },
+  });
+}
+```
+
+### Windows
+
+`rowNumber`, `rank`, `denseRank`, and `runningTotal` go in `select` on `find` or `one`.
+
+| Helper | Result |
+| --- | --- |
+| `rowNumber` | One number per row. The primary key is appended, so a tie stays stable. |
+| `rank` | Equal values share a rank. The next rank skips. |
+| `denseRank` | Equal values share a rank. The next rank is the next integer. |
+| `runningTotal` | The column's type, or null. An integer is a number or null. A column that reads as text, including `numeric`, is that string or null. |
+
+| Option | Result |
+| --- | --- |
+| `partitionBy` | The group. Omit it to number the whole result. |
+| `orderBy` | Required. The order inside the group. |
+| `as` | The name on the row. A column name is refused. |
+
+#### simple
+
+`rowNumber` numbers the rows in `orderBy`. Omit `partitionBy` to number the whole result.
+
+```ts title="row-number.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { rowNumber, schema, table, t } from "okmodel/pg";
+
+const tasks = table("tasks", {
+  id: t.identity(),
+  status: t.text(),
+  amount: t.integer(),
+});
+const app = schema({ tables: [tasks] });
+
+export async function numbered(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.tasks.find({
+    select: ["id", rowNumber({ orderBy: { amount: "desc" }, as: "n" })], // [!code focus]
+    limit: 20,
+  });
+}
+```
+
+#### complex
+
+`rank` skips after a tie. `denseRank` does not. `runningTotal` adds the column.
+
+```ts title="windows.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { denseRank, rank, rowNumber, runningTotal, schema, table, t } from "okmodel/pg";
+
+const tasks = table("tasks", {
+  id: t.identity(),
+  status: t.text(),
+  amount: t.integer(),
+});
+const app = schema({ tables: [tasks] });
+
+export async function numbered(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.tasks.find({
+    select: [
+      "id",
+      "status",
+      rowNumber({ partitionBy: ["status"], orderBy: { amount: "desc" }, as: "n" }), // [!code focus]
+      rank({ partitionBy: ["status"], orderBy: { amount: "desc" }, as: "r" }),
+      denseRank({ partitionBy: ["status"], orderBy: { amount: "desc" }, as: "d" }),
+      runningTotal("amount", { partitionBy: ["status"], orderBy: { id: "asc" }, as: "soFar" }),
+    ],
+    limit: 20,
+  });
+}
+```
+
+<Callout type="error" title="OKM1120">
+`page()` reads `select` as field names, so a window there is OKM1120: `select must be a list of field names.` An `as` that is a column name is `rowNumber as id clashes with a column of tasks.` An empty `as` is `rowNumber needs as, the name of the result key.` A control character is `rowNumber as has a control character.` A name on `Object.prototype`, or `then`, is `rowNumber as __proto__ is a prototype key. Use another name for the result.` `orderBy` is required: `rowNumber needs orderBy, the order inside the group.` `lag`, `lead`, and a frame are not in this version.
+</Callout>
+
+<Callout type="error" title="OKM1124">
+`runningTotal` on a column that is not a number or a string is refused.
+</Callout>
+
+### Period
+
+`bucket(column, unit, { tz, as })` goes in `aggregate` `groupBy`, beside field names. `as` is the result key. A grouped aggregate needs `limit`, or `.all(reason)`. There is no gap filling.
+
+| Unit | On `timestamptz` | On `date` |
+| --- | --- | --- |
+| `second`, `minute`, `hour` | `Temporal.Instant`, the period start. | OKM1120. |
+| `day`, `week`, `month`, `quarter`, `year` | `Temporal.PlainDate`, the local date the period starts. | The same date. |
+
+`tz` is required for `timestamptz` and refused for `date`. A `timestamp` without a zone is refused. `weekStart` applies only to `week` and is `monday` (the default), `sunday`, or `saturday`. A NULL timestamp is one group: the key is present and the value is null.
+
+#### simple
+
+One day bucket on `timestamptz`. `tz` is required. A `date` column omits `tz`.
+
+```ts title="buckets.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { bucket, schema, table, t } from "okmodel/pg";
+
+const events = table("events", { id: t.identity(), at: t.timestamptz() });
+const app = schema({ tables: [events] });
+
+export async function perDay(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.events.aggregate({
+    groupBy: [bucket("at", "day", { tz: "UTC", as: "day" })], // [!code focus]
+    count: true,
+    limit: 31,
+  });
+}
+```
+
+#### complex
+
+A week starts on Monday unless `weekStart` says otherwise. `sum` is the total `amount` in that week.
+
+```ts title="weeks.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { bucket, schema, table, t } from "okmodel/pg";
+
+const events = table("events", {
+  id: t.identity(),
+  at: t.timestamptz(),
+  amount: t.integer(),
+});
+const app = schema({ tables: [events] });
+
+export async function perWeek(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.events.aggregate({
+    groupBy: [bucket("at", "week", { tz: "UTC", weekStart: "sunday", as: "week" })], // [!code focus]
+    count: true,
+    sum: ["amount"],
+    limit: 12,
+  });
+}
+```
+
+<Callout type="error" title="OKM1120">
+An empty `as` is refused. `__proto__`, `constructor`, `toString`, and `hasOwnProperty` are refused. An `as` that clashes with a group field, another bucket, or `count`, `sum`, `avg`, `min`, or `max` is refused.
+</Callout>
+
+| Next | You use it for |
+| --- | --- |
+| [Read rows](/docs/queries/read-rows) | Page and stream. |
