@@ -39,6 +39,8 @@ test("sitemap and robots advertise the handbook", () => {
   const urls = sitemap().map((entry) => entry.url);
   expect(urls).toContain(SITE_ORIGIN);
   expect(urls).toContain(`${SITE_ORIGIN}/docs/start`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/start/why-okmodel`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/start/first-migration`);
   expect(urls).toContain(`${SITE_ORIGIN}/changelog`);
   expect(urls).toContain(`${SITE_ORIGIN}/llms.txt`);
   expect(urls).toContain(`${SITE_ORIGIN}/llms-full.txt`);

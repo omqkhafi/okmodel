@@ -20,6 +20,7 @@ const cli = join(root, "src/tooling/cli.ts");
 const install = readFileSync(join(root, "site/content/docs/start/installation.mdx"), "utf8");
 const first = readFileSync(join(root, "site/content/docs/start/first-schema.mdx"), "utf8");
 const structure = readFileSync(join(root, "site/content/docs/start/project-structure.mdx"), "utf8");
+const migration = readFileSync(join(root, "site/content/docs/start/first-migration.mdx"), "utf8");
 
 const imports: readonly (readonly [string, string])[] = [
   ["okmodel/pg/postgresjs", join(root, "src/runtime/pg/postgresjs.ts")],
@@ -56,6 +57,132 @@ test("okm init writes the project-structure file list", () => {
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+test("Why OKModel is dated with the package version", () => {
+  const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
+    version: string;
+  };
+  const page = readFileSync(join(root, "site/content/docs/start/why-okmodel.mdx"), "utf8");
+  expect(page).toContain(`As of ${version.version}.`);
+});
+
+postgresTest(
+  gate,
+  "the first migration commands match the handbook output",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = mkdtempSync(join(tmpdir(), "okm-start-migrate-"));
+    const previous = process.env.DATABASE_URL;
+    process.env.DATABASE_URL = database.url;
+    try {
+      writeFence(cwd, "schema.ts", fence(install, "ts", "schema.ts"));
+      writeFence(cwd, "db.ts", fence(install, "ts", "db.ts"));
+      writeFence(cwd, "okmodel.config.ts", fence(migration, "ts", "okmodel.config.ts"));
+
+      const planned = cliProc(cwd, ["migrate", "plan", "init"]);
+      expect(planned.status, planned.stderr).toBe(0);
+      expect(planned.stdout).toBe(fence(migration, "text", "plan-init.out"));
+
+      const generated = cliProc(cwd, ["generate", "init"]);
+      expect(generated.status, generated.stderr).toBe(0);
+      expect(generated.stdout).toBe(`${join(cwd, "migrations", "0001_init.sql")}\n`);
+      expect(readFileSync(join(cwd, "migrations", "0001_init.sql"), "utf8")).toBe(
+        fence(migration, "sql", "0001_init.sql"),
+      );
+      expect(readFileSync(join(cwd, ".gitattributes"), "utf8")).toBe(
+        "migrations/*.sql text eol=lf\n*.catalog.json text eol=lf\n.okm/** text eol=lf\n",
+      );
+      expect(statSync(join(cwd, ".okm", "catalog.json")).isFile()).toBe(true);
+      expect(statSync(join(cwd, ".okm", "catalog.hash")).isFile()).toBe(true);
+      expect(statSync(join(cwd, ".okm", "types.d.ts")).isFile()).toBe(true);
+
+      const again = cliProc(cwd, ["migrate", "plan", "init"]);
+      expect(again.status, again.stderr).toBe(0);
+      expect(again.stdout).toBe(fence(migration, "text", "plan-init-again.out"));
+
+      const applied = cliProc(cwd, ["migrate", "apply"]);
+      expect(applied.status, applied.stderr).toBe(0);
+      expect(applied.stdout).toBe(fence(migration, "text", "apply-init.out"));
+
+      const checked = cliProc(cwd, ["check"]);
+      expect(checked.status, checked.stderr).toBe(0);
+      expect(checked.stdout).toBe(fence(migration, "text", "check.out"));
+
+      const inserted = spawnOk(cwd, "insert.ts", fence(first, "ts", "insert.ts"));
+      expect(inserted.stdout).toBe(fence(first, "text", "insert.out"));
+
+      writeFence(cwd, "schema.ts", fence(migration, "ts", "schema-required.ts"));
+      const rejected = cliProc(cwd, ["migrate", "plan", "add-body"]);
+      expect(rejected.status).toBe(1);
+      expect(rejected.stdout).toBe(fence(migration, "text", "plan-body.out"));
+      expect(withoutConfig(rejected.stderr)).toBe(fence(migration, "text", "lint.err"));
+      const checkedRejected = cliProc(cwd, ["check"]);
+      expect(checkedRejected.status).toBe(1);
+      expect(withoutConfig(checkedRejected.stderr)).toBe(fence(migration, "text", "lint.err"));
+      const generatedBad = cliProc(cwd, ["generate", "add-body"]);
+      expect(generatedBad.status).toBe(1);
+      expect(generatedBad.stdout).toBe(`${join(cwd, "migrations", "0002_add-body.sql")}\n`);
+      expect(generatedBad.stderr).toContain("okm migrate apply will refuse until it is fixed.");
+      rmSync(join(cwd, "migrations", "0002_add-body.sql"));
+      rmSync(join(cwd, "migrations", "0002_add-body.catalog.json"));
+
+      writeFence(cwd, "schema.ts", fence(migration, "ts", "schema.ts"));
+      const accepted = cliProc(cwd, ["migrate", "plan", "add-body"]);
+      expect(accepted.status, accepted.stderr).toBe(0);
+      expect(accepted.stdout).toBe(fence(migration, "text", "plan-body-ok.out"));
+
+      const added = cliProc(cwd, ["generate", "add-body"]);
+      expect(added.status, added.stderr).toBe(0);
+      expect(added.stdout).toBe(`${join(cwd, "migrations", "0002_add-body.sql")}\n`);
+      expect(readFileSync(join(cwd, "migrations", "0002_add-body.sql"), "utf8")).toBe(
+        fence(migration, "sql", "0002_add-body.sql"),
+      );
+
+      const appliedBody = cliProc(cwd, ["migrate", "apply"]);
+      expect(appliedBody.status, appliedBody.stderr).toBe(0);
+      expect(appliedBody.stdout).toBe(fence(migration, "text", "apply-body.out"));
+
+      const status = cliProc(cwd, ["migrate", "status"]);
+      expect(status.status, status.stderr).toBe(0);
+      expect(status.stdout).toBe(fence(migration, "text", "status.out"));
+    } finally {
+      if (previous === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = previous;
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
+  "apply after push reports that notes already exists",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = mkdtempSync(join(tmpdir(), "okm-start-push-apply-"));
+    const previous = process.env.DATABASE_URL;
+    process.env.DATABASE_URL = database.url;
+    try {
+      writeFence(cwd, "schema.ts", fence(install, "ts", "schema.ts"));
+      writeFence(cwd, "okmodel.config.ts", fence(first, "ts", "okmodel.config.ts"));
+      const pushed = cliProc(cwd, ["push"]);
+      expect(pushed.status, pushed.stderr).toBe(0);
+      writeFence(cwd, "okmodel.config.ts", fence(migration, "ts", "okmodel.config.ts"));
+      const generated = cliProc(cwd, ["generate", "init"]);
+      expect(generated.status, generated.stderr).toBe(0);
+      const applied = cliProc(cwd, ["migrate", "apply"]);
+      expect(applied.status).toBe(1);
+      expect(withoutConfig(applied.stderr)).toBe(fence(migration, "text", "apply-after-push.err"));
+    } finally {
+      if (previous === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = previous;
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  60_000,
+);
 
 postgresTest(
   gate,
@@ -135,6 +262,19 @@ postgresTest(
  * @param lang - Fence language
  * @param title - Fence title
  */
+/**
+ * Stderr without the `config:` line. That line is an absolute path.
+ *
+ * @param stderr - Command stderr
+ */
+function withoutConfig(stderr: string): string {
+  const text = stderr
+    .split("\n")
+    .filter((line) => !line.startsWith("config:"))
+    .join("\n");
+  return text.endsWith("\n") || text.length === 0 ? text : `${text}\n`;
+}
+
 function fence(text: string, lang: string, title: string): string {
   const pattern = new RegExp(
     `\`\`\`${lang} title="${title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"\\n([\\s\\S]*?)\`\`\``,
