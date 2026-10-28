@@ -17,7 +17,7 @@ description: "connect() opens the client. The first argument is the target. sche
 Import `connect` from the [driver](/docs/operate/drivers) you installed. The process keeps one client.
 
 <Callout type="info" title="The schema">
-The client is typed by the schema you pass. There is no global register.
+The client is typed by the schema you pass. A `Register` augmentation, which `okm init` writes, feeds the `Row`, `Insert`, and `Update` helper types when no schema is passed.
 </Callout>
 
 ## The declaration

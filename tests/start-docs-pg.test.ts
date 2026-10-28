@@ -1,13 +1,15 @@
 /**
  * Get started examples run on a real Postgres.
  *
- * `okm init` does not connect. Push and the client scripts do.
+ * `okm init` does not connect. The test checks the files it writes.
+ * Stdout bytes include the package version and file hashes.
+ * Push and the client scripts do connect.
  * Each script is the handbook fence. Its stdout is the fence on the page.
  */
 
 import { expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -27,7 +29,7 @@ const imports: readonly (readonly [string, string])[] = [
 
 const gate = await loadPostgresGate();
 
-test("okm init stdout is the project-structure fence", () => {
+test("okm init writes the project-structure file list", () => {
   const cwd = mkdtempSync(join(tmpdir(), "okm-start-init-"));
   try {
     writeFileSync(
@@ -42,7 +44,14 @@ test("okm init stdout is the project-structure fence", () => {
     });
     expect(proc.status).toBe(0);
     expect(proc.stderr).toBe("");
-    expect(proc.stdout).toBe(fence(structure, "text", "init.out"));
+    const wrote = treePaths(fence(structure, "text", "init.tree"));
+    expect(
+      relativeFiles(cwd)
+        .filter((file) => file !== "bun.lock")
+        .sort(),
+    ).toEqual(wrote.sort());
+    const next = fence(structure, "text", "init.next");
+    expect(proc.stdout.endsWith(next.endsWith("\n") ? next : `${next}\n`)).toBe(true);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -52,17 +61,14 @@ postgresTest(
   gate,
   "the first-success scripts match the handbook output",
   async () => {
-    expect(fence(install, "ts", "schema.ts")).toBe(fence(first, "ts", "schema.ts"));
     const database = await createIsolatedDatabase();
     const cwd = mkdtempSync(join(tmpdir(), "okm-start-docs-"));
     const previous = process.env.DATABASE_URL;
     process.env.DATABASE_URL = database.url;
     try {
-      writeFence(cwd, "table.ts", fence(first, "ts", "table.ts"));
-      writeFence(cwd, "schema.ts", fence(first, "ts", "schema.ts"));
+      writeFence(cwd, "schema.ts", fence(install, "ts", "schema.ts"));
       writeFence(cwd, "db.ts", fence(install, "ts", "db.ts"));
       writeFence(cwd, "okmodel.config.ts", fence(first, "ts", "okmodel.config.ts"));
-      expect(spawnOk(cwd, "table.ts").stdout).toBe("");
       expect(spawnOk(cwd, "schema.ts").stdout).toBe("");
       const check = spawnOk(cwd, "check.ts", fence(install, "ts", "check.ts"));
       expect(check.stdout).toBe(fence(install, "text", "connected.out"));
@@ -196,6 +202,53 @@ function spawnFile(
  * @param cwd - Project directory
  * @param argv - Arguments after the program name
  */
+/**
+ * Files in a directory, relative and using `/`.
+ *
+ * @param dir - Root to walk
+ */
+function relativeFiles(dir: string): string[] {
+  const out: string[] = [];
+  const walk = (current: string, prefix: string): void => {
+    for (const name of readdirSync(current)) {
+      const path = join(current, name);
+      const relative = prefix.length === 0 ? name : `${prefix}/${name}`;
+      if (statSync(path).isDirectory()) walk(path, relative);
+      else out.push(relative);
+    }
+  };
+  walk(dir, "");
+  return out;
+}
+
+/**
+ * File paths in an `init.tree` fence. A deeper next line means a directory.
+ *
+ * @param text - Tree fence body
+ */
+function treePaths(text: string): string[] {
+  const rows = text
+    .split("\n")
+    .filter((line) => line.trim() !== "" && line.trim() !== ".")
+    .map((line) => {
+      const indent = /^(?:│ {3}| {4})*/.exec(line)?.[0].length ?? 0;
+      const name = line.replace(/^(?:│ {3}| {4})*[├└]── /, "");
+      return { depth: indent / 4, name };
+    });
+  const files: string[] = [];
+  const stack: string[] = [];
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    if (row === undefined) continue;
+    stack.length = row.depth;
+    stack[row.depth] = row.name;
+    const next = rows[index + 1];
+    if (next !== undefined && next.depth > row.depth) continue;
+    files.push(stack.join("/"));
+  }
+  return files;
+}
+
 function cliProc(
   cwd: string,
   argv: readonly string[],
