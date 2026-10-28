@@ -10,12 +10,19 @@
  *
  * A trailing `/` or `\` is removed so the joined file name is one path.
  *
+ * A missing or throwing `process.cwd` uses `./.okm`. Node keeps `<cwd>/.okm`.
+ *
  * @param catalogDir - Directory the caller passed, or the default `.okm`
  * @returns The directory, without a trailing slash
  */
 export function artifactDir(catalogDir: string | undefined): string {
   if (catalogDir !== undefined) return catalogDir.replace(/[/\\]+$/, "");
-  const cwd = globalThis.process?.cwd?.() ?? ".";
+  let cwd = ".";
+  try {
+    cwd = globalThis.process?.cwd?.() ?? ".";
+  } catch {
+    cwd = ".";
+  }
   return `${cwd}/.okm`;
 }
 
