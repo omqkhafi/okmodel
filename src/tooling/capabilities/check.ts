@@ -17,7 +17,8 @@ import type { CapabilityGate, EmulatedNote, FeatureEntry, Registry } from "./typ
  * @returns The errors page for that code
  */
 function refusalDocs(code: string): string {
-  return `https://okm.omqkhafi.dev/docs/reference/errors#${code.toLowerCase()}`;
+  // Joined so a source scan sees the errors page, not an uninterpolated template.
+  return "https://okm.omqkhafi.dev/docs/reference/errors#" + code.toLowerCase();
 }
 
 /** Doctor page for a feature the dialect refuses. */
