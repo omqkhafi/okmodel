@@ -16,6 +16,13 @@ test("a docs path negotiates to its markdown twin", () => {
   expect(markdownTwinPath("/docs/schema/tables")).toBe("/llms.mdx/docs/schema/tables.md");
   expect(markdownTwinPath("/docs/schema/the-schema")).toBe("/llms.mdx/docs/schema/the-schema.md");
   expect(markdownTwinPath("/docs/queries")).toBe("/llms.mdx/docs/queries.md");
+  expect(markdownTwinPath("/docs/queries/read-rows")).toBe("/llms.mdx/docs/queries/read-rows.md");
+  expect(markdownTwinPath("/docs/queries/write-rows")).toBe("/llms.mdx/docs/queries/write-rows.md");
+  expect(markdownTwinPath("/docs/queries/shape-results")).toBe("/llms.mdx/docs/queries/shape-results.md");
+  expect(markdownTwinPath("/docs/queries/search-and-trees")).toBe(
+    "/llms.mdx/docs/queries/search-and-trees.md",
+  );
+  expect(markdownTwinPath("/docs/queries/typed-raw-sql")).toBe("/llms.mdx/docs/queries/typed-raw-sql.md");
   expect(markdownTwinPath("/docs/operate/connect")).toBe("/llms.mdx/docs/operate/connect.md");
   expect(markdownTwinPath("/docs/migrations/from-drizzle")).toBe(
     "/llms.mdx/docs/migrations/from-drizzle.md",

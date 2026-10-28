@@ -1,4 +1,13 @@
 {
   "title": "Queries",
-  "pages": ["index", "presets", "request-filters"]
+  "pages": [
+    "index",
+    "read-rows",
+    "write-rows",
+    "shape-results",
+    "search-and-trees",
+    "typed-raw-sql",
+    "presets",
+    "request-filters"
+  ]
 }

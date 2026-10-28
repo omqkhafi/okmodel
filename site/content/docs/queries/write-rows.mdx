@@ -1,0 +1,271 @@
+---
+title: "Write rows"
+description: "Insert, update, claim, and sync."
+---
+
+These calls refuse an unknown key, then insert, update, claim, or sync.
+
+### Unknown keys
+
+An unknown key on `insert`, `update`, upsert / `onConflict`, first-or-create, `insert.validate`, `insert.check`, `insert.pick(...).validate`, `insert.pick(...).check`, `insert.omit(...).validate`, `insert.omit(...).check`, `update.validate`, or `insert["~standard"].validate` is OKM1120. The message names the key and the table. `insert.check`, `pick(...).check`, and `omit(...).check` return rule issues and do not throw OKM1200 for a failed rule. An unknown key throws on those calls too, and the rule issues are lost. The Standard Schema `validate` throws that OKM1120. It does not return `{ issues }` for an unknown key. A failed rule on that surface still returns `{ issues }`. Typos are no longer dropped silently. Guarded, sealed, and computed fields keep their existing codes (OKM1190 and the rest).
+
+<Callout type="error" title="OKM1120">
+`Field nope is not on notes.` Use a field from the catalog.
+</Callout>
+
+### Supplied id
+
+A client-generator `t.id({ default: uuidv4 })` omits `id` from insert. `{ allow: ["id"] }` writes the id you pass and skips the generator for that row. A list can mix a supplied id with a row that omits it. Without `allow`, a supplied id is OKM1190. On a list, `allow` has to be exactly `["id"]`. A longer list does not open `id` in the type.
+
+`t.id()` and `t.id({ default: "uuidv7" })` are database defaults. The type accepts `allow: ["id"]` on that id, and the runtime fails with OKM1190. Update does not change the key. A primary key with no client generator, including `.primaryKey().guarded()`, stays refused. A guarded field that is not the key still opens with `allow`.
+
+```ts title="supplied-id.ts"
+import { uuidv4 } from "okmodel/ids";
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const users = table("users", { id: t.id({ default: uuidv4 }), name: t.text() });
+const app = schema({ tables: [users] });
+
+export async function keep(url: string, id: string) {
+  await using db = connect(url, { schema: app });
+  return db.users.insert(
+    [{ id, name: "Ada" }, { name: "Grace" }],
+    { allow: ["id"] },
+  );
+}
+```
+
+<Callout type="error" title="OKM1190">
+A supplied id without `allow`, a database-default id named in `allow`, and an update of the key are refused.
+</Callout>
+
+### First or create
+
+`onConflict` decides what an insert does when a unique is already taken.
+
+| Value | Result |
+| --- | --- |
+| omitted, or `"error"` | The insert fails. |
+| `"ignore"` | The new row is skipped. |
+| `{ on, update }` | Those columns are set from the new row. |
+| `{ on, return: true }` | The existing row is read and not changed. |
+
+`on` is a unique or the primary key. `update` and `return` together are refused.
+
+#### return
+
+`{ on, return: true }` inserts the row. When that unique is taken, it reads the existing row and does not change it. The lookup runs only when the insert returned nothing.
+
+```ts title="create.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const tags = table("tags", { id: t.identity(), name: t.text().unique() });
+const app = schema({ tables: [tags] });
+
+export async function once(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.tags.insert({ name: "ship" }, { onConflict: { on: "name", return: true } }); // [!code focus]
+}
+```
+
+#### ignore
+
+`"ignore"` skips a row whose unique is taken.
+
+```ts title="ignore.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const tags = table("tags", { id: t.identity(), name: t.text().unique() });
+const app = schema({ tables: [tags] });
+
+export async function keep(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.tags.insert({ name: "ship" }, { onConflict: "ignore" }); // [!code focus]
+}
+```
+
+#### update
+
+`update` names the columns copied from the rejected row.
+
+```ts title="upsert.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const tags = table("tags", { id: t.identity(), name: t.text().unique() });
+const app = schema({ tables: [tags] });
+
+export async function rename(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.tags.insert({ name: "ship" }, { onConflict: { on: "name", update: ["name"] } }); // [!code focus]
+}
+```
+
+<Callout type="error" title="OKM1120">
+Anything else is `onConflict must be "error", "ignore", { on, update }, or { on, return: true }.` `update` and `return` together are `onConflict takes update or return, not both.`
+</Callout>
+
+<Callout type="info" title="Read committed">
+The lookup is a second statement and does not set isolation. A second request that commits while the first is waiting is visible, so both callers get the row. Repeatable read and serializable can still miss it. On an archivable table, a unique that is not the primary key matches only a row that is not archived.
+</Callout>
+
+### List
+
+`update` of a list writes those rows in one statement. A long list is split so the parameters stay inside the budget. A finished statement over 65,533 parameters is OKM1126 (count and limit in the message). The limit matches postgres.js (which refuses at 65,534) so OKM1126 fires first. The limit is for the whole statement — filters, `inList`, `limit`, and values — not for `inList` alone. Chunk the work, or filter with `= any(array)`.
+
+| Input | Result |
+| --- | --- |
+| the same target twice | OKM1120. |
+| a target that matches nothing | Not an error. `count` is the rows changed. |
+| an empty `set` | OKM1120. |
+| an empty list | No statement. |
+
+```ts title="list.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", { id: t.identity(), title: t.text() });
+const app = schema({ tables: [notes] });
+
+export async function rename(url: string, first: string, second: string) {
+  await using db = connect(url, { schema: app });
+  return db.notes.update([
+    { where: { id: first }, set: { title: "A" } }, // [!code focus]
+    { where: { id: second }, set: { title: "B" } },
+  ]);
+}
+```
+
+<Callout type="error" title="OKM1120">
+The same target twice is `update on notes lists the same target twice.` An empty `set` is `update set is empty.`
+</Callout>
+
+### Increment
+
+`inc` adds to a number or bigint column inside `set`. A null number stays null. `undefined` in `set` leaves the field unchanged.
+
+```ts title="inc.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { inc, schema, table, t } from "okmodel/pg";
+
+const tasks = table("tasks", { id: t.identity(), amount: t.integer() });
+const app = schema({ tables: [tasks] });
+
+export async function add(url: string, id: string) {
+  await using db = connect(url, { schema: app });
+  return db.tasks.update({ where: { id }, set: { amount: inc(1) } }); // [!code focus]
+}
+```
+
+<Callout type="error" title="OKM1124">
+A text column is `inc adds to a number. title is a text column.`
+</Callout>
+
+### Claim
+
+`update` with `lock: "skip"` and `limit` changes up to that many matching rows and leaves rows another transaction already holds. The database chooses which unlocked rows. The result is `{ count }`, the number of rows changed. `{ returning: true }` returns the updated rows and honors `select`, including when `{ allow }` names a guarded field. Set a `claimedBy` token in `set`, then `find` by that token, or pass `returning: true` and read the rows from the claim. `delete` does not accept `{ returning: true }`. That call is OKM1120 and deletes nothing. Pass the field names, or omit `returning` for `{ count }`.
+
+| Input | Result |
+| --- | --- |
+| `limit` without `lock: "skip"`, or `lock: "skip"` without `limit` | Refused. |
+| `orderBy` | Not accepted. |
+| `wait` on an update | Refused. |
+| `lock: "skip"` on a read | Refused. A read uses `lock: "update"` or `"share"` and `wait: "nowait"` or `"skip"` inside `tx()`. |
+| a path-tenancy parent in the same statement | Refused. |
+
+```ts title="claim.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const jobs = table("jobs", {
+  id: t.identity(),
+  status: t.text(),
+  claimedBy: t.text().nullable(),
+});
+const app = schema({ tables: [jobs] });
+
+export async function take(url: string, token: string) {
+  await using db = connect(url, { schema: app });
+  const claimed = await db.jobs.update({
+    where: { status: "pending" },
+    set: { status: "running", claimedBy: token }, // [!code focus]
+    limit: 1,
+    lock: "skip",
+  });
+  if (claimed.count === 0) return [];
+  return db.jobs.find({ where: { claimedBy: token }, limit: claimed.count }); // [!code focus]
+}
+```
+
+<Callout type="error" title="OKM1120">
+`limit` without the lock is `limit on an update needs lock: "skip".` The lock without `limit` is `lock: "skip" needs a limit.` `wait` is `wait belongs on a read. An update claims rows with lock: "skip".` A path column in the same claim is `lock: "skip" on tasks cannot change projectId in the same claim.`
+</Callout>
+
+<Callout type="error" title="OKM1121">
+`limit` must be a whole number from 1 to 2147483647.
+</Callout>
+
+### Sync
+
+`sync(id, relation, ids)` makes a to-many relation hold exactly those ids. It locks the parent, then writes, and returns `{ added, removed }`. Duplicate ids count once. A join table gains and loses link rows. A nullable foreign key is set or cleared, and the related row stays. A link that would have to delete a row is refused.
+
+A missing parent is `not_found`: `sync on nodes did not find that id.` An id that is not on the related table is `not_found`: `sync on nodes.children is missing 1 ids.` The relation must be `many` or `manyThrough`: `sync on nodes.children is not a to-many relation.` A tree-shaped `many` (the same table, through its own foreign key) refuses a list that contains the parent's own id. `manyThrough` accepts that link, including a row that follows itself. An `update` that sets a tree parent to the row's own id, or to a descendant, is OKM1120 when `where` is the primary key. A filter that is not the key is not checked.
+
+#### simple
+
+One call sets the relation to those ids. Duplicate ids count once.
+
+```ts title="sync.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { many, schema, table, t } from "okmodel/pg";
+
+const nodes = table(
+  "nodes",
+  {
+    id: t.identity(),
+    parentId: t.bigint().nullable().references("nodes"),
+    name: t.text(),
+  },
+  { relations: { children: many("nodes", "parentId") } },
+);
+const app = schema({ tables: [nodes] });
+
+export async function links(url: string, id: string, child: string) {
+  await using db = connect(url, { schema: app });
+  return db.nodes.sync(id, "children", [child]); // [!code focus]
+}
+```
+
+#### complex
+
+An empty list clears the links. The next call sets one id. Each call returns `{ added, removed }`.
+
+```ts title="sync-clear.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { many, schema, table, t } from "okmodel/pg";
+
+const nodes = table(
+  "nodes",
+  {
+    id: t.identity(),
+    parentId: t.bigint().nullable().references("nodes"),
+    name: t.text(),
+  },
+  { relations: { children: many("nodes", "parentId") } },
+);
+const app = schema({ tables: [nodes] });
+
+export async function replace(url: string, id: string, child: string) {
+  await using db = connect(url, { schema: app });
+  const cleared = await db.nodes.sync(id, "children", []); // [!code focus]
+  const set = await db.nodes.sync(id, "children", [child]);
+  return { cleared, set };
+}
+```
+
+| Next | You use it for |
+| --- | --- |
+| [Read rows](/docs/queries/read-rows) | Page and stream. |

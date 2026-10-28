@@ -9,7 +9,10 @@ import { join } from "node:path";
 import { repoRoot } from "../scripts/root.js";
 
 test("the raw SQL page notes the OKM1602 and OKM1702 behaviour", () => {
-  const page = readFileSync(join(repoRoot(), "site/content/docs/queries/index.mdx"), "utf8");
+  const page = readFileSync(
+    join(repoRoot(), "site/content/docs/queries/typed-raw-sql.mdx"),
+    "utf8",
+  );
   expect(page).toContain(
     "A typed `raw(db, sql, params)` call that passes a different number of parameters than the lock is OKM1602.",
   );
