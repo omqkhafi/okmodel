@@ -1,0 +1,142 @@
+---
+title: "Installation"
+description: "Install a driver, connect, and finish the startup check."
+---
+Install OKModel and open a client.
+
+You need Bun and a Postgres 15 or newer server. `DATABASE_URL` is its connection string. The database may be empty.
+
+<Steps>
+
+<Step>
+### Install
+
+`okmodel` has no runtime dependencies. Each driver is an optional peer. Pick the one the runtime already has. The pages after this one use postgres.js.
+
+<Tabs items={["postgres.js", "node-postgres", "PGlite", "Bun.sql"]}>
+
+<Tab value="postgres.js">
+
+The default on Node and Bun. It connects to a Postgres server.
+
+```sh title="postgres.js"
+bun add okmodel postgres
+```
+
+```ts title="driver.ts"
+import { connect } from "okmodel/pg/postgresjs";
+```
+
+</Tab>
+
+<Tab value="node-postgres">
+
+The other server driver on Node and Bun, when `pg` is already installed. `pg` ships no types, so `@types/pg` is a dev dependency.
+
+```sh title="node-postgres"
+bun add okmodel pg
+bun add -D @types/pg
+```
+
+```ts title="pg-driver.ts"
+import { connect } from "okmodel/pg/pg";
+```
+
+</Tab>
+
+<Tab value="PGlite">
+
+Postgres runs in the process, on Node or Bun. There is no server to start. The connect target is a data directory, or omit it for memory.
+
+```sh title="PGlite"
+bun add okmodel @electric-sql/pglite
+```
+
+```ts title="pglite-driver.ts"
+import { connect } from "okmodel/pg/pglite";
+```
+
+</Tab>
+
+<Tab value="Bun.sql">
+
+Built into Bun. No extra package. This entry does not run on Node. `bunx okm` still uses Node. `bun --bun okm` is the Bun runtime.
+
+```sh title="Bun.sql"
+bun add okmodel
+```
+
+```ts title="bun-driver.ts"
+import { connect } from "okmodel/pg/bun";
+```
+
+</Tab>
+
+</Tabs>
+
+</Step>
+
+<Step>
+### Save the schema
+
+The client imports this file. [Your first schema and queries](/docs/start/first-schema) explains each line.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity().primaryKey(),
+  title: t.text(),
+});
+
+export default schema({ tables: [notes] });
+```
+
+</Step>
+
+<Step>
+### Connect
+
+`connect` takes the URL and the schema. The process keeps `db`. An empty `DATABASE_URL` is refused before `connect`. A non-null assertion on the URL is the other form. The options are on [Connect](/docs/operate/connect).
+
+```ts title="db.ts"
+import { connect } from "okmodel/pg/postgresjs";
+
+import schema from "./schema.ts";
+
+const url = process.env.DATABASE_URL;
+if (url === undefined || url.length === 0) {
+  throw new Error("DATABASE_URL is not set");
+}
+
+export const db = connect(url, { schema });
+```
+
+</Step>
+
+<Step>
+### Startup check
+
+`db.connected` resolves when the check finishes. A query waits for it. The check is [Startup check](/docs/operate/startup-check).
+
+```ts title="check.ts"
+import { db } from "./db.ts";
+
+await db.connected;
+console.log("connected");
+```
+
+```text title="connected.out"
+connected
+```
+
+On an empty database the promise resolved, and the script printed `connected`.
+
+</Step>
+
+</Steps>
+
+| Next | You use it for |
+| --- | --- |
+| [Your first schema and queries](/docs/start/first-schema) | Define the table, push it, then insert and read a row. |
+| [Project structure](/docs/start/project-structure) | The files that project has. |

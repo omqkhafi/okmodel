@@ -62,7 +62,7 @@ globalThis.Temporal = Temporal;
 
 ## Quick start
 
-Define the table, compile the schema, point the config at it, push, then connect. The same steps are on [Let's start](https://okm.omqkhafi.dev/docs/start).
+Define the table, compile the schema, point the config at it, push, then connect. The same steps are on [Installation](https://okm.omqkhafi.dev/docs/start/installation) and [Your first schema and queries](https://okm.omqkhafi.dev/docs/start/first-schema).
 
 `schema.ts`:
 
@@ -108,7 +108,7 @@ export const db = connect(process.env.DATABASE_URL!, { schema });
 
 ## Basic usage
 
-Each call on `db`. [Basic Usage](https://okm.omqkhafi.dev/docs/start/basic-usage) has one example per call.
+Each call on `db`. [Your first schema and queries](https://okm.omqkhafi.dev/docs/start/first-schema) has one example per call.
 
 `notes.ts`:
 
@@ -161,7 +161,7 @@ export async function removeNote(id: string) {
 
 | Want…                       | Go to                                                                                              |
 | --------------------------- | -------------------------------------------------------------------------------------------------- |
-| One example per client call | [Basic usage](https://okm.omqkhafi.dev/docs/start/basic-usage)                                     |
+| One example per client call | [Your first schema and queries](https://okm.omqkhafi.dev/docs/start/first-schema)                  |
 | Tables, keys, and relations | [Define](https://okm.omqkhafi.dev/docs/schema/tables)                                              |
 | Every feature in one file   | [Guide](https://github.com/omqkhafi/okmodel/blob/main/docs/guide.md)                               |
 | Run it in production        | [Production checklist](https://github.com/omqkhafi/okmodel/blob/main/docs/production.md)           |

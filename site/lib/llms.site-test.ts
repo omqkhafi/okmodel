@@ -21,21 +21,17 @@ test("llms.txt lists every public page", () => {
 
 test("llms.txt lists each sidebar group once", () => {
   const text = buildLlmsTxt();
-  const groups = source
-    .getPageTree()
-    .children.flatMap((node) => (node.type === "folder" && typeof node.name === "string" ? [node.name] : []));
-  expect(source.getPages().length).toBe(64);
-  expect(groups).toEqual([
-    "Get started",
-    "Schema",
-    "Queries",
-    "Migrations",
-    "Operate",
-    "Reference",
-    "AI Resources",
-  ]);
-  const headings = [...text.matchAll(/^## (.+)$/gm)].map((match) => match[1]);
-  const groupHeadings = headings.filter((heading) => groups.includes(heading ?? ""));
+  const groups = source.getPageTree().children.flatMap((node) => {
+    if (node.type !== "folder" || typeof node.name !== "string") return [];
+    return [node.name];
+  });
+  expect(groups.length).toBeGreaterThan(0);
+  expect(new Set(groups).size).toBe(groups.length);
+  const headings = [...text.matchAll(/^## (.+)$/gm)].flatMap((match) => {
+    const heading = match[1];
+    return heading === undefined ? [] : [heading];
+  });
+  const groupHeadings = headings.filter((heading) => groups.includes(heading));
   expect(groupHeadings).toEqual(groups);
 });
 

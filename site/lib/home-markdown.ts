@@ -22,8 +22,10 @@ ${HERO_SUBHEAD}
 ${install}
 \`\`\`
 
-- [Let's start](/docs/start)
-- [Basic Usage](/docs/start/basic-usage)
+- [Introduction](/docs/start)
+- [Installation](/docs/start/installation)
+- [Your first schema and queries](/docs/start/first-schema)
+- [Project structure](/docs/start/project-structure)
 - [Documentation](/docs)
 - [llms.txt](/llms.txt)
 - [Changelog](/changelog)

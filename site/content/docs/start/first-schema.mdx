@@ -1,0 +1,277 @@
+---
+title: "Your first schema and queries"
+description: "Define the table, push it, then insert, find, one, count, exists, update, and delete."
+---
+Define a table, push it, and read a row back.
+
+You need [Installation](/docs/start/installation). `DATABASE_URL` points at a Postgres database you can drop. The outputs below are from an empty database. The first identity value is the string `"1"`.
+
+<Steps>
+
+<Step>
+### Define the table
+
+`table()` stores the columns. `t.identity().primaryKey()` makes `id` the primary key.
+
+```ts title="table.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity().primaryKey(),
+  title: t.text(),
+});
+```
+
+`t.identity()` is a `bigint`, generated always. Insert omits `id`. The default codec is a string. A key of more than one column is the `primaryKey` option. [Keys](/docs/schema/keys-and-identity).
+
+</Step>
+
+<Step>
+### Define the schema
+
+`schema()` compiles the tables into one catalog. The module default-exports that result.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity().primaryKey(),
+  title: t.text(),
+});
+
+export default schema({ tables: [notes] });
+```
+
+</Step>
+
+<Step>
+### Define the config
+
+Point `schema` at that file. `database` is the URL push connects to.
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+});
+```
+
+`okm push` loads `okmodel.config.ts` from the project directory. The file default-exports `defineConfig`. A file that does not is refused. A module that is not a `schema()` is refused: `<path> must export a schema().` Other options are on [Config](/docs/reference/config).
+
+The client is `db.ts` from [Installation](/docs/start/installation). The scripts below import it.
+
+</Step>
+
+<Step>
+### Push
+
+`okm push` connects and creates the tables. It does not write a SQL file.
+
+```sh
+bunx okm push
+```
+
+```text title="push.out"
+target default
+applied push-1
+```
+
+stderr prints `config:` and the path of `okmodel.config.ts`. A protected target refuses push ([OKM1850](/docs/reference/errors#okm1850)). Run the command again when the schema is already there:
+
+```text title="push-again.out"
+target default
+no changes
+```
+
+`bunx okm` runs with Node. `bun --bun okm` uses the Bun runtime.
+
+</Step>
+
+<Step>
+### Insert
+
+Insert passes `title` and omits `id`. The row that comes back has `id`.
+
+```ts title="insert.ts"
+import { db } from "./db.ts";
+
+const note = await db.notes.insert({ title: "Hello" });
+console.log(note);
+```
+
+```text title="insert.out"
+{
+  id: "1",
+  title: "Hello",
+}
+```
+
+</Step>
+
+<Step>
+### Find
+
+`find` returns a list. `limit: 1` asks for one row. The row is `[0]`.
+
+```ts title="find.ts"
+import { db } from "./db.ts";
+
+const found = await db.notes.find({ where: { id: "1" }, limit: 1 });
+console.log(found);
+const missing = await db.notes.find({ where: { id: "999" }, limit: 1 });
+console.log(missing[0]);
+```
+
+```text title="find.out"
+[
+  {
+    id: "1",
+    title: "Hello",
+  }
+]
+undefined
+```
+
+`[0]` is `undefined` when nothing matched. Omit the limit and the call throws [OKM1101](/docs/reference/errors#okm1101). The message is `find() needs a limit.` The fix is `Pass a limit.`
+
+```ts title="find-without-limit.ts"
+import { db } from "./db.ts";
+
+await db.notes.find({ where: { id: "1" } });
+```
+
+`.all(reason)` is how you ask for the full set. The reason is required. [Queries](/docs/queries).
+
+</Step>
+
+<Step>
+### One
+
+`one` returns that row, or `null` when nothing matched. More than one match throws `not_unique`: `one() on notes matched more than one row. Pass orderBy to take the first, or narrow where.`
+
+```ts title="one.ts"
+import { db } from "./db.ts";
+
+const row = await db.notes.one({ where: { id: "1" } });
+console.log(row);
+const missing = await db.notes.one({ where: { id: "999" } });
+console.log(missing);
+```
+
+```text title="one.out"
+{
+  id: "1",
+  title: "Hello",
+}
+null
+```
+
+</Step>
+
+<Step>
+### Count
+
+`count` returns how many rows match. It does not return the rows.
+
+```ts title="count.ts"
+import { db } from "./db.ts";
+
+const total = await db.notes.count();
+console.log(total);
+```
+
+```text title="count.out"
+1
+```
+
+</Step>
+
+<Step>
+### Exists
+
+`exists` returns true when a row matches. It does not return the row.
+
+```ts title="exists.ts"
+import { db } from "./db.ts";
+
+const yes = await db.notes.exists({ where: { id: "1" } });
+console.log(yes);
+const no = await db.notes.exists({ where: { id: "999" } });
+console.log(no);
+```
+
+```text title="exists.out"
+true
+false
+```
+
+</Step>
+
+<Step>
+### Update
+
+`where` picks the row. `set` names the new title. The call returns how many rows changed.
+
+```ts title="update.ts"
+import { db } from "./db.ts";
+
+const updated = await db.notes.update({
+  where: { id: "1" },
+  set: { title: "Next" },
+});
+console.log(updated);
+const row = await db.notes.one({ where: { id: "1" } });
+console.log(row);
+```
+
+```text title="update.out"
+{
+  count: 1,
+}
+{
+  id: "1",
+  title: "Next",
+}
+```
+
+A write with no `where` throws [OKM1102](/docs/reference/errors#okm1102). The message is `update on notes needs a where. Pass a filter.` The fix is `Pass a predicate. An undefined-only where is the same as an empty filter.`
+
+```ts title="update-without-where.ts"
+import { db } from "./db.ts";
+
+await db.notes.update({ set: { title: "Nope" } });
+```
+
+</Step>
+
+<Step>
+### Delete
+
+`where` picks the row. A delete with no `where` is the same OKM1102. The message is `delete on notes needs a where. Pass a filter.`
+
+```ts title="delete.ts"
+import { db } from "./db.ts";
+
+const deleted = await db.notes.delete({ where: { id: "1" } });
+console.log(deleted);
+```
+
+```text title="delete.out"
+{
+  count: 1,
+}
+```
+
+</Step>
+
+</Steps>
+
+The insert wrote the row. `find` and `one` read it back. You're now ready to use okmodel.
+
+| Next | You use it for |
+| --- | --- |
+| [Project structure](/docs/start/project-structure) | The files this tutorial writes, and the files `okm init` writes. |
+| [Queries](/docs/queries) | The rest of the calls on a table. |
+| [Using OKModel safely](/docs/operate/using-okmodel-safely) | Pin the lockfile, wait before updating, and read provenance. |

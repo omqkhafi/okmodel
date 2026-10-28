@@ -22,12 +22,12 @@ const CHIP =
   "inline-flex min-h-6.5 select-none items-center gap-1 rounded-full border px-2.5 py-1.5 text-sm font-normal leading-none";
 
 /**
- * Databases the page's steps run on. Only Let's start declares support.
+ * Databases the page's steps run on. Installation and the first schema do.
  *
  * @param url - Docs page URL
  */
 export function databaseSupportFor(url: string): readonly DatabaseId[] | undefined {
-  if (url === "/docs/start") return ["postgres"];
+  if (url === "/docs/start/installation" || url === "/docs/start/first-schema") return ["postgres"];
   return undefined;
 }
 

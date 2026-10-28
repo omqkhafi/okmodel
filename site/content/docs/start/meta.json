@@ -1,4 +1,4 @@
 {
   "title": "Get started",
-  "pages": ["index", "basic-usage"]
+  "pages": ["index", "installation", "first-schema", "project-structure"]
 }
