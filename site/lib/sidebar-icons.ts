@@ -35,6 +35,7 @@ import {
   Hash,
   KeyRound,
   Layers,
+  Lightbulb,
   Link2,
   ListFilter,
   ListTree,
@@ -46,6 +47,7 @@ import {
   Radio,
   Replace,
   Rows3,
+  ScrollText,
   Search,
   Settings,
   Shapes,
@@ -73,9 +75,11 @@ import { createElement, type ReactNode } from "react";
 /** Docs path → Lucide component. `/docs` is the landing and is not a sidebar row. */
 const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/docs/start": Terminal,
+  "/docs/start/why-okmodel": Lightbulb,
   "/docs/start/installation": Cable,
   "/docs/start/first-schema": Play,
   "/docs/start/project-structure": ListTree,
+  "/docs/start/first-migration": ScrollText,
   "/docs/operate/using-okmodel-safely": Lock,
   "/docs/migrations/from-drizzle": FileInput,
   "/docs/migrations/adopt-existing-database": FolderInput,

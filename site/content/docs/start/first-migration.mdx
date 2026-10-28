@@ -1,0 +1,250 @@
+---
+title: "Your first migration"
+description: "Add a migrations directory, generate the first file, and apply one change."
+---
+Push applies the schema directly. It writes no SQL file. It is for a database you can recreate. Migrations are reviewed SQL files in git. They plan, lint, and apply per target.
+
+You have the files from [Installation](/docs/start/installation) and [Your first schema and queries](/docs/start/first-schema). That page ran [`okm push`](/docs/reference/cli#push). The history version is `push-1`, and `notes` is already there. Apply then runs the new SQL file. Postgres reports that the relation already exists.
+
+```text title="apply-after-push.err"
+error invalid: Migration 0001_init failed at step 1: relation "notes" already exists
+Fix the step and run apply again. Finished steps are not repeated.
+```
+
+This page uses an empty database and the same files. `DATABASE_URL` points at that database.
+
+<Steps>
+
+<Step>
+### Add `migrations`
+
+The config from the first schema names `schema` and `database`. Add `migrations`.
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  migrations: "./migrations",
+  database: process.env.DATABASE_URL!,
+});
+```
+
+</Step>
+
+<Step>
+### Plan
+
+`bunx okm migrate plan init` prints the SQL. It prints the lock each step takes. It writes nothing. stderr prints `config:` and the path of `okmodel.config.ts`. One target that answers adds the estimate on the lock line.
+
+```sh
+bunx okm migrate plan init
+```
+
+```text title="plan-init.out"
+-- class: expand
+-- name: init
+
+-- class: expand
+-- kind: create-table
+-- action: ddl
+-- lock: ACCESS EXCLUSIVE on notes, new table
+create table "public"."notes" (
+  "id" bigint generated always as identity not null,
+  "title" text not null,
+  constraint "notes_pkey" primary key ("id")
+);
+```
+
+The line is `-- lock: ACCESS EXCLUSIVE on notes, new table`.
+
+</Step>
+
+<Step>
+### Generate
+
+`bunx okm generate init` writes `migrations/0001_init.sql` and `migrations/0001_init.catalog.json`. It prints the path of `migrations/0001_init.sql`. It also writes `.gitattributes` when that file is missing, and `.okm/catalog.json`, `.okm/catalog.hash`, and `.okm/types.d.ts`. The file records the lock. It does not add the estimate.
+
+```sh
+bunx okm generate init
+```
+
+```sql title="0001_init.sql"
+-- class: expand
+-- name: init
+
+-- class: expand
+-- kind: create-table
+-- action: ddl
+-- lock: ACCESS EXCLUSIVE
+create table "public"."notes" (
+  "id" bigint generated always as identity not null,
+  "title" text not null,
+  constraint "notes_pkey" primary key ("id")
+);
+```
+
+After that file is written, `bunx okm migrate plan init` prints no steps. The catalog already matches the schema.
+
+```text title="plan-init-again.out"
+-- class: expand
+-- name: init
+
+-- no steps
+```
+
+</Step>
+
+<Step>
+### Apply
+
+On an empty database, apply installs the head snapshot. It does not replay the file. The history id is `provisioned@` plus the migration id. [An empty database](/docs/reference/config-database#an-empty-database).
+
+```sh
+bunx okm migrate apply
+```
+
+```text title="apply-init.out"
+target default
+applied provisioned@0001_init
+```
+
+Drift is reported by `okm check` when you run it against a target, not automatically.
+
+```sh
+bunx okm check
+```
+
+```text title="check.out"
+ok
+```
+
+</Step>
+
+<Step>
+### A column with no default
+
+Insert one row, the same call as [Your first schema and queries](/docs/start/first-schema). The table has that row. Add `body: t.text()`. `t.text()` is `NOT NULL` and has no default.
+
+```ts title="schema-required.ts"
+import { schema, table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity().primaryKey(),
+  title: t.text(),
+  body: t.text(),
+});
+
+export default schema({ tables: [notes] });
+```
+
+`bunx okm migrate plan add-body` prints the statement, the lock, and the finding. It writes nothing. The command exits 1. stderr is [OKM1510](/docs/reference/errors#okm1510). `okm check` exits 1 with that same stderr.
+
+```sh
+bunx okm migrate plan add-body
+```
+
+```text title="plan-body.out"
+-- class: contract
+-- name: add-body
+
+-- class: contract
+-- kind: add-column-required
+-- action: ddl
+-- lock: ACCESS EXCLUSIVE on notes, rows unknown (table not analyzed)
+alter table "public"."notes" add column "body" text not null;
+error OKM1525 step 1: adds NOT NULL without a default -- fix: Add the column nullable, backfill, then set it NOT NULL.
+```
+
+```text title="lint.err"
+error OKM1510: error OKM1525 step 1: adds NOT NULL without a default -- fix: Add the column nullable, backfill, then set it NOT NULL.
+Change the statement so the finding is gone. An override must name a code that a statement in the step triggered, and the reason must not be empty.
+```
+
+The finding is [OKM1525](/docs/reference/errors#okm1525). The fix it prints is `Add the column nullable, backfill, then set it NOT NULL.` This page adds the column nullable. That is the statement plan accepts. [`okm generate`](/docs/reference/cli#generate) of the rejected plan still writes the file and exits 1. stderr says apply will refuse until it is fixed.
+
+</Step>
+
+<Step>
+### The nullable column
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity().primaryKey(),
+  title: t.text(),
+  body: t.text().nullable(),
+});
+
+export default schema({ tables: [notes] });
+```
+
+```sh
+bunx okm migrate plan add-body
+```
+
+```text title="plan-body-ok.out"
+-- class: expand
+-- name: add-body
+
+-- class: expand
+-- kind: add-column
+-- action: ddl
+-- lock: ACCESS EXCLUSIVE on notes, rows unknown (table not analyzed)
+alter table "public"."notes" add column "body" text;
+```
+
+The lock line is `-- lock: ACCESS EXCLUSIVE on notes, rows unknown (table not analyzed)`.
+
+```sh
+bunx okm generate add-body
+```
+
+The command prints the path of `migrations/0002_add-body.sql`.
+
+```sql title="0002_add-body.sql"
+-- class: expand
+-- name: add-body
+
+-- class: expand
+-- kind: add-column
+-- action: ddl
+-- lock: ACCESS EXCLUSIVE
+alter table "public"."notes" add column "body" text;
+```
+
+```sh
+bunx okm migrate apply
+```
+
+```text title="apply-body.out"
+target default
+applied 0002_add-body
+```
+
+</Step>
+
+<Step>
+### Status
+
+```sh
+bunx okm migrate status
+```
+
+```text title="status.out"
+target	version	catalog	state	protected
+default	0002_add-body	5cce87dcf5cfb0a3d4c2241ae71b2dfac568ea56e70bb67cd03d2f49d5867e28	current	false
+```
+
+`current` means the target is at that version. The catalog column is the catalog hash.
+
+</Step>
+
+</Steps>
+
+| Next | You use it for |
+| --- | --- |
+| [Existing database](/docs/migrations/adopt-existing-database) | Pull, generate, then baseline without replaying DDL. |
+| [Config](/docs/reference/config) | Targets, paths, timeouts, and roles. |
+| [CLI](/docs/reference/cli) | generate, plan, apply, check, and status. |

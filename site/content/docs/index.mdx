@@ -2,88 +2,47 @@
 title: "Documentation"
 description: "okmodel is a catalog-first TypeScript ORM, PostgreSQL first."
 ---
-The schema is the source. Migrations and queries come from it. Start with one table, then add only the part you need.
+okmodel is a catalog-first TypeScript ORM, PostgreSQL first. The schema is the single source. Migrations and queries come from it.
 
-Tooling around that schema: [pull](/docs/reference/cli#pull) writes table files from a database, [import drizzle](/docs/migrations/from-drizzle) writes them from a Drizzle schema, [catalogs](/docs/schema/several-catalogs) share one database, [describe](/docs/reference/schema-api) returns the catalog as JSON, [extension packs](/docs/schema/extensions) cover the contrib set except `vector`, the [GitHub Action](/docs/reference/github-action) posts the plan, and a [type change](/docs/migrations/type-change) that rewrites a table is five migrations.
+A new project starts at [Installation](/docs/start/installation). An existing database starts at [Existing database](/docs/migrations/adopt-existing-database) or [From Drizzle](/docs/migrations/from-drizzle). To find an answer, open [Schema](/docs/schema/tables), [Queries](/docs/queries), [Migrations](/docs/migrations/type-change), [Operate](/docs/operate/connect), or [Reference](/docs/reference/cli).
 
-<Callout title="The source">
-  The tables you declare are the catalog. Queries, migrations, and checks come from that catalog.
-</Callout>
+## Common tasks
 
-```ts title="schema.ts"
-import { table, t } from "okmodel/pg";
+- [Install a driver and open a client](/docs/start/installation)
+- [Define a table and read a row back](/docs/start/first-schema)
+- [See which files the project has](/docs/start/project-structure)
+- [Write the first reviewed migration](/docs/start/first-migration)
+- [Pull a database you already run](/docs/migrations/adopt-existing-database)
+- [Import a Drizzle schema](/docs/migrations/from-drizzle)
+- [Open a client on a URL](/docs/operate/connect)
+- [Look up an error code](/docs/reference/errors)
+- [Point the CLI at a target](/docs/reference/config)
+- [Add an index](/docs/schema/indexes)
 
-export const notes = table("notes", {
-  id: t.identity(),
-  title: t.text(),
-});
-```
+## Get started
 
-## 01 Start
+Install a driver, define one table, and write the first migration. Start at [Introduction](/docs/start).
 
-Install, define one table, and read a row back.
+## Schema
 
-<Cards>
-  <Card
-    title="Introduction"
-    description="The schema is the source. Migrations and queries come from it."
-    href="/docs/start"
-  />
-  <Card
-    title="Installation"
-    description="Install a driver, connect, and finish the startup check."
-    href="/docs/start/installation"
-  />
-  <Card
-    title="Your first schema and queries"
-    description="Define the table, push it, then insert, find, one, count, exists, update, and delete."
-    href="/docs/start/first-schema"
-  />
-  <Card
-    title="Project structure"
-    description="The files the tutorial writes, and the files okm init writes."
-    href="/docs/start/project-structure"
-  />
-  <Card
-    title="Existing database"
-    description="Pull, generate, then baseline without replaying DDL."
-    href="/docs/migrations/adopt-existing-database"
-  />
-  <Card
-    title="From Drizzle"
-    description="Import a Drizzle schema into okmodel table files."
-    href="/docs/migrations/from-drizzle"
-  />
-  <Card
-    title="Using OKModel safely"
-    description="Pin the lockfile, wait before updating, and read provenance as a build record."
-    href="/docs/operate/using-okmodel-safely"
-  />
-</Cards>
+Tables, columns, keys, and the catalog. Start at [Tables](/docs/schema/tables).
 
-## 02 Define
+## Queries
 
-Each table, the schema, the client, and the config file. Open the page for the object you are setting.
+The calls on a table. Start at [Queries](/docs/queries).
 
-<Cards>
-  <Card
-    title="Table"
-    description="table() stores the columns. Open it for the key, each data type, and the queries."
-    href="/docs/schema/tables"
-  />
-  <Card
-    title="Schema"
-    description="schema() compiles the tables into one catalog."
-    href="/docs/schema/the-schema"
-  />
-  <Card
-    title="Connect"
-    description="connect() opens the client. The first argument is the target."
-    href="/docs/operate/connect"
-  />
-  <Card
-    title="Config"
-    description="The file okm reads. Targets, paths, timeouts, and roles."
-    href="/docs/reference/config"
-  />
-</Cards>
+## Migrations
+
+Adopt a database, import Drizzle, or change a type. Start at [Existing database](/docs/migrations/adopt-existing-database).
+
+## Operate
+
+Connect, the drivers, and the startup check. Start at [Connect](/docs/operate/connect).
+
+## Reference
+
+The CLI, the config, and the error codes. Start at [CLI](/docs/reference/cli).
+
+## AI Resources
+
+Skills and the files an assistant reads. Start at [Skills](/docs/ai/skills).

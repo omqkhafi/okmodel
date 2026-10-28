@@ -11,36 +11,14 @@ You need [Installation](/docs/start/installation). `DATABASE_URL` points at a Po
 <Step>
 ### Define the table
 
-`table()` stores the columns. `t.identity().primaryKey()` makes `id` the primary key.
-
-```ts title="table.ts"
-import { table, t } from "okmodel/pg";
-
-export const notes = table("notes", {
-  id: t.identity().primaryKey(),
-  title: t.text(),
-});
-```
-
-`t.identity()` is a `bigint`, generated always. Insert omits `id`. The default codec is a string. A key of more than one column is the `primaryKey` option. [Keys](/docs/schema/keys-and-identity).
+[Installation](/docs/start/installation) saved `schema.ts`. `table()` stores the columns of `notes`. `id` is `t.identity().primaryKey()`. That makes `id` the primary key. `t.identity()` is a `bigint`, generated always. Insert omits `id`. The default codec is a string. A key of more than one column is the `primaryKey` option. [Keys](/docs/schema/keys-and-identity).
 
 </Step>
 
 <Step>
 ### Define the schema
 
-`schema()` compiles the tables into one catalog. The module default-exports that result.
-
-```ts title="schema.ts"
-import { schema, table, t } from "okmodel/pg";
-
-export const notes = table("notes", {
-  id: t.identity().primaryKey(),
-  title: t.text(),
-});
-
-export default schema({ tables: [notes] });
-```
+`schema()` compiles `notes` into one catalog. The module default-exports that result. The config below points `schema` at this file.
 
 </Step>
 
@@ -273,5 +251,6 @@ The insert wrote the row. `find` and `one` read it back. You're now ready to use
 | Next | You use it for |
 | --- | --- |
 | [Project structure](/docs/start/project-structure) | The files this tutorial writes, and the files `okm init` writes. |
+| [Your first migration](/docs/start/first-migration) | Generate the first SQL file, then apply one change. |
 | [Queries](/docs/queries) | The rest of the calls on a table. |
 | [Using OKModel safely](/docs/operate/using-okmodel-safely) | Pin the lockfile, wait before updating, and read provenance. |

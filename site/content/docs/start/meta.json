@@ -1,4 +1,4 @@
 {
   "title": "Get started",
-  "pages": ["index", "installation", "first-schema", "project-structure"]
+  "pages": ["index", "why-okmodel", "installation", "first-schema", "project-structure", "first-migration"]
 }
