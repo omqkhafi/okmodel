@@ -124,7 +124,7 @@ export const notes = table(
 
 ### Filter
 
-`has`, `none`, and `every` go in `where` under the relation name. A morph to-one refuses them: OKM1120, and the message says to filter the type and id columns or include the relation.
+`has`, `none`, and `every` go in `where` under the relation name. The SQL is [Where operators](/docs/queries/where-operators#relation-quantifiers). A morph to-one refuses them: OKM1120, and the message says to filter the type and id columns or include the relation.
 
 | Call | Keeps a row when |
 | --- | --- |

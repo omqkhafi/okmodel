@@ -28,6 +28,9 @@ test("a docs path negotiates to its markdown twin", () => {
   expect(markdownTwinPath("/docs/queries/search-and-trees")).toBe(
     "/llms.mdx/docs/queries/search-and-trees.md",
   );
+  expect(markdownTwinPath("/docs/queries/where-operators")).toBe(
+    "/llms.mdx/docs/queries/where-operators.md",
+  );
   expect(markdownTwinPath("/docs/queries/transactions")).toBe(
     "/llms.mdx/docs/queries/transactions.md",
   );
