@@ -25,7 +25,7 @@ import {
 import { effectivePredicate } from "./predicate.js";
 import { stack } from "./preset-stack.js";
 import { runSafety, safetyInstalled } from "./safety-hook.js";
-import { runWrite, type RunHost } from "./tx.js";
+import { runWrite, settingNames, type RunHost } from "./tx.js";
 import { statementObserve, tenantFromScope, type PreparedWrite } from "./write.js";
 
 registerFailFix(
@@ -44,6 +44,8 @@ type Mods = {
 
 type Host = RunHost & {
   readonly schema: QuerySchema;
+  /** `db.with()` pairs. Names are copied onto the write event. Values are not. */
+  readonly settings?: readonly (readonly [string, string])[] | undefined;
 };
 
 const OPTIONS = ["allow", "expect", "returning", "signal", "timeout"] as const;
@@ -72,7 +74,16 @@ export async function executeArchive(
   mods: Mods,
   scope: CallScope | undefined,
 ): Promise<{ readonly count: number; readonly archiveId?: string }> {
-  const prepared = prepareArchive(host.schema, op, table, input, options, mods, scope);
+  const prepared = prepareArchive(
+    host.schema,
+    op,
+    table,
+    input,
+    options,
+    mods,
+    scope,
+    host.settings,
+  );
   const watching = host.o !== undefined || host.q !== undefined;
   if (host.q !== undefined && wantsQueryParams(host.q)) {
     const { rememberSecrets } = await import("./observe-query.js");
@@ -103,6 +114,7 @@ function wantsQueryParams(handler: object | undefined): boolean {
  * @param options - `expect`, signal, and timeout
  * @param mods - `.all` and `.expect`
  * @param scope - Tenant value, when the schema has tenancy
+ * @param settings - `db.with()` pairs. Only the names are stored
  * @returns The statement, the call options, and `finish`
  */
 export function prepareArchive(
@@ -113,6 +125,7 @@ export function prepareArchive(
   options: object,
   mods: Mods,
   scope: CallScope | undefined,
+  settings?: readonly (readonly [string, string])[] | undefined,
 ): PreparedWrite {
   const planned = planArchive(schema, op, table, input, options, mods, scope);
   const keys =
@@ -128,7 +141,7 @@ export function prepareArchive(
       table,
       op,
       tenant: tenantFromScope(scope, keys),
-      settings: [],
+      settings: settingNames(settings),
       source: "client",
     },
     input,

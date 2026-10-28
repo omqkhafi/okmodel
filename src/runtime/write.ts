@@ -46,7 +46,7 @@ import { stack } from "./preset-stack.js";
 import { effectivePredicate } from "./predicate.js";
 import { fieldSealed, sealingTrait, touchFields } from "./trait-read.js";
 import { assertObserveKeys, observeKeyList } from "./observe-keys.js";
-import { runWrite, type RunHost, type WriteObserveMeta } from "./tx.js";
+import { runWrite, settingNames, type RunHost, type WriteObserveMeta } from "./tx.js";
 import { writeWouldValidate } from "./validate/places.js";
 
 registerFailFix(
@@ -101,6 +101,8 @@ export type WriteMods = {
 export type WriteHost = RunHost & {
   readonly schema: QuerySchema;
   readonly generators?: IdGenerators | undefined;
+  /** `db.with()` pairs. Names are copied onto the write event. Values are not. */
+  readonly settings?: readonly (readonly [string, string])[] | undefined;
 };
 
 /**
@@ -349,7 +351,7 @@ async function prepareWrite(
       mods,
       scope,
     );
-    const observe = writeObserve(op, table, options, scope, host.schema.tenancy);
+    const observe = writeObserve(op, table, options, scope, host.schema.tenancy, host.settings);
     const shaped =
       observeKeys?.includes(table) === true
         ? shapeObserver(indexes(host.schema).get(table) as Indexed, planned, observe)
@@ -507,7 +509,7 @@ export async function explainWrite(
   try {
     if (observeKeys !== undefined) assertObserveKeys(schema, observeKeys);
     const planned = await planWrite(schema, generators, op, table, input, options, mods, scope);
-    const observe = writeObserve(op, table, options, scope, schema.tenancy);
+    const observe = writeObserve(op, table, options, scope, schema.tenancy, undefined);
     if (observeKeys?.includes(table) === true) {
       const shaped = shapeObserver(indexes(schema).get(table) as Indexed, planned, observe);
       return {
@@ -1881,6 +1883,7 @@ export function statementObserve(
  * @param options - Caller options (detects upsert via onConflict)
  * @param scope - Tenant scope
  * @param tenancy - Schema tenancy
+ * @param settings - `db.with()` pairs. Only the names are stored
  * @returns Metadata shared by every statement of this write
  */
 function writeObserve(
@@ -1889,6 +1892,7 @@ function writeObserve(
   options: object,
   scope: CallScope | undefined,
   tenancy: QuerySchema["tenancy"],
+  settings: readonly (readonly [string, string])[] | undefined,
 ): WriteObserveMeta {
   const conflict = op === "insert" && isRecord(options) ? options["onConflict"] : undefined;
   const observed: WriteObserveMeta["op"] =
@@ -1897,7 +1901,7 @@ function writeObserve(
     table,
     op: observed,
     tenant: tenantFromScope(scope, tenantKeyList(tenancy)),
-    settings: [],
+    settings: settingNames(settings),
     source: "client",
   };
 }

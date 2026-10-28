@@ -19,6 +19,8 @@ type Host = {
   readonly hookm?: readonly Hookm[] | undefined;
   readonly tx?: object | undefined;
   readonly scope?: CallScope;
+  /** `db.with()` pairs. Archive copies the names onto the write event. */
+  readonly settings?: readonly (readonly [string, string])[] | undefined;
   readonly http?: ErrorStatuses;
   readonly includeValues: boolean;
   readonly connected: Promise<void>;
@@ -82,7 +84,16 @@ function lifecycle(
       await host.connected;
       const [mod, planned] = await Promise.all([loadArchive(), settle(host, table, mods)]);
       try {
-        return mod.prepareArchive(host.schema, op, table, input, options, planned, host.scope);
+        return mod.prepareArchive(
+          host.schema,
+          op,
+          table,
+          input,
+          options,
+          planned,
+          host.scope,
+          host.settings,
+        );
       } catch (error) {
         return settleCall(host as unknown as Parameters<typeof settleCall>[0], error);
       }

@@ -29,6 +29,7 @@ Anything that must survive a crash is an outbox table plus a relay.
 | `keys` | Primary-key records for a table named in `writeObserver({ keys })`. Omitted otherwise. |
 | `source` | `client` or `raw`. |
 | `tenant` | `null`, or the scope keys and values. |
+| `settings` | Setting names from `with()`, in stored order. Never values. `[]` when the client has no `with()`. |
 
 No event carries row values or bound parameters. `keys` carries only the primary-key columns of a table that opted in.
 

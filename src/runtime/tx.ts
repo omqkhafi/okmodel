@@ -52,6 +52,25 @@ export type WriteObserveMeta = {
   }[];
 };
 
+const NO_SETTINGS: readonly string[] = [];
+
+/**
+ * Setting names from `db.with()`, in the order the session stored them.
+ *
+ * Values stay off the event. A client with no `with()` is an empty list.
+ *
+ * @param settings - Name and wire text pairs, or absent
+ * @returns The names only
+ */
+export function settingNames(
+  settings: readonly (readonly [string, string])[] | undefined,
+): readonly string[] {
+  if (settings === undefined || settings.length === 0) return NO_SETTINGS;
+  const names: string[] = [];
+  for (const pair of settings) names.push(pair[0]);
+  return names;
+}
+
 /**
  * Runs write statements as one atomic unit.
  *

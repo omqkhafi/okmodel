@@ -634,7 +634,7 @@ each("clients scoped by for, unscoped, and with report only their own tenant", a
   }
 });
 
-test.skip("a write from a with() client names its settings and never their values (#528: settings is always empty)", async () => {
+test("a write from a with() client names its settings and never their values (#528: settings is always empty)", async () => {
   const seen = watch();
   const rig = await openRig("pglite", DDL);
   const db = await rig.connect({ schema: tenant, session, onWrite: seen.onWrite });
