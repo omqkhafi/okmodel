@@ -108,6 +108,7 @@ import { discoverRawCalls } from "../describe/scan.js";
 import { schemaAdvice } from "../migrate/schema-rules.js";
 import { testingObjectConflict } from "../testing/conflict.js";
 import { refuseDataLoss } from "../migrate/data-loss.js";
+import { ledgerRequiredColumns, refuseForeignLedger } from "../migrate/ledger.js";
 import { refuseUnpulledDrops } from "../migrate/unpulled.js";
 import { parseCli } from "../cli/parse.js";
 
@@ -2159,6 +2160,16 @@ thrown(
   },
   () => {
     refuseDataLoss([]);
+  },
+);
+
+thrown(
+  "OKM1899",
+  () => {
+    refuseForeignLedger("appns", "okm_steps", "r", ["id"]);
+  },
+  () => {
+    refuseForeignLedger("appns", "okm_steps", "r", ledgerRequiredColumns("okm_steps") ?? []);
   },
 );
 

@@ -2,7 +2,7 @@
 okmVersion: "0.10.0"
 since: "0.9"
 dialects: [postgres]
-codes: [OKM1553, OKM1554, OKM1555, OKM1556, OKM1557, OKM1558]
+codes: [OKM1553, OKM1554, OKM1555, OKM1556, OKM1557, OKM1558, OKM1899]
 ---
 # When a migration fails
 
@@ -45,6 +45,8 @@ The primary key is `(migration_id, step_index)`.
 | `error_text` | Failure text, control characters removed, at most 500 characters. |
 
 The primary key is `(migration_id, step_index)`.
+
+Apply and push refuse OKM1899 before any step when `okm_meta`, `okm_history`, `okm_backfill`, or `okm_steps` already exists in the catalog schema and is not that ledger. The relation is not an ordinary table, or a column the ledger writes is missing. The message names the schema and the table and says another table owns the name. `CREATE TABLE IF NOT EXISTS` does not replace that table.
 
 The step id everywhere else is `migrationId:stepIndex`, with the same 0-based index. `okm migrate status` prints that id. `okm migrate resolve` takes it.
 
