@@ -231,7 +231,7 @@ test("artifactDir drops a trailing slash or backslash", () => {
 });
 
 test("artifactDir uses ./.okm when process.cwd is missing or throws", () => {
-  const proc = globalThis.process as { cwd?: () => string };
+  const proc = globalThis.process as { cwd: (() => string) | undefined };
   const previous = proc.cwd;
   try {
     proc.cwd = undefined;
@@ -244,6 +244,7 @@ test("artifactDir uses ./.okm when process.cwd is missing or throws", () => {
   } finally {
     proc.cwd = previous;
   }
+  if (previous === undefined) throw new Error("process.cwd was missing");
   expect(artifactDir(undefined)).toBe(`${previous()}/.okm`);
 });
 

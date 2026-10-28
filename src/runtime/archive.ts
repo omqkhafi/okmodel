@@ -125,7 +125,7 @@ export function prepareArchive(
   options: object,
   mods: Mods,
   scope: CallScope | undefined,
-  settings?: readonly (readonly [string, string])[] | undefined,
+  settings?: readonly (readonly [string, string])[],
 ): PreparedWrite {
   const planned = planArchive(schema, op, table, input, options, mods, scope);
   const keys =

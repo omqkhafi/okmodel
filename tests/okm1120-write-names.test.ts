@@ -106,7 +106,7 @@ test("write OKM1120 omits the tenant key and a read keeps it", async () => {
 
   const upsert = await refused(() =>
     scoped.notes
-      .insert({ id: NOTE, title: "c" }, { onConflict: { on: "id", update: ["titl"] } })
+      .insert({ id: NOTE, title: "c" }, { onConflict: { on: "id", update: ["titl"] } } as never)
       .sql(),
   );
   expect(accepted(upsert.message)).not.toContain("tenantId");
@@ -128,7 +128,9 @@ test("write OKM1120 omits the tenant key and a read keeps it", async () => {
   expect(accepted(validated.message)).not.toContain("tenantId");
   expect(validated.message).toContain("checked");
 
-  const read = await refused(() => scoped.notes.find({ where: { nope: 1 }, limit: 1 }).sql());
+  const read = await refused(() =>
+    scoped.notes.find({ where: { nope: 1 }, limit: 1 } as never).sql(),
+  );
   expect(read.code).toBe("OKM1120");
   expect(accepted(read.message)).toContain("tenantId");
 

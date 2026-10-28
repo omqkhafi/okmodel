@@ -99,7 +99,8 @@ test("with() fills setting names on autocommit, tx, raw, archive, and restore", 
     await me.tx(async (tx) => {
       await tx.notes.insert({ id: 2, title: "inside" });
     });
-    await raw(me, RAW, [3, "raw"]);
+    const run = raw as unknown as (db: object, sql: string, params: unknown) => Promise<unknown>;
+    await run(me, RAW, [3, "raw"]);
     const archived = await me.notes.archive({ where: { id: 1 } });
     await me.notes.restore({ archiveId: archived.archiveId });
     await scoped

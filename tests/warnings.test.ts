@@ -205,9 +205,9 @@ test("OKM2005 ignores a pinned tenant key and still warns without that scope", a
     tenancy: compositeTenancy({ key: ["orgId", "teamId"], type: "uuid" }),
     tables: [rows],
   });
-  const open = (source: typeof column) =>
-    connect(pool, { schema: source, warnings: warnings({ env: "development" }) });
-  const scoped = open(column).for({ tenantId: TENANT });
+  const warn = { env: "development" } as const;
+  const columnDb = connect(pool, { schema: column, warnings: warnings(warn) });
+  const scoped = columnDb.for({ tenantId: TENANT });
   const byId = await capture(async () => {
     await scoped.notes.find({ limit: 2, orderBy: { id: "asc" } }).catch(() => undefined);
   });
@@ -225,13 +225,13 @@ test("OKM2005 ignores a pinned tenant key and still warns without that scope", a
   });
   expectRule(missing, "OKM2005");
   const unscoped = await capture(async () => {
-    await open(column)
+    await columnDb
       .unscoped("backfill")
       .notes.find({ limit: 2, orderBy: { id: "asc" } })
       .catch(() => undefined);
   });
   expectRule(unscoped, "OKM2005");
-  const root = open(column) as { readonly notes?: unknown };
+  const root = columnDb as { readonly notes?: unknown };
   expect(root.notes).toBeUndefined();
   const viaId = await capture(async () => {
     await scoped.projects.find({ limit: 2, orderBy: { id: "asc" } }).catch(() => undefined);
@@ -242,21 +242,21 @@ test("OKM2005 ignores a pinned tenant key and still warns without that scope", a
   });
   expectRule(viaName, "OKM2005");
   const rlsId = await capture(async () => {
-    await open(rls)
+    await connect(pool, { schema: rls, warnings: warnings(warn) })
       .for({ tenantId: TENANT })
       .notes.find({ limit: 2, orderBy: { id: "asc" } })
       .catch(() => undefined);
   });
   expect(rlsId.join("\n")).not.toContain("OKM2005");
   const compositeId = await capture(async () => {
-    await open(composite)
+    await connect(pool, { schema: composite, warnings: warnings(warn) })
       .for({ orgId: TENANT, teamId: OTHER })
       .notes.find({ limit: 2, orderBy: { id: "asc" } })
       .catch(() => undefined);
   });
   expect(compositeId.join("\n")).not.toContain("OKM2005");
   const compositeEmail = await capture(async () => {
-    await open(composite)
+    await connect(pool, { schema: composite, warnings: warnings(warn) })
       .for({ orgId: TENANT, teamId: OTHER })
       .notes.find({ limit: 2, orderBy: { email: "asc" } })
       .catch(() => undefined);
