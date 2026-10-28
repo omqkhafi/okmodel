@@ -14,18 +14,22 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+## v0.10.0 — 2026-10-28
+
 ### 💥 Breaking Changes
 
 - `DriverCapabilities` no longer includes `prepared` or `describe`. Prepared-statement mode stays a connect option. A driver that can describe a statement still exposes `pool.describe`.
+- `hidden({ filterable })` accepts only a literal `true`. `false` and a boolean variable are type errors. Call `hidden()` with no argument. Passing `false` from JavaScript still leaves the column hidden and not filterable.
 - `okm migrate plan --json` finding `reason` is an untrusted object. `okm migrate baseline --json` unmanaged `name` is an untrusted object. `okm migrate status` JSON `id`, `kind`, and `state` are untrusted objects. A database error's text is `errors[].detail`. `summary` stays a registry sentence, or `A database error was returned (<kind>).` when the code has no page.
 
 ### behaviour changes
 
 - Indexes on a tenant table lead with the tenant key (`indexes: true`, the default). A unique index is unique per tenant, so two tenants may share a value. `tenantIndexes: false` turns the prefix off for one table. `.global("reason")` opts one index out (an empty reason is refused) and `.scoped()` opts one index in. The nearest level wins. An index that already leads with the key is unchanged, and the next `okm generate` writes nothing. An index that does not is replaced once: `CREATE INDEX CONCURRENTLY` for the new index, then `DROP INDEX CONCURRENTLY` for the old one. That is not a blocking rebuild, and `okm migrate check` accepts it (Q3, D306, #390). OKM1706 stays when prefixing is off.
-- With `validation: true`, an unknown key on `insert`, `update`, upsert / `onConflict`, or first-or-create is OKM1120 and names the key and the table (R1, D304). A typo-only `update` names the key instead of saying "update set is empty."
+- With `validation: true`, an unknown key on `insert`, `update`, upsert / `onConflict`, first-or-create, `insert.validate`, `insert.check`, `insert.pick(...).validate`, `insert.pick(...).check`, `insert.omit(...).validate`, `insert.omit(...).check`, `update.validate`, or `insert["~standard"].validate` is OKM1120 and names the key and the table (R1, D304). A typo-only `update` names the key instead of saying "update set is empty." `insert.check`, `pick(...).check`, and `omit(...).check` return rule issues and do not throw OKM1200 for a failed rule. An unknown key throws OKM1120 on those calls too, and the rule issues are lost. The Standard Schema `validate` throws that OKM1120. It does not return `{ issues }` for an unknown key. A failed rule on that surface still returns `{ issues }`.
+- On a `versioned()` table, an update with `version` in `set` is OKM1120 (was OKM1190). A version string other than `"any"`, such as `"2"`, is OKM1120 (was OKM1121). The message says it must be an integer or `"any"`. Insert of `version` stays OKM1190.
 - `okm generate` exits 1 when an error finding exists; the migration file is still written; stderr says `okm migrate apply` will refuse until it is fixed (Q8, #395). A warning-only finding stays exit 0.
 - `okm pull` and `okm import drizzle` write relative imports with the `.ts` extension so Node type stripping and `bunx okm` can load the schema (R4, #401). `tsc` needs `allowImportingTsExtensions` with `noEmit`, or `rewriteRelativeImportExtensions`.
-- An `update` on a `versioned()` table without `version` is a TypeScript error; the runtime OKM1120 stays when types are bypassed (Q5, D305, #392). Non-versioned tables are unchanged. Type-cost ceilings: inferred-200 instantiations 17,831; query-features types 7,146 (measured plus 3 percent).
+- An `update` on a `versioned()` table without `version` is a TypeScript error; the runtime OKM1120 stays when types are bypassed (Q5, D305, #392). Non-versioned tables are unchanged.
 - `okm` exit codes follow the outcome. `0` is done or nothing to do. `1` is a command that ran and failed. `2` is usage or configuration (unknown flag, missing config, a Node older than 22.18). `3` is a decision the command will not ask (OKM1530, and a committed step that needs a person: OKM1553, OKM1555). `4` is a guard (OKM1850, OKM1852, OKM1855, OKM1859). `5` is a target that cannot be reached or a refused feature (OKM1802, OKM1803, OKM1811, OKM1812, OKM1843, OKM1844, OKM1846, OKM1854, OKM1860, and a lost connection). Every other code, including OKM1401, planner OKM1541, OKM1554, OKM1556, OKM1851, OKM1857, and OKM1858, stays `1`. A script that only checked non-zero still fails. A script that treated every failure as `1` now sees `2` through `5`.
 - `okm migrate plan --json`, `okm migrate baseline --json`, and `okm catalog export --json` keep their previous fields inside the `okm.cli/1` envelope `data`. `parsePlanJson` reads `data` and still accepts a bare plan document.
 - `okm build` and `okm dev` reject an unknown flag. They used to leave the rest of the line unread.
@@ -151,10 +155,6 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `docs/guide.md` and the handbook page `define/connect/session-settings` cover `okmodel/session`. `docs/known-limits.md` says it does not authenticate: a role that can run SQL can set the same names. D312 records the decision.
 - The Limits handbook page, the OKM2011 error page, and the OKM1101 and OKM1105 pages describe `connect({ limits })`. [Observer events](docs/observer-events.md) and [Warnings](docs/warnings.md) cover the limit source and OKM2011. `okm doctor` does not report limits yet, and `filters().parse` takes no clamp from `limits.max`: both are follow-ups in the plan.
 
-### 💥 Breaking Changes
-
-- A typed `hidden({ filterable: false })` is refused. Call `hidden()` with no argument. Passing `false` from JavaScript still leaves the column hidden and not filterable.
-
 ### ♻️ Changed
 
 - CI reads Bun `1.4.3` from `.bun-version`. The kill-storm wedge in Bun.sql is still there on that version.
@@ -179,7 +179,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - The adapter incremental size gates are raised by decision on 2026-10-21 after the size audit: postgres.js 16,000 to 17,000 and PGlite 12,010 to 12,700 minified bytes. One-time increase. The featureless app and runtime entry gates are unchanged.
 - Registry `fix` is the primary remedy. A bypass moves to `escapeHatches`.
-- The migration planner takes a dialect lowering object. Postgres plans stay the same. Feature support and refusal are questions on that object, so the planner does not import the feature registry.
+- The migration planner takes a dialect lowering object. Postgres plans stay the same. Feature support and refusal are questions on that object. The planner does not import the feature registry; the dialect object does.
 - Table, column, and constraint changes lower through that dialect. One logical change can be several statements. Postgres plans stay the same, including a validated check before `SET NOT NULL` on an existing column.
 - Index create, drop, and rename lower through that dialect. Postgres still builds and drops an index on an existing table concurrently. The planner still waits to drop a replaced index until the new one is built. Plans stay the same.
 - Enum, domain, and extension changes lower through that dialect. Adding labels, replacing an enum, and swapping a domain check can be several statements. Postgres plans stay the same, including a non-transactional `ADD VALUE` and an unverified extension upgrade.
@@ -200,7 +200,6 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `describe()` keeps a numeric `minPostgres` already on the input (`max` with the computed floor), and index opclass scan reads every `*_ops` token case-insensitively, so `describe(describe(s))` keeps 17 and 18, a description's floor does not fall to 15, and a later `gist_trgm_ops` after `text_pattern_ops` still reports `pg_trgm` (R5, #402).
 - `okm migrate check` and `okm check` reprint table checks (including picklists) on the connected server before planning, so an author `IN (...)` spelling is not permanent OKM1547 or a NOT VALID/VALIDATE swap against `pg_get_constraintdef` (R2, #399, D128). Check `columns` are left out of the plan comparison when an author check omits column handles.
 - `okm check` checks the Postgres major before author drift and required extensions after it, so a pending migration that creates an extension still surfaces OKM1520 instead of OKM1811. An extension an applied or pending migration creates is not refused as a missing install; when the package is absent from the server, OKM1811 points at `okm migrate apply`. Several targets and no `--target` print `server checks skipped: N targets, pass --target <name>` from `okm doctor` and `okm check` (#400).
-- The archivable unique-predicate migrate-check case tolerates `okm generate` exiting 1 on OKM1529 so the allow line can be written before apply (follow-up to Q8).
 - Validated `insert` / `update` handles expose `~plan` again, so `batch()` and `isolation()` work with `validation: true`. A failing rule inside a batch rolls everything back and reports OKM1200 with `issues` and `batchIndex` (D302, Q1).
 - The linter no longer refuses the planner's own `NOT VALID` then `VALIDATE` pair when the check is on a column added in the same migration with a constant default (or nullable without a default). A validate on an existing column, or after a volatile default, stays OKM1531 (D301).
 - The expand/contract type-change drop recipe no longer puts `-- okm-allow OKM1512` on `DROP TRIGGER` (that code does not fire there and was OKM1510). The trigger needs no allow; the function keeps OKM1515 and the column keeps OKM1512, under a name header so the first statement is a step (B-36).
@@ -222,6 +221,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### dialects
 
+- A numeric default given as a JavaScript number, such as `t.numeric().default(0)` on the string codec, is OKM1210 at `schema()`. The message says the value must be a decimal literal. A string default such as `"0"` still describes.
 - Introspection reads a PostgreSQL 18 `NOT NULL … NOT VALID` constraint (`pg_constraint` `contype` `n`, `convalidated` false) instead of treating `attnotnull` as proof. The column stays NOT NULL and records the unvalidated constraint. When the schema says NOT NULL, the plan is one `VALIDATE CONSTRAINT` step. When it says nullable, the plan is `DROP NOT NULL`. PostgreSQL 15 through 17 read as before (D316).
 
 #### adapters
