@@ -14,22 +14,32 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+## v0.10.0 — 2026-10-28
+
 ### 💥 Breaking Changes
 
 - `DriverCapabilities` no longer includes `prepared` or `describe`. Prepared-statement mode stays a connect option. A driver that can describe a statement still exposes `pool.describe`.
+- `hidden({ filterable })` accepts only a literal `true`. `false` and a boolean variable are type errors. Call `hidden()` with no argument. Passing `false` from JavaScript still leaves the column hidden and not filterable.
 - `okm migrate plan --json` finding `reason` is an untrusted object. `okm migrate baseline --json` unmanaged `name` is an untrusted object. `okm migrate status` JSON `id`, `kind`, and `state` are untrusted objects. A database error's text is `errors[].detail`. `summary` stays a registry sentence, or `A database error was returned (<kind>).` when the code has no page.
+- `db.batch` of a versioned update throws OKM1121 before any statement; move that update into `tx()`. `tx.batch` is unchanged, and `version: "any"` stays allowed.
+- Bound parameters stay off an error cause unless `includeValues` is set. A page cursor for a hidden or sensitive `orderBy` carries only the primary key (a gone row is OKM1130), and `OkmError` is branded so `instanceof` matches across two copies of the class (#541).
 
 ### behaviour changes
 
 - Indexes on a tenant table lead with the tenant key (`indexes: true`, the default). A unique index is unique per tenant, so two tenants may share a value. `tenantIndexes: false` turns the prefix off for one table. `.global("reason")` opts one index out (an empty reason is refused) and `.scoped()` opts one index in. The nearest level wins. An index that already leads with the key is unchanged, and the next `okm generate` writes nothing. An index that does not is replaced once: `CREATE INDEX CONCURRENTLY` for the new index, then `DROP INDEX CONCURRENTLY` for the old one. That is not a blocking rebuild, and `okm migrate check` accepts it (Q3, D306, #390). OKM1706 stays when prefixing is off.
-- With `validation: true`, an unknown key on `insert`, `update`, upsert / `onConflict`, or first-or-create is OKM1120 and names the key and the table (R1, D304). A typo-only `update` names the key instead of saying "update set is empty."
+- With `validation: true`, an unknown key on `insert`, `update`, upsert / `onConflict`, first-or-create, `insert.validate`, `insert.check`, `insert.pick(...).validate`, `insert.pick(...).check`, `insert.omit(...).validate`, `insert.omit(...).check`, `update.validate`, or `insert["~standard"].validate` is OKM1120 and names the key and the table (R1, D304). A typo-only `update` names the key instead of saying "update set is empty." `insert.check`, `pick(...).check`, and `omit(...).check` return rule issues and do not throw OKM1200 for a failed rule. An unknown key throws OKM1120 on those calls too, and the rule issues are lost. The Standard Schema `validate` throws that OKM1120. It does not return `{ issues }` for an unknown key. A failed rule on that surface still returns `{ issues }`.
+- On a `versioned()` table, an update with `version` in `set` is OKM1120 (was OKM1190). A version string other than `"any"`, such as `"2"`, is OKM1120 (was OKM1121). The message says it must be an integer or `"any"`. Insert of `version` stays OKM1190.
 - `okm generate` exits 1 when an error finding exists; the migration file is still written; stderr says `okm migrate apply` will refuse until it is fixed (Q8, #395). A warning-only finding stays exit 0.
 - `okm pull` and `okm import drizzle` write relative imports with the `.ts` extension so Node type stripping and `bunx okm` can load the schema (R4, #401). `tsc` needs `allowImportingTsExtensions` with `noEmit`, or `rewriteRelativeImportExtensions`.
-- An `update` on a `versioned()` table without `version` is a TypeScript error; the runtime OKM1120 stays when types are bypassed (Q5, D305, #392). Non-versioned tables are unchanged. Type-cost ceilings: inferred-200 instantiations 17,831; query-features types 7,146 (measured plus 3 percent).
+- An `update` on a `versioned()` table without `version` is a TypeScript error; the runtime OKM1120 stays when types are bypassed (Q5, D305, #392). Non-versioned tables are unchanged.
 - `okm` exit codes follow the outcome. `0` is done or nothing to do. `1` is a command that ran and failed. `2` is usage or configuration (unknown flag, missing config, a Node older than 22.18). `3` is a decision the command will not ask (OKM1530, and a committed step that needs a person: OKM1553, OKM1555). `4` is a guard (OKM1850, OKM1852, OKM1855, OKM1859). `5` is a target that cannot be reached or a refused feature (OKM1802, OKM1803, OKM1811, OKM1812, OKM1843, OKM1844, OKM1846, OKM1854, OKM1860, and a lost connection). Every other code, including OKM1401, planner OKM1541, OKM1554, OKM1556, OKM1851, OKM1857, and OKM1858, stays `1`. A script that only checked non-zero still fails. A script that treated every failure as `1` now sees `2` through `5`.
 - `okm migrate plan --json`, `okm migrate baseline --json`, and `okm catalog export --json` keep their previous fields inside the `okm.cli/1` envelope `data`. `parsePlanJson` reads `data` and still accepts a bare plan document.
 - `okm build` and `okm dev` reject an unknown flag. They used to leave the rest of the line unread.
 - A derived name longer than 63 bytes (index, constraint, sequence, check, trigger) keeps the same shape, a UTF-8 prefix, `_`, and 8 hex characters, but the suffix is now the 32-bit FNV-1a hash of the full name, not the first 8 characters of its SHA-256. The stored name of every such identifier changes once, so the next `okm generate` plans a change for it. Names that fit in 63 bytes are unchanged. Two long names that shorten to the same stored name stay OKM1023 (duplicate identity) and are never merged. The featureless app startup graph drops 2,415 minified bytes because `sha256.ts` leaves it (90,763 to 88,348).
+- `schema()` resolves every cased name once: `snake` splits an acronym (`userID` is `user_id`), `casing: "camel"` is accepted, any other casing is OKM1060, and two fields that spell one SQL name are OKM1023. A drop and add that are one casing of each other is OKM1530 and names `.sqlName()` and `.renamedFrom()`, and a column rename also renames its identity sequence (#535, #548).
+- Under composite tenancy, `index().unique()` leads with every tenant key, an ordinary index still leads with the first, a key already named moves to the front once, and two indexes that become the same one are OKM1023. `tenantIndexes` on a global table, or a tenant-index mark when the schema has no tenancy, is OKM1060, and OKM1706 on a `using` index names `index().global("reason")` (#546).
+- A table named `capabilities` is OKM1023, because `db.capabilities` is reserved on the root client, a scoped client, and inside `tx()` (#546).
+- `find`, `one`, and `page` reject a plain hidden key, an unknown key, a wrong filterable value, a bad `or()` branch, and a hidden `orderBy`, including inside `include`, and `page` rejects an unknown option and `relevance()` (OKM1120). The same plain hidden key and a bad `or()` are type errors on `count`, `exists`, `update`, and `delete`, while a filterable hidden column stays valid in `where` and `orderBy` (#549, #550).
 
 ### ✨ Added
 
@@ -66,6 +76,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `aggregate({ groupBy, orderBy })` orders groups by `count` and by the names in `select`, besides group fields and bucket names, each as `asc`, `desc`, or `{ dir, nulls }`. A `min` or `max` of a timestamp sorts as a timestamp. An unknown name is OKM1120 and lists the accepted names. Every other read that orders (`find`, `one`, `page`, `stream`, `include`, window helpers) already took `{ dir, nulls }`; they now have tests with NULL rows (D314, #510).
 - `connect({ limits: { find, include, page, groupBy, max } })` opts in to default limits (M-7). Each key is a positive integer, optional, and independent: `include` and `groupBy` never take `find`'s value. A default applies only to a call that states neither `limit` nor `.all(reason)`: `find` (with `search`, `matches`, presets, and relation filters), a to-many `include` (including `manyThrough`), the `page()` size, and `aggregate` with `groupBy`. `max` is a hard ceiling for a written limit: above it is OKM1101, and `.all(reason)` goes past it. `.stream()`, `one`, `count`, `exists`, an `aggregate` without `groupBy`, update and delete limits, bulk write predicates, and `raw()` are untouched. Without `limits` nothing changes. `.inspect()` lists the `bounded` rule as `limits.find`, `limits.page`, `limits.groupBy`, or `limits.include`, and `QueryEvent.limit.source` reads the same. A bad `limits` is OKM1120 at connect.
 - OKM2011 (`default-limit-reached`) joins the warning registry: in development, a read that used a default from `limits` and returned exactly that many rows warns with the call site, the key (`limits.find = 50`), and the fix. It never fires for a limit the call wrote, for `.all(reason)`, or for `page()`. The notice has a `limit` field.
+- `orderBy` accepts one hop, a column of a to-one relation or `count` on a to-many, and a hidden or sensitive relation sort stays a primary-key cursor. That order with `distinct` or `distinctOn` is OKM1127, in `aggregate` is OKM1128, and a cursor that does not match the order is OKM1130 (#558).
 
 #### tooling
 
@@ -122,6 +133,8 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - The packed text scan (`docs:check`) covers every file under `skills/`, not only `skills/okmodel/SKILL.md`.
 - `okm doctor --production` checks one target for misuse and changes nothing: every query runs in one `READ ONLY` transaction, and the output says `target <name>` and never the URL, host, user, or password. Each finding has a stable id, a severity (`fail`, `warn`, `ok`), and a one-line fix. The exit code is 1 when any finding fails (OKM2204), 2 when several targets exist and no `--target` is given (OKM1853), and 5 when the target cannot be read. `--json` returns the `okm.cli/1` envelope with `data.production`. Findings: `target-protection` (fails unless the config sets `protected: true`; a name or `NODE_ENV` is never read; OKM2202), `pooler` (warns, fails with `--allow-pooler`; OKM2203), `okm-meta` (fails when absent; the doctor cannot see `connect()` options such as `requireMeta`; OKM1520), `role-privilege` (superuser or BYPASSRLS fails; OKM1707), `role-owns-tables` (warns), `role-config` (with `config.roles`; OKM1707), `lock-timeout` and `statement-timeout` (a value of 0 warns; apply's own lock timeout is the one reported; OKM2201), `server-version` (outside 15 to 18 warns above and fails below; OKM1803), and `extensions` (installed versions; OKM1811). The exposure check is not built: the catalog does not record `validation` (D315, #523). `--allow-pooler` is accepted on `okm doctor` only with `--production`.
 - OKM1709 is registered with a page. `session.local` is native on Postgres in the capability registry and `SESSION_SETTINGS` reports the scope by dialect family: `transaction` for Postgres, `session` for the MySQL family, `none` for SQLite. `assertSessionSettings("mysql" | "sqlite")` refuses with OKM1860 and names column, composite, or path tenancy. `docs/capabilities.md` lists the table.
+- `okm pull --casing snake|camel` writes `sqlName` when the key does not spell the database name. `okm import drizzle` no longer requires Relations, detects casing from the flag, the builders, then the config, and keeps a docs-shaped index and column unique under those names (#557).
+- `okm pull --import-ext js|none` sets the relative specifier (the default stays `.ts`). A partial index is emitted with `index()`, a non-default btree operator class is kept, and `.name()` is written when the database index name is not the generated one (#545, #555).
 
 #### docs
 
@@ -151,10 +164,6 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `docs/guide.md` and the handbook page `define/connect/session-settings` cover `okmodel/session`. `docs/known-limits.md` says it does not authenticate: a role that can run SQL can set the same names. D312 records the decision.
 - The Limits handbook page, the OKM2011 error page, and the OKM1101 and OKM1105 pages describe `connect({ limits })`. [Observer events](docs/observer-events.md) and [Warnings](docs/warnings.md) cover the limit source and OKM2011. `okm doctor` does not report limits yet, and `filters().parse` takes no clamp from `limits.max`: both are follow-ups in the plan.
 
-### 💥 Breaking Changes
-
-- A typed `hidden({ filterable: false })` is refused. Call `hidden()` with no argument. Passing `false` from JavaScript still leaves the column hidden and not filterable.
-
 ### ♻️ Changed
 
 - CI reads Bun `1.4.3` from `.bun-version`. The kill-storm wedge in Bun.sql is still there on that version.
@@ -179,7 +188,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 - The adapter incremental size gates are raised by decision on 2026-10-21 after the size audit: postgres.js 16,000 to 17,000 and PGlite 12,010 to 12,700 minified bytes. One-time increase. The featureless app and runtime entry gates are unchanged.
 - Registry `fix` is the primary remedy. A bypass moves to `escapeHatches`.
-- The migration planner takes a dialect lowering object. Postgres plans stay the same. Feature support and refusal are questions on that object, so the planner does not import the feature registry.
+- The migration planner takes a dialect lowering object. Postgres plans stay the same. Feature support and refusal are questions on that object. The planner does not import the feature registry; the dialect object does.
 - Table, column, and constraint changes lower through that dialect. One logical change can be several statements. Postgres plans stay the same, including a validated check before `SET NOT NULL` on an existing column.
 - Index create, drop, and rename lower through that dialect. Postgres still builds and drops an index on an existing table concurrently. The planner still waits to drop a replaced index until the new one is built. Plans stay the same.
 - Enum, domain, and extension changes lower through that dialect. Adding labels, replacing an enum, and swapping a domain check can be several statements. Postgres plans stay the same, including a non-transactional `ADD VALUE` and an unverified extension upgrade.
@@ -200,7 +209,6 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `describe()` keeps a numeric `minPostgres` already on the input (`max` with the computed floor), and index opclass scan reads every `*_ops` token case-insensitively, so `describe(describe(s))` keeps 17 and 18, a description's floor does not fall to 15, and a later `gist_trgm_ops` after `text_pattern_ops` still reports `pg_trgm` (R5, #402).
 - `okm migrate check` and `okm check` reprint table checks (including picklists) on the connected server before planning, so an author `IN (...)` spelling is not permanent OKM1547 or a NOT VALID/VALIDATE swap against `pg_get_constraintdef` (R2, #399, D128). Check `columns` are left out of the plan comparison when an author check omits column handles.
 - `okm check` checks the Postgres major before author drift and required extensions after it, so a pending migration that creates an extension still surfaces OKM1520 instead of OKM1811. An extension an applied or pending migration creates is not refused as a missing install; when the package is absent from the server, OKM1811 points at `okm migrate apply`. Several targets and no `--target` print `server checks skipped: N targets, pass --target <name>` from `okm doctor` and `okm check` (#400).
-- The archivable unique-predicate migrate-check case tolerates `okm generate` exiting 1 on OKM1529 so the allow line can be written before apply (follow-up to Q8).
 - Validated `insert` / `update` handles expose `~plan` again, so `batch()` and `isolation()` work with `validation: true`. A failing rule inside a batch rolls everything back and reports OKM1200 with `issues` and `batchIndex` (D302, Q1).
 - The linter no longer refuses the planner's own `NOT VALID` then `VALIDATE` pair when the check is on a column added in the same migration with a constant default (or nullable without a default). A validate on an existing column, or after a volatile default, stays OKM1531 (D301).
 - The expand/contract type-change drop recipe no longer puts `-- okm-allow OKM1512` on `DROP TRIGGER` (that code does not fire there and was OKM1510). The trigger needs no allow; the function keeps OKM1515 and the column keeps OKM1512, under a name header so the first statement is a step (B-36).
@@ -222,11 +230,18 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 #### dialects
 
+- A numeric default given as a JavaScript number, such as `t.numeric().default(0)` on the string codec, is OKM1210 at `schema()`. The message says the value must be a decimal literal. A string default such as `"0"` still describes.
 - Introspection reads a PostgreSQL 18 `NOT NULL … NOT VALID` constraint (`pg_constraint` `contype` `n`, `convalidated` false) instead of treating `attnotnull` as proof. The column stays NOT NULL and records the unvalidated constraint. When the schema says NOT NULL, the plan is one `VALIDATE CONSTRAINT` step. When it says nullable, the plan is `DROP NOT NULL`. PostgreSQL 15 through 17 read as before (D316).
+- Column handles in `sql` and enum or domain type names go through one identifier path, so a mixed-case name, a space, or a quote stays one quoted name (#534).
+- An array picklist checks that every element is one of the values. `.unique()` on a gin or gist index is OKM1060 at `schema()` (#537, #545).
 
 #### adapters
 
 - A Bun.sql pool that answers `connection must be a PostgresSQLConnection` after `pg_terminate_backend` is replaced. The next call dials again. Pool `close()` returns within a second when Bun's own `close()` does not (oven-sh/bun#46166). Still present on Bun 1.4.3.
+- Bun.sql stamps SQLSTATE 08006 on a dead socket (`Connection closed` or `connection must be a PostgresSQLConnection`), so the failure is `unavailable`. A commit already `outcome_unknown` stays OKM1401 (#567).
+- A node-postgres pool does not retry a read after the connection fails. The killed client is discarded (#568).
+- `db.capabilities` is frozen. A write to a driver flag is rejected (#546).
+- PGlite loads a declared contrib extension before wasm (#554).
 
 #### runtime
 
@@ -235,6 +250,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A write observer unit is tracked per transaction, batch, or autocommit statement instead of per client. Two transactions that overlap on one client no longer mix their events or lose an outcome (G-8, #525).
 - `onQuery` reads inside a savepoint share the transaction's unit id, and the `params` of a successful write statement are redacted for hidden and sensitive columns (G-8, #525).
 - A read the topology serves from a replica is labelled `{ endpoint: <name>, role: "replica" }` in `onQuery`, not `primary` (G-8, #525).
+- A validated row is branded for its table, so a row sealed for one table does not skip another table's rules, and a batched OKM1200 keeps the stack of the check that threw. `find`, `one`, and `count` reject an unknown option beside a valid one, and `update` with `version: "any"`, `lock`, `limit`, and `{ allow }` on a guarded column typechecks (#560, #562).
 
 #### tooling
 
@@ -249,6 +265,25 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - `testing()` drops the catalog it applied when the harness finishes, in reverse dependency order. An `ignored` object is left in place. `migrate: false` drops nothing (Q9, #396).
 - The packed-tarball size check runs for this repository. A fixture passed to `pack-contract` with `--root` does not need `tests/fixtures/pack-size.json`.
 - `okm check` reports a PostgreSQL 18 `NOT NULL … NOT VALID` constraint as drift (OKM1520) and names the column, even when no row holds NULL. `okm pull` writes that column `.nullable()` with a comment and lists it under `not validated`. A dependent catalog's `okm check` treats such an external column as stale (OKM1841). The linter reports its `VALIDATE CONSTRAINT` as OKM1531 with the reason `validates a NOT NULL constraint`.
+- `okm push` refuses a plan that drops a column or a table that holds a row (OKM1898); `--allow-data-loss` applies it and prints `dropped <object>`, while an empty column or table still applies with no dropped line. A drop `.okm/pull.json` lists stays OKM1897, and dropping a unique or primary-key constraint alone is applied (#563, #564).
+- `okm check` reports a reserved column or index name as OKM1122, as `okm push` does, unless `.okm/pull.json` already lists that name. `okm pull` writes that record at the project root even with `--out`; a scratch pull or another target's `--schema` leaves it, and `--out` of the same database refreshes it (#561, #562, #563).
+- OKM1894: `testing()` found a table, type, or extension that already exists. Use an empty database, or `migrate: false` (#542, #561).
+- OKM1895: the command line was not accepted, including `--json` usage and a missing config file. `okm --help` and `okm <command> --help` list what is accepted (#542, #566).
+- OKM1896: a check, picklist, domain check, generated column, or btree expression is reprinted on a temporary table, and this session cannot create one. Point the command at a writable primary; the role needs `TEMP`, not `CREATE` on the schema (#552).
+- OKM1897: `okm push` would drop a column or constraint that `okm pull` listed under not pulled yet. Those objects stay, because pull did not write them (#561, #563).
+- OKM1898: `okm push` would drop columns and tables that hold rows. Keep them, or pass `--allow-data-loss` (#563, #564).
+- `okm migrate apply` honors `minPostgres` and refuses a feature the registry refuses, using that entry's code when it is OKM1861 or OKM1868 through OKM1879. Any other refusal stays OKM1860, and a missing dialect method or a lowered statement the planner cannot trust is OKM1559 (#566, #568).
+- Apply of `uuidv7()` stays OKM1812 when the function is missing, including when `minPostgres` is set, and a hand-installed function still applies. A using-index reprint that fails because the operator class is not installed yet keeps the author text, so check reports the pending extension as drift (#566).
+- `okm check`, apply, and push reprint a check, a generated expression, and a btree index expression until the text matches what Postgres stores, so a `CASE` newline is not OKM1122 and an INVALID index is omitted from the live catalog. `CREATE UNIQUE INDEX … IF NOT EXISTS` still raises OKM1528 and OKM1529, and the empty-replay line also names a foreign-key validation and a cast (#545).
+- Cleanup of a failed concurrent index drops that index in the table's schema and does not treat another session's build as its own. OKM1812 step numbers count from 1, a lock timeout tells you to run `okm migrate check` again, and an index another session is still building says to wait for that build (#545, #566, #568).
+- The planner drops an index before the column it covers, keeps both foreign-key actions, does not drop an identity sequence when its table is renamed, and treats an added enum label as applied (a removed or reordered label stays OKM1548). A trigger `WHEN` is reprinted before compare, `okm check` reads views on the namespace `search_path`, and an existing unique index that covers the new one is not OKM1529 (#537).
+- A column or table rename does not rewrite a function body or a trigger `WHEN` in place. A function with the same signature is replaced, and a trigger whose `WHEN` changed is dropped and created; checks, indexes, and policies still rewrite in place (#548).
+- `okm migrate check` does not move an installed extension into the scratch schema, and reprint uses temporary objects instead of `okm_expr*` in the live schema. `COMMIT`, `END`, `ROLLBACK`, and `ABORT`, including `WORK`, `TRANSACTION`, and `AND [NO] CHAIN`, are OKM1551, and `okm push` refuses a plan that weakens row-level security as OKM1510 before any statement (the allow line is OKM1550) (#532).
+- An extension installed outside the table schema is found from a column type or an index operator class, and apply puts that schema on `search_path`. Unquoted `CREATE EXTENSION` names are folded, `extension(name, { schema })` creates the schema inside check, an operator class is mapped by method, and a role that does not own the extension gets OKM1814 (#552, #554, #557).
+- `okm check` and `okm doctor` skip OKM1811 before the initial migration when the package is available, and they still report it after `DROP EXTENSION` on an applied database. A role that cannot install an extension named in a pending migration is OKM1811, and `describe()` reports uuid arrays, column tenancy, and the `uuidv7` case (#552, #554, #561).
+- `okm pull` writes a generated-always integer primary key as `t.integerIdentity()`, lists a reserved-word column, constraint, or index under not pulled yet instead of aborting, and stores an unnamed Drizzle index as `{table}_{columns}_index`. A citext check reprints by installing the extension type and rolling that install back, with the extension schema on `search_path` (#561, #562).
+- `okm pull` lists unmanaged row-level security and does not drop it after baseline, appends `Name` to a binding that shadows an okmodel import, and omits a cross-schema foreign key it did not read (two schemas that share a table name are OKM1023). `--schema billing` rewrites a key to `public.users` as `.references("users")`; repeating `--schema` writes nothing (OKM1023 when the name is in both, OKM1021 when the target is outside the one namespace) (#555, #562).
+- `okm` exits when stderr is closed (EPIPE) instead of writing again and spinning. A dangling agent skill link is refused before `okm init` writes (OKM1886), `okm doctor --bundle` refuses a symlink that leaves the project (an existing file without `--force-file` is OKM1855), a second `okm generate` lints the pending migration again and prints each finding once, `protected.json` is mode 600, and `writeObserver` refuses an unknown option (#542).
 
 #### docs
 
@@ -261,6 +296,7 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 - A store fingerprint blocks a state-changing command when there is no terminal (OKM1859, exit 4), including when that invocation passed `--allow-protected`. Project-config protection still honors `--allow-protected`. Deleting `protected: true` does not delete the stored fingerprint. A terminal is friction, not proof of a human. The ceiling is [Protection](docs/protection.md).
 - A postgres.js generic or aborted-connection failure on a statement whose table has a sensitive column no longer leaves `parameters` or `args` on `error.cause` when the driver omits `table` (B-33 residual, #364).
 - `SECURITY.md` names the disclosure address, the report policy, and supported lines (the current 0.x minor and the previous minor, 0.10.x and 0.9.x). [Using OKModel safely](docs/using-okmodel-safely.md) covers lockfile pinning, a minimum release age, and what provenance does not prove.
+- `inspect()` redacts a write the way a read does, and `explain()` sends the real parameters and then replaces hidden and sensitive values in `params` and in the plan text. Batch `onQuery` params and a page cursor redact from the statement's own table, so a concealed value or a tenant id is not left in clear text, and an OKM1210 message for that column does not contain the value (#551, #560, #562).
 
 ## v0.9.1 — 2026-10-17
 
