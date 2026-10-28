@@ -1,0 +1,41 @@
+---
+title: "Tenancy"
+description: "Tenancy keeps one tenant's rows out of another tenant's queries."
+---
+
+Tenancy keeps one tenant's rows out of another tenant's queries. You declare it on the schema. A table is isolated unless you mark it shared or send it along a relation. The key, the indexes, and the examples are [Tenancy](/docs/schema/tenancy).
+
+## The problem
+
+A shared database holds every tenant. A query that forgets the filter returns another tenant's rows. A bug in one call is a leak, and a review cannot see every call.
+
+## How OKModel handles it
+
+`columnTenancy` adds one guarded uuid column. A table that does not say otherwise gets that column. `global("reason")` leaves the column off that table. `via()` follows a relation path, so this table has no column and the predicate walks the path. Anything else is refused when `schema()` runs.
+
+The root client does not expose a tenant table. The call is `for({ key })`, and a tenant table used without it is OKM1701. Insert stamps the key from that scope. Input that sets the key is OKM1190. An update or a filter that sets it is OKM1704. A read or a write on the scoped client adds the predicate.
+
+`unscoped("reason")` is the reviewed hatch. The reason is required. The statement then does not add the predicate.
+
+A unique on a tenant table includes the key, unless that one constraint is marked global with a reason. When the table has a primary key, the tenant key is added to it. A global table that references a tenant table is OKM1705.
+
+Typed raw SQL has no tenant predicate, so a schema with tenancy refuses it (OKM1702) unless the client went through `trusted(reason)` or `unscoped`.
+
+`rlsTenancy` keeps the column predicate and adds policies as a backstop. It takes one key. A table that uses `via()` under it is OKM1060. An array of keys is refused.
+
+## Limits and trade-offs
+
+The predicate is on the calls the client plans. `unscoped` and `trusted` are how a reviewed statement leaves it off. They are reasons, not a mode the next call inherits.
+
+Row-level security does not replace the column predicate. A login that bypasses it is a role problem. The doctor check is [Protected targets and roles](/docs/operate/protected-targets-and-roles).
+
+Index prefixes, composite keys, path length, and every example stay on the schema page. This page does not repeat them.
+
+## Where to read the detail
+
+| Page | You use it for |
+| --- | --- |
+| [Tenancy](/docs/schema/tenancy) | The key, `global`, `via`, indexes, and `rlsTenancy`. |
+| [References](/docs/schema/references) | A foreign key under a tenant table. |
+| [Typed raw SQL](/docs/queries/typed-raw-sql) | `trusted` and OKM1702. |
+| [The safety model](/docs/concepts/the-safety-model) | The other refusals, beside the tenant key. |

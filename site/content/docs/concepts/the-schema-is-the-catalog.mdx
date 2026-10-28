@@ -1,0 +1,36 @@
+---
+title: "The schema is the catalog"
+description: "schema() is the catalog that generate, plan, check, and the client types read."
+---
+
+The object `schema()` returns is the catalog. Generate, plan, and check diff that document. The client types are the tables on the same object, not a second description of the database.
+
+## The problem
+
+A migration tool that introspects the database, and a client that trusts a handwritten type, can disagree with the file you edit. The file you edit has to be the thing both sides read.
+
+## How OKModel handles it
+
+`schema()` stores the catalog on `catalog`. `catalogHash` is the SHA-256 of that document, serialized. Generate loads the schema, reads the previous migration's catalog snapshot (an empty catalog when there is no snapshot), and plans one into the other. It writes the SQL file and a catalog snapshot beside it. Plan prints that same diff and writes nothing.
+
+`okm check`, when it can reach one target, compares a database that already has `okm_meta` with this catalog. Apply records the hash in `okm_meta` and one row per step in `okm_history`, including the step class.
+
+The client does not read the JSON. `connect` takes the schema value. Its tables are the keys of `~byName`, which is what `Row`, `Insert`, and `Update` index when you pass that value. The declaration, the tables list, and the hash rules are [The schema](/docs/schema/the-schema).
+
+## Limits and trade-offs
+
+The schema catalog is not everything the tooling can attach. `defineConfig({ roles })` adds grants before generate, plan, or check. A `schema()` catalog never has them. The hash `connect` compares leaves privileges out, and `okm check` still verifies them when the config names roles.
+
+`minPostgres` and the row-type mode are fields on the schema value. They are not objects inside the catalog document. Changing them does not change `catalogHash`. The floor is [Minimum Postgres](/docs/schema/the-schema#minimum-postgres). The mode is [Row types](/docs/schema/codecs-and-row-types#row-types).
+
+A catalog hash match is not a row-by-row proof. The live comparison and the startup comparison are [Migrations and drift](/docs/concepts/migrations-and-drift).
+
+## Where to read the detail
+
+| Page | You use it for |
+| --- | --- |
+| [The schema](/docs/schema/the-schema) | `tables`, casing, and the floor. |
+| [generate](/docs/reference/cli#generate) | The SQL file and the snapshot beside it. |
+| [plan](/docs/reference/cli#migrate-plan) | The diff, without writing. |
+| [check](/docs/reference/cli#check) | The live comparison, when a target is reachable. |
+| [Config](/docs/reference/config) | `defineConfig`, targets, and roles. |

@@ -1,0 +1,51 @@
+---
+title: "The safety model"
+description: "What OKModel refuses by default, and the pages that hold the detail."
+---
+
+OKModel refuses a call that would read an unbounded set, write an unbounded set, or set a field the caller does not own. A destructive migration step is an error until the file acknowledges it. Protection of a target is off until you turn it on.
+
+## The problem
+
+A default that runs the wide query, or drops the table, fails open. The mistake is one missing argument. The repair is a production incident.
+
+## How OKModel handles it
+
+These are the refusals that hold when you have not opted in. Each line stops at the fact. The linked page is the detail.
+
+| Refusal | Page |
+| --- | --- |
+| `find`, `page`, a grouped `aggregate`, or a to-many `include` with no limit | [Query limits](/docs/operate/query-limits) |
+| `update` or `delete` with no effective filter, and the same rule for `archive` and `restore` | [Write rows](/docs/queries/write-rows) and [Traits](/docs/schema/traits) |
+| An unknown field on insert or update | [OKM1120](/docs/reference/errors#okm1120) |
+| A guarded field set from input | [Visibility](/docs/schema/visibility) |
+| A destructive migration step, until the file carries `-- okm-allow` | [Checks and lint](/docs/migrations/checks-and-lint) |
+
+`find` without a limit is OKM1101. A to-many `include` without a limit is OKM1105. `.all(reason)` is the hatch for a read or a write you mean to leave unbounded. `limits` on `connect` can supply a default for the read calls. Leave `limits` out and those calls still refuse a missing limit. They do not gain a silent default.
+
+`update` and `delete` without a filter are OKM1102. `.all(reason)` is the hatch, and a blank reason is refused. `archive` and `restore` use the same check.
+
+An unknown key is refused and names the key. It is not stored. A guarded column cannot be set from input (OKM1190). Hidden and sensitive change what a row contains and what a log shows. The three flags are [Visibility](/docs/schema/visibility).
+
+Dropping a table or a column is an error finding (OKM1511, OKM1512). An error finding fails the command as OKM1510. `-- okm-allow CODE: reason` on that step silences the code it names. A blank reason is itself OKM1510. The other codes are [Errors](/docs/reference/errors).
+
+A protected target is a flag on the target, or a fingerprint in the user store. It is not implied by the name `production` or by `NODE_ENV`. `connect` does not read it. Which commands it blocks is [Protected targets and roles](/docs/operate/protected-targets-and-roles).
+
+## Limits and trade-offs
+
+Validation does not run on every write. Omitted, or `false`, leaves it off. A column, a table, or the schema can turn it on. The switch is [Validation](/docs/schema/validation).
+
+The refusals above are the library. They are not a review of the package you install. Pinning the lockfile, waiting before a new release, and reading a provenance attestation are [Using OKModel safely](/docs/operate/using-okmodel-safely).
+
+What to turn on before a real target — `protected`, `requireMeta`, `--target`, a direct connection — is the [Production checklist](/docs/operate/production-checklist). This page does not repeat that list.
+
+A limit you pass, and `.all(reason)`, are intentional. The hatch is a reason string, not a second silent default.
+
+## Where to read the detail
+
+| Page | You use it for |
+| --- | --- |
+| [Query limits](/docs/operate/query-limits) | `limits`, `max`, and `.all(reason)`. |
+| [Protected targets and roles](/docs/operate/protected-targets-and-roles) | The flag, the store, and the grants. |
+| [Using OKModel safely](/docs/operate/using-okmodel-safely) | The lockfile, the wait, and provenance. |
+| [Production checklist](/docs/operate/production-checklist) | What a production target should have on. |

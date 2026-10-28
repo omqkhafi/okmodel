@@ -1,0 +1,40 @@
+---
+title: "Migrations and drift"
+description: "A migration is the SQL between two catalogs. okm check reports a live difference, and only against a reachable target."
+---
+
+A migration is the SQL from the previous catalog snapshot to the catalog `schema()` just built. Drift is a database that is not that catalog. `okm check` reports a live difference, as OKM1520, and only when it can reach one target. It does not run by itself.
+
+## The problem
+
+The database changes without a migration file: a column added by hand, an apply that did not finish, two copies of the app. A later apply then plans the wrong step, or a boot proceeds against a database the code cannot read.
+
+## How OKModel handles it
+
+Generate and plan load the schema catalog and the previous snapshot. No snapshot means an empty catalog. The plan is the steps from one to the other. A step the planner emits is `expand` or `contract`, from the kind of change: adding a nullable column is expand, dropping one is contract. Apply writes `okm_history` with that class and the catalog hash, and it writes the hash into `okm_meta`.
+
+`okm check` does two kinds of work. Before it connects, it lints the plan and the catalog. An error finding is OKM1510. When the project has no target, it stops there. When several targets are configured and you omit `--target`, it does not connect: server checks, including drift, are skipped. With one target, or with `--target`, it compares a database that already has `okm_meta` with the schema. A remaining step is OKM1520, `The database differs from the schema.` A database with no `okm_meta` is not that comparison.
+
+That live comparison is a command. Nothing in the query path runs it for you.
+
+`connect` does a narrower check, and only when `okm_meta` already holds a hash. Equal hashes return without reading history. A database that is ahead by expand migrations is allowed. Ahead by a contract step, or behind, is OKM1520. A missing hash skips this check unless `requireMeta` is set. The cases are [Startup check](/docs/operate/startup-check).
+
+`okm migrate check` is a third command. It replays migration files in a scratch schema. It does not read the selected database's rows, and it is not the live drift report. The four checks are [Checks and lint](/docs/migrations/checks-and-lint).
+
+## Limits and trade-offs
+
+Expand is how an old app keeps running while the database moves forward. A contract step is not that. The startup check allows only the expand-ahead case. It does not repair a database, and it does not notice a difference that left the hash unchanged.
+
+`okm check` on a database that has never been pushed does not report OKM1520 for a missing `okm_meta`. The structural comparison starts once that table exists.
+
+A pooler URL is refused for a connecting check unless you allow it. The rule is [Production checklist](/docs/operate/production-checklist).
+
+## Where to read the detail
+
+| Page | You use it for |
+| --- | --- |
+| [Your first migration](/docs/start/first-migration) | Generate, apply, and status. |
+| [check](/docs/reference/cli#check) | Lint, then the live comparison. |
+| [Startup check](/docs/operate/startup-check) | The hash `connect` compares. |
+| [Checks and lint](/docs/migrations/checks-and-lint) | Replaying history in a scratch schema. |
+| [Type change](/docs/migrations/type-change) | A change that is not a single safe step. |

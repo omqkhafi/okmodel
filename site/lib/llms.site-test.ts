@@ -41,6 +41,12 @@ test("sitemap and robots advertise the handbook", () => {
   expect(urls).toContain(`${SITE_ORIGIN}/docs/start`);
   expect(urls).toContain(`${SITE_ORIGIN}/docs/start/why-okmodel`);
   expect(urls).toContain(`${SITE_ORIGIN}/docs/start/first-migration`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/concepts/how-okmodel-works`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/concepts/the-schema-is-the-catalog`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/concepts/type-safety-and-inference`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/concepts/migrations-and-drift`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/concepts/the-safety-model`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/concepts/tenancy`);
   expect(urls).toContain(`${SITE_ORIGIN}/changelog`);
   expect(urls).toContain(`${SITE_ORIGIN}/llms.txt`);
   expect(urls).toContain(`${SITE_ORIGIN}/llms-full.txt`);

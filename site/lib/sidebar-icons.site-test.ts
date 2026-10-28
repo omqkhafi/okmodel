@@ -11,6 +11,7 @@ test("pages sit flat under the capability groups", () => {
   const folders = source.getPageTree().children.flatMap((node) => (node.type === "folder" ? [node] : []));
   expect(folders.map((folder) => folder.name)).toEqual([
     "Get started",
+    "Concepts",
     "Schema",
     "Queries",
     "Migrations",
@@ -33,11 +34,26 @@ test("pages sit flat under the capability groups", () => {
   const migrations = byFolder.get("Migrations");
   const queries = byFolder.get("Queries");
   const schema = byFolder.get("Schema");
-  if (operate === undefined || migrations === undefined || queries === undefined || schema === undefined) {
+  const concepts = byFolder.get("Concepts");
+  if (
+    operate === undefined ||
+    migrations === undefined ||
+    queries === undefined ||
+    schema === undefined ||
+    concepts === undefined
+  ) {
     throw new Error("missing group");
   }
   const childUrls = (folder: (typeof folders)[number]): string[] =>
     folder.children.flatMap((child) => (child.type === "page" ? [child.url] : []));
+  expect(childUrls(concepts)).toEqual([
+    "/docs/concepts/how-okmodel-works",
+    "/docs/concepts/the-schema-is-the-catalog",
+    "/docs/concepts/type-safety-and-inference",
+    "/docs/concepts/migrations-and-drift",
+    "/docs/concepts/the-safety-model",
+    "/docs/concepts/tenancy",
+  ]);
   expect(childUrls(operate)).toEqual([
     "/docs/operate/using-okmodel-safely",
     "/docs/operate/production-checklist",

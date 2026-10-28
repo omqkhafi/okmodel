@@ -1,0 +1,44 @@
+---
+title: "How OKModel works"
+description: "One schema produces the types, the queries, the migrations, and the checks."
+---
+
+One `schema()` call is the source. The types, the queries, the migrations, and the checks are read from that object.
+
+## The problem
+
+A table that lives in three places drifts. The type names one column, a query sends another, and a migration creates a third. Nothing in the project is left to notice.
+
+## How OKModel handles it
+
+`schema()` compiles the tables and returns one value. That value holds the catalog, and it holds the table names the client is typed from. `connect` requires this value. Each table becomes a set of calls on the client.
+
+`okm generate` and `okm migrate plan` diff the previous catalog snapshot against the catalog this call just built. A check is SQL text stored on the table. `okm check` and `okm migrate check` read that same catalog.
+
+`defineConfig` is the tooling: targets, paths, and roles. `connect` is the runtime. The schema is the model both of them read.
+
+| The schema gives you | Page |
+| --- | --- |
+| Types for the client, and for `Row`, `Insert`, and `Update` | [Type safety and inference](/docs/concepts/type-safety-and-inference) |
+| Queries on each table | [Queries](/docs/queries) |
+| Migration SQL from one catalog to the next | [Migrations and drift](/docs/concepts/migrations-and-drift) |
+| Check constraints in the catalog | [Checks](/docs/schema/checks) |
+
+The two commands that read the catalog are [check](/docs/reference/cli#check) and [Checks and lint](/docs/migrations/checks-and-lint).
+
+## Limits and trade-offs
+
+The catalog document and the TypeScript shapes are two fields of one object. They are not the same bytes. Swapping two tables does not change the catalog hash, and it does change the order of the emitted interfaces. That split is [The schema](/docs/schema/the-schema).
+
+Roles and grants are not fields of `schema()`. When the config names `roles`, the tooling attaches them before a plan or a check. `connect` hashes the schema catalog without those privileges.
+
+A query is planned when you call it. The schema does not store the SQL of `find`.
+
+## Where to read the detail
+
+| Page | You use it for |
+| --- | --- |
+| [The schema is the catalog](/docs/concepts/the-schema-is-the-catalog) | What `schema().catalog` means for generate, plan, check, and the client. |
+| [The schema](/docs/schema/the-schema) | The declaration and the tables list. |
+| [Your first schema and queries](/docs/start/first-schema) | One table, then insert and read. |
+| [Your first migration](/docs/start/first-migration) | Generate the first SQL file and apply it. |
