@@ -16,7 +16,15 @@ type Built = {
   readonly validation?: unknown;
   readonly tables: readonly AnyTable[];
   readonly model: Readonly<Record<string, TableModel>>;
+  readonly tenancy?: { readonly key: string; readonly keys?: readonly string[] };
 };
+
+function tenantKeyList(schema: Built): readonly string[] {
+  const tenancy = schema.tenancy;
+  if (tenancy === undefined) return [];
+  if (tenancy.keys !== undefined && tenancy.keys.length > 0) return tenancy.keys;
+  return [tenancy.key];
+}
 
 type Handle = Promise<unknown> & {
   sql: () => Promise<unknown>;
@@ -61,22 +69,23 @@ export function attachValidation(target: Record<string, unknown>, ctx: SchemaHoo
   const insert = target.insert;
   const update = target.update;
   if (typeof insert !== "function" || typeof update !== "function") return;
-  const wrapped = guardWrite(insert as Write, "insert", model, source, schema.validation);
+  const tenant = tenantKeyList(schema);
+  const wrapped = guardWrite(insert as Write, "insert", model, source, schema.validation, tenant);
   wrapped.validate = (body: unknown) =>
-    stand(model, source, schema.validation, "insert", body, "valid");
+    stand(model, source, schema.validation, "insert", body, "valid", undefined, undefined, tenant);
   wrapped.check = (body: unknown) =>
-    stand(model, source, schema.validation, "insert", body, "check");
+    stand(model, source, schema.validation, "insert", body, "check", undefined, undefined, tenant);
   wrapped.pick = (...keys: string[]) => ({
     validate: (body: unknown) =>
-      stand(model, source, schema.validation, "insert", body, "valid", keys),
+      stand(model, source, schema.validation, "insert", body, "valid", keys, undefined, tenant),
     check: (body: unknown) =>
-      stand(model, source, schema.validation, "insert", body, "check", keys),
+      stand(model, source, schema.validation, "insert", body, "check", keys, undefined, tenant),
   });
   wrapped.omit = (...keys: string[]) => ({
     validate: (body: unknown) =>
-      stand(model, source, schema.validation, "insert", body, "valid", undefined, keys),
+      stand(model, source, schema.validation, "insert", body, "valid", undefined, keys, tenant),
     check: (body: unknown) =>
-      stand(model, source, schema.validation, "insert", body, "check", undefined, keys),
+      stand(model, source, schema.validation, "insert", body, "check", undefined, keys, tenant),
   });
   wrapped["~standard"] = {
     version: 1,
@@ -84,7 +93,17 @@ export function attachValidation(target: Record<string, unknown>, ctx: SchemaHoo
     async validate(value: unknown) {
       try {
         return {
-          value: await stand(model, source, schema.validation, "insert", value, "valid"),
+          value: await stand(
+            model,
+            source,
+            schema.validation,
+            "insert",
+            value,
+            "valid",
+            undefined,
+            undefined,
+            tenant,
+          ),
         };
       } catch (error) {
         if (error instanceof OkmError && error.issues !== undefined)
@@ -94,9 +113,16 @@ export function attachValidation(target: Record<string, unknown>, ctx: SchemaHoo
     },
   };
   target.insert = wrapped;
-  const wrappedUpdate = guardWrite(update as Write, "update", model, source, schema.validation);
+  const wrappedUpdate = guardWrite(
+    update as Write,
+    "update",
+    model,
+    source,
+    schema.validation,
+    tenant,
+  );
   wrappedUpdate.validate = (body: unknown) =>
-    stand(model, source, schema.validation, "update", body, "valid");
+    stand(model, source, schema.validation, "update", body, "valid", undefined, undefined, tenant);
   target.update = wrappedUpdate;
 }
 
@@ -109,9 +135,10 @@ function stand(
   mode: "valid" | "check",
   pick?: readonly string[],
   omit?: readonly string[],
+  tenant: readonly string[] = [],
 ): Promise<unknown> {
   return loadEngine().then((mod) =>
-    mod.stand(model, source, schemaFlag, op, body, mode, pick, omit),
+    mod.stand(model, source, schemaFlag, op, body, mode, pick, omit, tenant),
   );
 }
 
@@ -123,6 +150,7 @@ function guardWrite(
   model: TableModel,
   source: AnyTable,
   schemaFlag: unknown,
+  tenant: readonly string[],
 ): Write & Record<string, unknown> {
   const wrapped = (data: unknown, options: object = {}): Handle => {
     const rest = dropValidate(options);
@@ -130,7 +158,7 @@ function guardWrite(
     return chain((ok, fail) => {
       void loadEngine().then((mod) => {
         void mod
-          .prepare(model, source, schemaFlag, op, data)
+          .prepare(model, source, schemaFlag, op, data, tenant)
           .then((next) => ok(original(next, rest)), fail);
       }, fail);
     });
