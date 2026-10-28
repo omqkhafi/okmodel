@@ -1,0 +1,160 @@
+---
+title: "Postgres-specific columns"
+description: "Ranges, network, geometry, search, named types, and other Postgres types."
+---
+
+These types are specific to Postgres.
+
+## Ranges
+
+A range is empty, or a pair of bounds. A null bound is unbounded. `lowerInclusive` and `upperInclusive` choose `[` or `(`.
+
+| Builder | SQL | Bound | Bytes | Postgres |
+| --- | --- | --- | --- | --- |
+| `t.int4range()` | `int4range` | `number`, the integer range | variable | yes |
+| `t.int8range()` | `int8range` | `string`, a bigint | variable | yes |
+| `t.numrange()` | `numrange` | `string`, a numeric | variable | yes |
+| `t.daterange()` | `daterange` | `Temporal.PlainDate` | variable | yes |
+| `t.tstzrange()` | `tstzrange` | `Temporal.Instant` | variable | yes |
+
+There is no `tsrange` builder. An instant range is `t.tstzrange()`.
+
+```ts title="plans.ts"
+import { table, t } from "okmodel/pg";
+
+export const plans = table("plans", {
+  id: t.identity(),
+  scores: t.int4range(), // [!code focus]
+  active: t.tstzrange(), // [!code focus]
+});
+```
+
+A bound is `{ empty: false, lower, upper, lowerInclusive, upperInclusive }`. `{ empty: true }` is the empty range.
+
+## Network
+
+Values are canonical text.
+
+| Builder | SQL | Value | Bytes | Postgres |
+| --- | --- | --- | --- | --- |
+| `t.inet()` | `inet` | An IPv4 or IPv6 host. A prefix is optional. | 7 or 19 | yes |
+| `t.cidr()` | `cidr` | An IPv4 or IPv6 network. A prefix is required. | 7 or 19 | yes |
+| `t.macaddr()` | `macaddr` | Six lowercase groups: `aa:bb:cc:dd:ee:ff`. | 6 | yes |
+| `t.macaddr8()` | `macaddr8` | Eight lowercase groups. | 8 | yes |
+
+7 bytes is IPv4. 19 bytes is IPv6.
+
+An IPv4 prefix above 32, or any prefix above 128, is refused. `t.cidr()` with no prefix is refused.
+
+```ts title="hosts.ts"
+import { table, t } from "okmodel/pg";
+
+export const hosts = table("hosts", {
+  id: t.identity(),
+  address: t.inet(), // [!code focus]
+  block: t.cidr(), // [!code focus]
+  mac: t.macaddr(), // [!code focus]
+});
+```
+
+## Geometry
+
+Built-in plane geometry. A point is `{ x, y }`. A line is `{ a, b, c }` for `ax + by + c = 0`.
+
+| Builder | SQL | TypeScript | Bytes | Postgres |
+| --- | --- | --- | --- | --- |
+| `t.point()` | `point` | `{ x: number, y: number }` | 16 | yes |
+| `t.line()` | `line` | `{ a: number, b: number, c: number }` | 24 | yes |
+
+`box`, `circle`, `lseg`, `path`, and `polygon` have no builder. PostGIS is not these types.
+
+```ts title="places.ts"
+import { table, t } from "okmodel/pg";
+
+export const places = table("places", {
+  id: t.identity(),
+  location: t.point(), // [!code focus]
+});
+```
+
+## Search
+
+| Builder | SQL | TypeScript | Bytes | Postgres |
+| --- | --- | --- | --- | --- |
+| `t.tsvector()` | `tsvector` | `string` | variable | yes |
+| `t.ltree()` | `ltree` | `string` | variable | extension |
+
+`t.tsvector()` stores the vector text. A generated vector is [`.generated()`](/docs/schema/defaults). `t.ltree()` is labels separated by dots, such as `top.science`. Each label is letters, digits, or underscores. The schema lists `extension("ltree")` from `okmodel/ext`. See [extensions](/docs/schema/extensions). There is no `tsquery` builder.
+
+```ts title="notes.ts"
+import { extension } from "okmodel/ext";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  search: t.tsvector(), // [!code focus]
+  path: t.ltree(), // [!code focus]
+});
+
+export default schema({
+  tables: [notes],
+  extensions: [extension("ltree")], // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1020">
+`t.ltree()` with no `ltree` extension on the schema is refused when the catalog is built.
+</Callout>
+
+## Named types
+
+| Builder | SQL | TypeScript | Bytes | Postgres |
+| --- | --- | --- | --- | --- |
+| `t.enum(name, values)` | the enum name | the union of the labels | 4 | yes |
+| `t.domain(name, base, check)` | the domain name | the base column's type | the base type | yes |
+| `t.custom({ sqlType, encode, decode })` | `sqlType` | the type `encode` accepts | the SQL type | yes |
+
+An [enum](/docs/schema/enums-arrays-picklists#enum) is its own type. A [picklist](/docs/schema/enums-arrays-picklists#picklist) stays a string column and adds a CHECK.
+
+`t.domain("email", t.text(), "VALUE LIKE '%@%'")` stores the check as written. The name and the check must be non-empty. An enum cannot be the base. Changing the base type of an existing domain is OKM1020. An enum or domain name with a capital letter, a space, or a quote is written as one quoted identifier wherever the type is used, so it never runs as SQL.
+
+`t.custom()` stores a SQL type that has no builder. `sqlType` must be non-empty. `accepts` names the object kinds the codec takes, such as `"Object"`. Omit `accepts` for a scalar. `extension` records an extension dependency. `sqlForm` defaults to `"quote"`.
+
+```ts title="notes.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  email: t.domain("email", t.text(), "VALUE LIKE '%@%'"), // [!code focus]
+  label: t.custom({
+    sqlType: "text",
+    encode: (value: string) => value,
+    decode: (wire: string) => wire,
+  }), // [!code focus]
+});
+```
+
+## Other Postgres types
+
+Postgres has these types. This dialect has no builder under that name. The Postgres cell stays `yes`, because the database has the type. The call is what you write instead.
+
+| Postgres type | Bytes | Call | Postgres |
+| --- | --- | --- | --- |
+| `serial` | 4 | `t.integerIdentity()` | yes |
+| `bigserial` | 8 | `t.identity()` | yes |
+| `smallserial` | 2 | `t.smallint()` | yes |
+| `money` | 8 | `t.numeric(precision, scale)` | yes |
+| `decimal` | variable | `t.numeric()` | yes |
+| `tsrange` | variable | `t.tstzrange()` | yes |
+| `tsquery` | variable | `t.custom()` with `sqlType: "tsquery"` | yes |
+| `bit`, `bit varying` | 1 byte per 8 bits, plus 5 or 8 | `t.custom()` with that SQL type | yes |
+| `xml`, `hstore` | variable | `t.custom()` with that SQL type | yes |
+| `box`, `lseg` | 32 | `t.custom()` with that SQL type | yes |
+| `circle` | 24 | `t.custom()` with that SQL type | yes |
+| `path` | 16 + 16 per point | `t.custom()` with that SQL type | yes |
+| `polygon` | 40 + 16 per point | `t.custom()` with that SQL type | yes |
+| `oid` | 4 | `t.custom()` with that SQL type | yes |
+| `pg_lsn` | 8 | `t.custom()` with that SQL type | yes |
+| multirange | variable | `t.custom()` with that SQL type | yes |
+
+Next: [Columns](/docs/schema/columns).

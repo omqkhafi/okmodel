@@ -8,7 +8,7 @@ description: "Extension definitions. schema() does not install them."
 
 ### citext
 
-`citext()` from `okmodel/pg/citext` declares `citext`. A [citext](/docs/schema/columns#citext) column needs that name.
+`citext()` from `okmodel/pg/citext` declares `citext`. A [citext](/docs/schema/text-columns#citext) column needs that name.
 
 ```ts title="citext.ts"
 import { citext } from "okmodel/pg/citext";
@@ -274,7 +274,7 @@ export async function hashed(url: string) {
 
 ### name
 
-`extension("name")` from `okmodel/ext` declares that name. There is no typed operator. `uuid-ossp` is this form. A [ltree](/docs/schema/columns#search) column can use `ltree()` from `okmodel/pg/ltree` instead.
+`extension("name")` from `okmodel/ext` declares that name. There is no typed operator. `uuid-ossp` is this form. A [ltree](/docs/schema/postgres-specific-columns#search) column can use `ltree()` from `okmodel/pg/ltree` instead.
 
 ```ts title="name.ts"
 import { extension } from "okmodel/ext";

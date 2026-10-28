@@ -67,7 +67,7 @@ export async function add(url: string, title: string) {
 ```
 
 <Callout type="info" title="Generators">
-A generator is `uuidv4`, `uuidv7`, or [OKID](/docs/schema/columns#okid) (`okid(...)`), all from `okmodel/ids`, or any function. `connect({ generators })` replaces `uuidv4`, `uuidv7`, and `okid`. A function you wrote is left alone. These run in the application. They are not the database functions `uuidv7()` and `gen_random_uuid()`.
+A generator is `uuidv4`, `uuidv7`, or [OKID](/docs/schema/binary-json-id-columns#okid) (`okid(...)`), all from `okmodel/ids`, or any function. `connect({ generators })` replaces `uuidv4`, `uuidv7`, and `okid`. A function you wrote is left alone. These run in the application. They are not the database functions `uuidv7()` and `gen_random_uuid()`.
 </Callout>
 
 ### Already filled

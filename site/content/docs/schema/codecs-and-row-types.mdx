@@ -18,7 +18,7 @@ The column `as` is what types the value. While the schema codec is `"string"`, a
 
 ### bigint
 
-`t.bigint()` and `t.identity()` share this codec. `"number"` is a safe integer. A value outside that range is OKM1210. See [bigint](/docs/schema/columns#bigint).
+`t.bigint()` and `t.identity()` share this codec. `"number"` is a safe integer. A value outside that range is OKM1210. See [bigint](/docs/schema/number-columns#bigint).
 
 #### string
 
@@ -77,7 +77,7 @@ A bare column under `"number"` or `"bigint"` is `Schema codecs.bigint is number,
 
 ### numeric
 
-`t.numeric()` is exact. `{ as: "number" }` can lose digits past a JavaScript number. See [numeric](/docs/schema/columns#numbers).
+`t.numeric()` is exact. `{ as: "number" }` can lose digits past a JavaScript number. See [numeric](/docs/schema/number-columns#numbers).
 
 #### string
 
@@ -118,7 +118,7 @@ A bare column under `"number"` is `Schema codecs.numeric is number, and payments
 
 ### timestamps
 
-`"temporal"` is the only value. Omitting it is the same. A time column has no `as`. `t.timestamptz()` is `Temporal.Instant`. See [time](/docs/schema/columns#time).
+`"temporal"` is the only value. Omitting it is the same. A time column has no `as`. `t.timestamptz()` is `Temporal.Instant`. See [time](/docs/schema/time-columns#time).
 
 ```ts title="timestamps.ts"
 import { schema, table, t } from "okmodel/pg";

@@ -75,6 +75,11 @@ test("sitemap and robots advertise the handbook", () => {
   expect(urls).toContain(`${SITE_ORIGIN}/docs/schema/traits`);
   expect(urls).toContain(`${SITE_ORIGIN}/docs/schema/tenancy`);
   expect(urls).toContain(`${SITE_ORIGIN}/docs/schema/codecs-and-row-types`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/schema/text-columns`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/schema/number-columns`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/schema/time-columns`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/schema/binary-json-id-columns`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/schema/postgres-specific-columns`);
   for (const removed of [
     "validation-schema",
     "traits-schema",

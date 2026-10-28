@@ -1,0 +1,94 @@
+---
+title: "Text columns"
+description: "Text."
+---
+
+A string column is text, varchar, char, or citext.
+
+## Text
+
+Postgres stores `text`, `varchar`, and `char` with the same representation. The length is a check, counted in characters. A value up to 126 bytes is 1 byte plus the string. A longer value is 4 bytes plus the string. `char` includes its padding in that string. `citext` uses the same size.
+
+### Unbounded
+
+`t.text()` is `text`. The TypeScript value is a string. A title, a body, or a name uses it.
+
+```ts title="unbounded.ts"
+import { table, t } from "okmodel/pg";
+
+export const people = table("people", {
+  id: t.identity(),
+  name: t.text(), // [!code focus]
+});
+```
+
+### Varchar
+
+`t.varchar(n)` is `varchar(n)`. The TypeScript value is a string. `n` is an integer from 1 to 10485760.
+
+```ts title="varchar.ts"
+import { table, t } from "okmodel/pg";
+
+export const people = table("people", {
+  id: t.identity(),
+  code: t.varchar(16), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1060">
+A length outside 1 to 10485760 is refused.
+</Callout>
+
+<Callout type="error" title="OKM1210">
+A longer value is refused when it is encoded.
+</Callout>
+
+### Char
+
+`t.char(n)` is `char(n)`. The TypeScript value is a string. `n` is an integer from 1 to 10485760. Encode stores the characters you pass.
+
+```ts title="char.ts"
+import { table, t } from "okmodel/pg";
+
+export const people = table("people", {
+  id: t.identity(),
+  region: t.char(2), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1060">
+A length outside 1 to 10485760 is refused.
+</Callout>
+
+<Callout type="error" title="OKM1210">
+A longer value is refused when it is encoded.
+</Callout>
+
+### Citext
+
+`t.citext()` is `citext`. The TypeScript value is a string. Comparison ignores case. The schema lists `citext()` from `okmodel/pg/citext`. See [extensions](/docs/schema/extensions).
+
+```ts title="citext.ts"
+import { citext } from "okmodel/pg/citext";
+import { schema, table, t } from "okmodel/pg";
+
+const people = table("people", {
+  id: t.identity(),
+  email: t.citext(), // [!code focus]
+});
+
+export default schema({
+  tables: [people],
+  extensions: [citext()], // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1020">
+`t.citext()` is refused when `extensions` is omitted or empty.
+</Callout>
+
+<Callout type="error" title="OKM1810">
+`t.citext()` is refused when `extensions` is a list that does not contain `citext`.
+</Callout>
+
+Next: [Columns](/docs/schema/columns).

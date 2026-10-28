@@ -117,7 +117,7 @@ An empty reason is `unique() global needs a reason.` `{ global: true }` with no 
 
 Needs PostgreSQL 18 or higher.
 
-`t.id()` is a uuid primary key. The schema [id default](/docs/schema/keys-and-identity#id-default) is what a bare call means. A column option wins. [OKID](/docs/schema/columns#okid) is `t.id({ default: okid() })`, stored as `text`.
+`t.id()` is a uuid primary key. The schema [id default](/docs/schema/keys-and-identity#id-default) is what a bare call means. A column option wins. [OKID](/docs/schema/binary-json-id-columns#okid) is `t.id({ default: okid() })`, stored as `text`.
 
 | Call | What fills it | Insert |
 | --- | --- | --- |
@@ -287,7 +287,7 @@ export default schema({
 
 #### okid
 
-`okid()` is `text` with collation `C`. Calling it returns the generator. It does not mint the id here. Length, prefix, and sortable are on [OKID](/docs/schema/columns#okid).
+`okid()` is `text` with collation `C`. Calling it returns the generator. It does not mint the id here. Length, prefix, and sortable are on [OKID](/docs/schema/binary-json-id-columns#okid).
 
 ```ts title="schema.ts"
 import { okid } from "okmodel/ids";

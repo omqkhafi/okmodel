@@ -3,6 +3,11 @@
   "pages": [
     "tables",
     "columns",
+    "text-columns",
+    "number-columns",
+    "time-columns",
+    "binary-json-id-columns",
+    "postgres-specific-columns",
     "defaults",
     "the-schema",
     "keys-and-identity",
