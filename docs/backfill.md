@@ -36,7 +36,7 @@ A finished batch must change nothing when it runs again. The planner writes that
 
 ## Batch, pause, and timeout
 
-`defineConfig({ backfill: { batchSize, pauseMs, statementTimeoutMs } })` supplies the defaults. Omitted fields use 1,000 rows, no pause, and 30 seconds. `batch=` in the step header overrides `batchSize` for that step. The pause and the statement timeout are apply-time settings. They are not written into the file.
+`defineConfig({ backfill: { batchSize, pauseMs, statementTimeoutMs } })` supplies the defaults. Omitted `batchSize` is 1,000 rows. Omitted `pauseMs` is no pause. The statement timeout is `backfill.statementTimeoutMs`, then the apply statement timeout (`timeouts.statement` or `--statement-timeout`), then 30000. `batch=` in the step header overrides `batchSize` for that step. The pause and the statement timeout are apply-time settings. They are not written into the file.
 
 Each batch runs under `statement_timeout` and `lock_timeout`. A lock timeout retries that batch with the same backoff as any other step. Any other error stops the step. The previous checkpoint stays. A timed-out batch rolls back and does not lose the last committed key.
 
