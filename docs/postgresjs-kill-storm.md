@@ -81,4 +81,4 @@ kills), use:
 - `okmodel/pg/bun` (Bun.sql on Bun)
 
 See [known limits](known-limits.md). The docs site Drivers page
-(`site/content/docs/define/connect/drivers.mdx`) repeats the recommendation.
+(`site/content/docs/operate/drivers.mdx`) repeats the recommendation.

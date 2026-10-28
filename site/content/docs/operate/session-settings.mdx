@@ -1,0 +1,144 @@
+---
+title: "Session settings"
+description: "okmodel/session hands a value such as the user id to a policy or trigger for one transaction."
+---
+`okmodel/session` sets Postgres settings for the length of one transaction. A row-level security policy or a trigger reads them with `current_setting`. It is how a policy learns which user the request is for.
+
+`sessionSettings()` declares the settings. `connect({ session })` installs them. `db.with({ ...values })` returns a client that sets those values before its work. The module is its own subpath, so a project that does not import it pays nothing at startup.
+
+| You write | It does |
+| --- | --- |
+| `sessionSettings({ key: { name, type, required? } })` | Declares each setting. `type` is `text`, `uuid`, `int`, or `bool`. |
+| `connect(url, { schema, session })` | Adds `db.with()` to the client. |
+| `db.with({ key: value })` | Returns a typed client. Every `required` key is required. The others are optional. |
+
+### Declare and use
+
+```sql title="policy.sql"
+create table docs (
+  id bigint generated always as identity primary key,
+  owner_id uuid not null,
+  title text not null
+);
+
+alter table docs enable row level security;
+
+create policy own_docs on docs
+  using (owner_id = NULLIF(current_setting('app.user_id', true), '')::uuid)
+  with check (owner_id = NULLIF(current_setting('app.user_id', true), '')::uuid);
+```
+
+```ts title="session.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { sessionSettings } from "okmodel/session";
+
+const docs = table("docs", {
+  id: t.identity(),
+  ownerId: t.uuid(),
+  title: t.text(),
+});
+
+const app = schema({ casing: "snake", tables: [docs] });
+
+const session = sessionSettings({
+  userId: { name: "app.user_id", type: "uuid", required: true }, // [!code focus]
+});
+
+export async function mine(url: string, userId: string) {
+  await using db = connect(url, { schema: app, session });
+  const me = db.with({ userId }); // [!code focus]
+  await me.docs.insert({ ownerId: userId, title: "hello" });
+  return await me.docs.find({ limit: 20 });
+}
+```
+
+The application role must not own the table or have `BYPASSRLS`, or the policy does not apply. A table owner skips its own policies.
+
+### What runs
+
+Each unit of work is one transaction. The first statement of that transaction is one call.
+
+```sql
+select set_config($1, $2, true), set_config($3, $4, true)
+```
+
+The names and the values are parameters. The third argument is always `true`: the setting is local to the transaction. It is gone after commit and after rollback, so a pooler in transaction mode cannot hand one client's value to the next. There is no option for a session-level setting.
+
+| Where | What happens |
+| --- | --- |
+| A single write | A batch of the set statement and the write, in one transaction. |
+| A read | `BEGIN READ ONLY`, then the set statement, then the read. It follows the read's routing, so a replica sets it too. |
+| `tx()` | The set statement is first, before any savepoint. A nested `tx()` never sets again, and a rollback to a savepoint does not cancel it. |
+| `batch()` | The set statement starts the batch. |
+| Neon over HTTP | The set statement is first in the same `transaction([...])` array. |
+
+Values join the scope key the way a tenant does. Two clients with different values in one transaction set again before the second one runs.
+
+### Read it in SQL
+
+After the transaction the setting reads as an empty string, not NULL, because Postgres keeps the name once it has been set on a connection. Always write `NULLIF(current_setting('app.user_id', true), '')` before a cast. The `true` makes a name that was never set read as NULL instead of an error.
+
+### required
+
+`required: true` makes the key required in `db.with()`. A client that never called `with()` refuses every statement before it reaches the database. A key that is not required and not given is simply not set.
+
+```ts title="optional.ts"
+import { sessionSettings } from "okmodel/session";
+
+export const session = sessionSettings({
+  userId: { name: "app.user_id", type: "uuid", required: true },
+  role: { name: "app.role", type: "text" }, // [!code focus]
+  level: { name: "app.level", type: "int" },
+  admin: { name: "app.admin", type: "bool" },
+});
+```
+
+`with()` calls add to the earlier ones, so `db.with({ userId }).with({ role: "editor" })` sets both. `uuid` takes a string in uuid form, `int` a safe integer, `bool` a boolean, and `text` a string without a NUL character.
+
+### With tenancy
+
+`with()` composes with `for()` and `unscoped()` in any order. Under `rlsTenancy()` the tenant and the settings are one statement.
+
+```ts title="tenancy.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { rlsTenancy } from "okmodel/tenancy";
+import { sessionSettings } from "okmodel/session";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+export const app = schema({
+  casing: "snake",
+  tenancy: rlsTenancy({ key: "tenantId", type: "uuid" }),
+  tables: [notes],
+});
+
+const session = sessionSettings({
+  userId: { name: "app.user_id", type: "uuid", required: true },
+});
+
+export async function list(url: string, tenantId: string, userId: string) {
+  await using db = connect(url, { schema: app, session });
+  const scoped = db.for({ tenantId }).with({ userId }); // [!code focus]
+  const same = db.with({ userId }).for({ tenantId }); // [!code focus]
+  return [await scoped.notes.find({ limit: 20 }), await same.notes.find({ limit: 20 })];
+}
+```
+
+### Names
+
+A name needs a dot, such as `app.user_id`. Letters, digits, and `_` in dotted words. It cannot start with `app.tenant` or `app.unscoped`, which okm uses for tenancy, and it cannot be a setting Postgres or a bundled extension owns, such as `plpgsql.*` or `pg_stat_statements.*`. Two keys cannot share a name.
+
+<Callout type="error" title="OKM1709">
+A declaration with a name that has no dot is `Setting userId name needs a dot, like app.user_id.` A reserved name is `Setting userId name app.tenant is taken by Postgres or okm.` A value of the wrong type is `with() userId is not a uuid.` An unknown key is `with() does not know other.` A required key that is not given is `Session setting userId is required.` None of them reach the database.
+</Callout>
+
+### Limits
+
+It does not authenticate. Your application decides the value. A role that can run SQL can run `set_config('app.user_id', ..., true)` itself, so the setting is not a credential and the role's privileges are still what protects the data.
+
+It is Postgres only. The MySQL family has only connection-level variables, which a pooled connection hands to the next client, and SQLite has none. Both refuse with OKM1860 and point at [column, composite, or path tenancy](/docs/schema/tenancy-schema).

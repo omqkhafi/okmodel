@@ -25,7 +25,7 @@ import { run } from "../src/tooling/migrate/commands.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
 
 const root = join(import.meta.dir, "..");
-const pages = ["extensions", "functions", "triggers", "traits"] as const;
+const pages = ["extensions", "functions", "triggers", "traits-schema"] as const;
 
 const imports: readonly (readonly [string, string])[] = [
   ["okmodel/pg/postgresjs", join(root, "src/runtime/pg/postgresjs.ts")],
@@ -125,7 +125,7 @@ postgresTest(
   "the extensions schema example passes generate, migrate check, apply, and okm check",
   async () => {
     const body = fence(
-      readFileSync(join(root, "site/content/docs/define/schema/extensions.mdx"), "utf8"),
+      readFileSync(join(root, "site/content/docs/schema/extensions.mdx"), "utf8"),
       "schema-name.ts",
     );
     if (body === undefined) throw new Error("extensions.mdx is missing schema-name.ts");
@@ -185,7 +185,7 @@ postgresTest(
 function ownExamples(): readonly OwnExample[] {
   const found: OwnExample[] = [];
   for (const page of pages) {
-    const text = readFileSync(join(root, "site/content/docs/define/schema", `${page}.mdx`), "utf8");
+    const text = readFileSync(join(root, "site/content/docs/schema", `${page}.mdx`), "utf8");
     for (const title of ["own.ts", "own-advanced.ts"] as const) {
       const body = fence(text, title);
       if (body === undefined) throw new Error(`${page} is missing ${title}`);

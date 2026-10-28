@@ -6,7 +6,7 @@ description: "connect and defineConfig do not read the environment. okm reads OK
 
 ## Client
 
-The client takes the URL you pass. [Target](/docs/define/connect/target) is that argument. [Database](/docs/define/config/database) is the field in `okmodel.config.ts`.
+The client takes the URL you pass. [Target](/docs/operate/target) is that argument. [Database](/docs/reference/config-database) is the field in `okmodel.config.ts`.
 
 ```ts title="db.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -40,10 +40,10 @@ A missing or empty `database` is OKM1845. `Target default has no url.` The confi
 
 | Name | Result |
 | --- | --- |
-| `NODE_ENV` | Not read. It does not select a target, set `protected`, or turn on [`requireMeta`](/docs/define/connect/check). |
+| `NODE_ENV` | Not read. It does not select a target, set `protected`, or turn on [`requireMeta`](/docs/operate/startup-check). |
 | `OKM_ALLOW_PROTECTED` | Not read. `--allow-protected` is that invocation. Setting the variable leaves OKM1850 in place. |
 
-A replica URL is the same kind of argument. [Topology](/docs/define/connect/topology) takes the strings you pass.
+A replica URL is the same kind of argument. [Topology](/docs/operate/replicas-and-topology) takes the strings you pass.
 
 <Callout type="info" title="The URL">
 `connect` and `defineConfig` receive the string you pass. They do not read `DATABASE_URL`.
@@ -63,7 +63,7 @@ A replica URL is the same kind of argument. [Topology](/docs/define/connect/topo
 OKM_DEBUG=1 okm check
 ```
 
-Migrate commands read the config and the flags. The target, protection, and the apply timeouts are those fields. See [Database](/docs/define/config/database) and [Timeouts](/docs/define/config#timeouts).
+Migrate commands read the config and the flags. The target, protection, and the apply timeouts are those fields. See [Database](/docs/reference/config-database) and [Timeouts](/docs/reference/config#timeouts).
 
 ## Tests and local Postgres
 

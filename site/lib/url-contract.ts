@@ -1,12 +1,11 @@
 /**
  * Docs URLs shipped in README.md, `src/`, and `docs/` must resolve to a
- * handbook page, an anchor on that page, or a permanent redirect.
+ * handbook page or an anchor on that page.
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
-import { DOCS_REDIRECTS, redirectPathname } from "./docs-redirects";
 import { DOCS_CONTENT_DIR } from "./markdown-source";
 import { repoRoot } from "./repo";
 
@@ -42,22 +41,14 @@ export function collectShippedDocsUrls(): readonly DocsUrlHit[] {
 }
 
 /**
- * Whether a docs href resolves to a page, an anchor, or a redirect target.
+ * Whether a docs href resolves to a page or an anchor on that page.
  *
  * @param href - Absolute `/docs…` path, optional `#anchor`
  */
 export function docsUrlResolves(href: string): boolean {
   const [rawPath, hash] = href.split("#", 2);
   if (rawPath === undefined) return false;
-  let path = rawPath.length > 1 && rawPath.endsWith("/") ? rawPath.slice(0, -1) : rawPath;
-  const redirected = DOCS_REDIRECTS[path];
-  if (redirected !== undefined) {
-    const [destPath, destHash] = redirected.split("#", 2);
-    path = redirectPathname(destPath ?? redirected);
-    if (hash === undefined && destHash !== undefined) {
-      return pageOrAnchorExists(path, destHash);
-    }
-  }
+  const path = rawPath.length > 1 && rawPath.endsWith("/") ? rawPath.slice(0, -1) : rawPath;
   return pageOrAnchorExists(path, hash);
 }
 

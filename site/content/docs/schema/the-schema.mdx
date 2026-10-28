@@ -1,0 +1,33 @@
+---
+title: "Overview"
+description: "schema() compiles the tables into one catalog. Each option is a page."
+---
+<Anatomy call="schema" shape="object" exported>
+  <AnatomyPart slot="tables" label="Tables" code="tables: [notes]," mark="required">
+    The list, in the order you write it. A reference names a table in this list, earlier or later. [`table()`](/docs/schema/tables) only stores the columns. Names and the catalog hash are fixed here. Calling `schema()` twice on the same tables returns equal catalog bytes.
+  </AnatomyPart>
+  <AnatomyPart slot="sections" label="Pages" code="…," mark="sections">
+    Each other field is a page in this group.
+  </AnatomyPart>
+</Anatomy>
+
+## The declaration
+
+Each option is a page. Tables come first, because every other option refers to them.
+
+| Order | Page | You use it for |
+| --- | --- | --- |
+| 1 | [Tables](/docs/schema/the-schema-tables) | The list `schema()` compiles. |
+| 2 | [Casing](/docs/schema/casing) | The SQL name of a camelCase field. |
+| 3 | [Codecs](/docs/schema/codecs) | The TypeScript value. The SQL type stays. |
+| 4 | [Row types](/docs/schema/row-types) | Emitted types, or types kept in the checker. |
+| 5 | [Id default](/docs/schema/id-default) | What a bare `t.id()` means. |
+| 6 | [Minimum Postgres](/docs/schema/min-postgres) | The oldest major. Omitted means 15. |
+| 7 | [Traits](/docs/schema/traits-schema) | Columns added to every table. |
+| 8 | [Tenancy](/docs/schema/tenancy-schema) | Tenant keys on every table. |
+| 9 | [Validation](/docs/schema/validation-schema) | Whether rules run. |
+| 10 | [Extensions](/docs/schema/extensions) | Extensions the catalog names. |
+| 11 | [Functions](/docs/schema/functions) | Routines the catalog stores. |
+| 12 | [Triggers](/docs/schema/triggers) | Triggers that call those functions. |
+| 13 | [Views](/docs/schema/views) | Views and materialized views. |
+| 14 | [Several catalogs](/docs/schema/several-catalogs) | `external()`, a snapshot, and one history per namespace. |

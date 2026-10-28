@@ -4,7 +4,7 @@ description: "okmodel is a catalog-first TypeScript ORM, PostgreSQL first."
 ---
 The schema is the source. Migrations and queries come from it. Start with one table, then add only the part you need.
 
-Tooling around that schema: [pull](/docs/reference/cli#pull) writes table files from a database, [import drizzle](/docs/migrate/from-drizzle) writes them from a Drizzle schema, [catalogs](/docs/define/schema/catalogs) share one database, [describe](/docs/reference/schema-api) returns the catalog as JSON, [extension packs](/docs/define/schema/extensions) cover the contrib set except `vector`, the [GitHub Action](/docs/reference/github-action) posts the plan, and a [type change](/docs/reference/type-change) that rewrites a table is five migrations.
+Tooling around that schema: [pull](/docs/reference/cli#pull) writes table files from a database, [import drizzle](/docs/migrations/from-drizzle) writes them from a Drizzle schema, [catalogs](/docs/schema/several-catalogs) share one database, [describe](/docs/reference/schema-api) returns the catalog as JSON, [extension packs](/docs/schema/extensions) cover the contrib set except `vector`, the [GitHub Action](/docs/reference/github-action) posts the plan, and a [type change](/docs/migrations/type-change) that rewrites a table is five migrations.
 
 <Callout title="The source">
   The tables you declare are the catalog. Queries, migrations, and checks come from that catalog.
@@ -37,17 +37,17 @@ Add the package, then one table. The next page is one example per call.
   <Card
     title="Existing database"
     description="Pull, generate, then baseline without replaying DDL."
-    href="/docs/migrate/from-existing"
+    href="/docs/migrations/adopt-existing-database"
   />
   <Card
     title="From Drizzle"
     description="Import a Drizzle schema into okmodel table files."
-    href="/docs/migrate/from-drizzle"
+    href="/docs/migrations/from-drizzle"
   />
   <Card
     title="Using OKModel safely"
     description="Pin the lockfile, wait before updating, and read provenance as a build record."
-    href="/docs/start/safely"
+    href="/docs/operate/using-okmodel-safely"
   />
 </Cards>
 
@@ -59,21 +59,21 @@ Each table, the schema, the client, and the config file. Open the page for the o
   <Card
     title="Table"
     description="table() stores the columns. Open it for the key, each data type, and the queries."
-    href="/docs/define/table"
+    href="/docs/schema/tables"
   />
   <Card
     title="Schema"
     description="schema() compiles the tables into one catalog."
-    href="/docs/define/schema"
+    href="/docs/schema/the-schema"
   />
   <Card
     title="Connect"
     description="connect() opens the client. The first argument is the target."
-    href="/docs/define/connect"
+    href="/docs/operate/connect"
   />
   <Card
     title="Config"
     description="The file okm reads. Targets, paths, timeouts, and roles."
-    href="/docs/define/config"
+    href="/docs/reference/config"
   />
 </Cards>

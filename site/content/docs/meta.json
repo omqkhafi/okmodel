@@ -2,15 +2,12 @@
   "title": "Documentation",
   "pages": [
     "index",
-    "---01 Start---",
     "start",
-    "---02 Define---",
-    "define",
-    "---03 Migrate---",
-    "...migrate",
-    "---04 Reference---",
+    "schema",
+    "queries",
+    "migrations",
+    "operate",
     "reference",
-    "---05 Coding agents---",
     "ai"
   ]
 }

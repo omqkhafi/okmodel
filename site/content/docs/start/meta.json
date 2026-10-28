@@ -1,8 +1,4 @@
 {
-  "title": "Start",
-  "pages": [
-    "index",
-    "basic-usage",
-    "safely"
-  ]
+  "title": "Get started",
+  "pages": ["index", "basic-usage"]
 }

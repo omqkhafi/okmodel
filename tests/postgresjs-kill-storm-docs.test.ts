@@ -23,7 +23,7 @@ test("known-limits documents postgres.js kill-storm as upstream (B-02)", () => {
 });
 
 test("Drivers page warns about postgres.js kill storms (B-02)", () => {
-  const drivers = readFileSync(join(root, "site/content/docs/define/connect/drivers.mdx"), "utf8");
+  const drivers = readFileSync(join(root, "site/content/docs/operate/drivers.mdx"), "utf8");
   expect(drivers).toContain("postgres.js kill storms (B-02)");
   expect(drivers).toContain("Prefer `okmodel/pg/pg` or `okmodel/pg/bun`");
   expect(drivers).toContain("docs/postgresjs-kill-storm.md");

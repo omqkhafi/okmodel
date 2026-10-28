@@ -1,0 +1,179 @@
+---
+title: "Validation"
+description: "Turns rules on for the schema. schema() does not run them."
+---
+`validation` is stored as you pass it. `schema()` does not read the rules. `okm check` does, and the engine does on the first validated call. Import `okmodel/validate` before that call, or a write that would validate is refused. The rules themselves are [on the table](/docs/schema/validation).
+
+Omitted and `false` are off. `true` is on. An object is on unless `enabled` is `false`. Omitting `enabled` inside an object leaves it on. Insert and update run the rules, including when those writes sit in `batch()`. An unknown write key is OKM1120 and names the key and the table, the same as when validation is off. A read does not run the rules. `{ validate: false }` skips that call. `onRead` is stored. The write path does not read it.
+
+`style` chooses where a rule may live. `"inline"` is `.validate()` on the column. `"section"` is the table `validate` section. Omitted, either place is accepted, and the same field in both is refused.
+
+### off
+
+Omitted, rules stay off. `false` is the same.
+
+```ts title="off.ts"
+import { schema, table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text().validate([v.min(1, "title_required")]),
+});
+
+export default schema({
+  tables: [notes],
+});
+```
+
+`false` leaves them off as well.
+
+```ts title="disabled.ts"
+import { schema, table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text().validate([v.min(1, "title_required")]),
+});
+
+export default schema({
+  tables: [notes],
+  validation: false, // [!code focus]
+});
+```
+
+### on
+
+`true` turns rules on. `onRead` stays `false`. `style` stays unset, so a column rule and a `validate` section may both exist, on different fields.
+
+```ts title="on.ts"
+import { schema, table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text().validate([v.min(1, "title_required")]), // [!code focus]
+});
+
+export default schema({
+  tables: [notes],
+  validation: true, // [!code focus]
+});
+```
+
+### object
+
+`enabled`, `onRead`, and `style` are the keys. `onRead: true` is stored with the flag. A read still does not run the rules.
+
+#### inline
+
+`"inline"` keeps column rules and refuses a `validate` section, including `$row`.
+
+```ts title="inline.ts"
+import { schema, table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text().validate([v.trim(), v.min(1, "title_required")]),
+});
+
+export default schema({
+  tables: [notes],
+  validation: { enabled: true, onRead: false, style: "inline" }, // [!code focus]
+});
+```
+
+#### section
+
+`"section"` keeps the table `validate` section and refuses `.validate()` on a column.
+
+```ts title="section.ts"
+import { schema, table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+  },
+  { validate: { title: [v.min(1, "title_required")] } },
+);
+
+export default schema({
+  tables: [notes],
+  validation: { style: "section" }, // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1060">
+Anything other than a boolean or an object is `schema() validation must be a boolean or { enabled, onRead, style }.` Another style is `validation.style must be inline or section.` The same on a table is `table() validation must be a boolean or { enabled, onRead, style }.`
+</Callout>
+
+<Callout type="error" title="OKM1030">
+The same field in both places is `Field notes.title is validated in two places. Keep the column rules or the validate section.` `"inline"` with a `validate` section, including `$row`, is the same code. `"section"` with `.validate()` is the same code.
+</Callout>
+
+### table
+
+A table flag replaces `enabled` and keeps the schema's `onRead` and `style`. `true` turns that table on. `false` turns it off. An object can set its own `onRead` and `style`. Omitting either one keeps the schema value.
+
+```ts title="table.ts"
+import { schema, table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text().validate([v.min(1, "title_required")]),
+});
+
+const drafts = table(
+  "drafts",
+  {
+    id: t.identity(),
+    title: t.text(),
+  },
+  { validation: false }, // [!code focus]
+);
+
+export default schema({
+  tables: [notes, drafts],
+  validation: { enabled: true, style: "inline" },
+});
+```
+
+### together
+
+`insert.validate` checks the row and returns it frozen. A later `insert` of that value skips the rules. `insert.check` returns the issues for a failed rule and does not throw OKM1200 for that failure. An unknown key throws OKM1120 on `insert.validate`, `insert.check`, `insert.pick(...).validate`, `insert.pick(...).check`, `insert.omit(...).validate`, `insert.omit(...).check`, `update.validate`, and `insert["~standard"].validate`, and the rule issues are not returned. The Standard Schema `validate` throws that OKM1120. It does not return `{ issues }` for an unknown key.
+
+```ts title="together.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.varchar(200).validate([v.trim(), v.min(1, "title_required")]),
+});
+
+const app = schema({
+  tables: [notes],
+  validation: true, // [!code focus]
+});
+
+export async function add(url: string, title: string) {
+  await using db = connect(url, { schema: app });
+  const row = await db.notes.insert.validate({ title }); // [!code focus]
+  return db.notes.insert(row);
+}
+```
+
+<Callout type="error" title="OKM1201">
+A write that would validate, when `okmodel/validate` was not imported, is ``Validation is enabled but `okmodel/validate` was not imported.``
+</Callout>
+
+<Callout type="error" title="OKM1200">
+A failed `validate` is `Validation failed: title title_required.` The message names the first field and its key. `check` returns those rule issues. An unknown key on `check` throws OKM1120, and the rule issues are lost.
+</Callout>

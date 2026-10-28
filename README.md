@@ -150,19 +150,19 @@ export async function removeNote(id: string) {
 | Want…                   | Go to                                                                  |
 | ----------------------- | ---------------------------------------------------------------------- |
 | Pull a database         | [pull](https://okm.omqkhafi.dev/docs/reference/cli#pull)               |
-| Import Drizzle          | [From Drizzle](https://okm.omqkhafi.dev/docs/migrate/from-drizzle)     |
-| Several catalogs        | [Catalogs](https://okm.omqkhafi.dev/docs/define/schema/catalogs)       |
+| Import Drizzle          | [From Drizzle](https://okm.omqkhafi.dev/docs/migrations/from-drizzle)  |
+| Several catalogs        | [Catalogs](https://okm.omqkhafi.dev/docs/schema/several-catalogs)      |
 | `describe`              | [Schema API](https://okm.omqkhafi.dev/docs/reference/schema-api)       |
-| Extension packs         | [Extensions](https://okm.omqkhafi.dev/docs/define/schema/extensions)   |
+| Extension packs         | [Extensions](https://okm.omqkhafi.dev/docs/schema/extensions)          |
 | The GitHub Action       | [GitHub Action](https://okm.omqkhafi.dev/docs/reference/github-action) |
-| A rewriting type change | [Type change](https://okm.omqkhafi.dev/docs/reference/type-change)     |
+| A rewriting type change | [Type change](https://okm.omqkhafi.dev/docs/migrations/type-change)    |
 
 ## Next
 
 | Want…                       | Go to                                                                                              |
 | --------------------------- | -------------------------------------------------------------------------------------------------- |
 | One example per client call | [Basic usage](https://okm.omqkhafi.dev/docs/start/basic-usage)                                     |
-| Tables, keys, and relations | [Define](https://okm.omqkhafi.dev/docs/define)                                                     |
+| Tables, keys, and relations | [Define](https://okm.omqkhafi.dev/docs/schema/tables)                                              |
 | Every feature in one file   | [Guide](https://github.com/omqkhafi/okmodel/blob/main/docs/guide.md)                               |
 | Run it in production        | [Production checklist](https://github.com/omqkhafi/okmodel/blob/main/docs/production.md)           |
 | Install it safely           | [Using OKModel safely](https://github.com/omqkhafi/okmodel/blob/main/docs/using-okmodel-safely.md) |

@@ -6,8 +6,10 @@
     "github-action",
     "errors",
     "warnings",
-    "type-change",
     "okid",
-    "environment-variables"
+    "environment-variables",
+    "config",
+    "config-database",
+    "config-roles"
   ]
 }

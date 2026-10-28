@@ -17,7 +17,7 @@ import { renderCatalog } from "../src/dialects/pg/ddl.js";
 import type { Catalog } from "../src/contracts/catalog/types.js";
 
 const root = join(import.meta.dir, "..");
-const page = join(root, "site/content/docs/define/connect/session-settings.mdx");
+const page = join(root, "site/content/docs/operate/session-settings.mdx");
 
 const USER_A = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c8d";
 const USER_B = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c8e";

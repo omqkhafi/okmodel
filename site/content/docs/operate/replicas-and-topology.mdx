@@ -1,0 +1,308 @@
+---
+title: "Replicas and topology"
+description: "{ primary, replicas } opens one pool per endpoint."
+---
+<Callout type="info" title="Where this fits">
+A [target](/docs/operate/target) is one endpoint. This page is a primary and its replicas.
+</Callout>
+
+`{ primary, replicas }` opens one pool per endpoint. The promise resolves to the client. A string or a pool is one endpoint. It serves either route and has no `using`.
+
+| Field | Default | Result |
+| --- | --- | --- |
+| `primary` | — | The primary URL. Its name is `primary`. |
+| `replicas` | none | A string is a URL with weight 1. An object is `{ url, weight, name, pool }`. |
+| `routing.probe` | `"1s"` | How often a replica is probed. A number is milliseconds. |
+| `routing.select` | `"weighted"` | `weighted`, `roundRobin`, `leastConnections`, `latencyAware`, or a function. |
+| `routing.consistency` | `"session"` | `session` keeps a watermark when replicas are configured. `eventual` leaves it unset. |
+| `routing.fallback` | `"primary"` | `error` is OKM1844 when no replica can serve an automatic read. |
+| `routing.maxLag` | unset | A duration or a size. A bare number is refused. |
+| `onRoute` | unset | Called after an endpoint is chosen. A throw is ignored. The operation still runs. |
+
+`routing` accepts `probe`, `select`, `fallback`, `consistency`, and `maxLag`.
+
+### Primary
+
+`primary` is a non-empty URL. The endpoint is named `primary`.
+
+<Callout type="error" title="OKM1120">
+An empty primary is `A topology needs one primary URL. Accepted shape: { primary, replicas }.`
+</Callout>
+
+### Replicas
+
+`replicas` is optional. Omit it, or pass `[]`, and the only endpoint is the primary.
+
+A string is a URL with weight 1. An omitted name is `replica-1`, then `replica-2`. An empty name is `replicas[0].name must be a non-empty string.`
+
+```ts title="replicas.ts"
+const primary = process.env.DATABASE_URL!;
+const east = process.env.REPLICA_URL!;
+
+export const target = {
+  primary,
+  replicas: [east], // [!code focus]
+};
+```
+
+An object is `{ url, weight, name, pool }`. `weight`, `name`, and `pool` are optional. `weight` defaults to 1. `pool` is `{ max }`.
+
+A replica `pool.max` overrides [max](/docs/operate/session-and-pool#max) for that endpoint. It is a positive integer: `replicas[0].pool.max must be a positive integer.` The primary uses the connect `max`. A replica that omits `pool` uses it too.
+
+On PGlite a replica url is that endpoint's data directory.
+
+```ts title="topology.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+const primary = process.env.DATABASE_URL!;
+const url = process.env.REPLICA_URL!;
+
+export const db = await connect(
+  {
+    primary,
+    replicas: [{ url, weight: 2, name: "east", pool: { max: 4 } }], // [!code focus]
+  },
+  {
+    schema: app,
+    routing: { consistency: "session", select: "weighted", maxLag: "5s" },
+  },
+);
+```
+
+A repeated name is refused. A replica named `primary` is `Endpoint name primary is used twice.`
+
+<Callout type="error" title="OKM1120">
+A weight of 0 or below is `replicas[0].weight must be a positive number.` The index is that replica's place in the array.
+</Callout>
+
+<Callout type="error" title="OKM1120">
+An empty string is `replicas[0] is an empty URL.` An object without a url is `replicas[0] needs a url.`
+</Callout>
+
+### Probe
+
+Omitted is `"1s"`, 1000 milliseconds. A positive number is milliseconds. A string is trimmed, then a number and `ms`, `s`, or `m`. A fraction is allowed. `"1s"`, `"500ms"`, and `"1m"` are the forms a bad string is shown.
+
+The first probe runs at connect. Later probes wait for that interval. A failed probe or a connection failure adds one. A successful probe clears the count. Two open the circuit, and that replica is left out until a probe succeeds. While the circuit is open the next probe waits longer, up to 30 seconds.
+
+The primary insert position is read on that interval when replicas are configured, consistency is `session` or `maxLag` is set, and that endpoint can read it.
+
+<Callout type="error" title="OKM1120">
+A string that is not a duration is `routing.probe must be a number of milliseconds, or "1s", "500ms", or "1m".` A number that is not positive and finite is `routing.probe must be a positive number of milliseconds.` A duration of 0 is `routing.probe must be positive.`
+</Callout>
+
+### Select
+
+`routing.select` chooses among replicas the read can use.
+
+| Value | Result |
+| --- | --- |
+| `"weighted"` | Each eligible replica's running weight grows by its configured weight. The largest wins, then loses the total of the weights that took part. Equal weights take turns in config order. |
+| `"roundRobin"` | The next eligible replica after the previous pick, in config order. |
+| `"leastConnections"` | The fewest in-flight statements. A tie stays with the earlier replica. |
+| `"latencyAware"` | The lowest round-trip. The first sample is kept. Later samples count the new reading at 0.2. A replica with no sample loses to one that has one. A tie stays with the earlier replica. |
+| a function | See below. |
+
+#### function
+
+The function runs for an automatic read with two or more eligible replicas. One replica skips the call. `route: "replica"` and `using("replica")` skip it and take the first eligible replica in config order. The built-in names still run for those calls.
+
+Each candidate has `name`, `weight`, `inflight`, `latencyMs`, and `lag`. `lag` is the byte lag, or `null` when either position is unknown. `latencyMs` stays `null` until a probe or a successful read has been timed. The second argument is `{ op: "read" }`. Return one of those candidates, or its name.
+
+```ts title="select.ts"
+export const routing = {
+  select(
+    candidates: readonly {
+      readonly name: string;
+      readonly weight: number;
+      readonly inflight: number;
+      readonly latencyMs: number | null;
+      readonly lag: number | null;
+    }[],
+  ) {
+    return candidates[0]?.name; // [!code focus]
+  },
+};
+```
+
+<Callout type="error" title="OKM1120">
+`routing.select must be "weighted", "roundRobin", "leastConnections", "latencyAware", or a function.` Returning `undefined` is `routing.select returned undefined. It must return a candidate or its name.`
+</Callout>
+
+### Consistency
+
+| Value | Result |
+| --- | --- |
+| `"session"` | After a committed write, the client stores the primary insert position. A replica serves the read when its replay position has reached that value. |
+| `"eventual"` | The watermark stays unset. `maxLag` still applies when it is set. |
+
+Before the first committed write, session has no watermark, so that check passes. A rollback leaves the watermark where it was. When a write's insert position cannot be read, and replicas are configured, session treats it as unknown. An automatic read uses the primary, or OKM1844 with `position-unknown`. A replica route is OKM1843. A later primary probe can clear that state.
+
+<Callout type="info" title="Watermark">
+One value for the whole `connect()`. The root, `for()`, `unscoped()`, `using()`, and `reserve()` share it.
+</Callout>
+
+<Callout type="error" title="OKM1120">
+`routing.consistency must be "session" or "eventual". "strong" is not one of those.`
+</Callout>
+
+### maxLag
+
+Omitted means no lag ceiling. The value is a string. It is trimmed. A duration is a number and `ms`, `s`, or `m`, such as `5s`, `500ms`, or `2m`. A size is a number and `B`, `KB`, `MB`, or `GB`, such as `16MB`, `512KB`, `1GB`, or `4096B`. `KB` is 1024 bytes. A fraction is allowed.
+
+A duration uses the replica's replay time. A size uses the bytes between the primary insert position and the replica replay position. A caught-up replica has lag zero. A replica whose position is unknown fails the check.
+
+<Callout type="error" title="OKM1120">
+A bare number is `routing.maxLag must be a duration ("5s", "500ms", "2m") or a size ("16MB", "512KB", "1GB", "4096B"). 5 is not one of those forms.`
+</Callout>
+
+### Fallback
+
+| Value | Result |
+| --- | --- |
+| `"primary"` | An automatic read uses the primary when no replica can serve it. |
+| `"error"` | That read throws OKM1844. |
+
+`route: "replica"` and `using("replica")` have no fallback.
+
+<Callout type="error" title="OKM1844">
+`No replica is eligible (behind) and fallback is error.` The word in parentheses is `no-replicas`, `unhealthy`, `position-unknown`, `saturated`, or `behind`.
+</Callout>
+
+<Callout type="error" title="OKM1120">
+`routing.fallback must be "primary" or "error".`
+</Callout>
+
+| Call | Result |
+| --- | --- |
+| an automatic read | A replica with a closed circuit, within `maxLag`, caught up when session has a watermark, and not full. Otherwise the fallback. |
+| `find({ route: "primary" })` | The primary. |
+| `find({ route: "replica" })` | A replica with a closed circuit that satisfies the watermark and `maxLag`. A full pool stays eligible. None eligible is OKM1843. |
+| `db.using("primary")` or `db.using("replica")` | A client that forces that route. It has no `close` and no `using`. |
+| a write, a batch, or a transaction on `using("replica")` | OKM1840, `This operation needs the primary.` |
+| a locking `find` with `route: "replica"` | OKM1840, `A locking read needs the primary.` |
+
+### Automatic read
+
+A read with no `route` is automatic. The replica's circuit is closed. Session adds the watermark once one is stored. `maxLag` adds the lag ceiling. A replica with a `max`, no idle connection, size at least that max, and a waiter is skipped. With no `max`, the replica counts as having room.
+
+```ts title="read.ts"
+import { db } from "./topology.ts";
+
+export function titles() {
+  return db.notes.find({ limit: 20 }); // [!code focus]
+}
+```
+
+A connection failure tries one other eligible replica. When none is eligible, the primary runs the read unless fallback is `error`.
+
+`no-replicas` means none are configured. `unhealthy` means no replica with a closed circuit can take the read. `behind` means none passed the watermark and `maxLag`. `saturated` means each remaining replica is full. `position-unknown` means session could not read the insert position.
+
+### Primary route
+
+`route: "primary"` reads the primary.
+
+```ts title="primary-route.ts"
+import { db } from "./topology.ts";
+
+export function titles() {
+  return db.notes.find({ limit: 20, route: "primary" }); // [!code focus]
+}
+```
+
+### Replica route
+
+`route: "replica"` reads a replica with a closed circuit that satisfies the watermark and `maxLag`. A replica at its max stays eligible. The call has no fallback.
+
+```ts title="replica-route.ts"
+import { db } from "./topology.ts";
+
+export function titles() {
+  return db.notes.find({ limit: 20, route: "replica" }); // [!code focus]
+}
+```
+
+A connection failure can try another eligible replica. The retry stays on a replica.
+
+<Callout type="error" title="OKM1843">
+`No replica is eligible. This call does not read the primary.`
+</Callout>
+
+### using
+
+`db.using("primary")` or `db.using("replica")` returns a client that forces that route. It has no `close` and no `using`. The root `close()` still closes the pools.
+
+```ts title="using.ts"
+import { db } from "./topology.ts";
+
+export function writer() {
+  return db.using("primary"); // [!code focus]
+}
+
+export function reader() {
+  return db.using("replica"); // [!code focus]
+}
+```
+
+A write, a batch, and a transaction run on the primary. On `using("replica")` each of those is OKM1840. A locking `find` with `route: "replica"`, including on that client, is the same code and the other message.
+
+<Callout type="error" title="OKM1840">
+A write, a batch, or a transaction on a replica route is `This operation needs the primary.` A locking find is `A locking read needs the primary.`
+</Callout>
+
+<Callout type="error" title="OKM1120">
+`using takes "primary" or "replica".`
+</Callout>
+
+<Callout type="error" title="OKM1120">
+`Table "using" collides with client.using(). Rename the table.`
+</Callout>
+
+### onRoute
+
+`onRoute` is called after an endpoint is chosen, with the operation (`read`, `write`, `tx`, or `lock`), the endpoint name, and the reason. A throw is ignored. The operation still runs.
+
+```ts title="on-route.ts"
+const seen: string[] = [];
+
+export function onRoute(event: {
+  readonly op: "read" | "write" | "tx" | "lock";
+  readonly endpoint: string;
+  readonly reason: string;
+}): void {
+  seen.push(event.endpoint); // [!code focus]
+}
+```
+
+### Inspect
+
+On this client, `inspect().routing.reason` is the same string `onRoute` receives. The preview does not call `onRoute` and does not move which replica is next. A string or a pool stays `single-endpoint`, and that call is synchronous.
+
+```ts title="inspect-route.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", { id: t.identity(), title: t.text() });
+const app = schema({ tables: [notes] });
+
+export async function reason(primary: string, replica: string) {
+  const db = await connect(
+    { primary, replicas: [{ url: replica, name: "east" }] },
+    { schema: app },
+  );
+  const seen = await db.notes.find({ limit: 1 }).inspect();
+  return seen.routing.reason; // [!code focus]
+}
+```
+
+### Close
+
+`close()` on the root stops the probes and closes the pools this call opened. A client from `using()` has no `close`. A failed connect closes the pools it had opened. That call is [`close()`](/docs/operate/connect#close).

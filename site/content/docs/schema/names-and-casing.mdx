@@ -1,0 +1,158 @@
+---
+title: "Names"
+description: "The field name is the TypeScript name."
+---
+<Callout type="info" title="Where this fits">
+TypeScript sees the field name. This page is the SQL name, a rename that keeps the old column, and the comment. [Visibility](/docs/schema/visibility) decides who can read or write it.
+</Callout>
+
+Insert, update, and `where` use the field name. The SQL name is what the statement quotes.
+
+### SQL name
+
+The SQL name is the field name, unless you replace it. [Casing](/docs/schema/casing) `"snake"` and `"camel"` rewrite a name you did not set. `publishedAt` is `published_at`. `userID` is `user_id`. Casing does not rewrite a name you set.
+
+| Call | Result |
+| --- | --- |
+| `.sqlName("headline")` | That column is stored as `headline`. |
+| `sqlName: "note"` | The table is stored as `note`. |
+
+#### column
+
+`.sqlName()` replaces one column. Insert still uses the field name.
+
+```ts title="column.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text().sqlName("headline"), // [!code focus]
+});
+const app = schema({ tables: [notes] });
+
+export async function add(url: string, title: string) {
+  await using db = connect(url, { schema: app });
+  return db.notes.insert({ title });
+}
+```
+
+#### table
+
+`sqlName` on the table replaces the table name. The client property stays `notes`.
+
+```ts title="table.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table(
+  "notes",
+  { id: t.identity(), title: t.text() },
+  { sqlName: "note" }, // [!code focus]
+);
+const app = schema({ tables: [notes] });
+
+export async function add(url: string, title: string) {
+  await using db = connect(url, { schema: app });
+  return db.notes.insert({ title });
+}
+```
+
+<Callout type="error" title="OKM1060">
+An empty column or table `sqlName` is refused.
+</Callout>
+
+<Callout type="error" title="OKM1122">
+A reserved word, a control character, or a name longer than 63 bytes is refused.
+</Callout>
+
+<Callout type="error" title="OKM1023">
+Two tables that store the same SQL name are refused. The message lists the table names. Two names longer than 63 bytes that shorten to the same stored name and hash suffix are refused the same way.
+</Callout>
+
+### Previous name
+
+A migration plans `ALTER TABLE … RENAME TO` or `RENAME COLUMN`. Renaming an identity column also renames the sequence `{table}_{column}_seq`. A table rename does the same for each identity column. Dropping one name and adding another, with no `renamedFrom`, is refused and the fix names the line to add. A previous name that the last snapshot does not contain is refused. Remove `renamedFrom` once the migration that used it has been applied. With no snapshot, that check does not run.
+
+| Call | Result |
+| --- | --- |
+| `.renamedFrom("headline")` | The previous column SQL name. |
+| `renamedFrom: "posts"` | The previous table SQL name. |
+
+#### column
+
+`.renamedFrom()` is the previous column.
+
+```ts title="column-rename.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.text().renamedFrom("headline"), // [!code focus]
+});
+```
+
+#### table
+
+`renamedFrom` on the table is the previous table name.
+
+```ts title="table-rename.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  { id: t.identity(), title: t.text() },
+  { renamedFrom: "posts" }, // [!code focus]
+);
+```
+
+<Callout type="error" title="OKM1060">
+An empty column or table `renamedFrom` is refused.
+</Callout>
+
+<Callout type="error" title="OKM1020">
+`Table renamedFrom … is not in the previous snapshot.` A column message names the table and the previous column.
+</Callout>
+
+<Callout type="error" title="OKM1530">
+`Drop headline and add title could be a rename.` The fix is `.renamedFrom("headline")` on the new column, or `renamedFrom: "posts"` on the new table.
+</Callout>
+
+### Comment
+
+`.comment()` and a table `comment` are checked. The catalog has no comment field, so neither is emitted. Omit the call to leave it off. An empty table comment is refused. An empty column comment is accepted.
+
+#### column
+
+`.comment()` is checked on that column and not stored.
+
+```ts title="column-comment.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.text().comment("Shown in the list"), // [!code focus]
+});
+```
+
+#### table
+
+A table `comment` is checked and not stored.
+
+```ts title="table-comment.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  { id: t.identity(), title: t.text() },
+  { comment: "One row per note" }, // [!code focus]
+);
+```
+
+<Callout type="error" title="OKM1060">
+An empty table `comment` is refused.
+</Callout>
+
+<Callout type="error" title="OKM1122">
+A comment that contains a control character is refused.
+</Callout>

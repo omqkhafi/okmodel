@@ -22,7 +22,7 @@ export default async function Page(props: PageProps<"/docs/[[...slug]]">) {
   const databases = databaseSupportFor(page.url);
 
   return (
-    <DocsPage toc={page.data.toc} full={page.data.full} breadcrumb={{ enabled: false }}>
+    <DocsPage toc={page.data.toc} full={page.data.full} breadcrumb={{ enabled: true }}>
       <header className="border-b border-fd-border pb-4">
         <DocsTitle className="flex flex-wrap items-center gap-x-3 gap-y-2">
           {page.data.title}

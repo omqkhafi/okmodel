@@ -1,7 +1,4 @@
 {
-  "title": "Coding agents",
-  "pages": [
-    "skills",
-    "llm"
-  ]
+  "title": "AI Resources",
+  "pages": ["skills", "llm"]
 }

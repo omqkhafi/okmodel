@@ -1,0 +1,397 @@
+---
+title: "Request filters"
+description: "filters() allowlists what a caller may send."
+---
+<Callout type="info" title="Where this fits">
+The table is declared. This page is the allowlist a caller may send. [Queries](/docs/queries) are the calls that use the result.
+</Callout>
+
+`filters()` checks the allowlist when you call it. `parse` loads the parser the first time a request arrives and returns `{ where, orderBy }`. Spread that into `find`. `orderBy` is absent when the request has no `sort`. A request that is not an object is OKM1121: `filters parse expects an object of fields.`
+
+A scalar equality is a plain value. Every other operator is a value `parse` builds. Copying that value through JSON drops it, and `find` throws OKM1121: `where must be an object of fields. Wrap an object value with eq.`
+
+<Callout type="error" title="OKM1123">
+A hidden field in `allow`, `sort`, or `relations` is refused when you call `filters()`. The message is `Field notes.secret is hidden.` `filterable` does not change that. See [hidden](/docs/schema/visibility#hidden).
+</Callout>
+
+### Allow
+
+`allow` maps a field to operators. A scalar, `null`, or an array is equality when that field lists `eq`. An object names operators. One operator stays that operator. Several operators on one field, or several fields, become `and`.
+
+A field the request names, and that is not in `allow` or `relations`, is OKM1123: `Field rank is not in the allow list.` An own key such as `constructor` is a field name.
+
+#### eq
+
+A scalar, `null`, or an array is equality. An array here is the equality value, not `in`. The result is `{ where: { title: "ship" } }`.
+
+```ts title="eq.ts"
+import { table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+export async function named() {
+  return notes.filters({ allow: { title: ["eq"] } }).parse({ title: "ship" }); // [!code focus]
+}
+```
+
+#### in
+
+`in` and `inList` both need an array, and both become `inList`. Listing `in` also accepts a request key `inList`. Listing only `inList` does not accept `in`.
+
+```ts title="in.ts"
+import { table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  status: t.text(),
+});
+
+export async function statuses() {
+  return notes.filters({ allow: { status: ["in"] } }).parse({
+    status: { in: ["open", "closed"] }, // [!code focus]
+  });
+}
+```
+
+#### notIn
+
+`notIn` needs an array. Anything else is OKM1120: `notIn needs an array.`
+
+```ts title="not-in.ts"
+import { table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  status: t.text(),
+});
+
+export async function excluded() {
+  return notes.filters({ allow: { status: ["notIn"] } }).parse({
+    status: { notIn: ["draft"] }, // [!code focus]
+  });
+}
+```
+
+#### lt
+
+`lt`, `lte`, `gt`, and `gte` each take the bound.
+
+```ts title="lt.ts"
+import { table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+export async function before() {
+  return notes.filters({ allow: { title: ["lt"] } }).parse({
+    title: { lt: "m" }, // [!code focus]
+  });
+}
+```
+
+#### between
+
+`between` needs two bounds. One bound, or three, is OKM1120: `between on rank needs two bounds.`
+
+```ts title="between.ts"
+import { table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  rank: t.integer(),
+});
+
+export async function ranked() {
+  return notes.filters({ allow: { rank: ["between"] } }).parse({
+    rank: { between: [1, 10] }, // [!code focus]
+  });
+}
+```
+
+#### startsWith
+
+`startsWith`, `endsWith`, `like`, and `ilike` need a string. Anything else is OKM1120: `startsWith needs a string.`
+
+```ts title="starts-with.ts"
+import { table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+export async function prefixed() {
+  return notes.filters({ allow: { title: ["startsWith"] } }).parse({
+    title: { startsWith: "ship" }, // [!code focus]
+  });
+}
+```
+
+#### contains
+
+`contains` takes the value you send. A string, a number, or a list is accepted here.
+
+```ts title="contains.ts"
+import { table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+export async function holding() {
+  return notes.filters({ allow: { title: ["contains"] } }).parse({
+    title: { contains: "ship" }, // [!code focus]
+  });
+}
+```
+
+#### not
+
+`not` takes a scalar or `null`. An object is OKM1120: `not on title takes a scalar.`
+
+```ts title="not.ts"
+import { table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+export async function excluded() {
+  return notes.filters({ allow: { title: ["not"] } }).parse({
+    title: { not: "draft" }, // [!code focus]
+  });
+}
+```
+
+#### overlaps
+
+`containedBy` and `overlaps` take the value you send. On an array column that value is a list.
+
+```ts title="overlaps.ts"
+import { table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  tags: t.text().array(),
+});
+
+export async function tagged() {
+  return notes.filters({ allow: { tags: ["overlaps", "containedBy"] } }).parse({
+    tags: { overlaps: ["a"], containedBy: ["a", "b"] }, // [!code focus]
+  });
+}
+```
+
+#### hasKey
+
+`hasKey` needs a string. `hasAnyKey` needs an array of strings. A number in that array is OKM1120: `hasAnyKey on meta needs an array of strings.`
+
+```ts title="has-key.ts"
+import { table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  meta: t.jsonb(),
+});
+
+export async function marked() {
+  return notes.filters({ allow: { meta: ["hasKey", "hasAnyKey"] } }).parse({
+    meta: { hasKey: "published", hasAnyKey: ["published", "title"] }, // [!code focus]
+  });
+}
+```
+
+#### and
+
+You do not list `and`. Two operators on one field, or two fields, become it.
+
+```ts title="and.ts"
+import { table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+  rank: t.integer(),
+});
+
+export async function narrowed() {
+  return notes
+    .filters({ allow: { title: ["startsWith", "lt"], rank: ["eq"] } })
+    .parse({ title: { startsWith: "a", lt: "m" }, rank: 1 }); // [!code focus]
+}
+```
+
+<Callout type="error" title="OKM1120">
+An operator the field does not list is `filters() cannot apply startsWith on title.` A scalar on a field that does not list `eq` is `filters() cannot apply eq on title.` An empty operator object is `filters() cannot apply a value on title.`
+</Callout>
+
+#### Refused
+
+`path`, `matches`, `similar`, `wordSimilar`, boolean trees, relation quantifiers, and write operators. A caller cannot name them in `allow`. Naming one and calling `parse`, even with `{}`, is OKM1120: `filters() cannot apply path on title.`
+
+### Sort
+
+`sort` names the fields a caller may sort. The request key `sort` is one of those names, and `parse` orders that field ascending. There is no descending value. A name outside the list is OKM1123: `Field sort is not in the allow list.`
+
+```ts title="sort.ts"
+import { table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+export async function ordered() {
+  return notes.filters({ allow: { title: ["eq"] }, sort: ["title"] }).parse({
+    title: "ship",
+    sort: "title", // [!code focus]
+  });
+}
+```
+
+That result is `{ where: { title: "ship" }, orderBy: { title: "asc" } }`.
+
+### Related fields
+
+`relations` maps a [relation](/docs/schema/relations) name to fields of that table. You name fields, not operators. Each field accepts every operator under [Allow](#allow). `parse` turns the object into `has`.
+
+#### fields
+
+The list is the fields a caller may filter on that relation. `filters()` refuses a hidden field on the related table. It does not check that the field is a column. `find` does, and a missing column is OKM1120: `Field name is not on users. Accepted names: …`.
+
+```ts title="fields.ts"
+import { one, table, t } from "okmodel/pg";
+
+const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+    authorId: t.bigint().references("users"),
+  },
+  { relations: { author: one("users") } },
+);
+
+export async function byAuthor() {
+  return notes.filters({ relations: { author: ["name"] } }).parse({
+    author: { name: { startsWith: "a" } }, // [!code focus]
+  });
+}
+```
+
+A field outside that relation's list is OKM1123: `Field title is not in the allow list.` A scalar where the relation needs an object is OKM1120: `filters() cannot apply a value on author.`
+
+#### column
+
+A name in `allow` is the column when that name is also a relation. `{ list: "x" }` stays `{ where: { list: "x" } }`.
+
+```ts title="column.ts"
+import { many, table, t } from "okmodel/pg";
+
+const owners = table(
+  "owners",
+  {
+    id: t.identity(),
+    list: t.text(),
+  },
+  { relations: { list: many("items", "ownerId") } },
+);
+
+export async function listed() {
+  return owners.filters({ allow: { list: ["eq"] }, relations: { list: ["name"] } }).parse({
+    list: "x", // [!code focus]
+  });
+}
+```
+
+### Request
+
+Spread the result of `parse` into `find`.
+
+#### simple
+
+One field, and a sort. The result is `{ where: { title: "ship" }, orderBy: { title: "asc" } }`.
+
+```ts title="simple.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export async function named(url: string) {
+  const parsed = await notes.filters({ allow: { title: ["eq"] }, sort: ["title"] }).parse({
+    title: "ship", // [!code focus]
+    sort: "title", // [!code focus]
+  });
+  await using db = connect(url, { schema: app });
+  return db.notes.find({ ...parsed, limit: 20 }); // [!code focus]
+}
+```
+
+#### complex
+
+Several fields, a relation, and a sort. `parse` joins the fields with `and`. `where` is `and` of `not`, `startsWith`, `inList`, `between`, `overlaps`, `hasKey`, and `has`. `orderBy` is `{ rank: "asc" }`.
+
+```ts title="complex.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { one, schema, table, t } from "okmodel/pg";
+
+const users = table("users", {
+  id: t.identity(),
+  name: t.text(),
+});
+
+const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+    status: t.text(),
+    rank: t.integer(),
+    tags: t.text().array(),
+    meta: t.jsonb(),
+    authorId: t.bigint().references("users"),
+  },
+  { relations: { author: one("users") } },
+);
+
+const app = schema({ tables: [users, notes] });
+
+export async function listed(url: string) {
+  const parsed = await notes
+    .filters({
+      allow: {
+        title: ["not", "startsWith"],
+        status: ["in"],
+        rank: ["between"],
+        tags: ["overlaps"],
+        meta: ["hasKey"],
+      },
+      sort: ["rank"],
+      relations: { author: ["name"] },
+    })
+    .parse({
+      title: { not: "draft", startsWith: "ship" }, // [!code focus]
+      status: { in: ["open", "closed"] }, // [!code focus]
+      rank: { between: [1, 10] }, // [!code focus]
+      tags: { overlaps: ["a"] }, // [!code focus]
+      meta: { hasKey: "published" }, // [!code focus]
+      author: { name: { startsWith: "a" } }, // [!code focus]
+      sort: "rank", // [!code focus]
+    });
+  await using db = connect(url, { schema: app });
+  return db.notes.find({ ...parsed, limit: 20 }); // [!code focus]
+}
+```

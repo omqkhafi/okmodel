@@ -19,6 +19,26 @@ test("llms.txt lists every public page", () => {
   }
 });
 
+test("llms.txt lists each sidebar group once", () => {
+  const text = buildLlmsTxt();
+  const groups = source
+    .getPageTree()
+    .children.flatMap((node) => (node.type === "folder" && typeof node.name === "string" ? [node.name] : []));
+  expect(source.getPages().length).toBe(64);
+  expect(groups).toEqual([
+    "Get started",
+    "Schema",
+    "Queries",
+    "Migrations",
+    "Operate",
+    "Reference",
+    "AI Resources",
+  ]);
+  const headings = [...text.matchAll(/^## (.+)$/gm)].map((match) => match[1]);
+  const groupHeadings = headings.filter((heading) => groups.includes(heading ?? ""));
+  expect(groupHeadings).toEqual(groups);
+});
+
 test("sitemap and robots advertise the handbook", () => {
   const urls = sitemap().map((entry) => entry.url);
   expect(urls).toContain(SITE_ORIGIN);

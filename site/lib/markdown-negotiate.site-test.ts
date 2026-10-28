@@ -4,27 +4,22 @@
 
 import { expect, test } from "bun:test";
 
-import { DOCS_REDIRECTS } from "./docs-redirects";
 import { markdownNegotiation, markdownTwinPath } from "./markdown-negotiate";
 
 test("a docs path negotiates to its markdown twin", () => {
   expect(markdownTwinPath("/docs/start")).toBe("/llms.mdx/docs/start.md");
   expect(markdownTwinPath("/docs")).toBe("/llms.mdx/docs/index.md");
-  expect(markdownTwinPath("/docs/define/config")).toBe("/llms.mdx/docs/define/config.md");
-  expect(markdownTwinPath("/docs/define/config/schema")).toBe("/llms.mdx/docs/define/config.md");
-  expect(markdownTwinPath("/docs/define/config/database")).toBe("/llms.mdx/docs/define/config/database.md");
-  expect(markdownTwinPath("/docs/config")).toBe("/llms.mdx/docs/define/config.md");
-  expect(markdownTwinPath("/docs/config/paths")).toBe("/llms.mdx/docs/define/config.md");
-  expect(markdownTwinPath("/docs/config/targets")).toBe("/llms.mdx/docs/define/config/database.md");
-  expect(markdownTwinPath("/docs/schema/tables")).toBe("/llms.mdx/docs/define/schema/tables.md");
-  expect(markdownTwinPath("/docs/table/columns")).toBe("/llms.mdx/docs/define/table/columns.md");
-  expect(markdownTwinPath("/docs/table/reference")).toBe("/llms.mdx/docs/define/table/reference-rows.md");
-  expect(markdownTwinPath("/docs/start/query")).toBe("/llms.mdx/docs/start.md");
-  expect(markdownTwinPath("/docs/start/from-drizzle")).toBe("/llms.mdx/docs/migrate/from-drizzle.md");
-  expect(markdownTwinPath("/docs/ship/migrations")).toBe("/llms.mdx/docs/define/config.md");
-  expect(markdownTwinPath("/docs/define/connect/close")).toBe("/llms.mdx/docs/define/connect.md");
-  expect(markdownTwinPath("/docs/define/connect/pool")).toBe("/llms.mdx/docs/define/connect/session.md");
-  expect(markdownTwinPath("/docs/ai/mcp")).toBe("/llms.mdx/docs/ai/skills.md");
+  expect(markdownTwinPath("/docs/reference/config")).toBe("/llms.mdx/docs/reference/config.md");
+  expect(markdownTwinPath("/docs/reference/config-database")).toBe(
+    "/llms.mdx/docs/reference/config-database.md",
+  );
+  expect(markdownTwinPath("/docs/schema/tables")).toBe("/llms.mdx/docs/schema/tables.md");
+  expect(markdownTwinPath("/docs/schema/the-schema")).toBe("/llms.mdx/docs/schema/the-schema.md");
+  expect(markdownTwinPath("/docs/queries")).toBe("/llms.mdx/docs/queries.md");
+  expect(markdownTwinPath("/docs/operate/connect")).toBe("/llms.mdx/docs/operate/connect.md");
+  expect(markdownTwinPath("/docs/migrations/from-drizzle")).toBe(
+    "/llms.mdx/docs/migrations/from-drizzle.md",
+  );
   expect(markdownTwinPath("/docs/ai/skills")).toBe("/llms.mdx/docs/ai/skills.md");
   expect(markdownTwinPath("/")).toBe("/llms.mdx/home");
   expect(markdownTwinPath("/changelog")).toBe("/llms.mdx/releases");
@@ -38,11 +33,9 @@ test("a docs path negotiates to its markdown twin", () => {
   });
 });
 
-test("retired known-limits and linter paths are not redirected", () => {
-  expect(DOCS_REDIRECTS["/docs/known-limits"]).toBeUndefined();
-  expect(DOCS_REDIRECTS["/docs/reference/known-limits"]).toBeUndefined();
-  expect(DOCS_REDIRECTS["/docs/reference/linter"]).toBeUndefined();
+test("an unknown docs path keeps its own twin", () => {
   expect(markdownTwinPath("/docs/known-limits")).toBe("/llms.mdx/docs/known-limits.md");
+  expect(markdownTwinPath("/docs/reference/linter")).toBe("/llms.mdx/docs/reference/linter.md");
 });
 
 test("html and machine routes are not rewritten", () => {

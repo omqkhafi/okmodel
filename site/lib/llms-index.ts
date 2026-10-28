@@ -57,7 +57,7 @@ export function listLlmsPages(): LlmsPageRef[] {
 
 /**
  * llmstxt.org index in sidebar order. Root pages come first, then one
- * heading per top-level folder with every page under it.
+ * heading per sidebar group, each group once.
  *
  * @param origin - Absolute origin
  * @param pages - Handbook pages. Defaults to the live source.
@@ -84,9 +84,10 @@ export function buildLlmsTxt(
     if (node.type === "page") rootUrls.push(node.url);
     else if (node.type === "folder") folders.push(node);
   }
-  lines.push("## Start", "");
-  pushPages(lines, rootUrls, byUrl, origin);
-  lines.push("");
+  if (rootUrls.length > 0) {
+    pushPages(lines, rootUrls, byUrl, origin);
+    lines.push("");
+  }
 
   for (const folder of folders) {
     lines.push(`## ${typeof folder.name === "string" ? folder.name : ""}`, "");
@@ -152,8 +153,29 @@ export function buildLlmsCatalog(
  * @param folder - Sidebar folder
  */
 function folderUrls(folder: PageTree.Folder): string[] {
-  const urls = folder.index === undefined ? [] : [folder.index.url];
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  const push = (url: string): void => {
+    if (seen.has(url)) return;
+    seen.add(url);
+    urls.push(url);
+  };
+  if (folder.index !== undefined) push(folder.index.url);
   for (const node of folder.children) {
+    if (node.type === "page") push(node.url);
+    else if (node.type === "folder") for (const url of folderUrls(node)) push(url);
+  }
+  return urls;
+}
+
+/**
+ * Handbook URLs in sidebar order: root pages, then each group.
+ *
+ * @param tree - Sidebar tree
+ */
+export function orderedHandbookUrls(tree: PageTree.Root = source.getPageTree()): string[] {
+  const urls: string[] = [];
+  for (const node of tree.children) {
     if (node.type === "page") urls.push(node.url);
     else if (node.type === "folder") urls.push(...folderUrls(node));
   }

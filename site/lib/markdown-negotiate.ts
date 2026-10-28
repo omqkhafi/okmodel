@@ -1,11 +1,8 @@
 /**
  * Accept negotiation map — HTML handbook URLs rewrite to their markdown twins.
- * Retired paths use {@link DOCS_REDIRECTS}; the twin is the destination page.
  */
 
 import { isMarkdownPreferred } from "fumadocs-core/negotiation";
-
-import { DOCS_REDIRECTS, redirectPathname } from "./docs-redirects";
 
 /** Result of inspecting one request for markdown negotiation. */
 export type MarkdownAction =
@@ -30,16 +27,13 @@ export function markdownTwinPath(pathname: string): string | undefined {
     return `/llms.mdx/releases/${rest}`;
   }
 
-  const redirected = DOCS_REDIRECTS[path];
-  if (redirected !== undefined) return handbookMarkdownTwin(redirectPathname(redirected));
-
   if (path === "/docs" || path.startsWith("/docs/")) return handbookMarkdownTwin(path);
 
   return undefined;
 }
 
 /**
- * Markdown twin for a current handbook HTML path (after redirects).
+ * Markdown twin for a handbook HTML path.
  *
  * @param path - Absolute docs path without a trailing slash or hash
  */

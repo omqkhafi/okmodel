@@ -1,0 +1,187 @@
+---
+title: "Tenancy"
+description: "Schema tenancy adds the key to every table."
+---
+<Callout type="info" title="Where this fits">
+[Schema tenancy](/docs/schema/tenancy-schema) adds one key to every table. This page keeps that key, marks the table global, or follows a path of relations.
+</Callout>
+
+Omitted, the table stores the key. `global` and `via` come from `okmodel/tenancy`. Anything else is OKM1060: `Table notes tenancy must be global("reason") or via().`
+
+### Key
+
+The key is a guarded uuid. Insert fills it from `for()`. A read or a write filters on it. Input cannot set it. Insert that names it is OKM1190: `Field notes.tenantId is the tenant key. The scope sets it. Input cannot.` An update is OKM1704: `Field notes.tenantId is the tenant key. An update cannot change it.` A filter is the same code: `Field notes.tenantId is the tenant key. A filter cannot set it.`
+
+A column the table already declares with that name is OKM1012: `Table notes already declares tenantId, which tenancy adds. Rename the field or drop it from the table.`
+
+A unique includes the key. The primary key does too. An index is prefixed with the key, so a unique index is unique per tenant and two tenants may share a value. `tenantIndexes: false` turns the prefix off for this table. One index can opt out with `.global("reason")` or opt in with `.scoped()`. The nearest level wins. With the prefix off, an index that does not start with the key is OKM1706: `Index on notes starts with title. Put tenantId first.` A `using` tail is not prefixed that way. `index().global("reason")` is the option that works for it. A foreign key to another tenant table includes the key, so `set null` and `set default` are refused. See [references](/docs/schema/references).
+
+#### unique
+
+`.unique({ global: "reason" })` leaves the key out of that one constraint. `{ global: true, reason }` is the same opt-out. An empty reason is OKM1060: `unique() global needs a reason.` `{ global: true }` with no reason is OKM1060: `Unique notes.email sets global and needs a reason.`
+
+```ts title="unique.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  email: t.text().unique({ global: "login email" }), // [!code focus]
+  title: t.text().unique(),
+});
+```
+
+`email` is unique across tenants. `title` is unique inside one tenant.
+
+### Global
+
+`global("reason")` leaves the tenant column off this table. The reason is stored and `inspect()` shows it. An empty reason is OKM1060: `global() needs a reason.`
+
+```ts title="global.ts"
+import { table, t } from "okmodel/pg";
+import { global } from "okmodel/tenancy";
+
+export const plans = table(
+  "plans",
+  { id: t.identity(), code: t.text() },
+  { tenancy: global("plans are shared") }, // [!code focus]
+);
+```
+
+<Callout type="error" title="OKM1705">
+A global table that references a tenant table is `Table plans.code is global and references tenant table notes. Drop the reference, or make plans a tenant table.`
+</Callout>
+
+### Path
+
+`via("project.organization")` follows to-one relations. Each step is a relation name, separated by `.`, up to three. The last table stores the tenant key. This table does not. A read or a write adds `exists` along that path. An empty path is OKM1060: `via() needs a relation path.`
+
+```ts title="path.ts"
+import { one, table, t } from "okmodel/pg";
+import { via } from "okmodel/tenancy";
+
+export const organizations = table("organizations", {
+  id: t.identity(),
+  name: t.text(),
+});
+
+export const projects = table(
+  "projects",
+  {
+    id: t.identity(),
+    organizationId: t.bigint().references("organizations"),
+    name: t.text(),
+  },
+  { relations: { organization: one("organizations") } },
+);
+
+export const tasks = table(
+  "tasks",
+  {
+    id: t.identity(),
+    projectId: t.bigint().references("projects"),
+    title: t.text(),
+  },
+  {
+    relations: { project: one("projects") },
+    tenancy: via("project.organization"), // [!code focus]
+  },
+);
+```
+
+<Callout type="error" title="OKM1705">
+More than three steps is `Table tasks tenancy via "a.b.c.d" is longer than 3 hops.` A missing to-one relation is `Table tasks tenancy via "project.organization" has no to-one relation project.` A path that ends on a global table is `Table tasks tenancy via "project.organization" ends at plans, which is not a tenant table.` A cycle is `Table tasks tenancy via "project.organization" cycles at projects.` An insert whose parent is outside this tenant is `Insert on tasks did not find a parent in this tenant.` An update is `Update on tasks did not find a parent in this tenant.`
+</Callout>
+
+### Calls
+
+`for({ tenantId })` opens a client for one tenant. The value is a uuid. `unscoped("reason")` drops the predicate. Insert still needs `for()`. A call with no scope is OKM1701: `Table notes is tenant-scoped. Call for({ tenantId }).`
+
+#### simple
+
+One tenant table. Insert sets `title`. The scope sets `tenantId`.
+
+```ts title="simple.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { columnTenancy } from "okmodel/tenancy";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({
+  tables: [notes],
+  tenancy: columnTenancy({ key: "tenantId", type: "uuid" }), // [!code focus]
+});
+
+export async function add(url: string, title: string) {
+  await using db = connect(url, { schema: app });
+  const scoped = db.for({ tenantId: "018f3b2c-7a11-7c3a-8e2d-6b4a9c1d0e5f" }); // [!code focus]
+  return scoped.notes.insert({ title }); // [!code focus]
+}
+```
+
+#### complex
+
+`organizations` stores the key. `projects` follows `organization`. `tasks` follows `project.organization`. `plans` is global, so the root client can insert it. The scoped client inserts the rest.
+
+```ts title="complex.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { one, schema, table, t } from "okmodel/pg";
+import { columnTenancy, global, via } from "okmodel/tenancy";
+
+const organizations = table("organizations", {
+  id: t.identity(),
+  name: t.text(),
+});
+
+const projects = table(
+  "projects",
+  {
+    id: t.identity(),
+    organizationId: t.bigint().references("organizations"),
+    name: t.text(),
+  },
+  {
+    relations: { organization: one("organizations") },
+    tenancy: via("organization"), // [!code focus]
+  },
+);
+
+const tasks = table(
+  "tasks",
+  {
+    id: t.identity(),
+    projectId: t.bigint().references("projects"),
+    title: t.text(),
+  },
+  {
+    relations: { project: one("projects") },
+    tenancy: via("project.organization"), // [!code focus]
+  },
+);
+
+const plans = table(
+  "plans",
+  { id: t.identity(), code: t.text() },
+  { tenancy: global("plans are shared") }, // [!code focus]
+);
+
+const app = schema({
+  tables: [organizations, projects, tasks, plans],
+  tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
+});
+
+export async function open(url: string) {
+  await using db = connect(url, { schema: app });
+  await db.plans.insert({ code: "free" }); // [!code focus]
+  const scoped = db.for({ tenantId: "018f3b2c-7a11-7c3a-8e2d-6b4a9c1d0e5f" });
+  const org = await scoped.organizations.insert({ name: "Acme" });
+  const project = await scoped.projects.insert({
+    name: "Ship",
+    organizationId: org.id, // [!code focus]
+  });
+  return scoped.tasks.insert({ title: "Write", projectId: project.id }); // [!code focus]
+}
+```

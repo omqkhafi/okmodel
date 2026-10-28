@@ -1,0 +1,163 @@
+---
+title: "Required rows"
+description: "Rows the application expects to find, inserted when the key is missing."
+---
+<Callout type="info" title="Not a foreign key">
+[References](/docs/schema/references) is `.references()`. This page is the table option `reference`: rows the application expects to find already stored.
+</Callout>
+
+A status, a role, or a plan is a row other code assumes is there. You list those rows next to the table. `okm migrate apply` inserts one when its key is not stored yet. A row that is already stored is left as it is. A row you take off the list is not deleted.
+
+A migration file changes the catalog. An `insert` in that file is OKM1542: it changes rows outside `backfill()`. These rows are not a migration step, so that check does not see them. They are not copied into the catalog, and they do not change the catalog hash. Adding a key needs no new DDL file. The next apply inserts it.
+
+An empty database gets them when apply installs the head snapshot. A database that already has history gets them after the pending migrations. `provision()` does the same inserts on an empty target and records `provisioned@` plus the migration id.
+
+### Key
+
+`key` is the field that identifies a row, or several fields. The order is the order of the primary key, the unique constraint, or a unique index that has no predicate. `key` uses the field name. Snake casing and `sqlName` are what the insert and the constraint use.
+
+An empty key is `invalid`: `Table statuses reference key is empty.` A key that does not match is `invalid`: `Reference key label on statuses is not a primary key or a unique constraint.` A table that is not in the head snapshot yet is `invalid`: `Table statuses declares reference rows and is not in the head snapshot.` Generate first, so the snapshot includes the table.
+
+#### one
+
+`code` is the primary key. `open` and `done` are the rows the application looks up.
+
+```ts title="one.ts"
+import { table, t } from "okmodel/pg";
+
+export const statuses = table(
+  "statuses",
+  {
+    code: t.text().primaryKey(),
+    label: t.text(),
+  },
+  {
+    reference: {
+      key: "code", // [!code focus]
+      rows: [
+        { code: "open", label: "Open" },
+        { code: "done", label: "Done" },
+      ],
+    },
+  },
+);
+```
+
+#### several
+
+The key is `kind` then `code`, the same order as `primaryKey`. `["code", "kind"]` does not match that constraint.
+
+```ts title="several.ts"
+import { table, t } from "okmodel/pg";
+
+export const codes = table(
+  "codes",
+  {
+    kind: t.text(),
+    code: t.text(),
+    label: t.text(),
+  },
+  {
+    primaryKey: ["kind", "code"],
+    reference: {
+      key: ["kind", "code"], // [!code focus]
+      rows: [
+        { kind: "status", code: "open", label: "Open" },
+        { kind: "status", code: "done", label: "Done" },
+      ],
+    },
+  },
+);
+```
+
+### Rows
+
+`rows` is a list. Each item is an object of field names. A value is a string, a number, a boolean, or null. The key fields are required on every row. Other fields are inserted with them.
+
+A value that is not a list is `invalid`: `Table statuses reference rows must be a list.` A row that is not an object is `invalid`: `Table statuses reference row 0 is not an object.` A missing key is `invalid`: `Table statuses reference row 0 is missing key code.` An unknown field is `invalid`: `Table statuses reference names rank, which is not a column.` Anything else is `invalid`: `Table statuses reference row 0 column label is not a string, number, boolean, or null.`
+
+```ts title="values.ts"
+import { table, t } from "okmodel/pg";
+
+export const plans = table(
+  "plans",
+  {
+    code: t.text().primaryKey(),
+    rank: t.integer(),
+    active: t.boolean(),
+    note: t.text().nullable(),
+  },
+  {
+    reference: {
+      key: "code",
+      rows: [
+        { code: "free", rank: 1, active: true, note: null }, // [!code focus]
+        { code: "pro", rank: 2, active: false, note: "paid" },
+      ],
+    },
+  },
+);
+```
+
+### Apply
+
+Each row is its own insert. A missing key is inserted. A stored key is skipped, including when the label in this list has changed. Nothing is updated or deleted.
+
+```sql
+insert into "public"."statuses" ("code", "label") values ('open', 'Open') on conflict ("code") do nothing
+```
+
+#### simple
+
+Two statuses. Apply inserts `open` and `done` when those codes are absent.
+
+```ts title="simple.ts"
+import { table, t } from "okmodel/pg";
+
+export const statuses = table(
+  "statuses",
+  {
+    code: t.text().primaryKey(),
+    label: t.text(),
+  },
+  {
+    reference: {
+      key: "code",
+      rows: [
+        { code: "open", label: "Open" }, // [!code focus]
+        { code: "done", label: "Done" },
+      ],
+    },
+  },
+);
+```
+
+#### complex
+
+The key is two columns. The row also stores a number, a boolean, and null. A later apply that adds `{ kind: "status", code: "archived", ... }` inserts that key and leaves `open` and `done` as they are.
+
+```ts title="complex.ts"
+import { table, t } from "okmodel/pg";
+
+export const codes = table(
+  "codes",
+  {
+    kind: t.text(),
+    code: t.text(),
+    label: t.text(),
+    rank: t.integer(),
+    active: t.boolean(),
+    note: t.text().nullable(),
+  },
+  {
+    primaryKey: ["kind", "code"],
+    reference: {
+      key: ["kind", "code"], // [!code focus]
+      rows: [
+        { kind: "status", code: "open", label: "Open", rank: 1, active: true, note: null },
+        { kind: "status", code: "done", label: "Done", rank: 2, active: false, note: null },
+      ],
+    },
+  },
+);
+```
