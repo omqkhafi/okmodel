@@ -65,7 +65,7 @@ export const notes = table("notes", {
 
 `okid` comes from `okmodel/ids`. It is not a Postgres type. `t.id({ default: okid() })` is a primary key of `text` with collation `C`. The client mints one id on insert. The catalog stores no default. Calling `okid()` returns the generator. It does not mint the id at definition time.
 
-A default body is 21 characters on a URL-safe alphabet, so the stored value is 22 bytes. A longer body, or a prefix, follows [text](#text): 1 byte plus the string up to 126 bytes, then 4 bytes plus the string.
+A default body is 21 characters on a URL-safe alphabet, so the stored value is 22 bytes. A longer body, or a prefix, follows [text](/docs/schema/text-columns#text): 1 byte plus the string up to 126 bytes, then 4 bytes plus the string.
 
 | Call | Body | Bytes |
 | --- | --- | --- |
