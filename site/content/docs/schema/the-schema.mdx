@@ -1,6 +1,6 @@
 ---
-title: "Overview"
-description: "schema() compiles the tables into one catalog. Each option is a page."
+title: "The schema"
+description: "schema() compiles the tables into one catalog. Some options are sections of this page. Others are their own pages."
 ---
 schema() compiles the tables into one catalog. This page holds the declaration, the tables list, and the oldest PostgreSQL major the catalog allows. Each other option is linked from the declaration to the page that now holds it.
 
@@ -9,13 +9,13 @@ schema() compiles the tables into one catalog. This page holds the declaration, 
     The list, in the order you write it. A reference names a table in this list, earlier or later. [`table()`](/docs/schema/tables) only stores the columns. Names and the catalog hash are fixed here. Calling `schema()` twice on the same tables returns equal catalog bytes.
   </AnatomyPart>
   <AnatomyPart slot="sections" label="Pages" code="…," mark="sections">
-    Each other field is a page in this group.
+    Tables and minimum Postgres are sections on this page. Each other field is a separate page.
   </AnatomyPart>
 </Anatomy>
 
 ## The declaration
 
-Each option is a page. Tables come first, because every other option refers to them.
+Options are sections of this page, or pages that still exist: tables, columns, and defaults. Tables come first, because every other option refers to them.
 
 | Order | Page | You use it for |
 | --- | --- | --- |

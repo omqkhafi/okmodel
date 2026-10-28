@@ -1,13 +1,13 @@
 ---
-title: "Names"
-description: "The field name is the TypeScript name."
+title: "Names and casing"
+description: "The field name is the TypeScript name. Casing or a name option sets the SQL name."
 ---
 Names are the SQL spelling PostgreSQL stores, and casing rewrites a name you did not set. The names section sets a SQL name, a previous name, or a comment. The casing section chooses snake case or camel case.
 
 ## Names
 
 <Callout type="info" title="Where this fits">
-TypeScript sees the field name. This page is the SQL name, a rename that keeps the old column, and the comment. [Visibility](/docs/schema/visibility) decides who can read or write it.
+TypeScript sees the field name. Names are the SQL name, a rename that keeps the old column, the comment, and casing. [Visibility](/docs/schema/visibility) decides who can read or write it.
 </Callout>
 
 Insert, update, and `where` use the field name. The SQL name is what the statement quotes.

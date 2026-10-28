@@ -7,7 +7,7 @@ Tenancy keeps one tenant's rows apart from another's. On a table you keep the sc
 ## On a table
 
 <Callout type="info" title="Where this fits">
-[Schema tenancy](/docs/schema/tenancy#on-the-schema) adds one key to every table. This page keeps that key, marks the table global, or follows a path of relations.
+[Schema tenancy](/docs/schema/tenancy#on-the-schema) adds one key to every table. A table keeps that key, marks the table global, or follows a path. The schema section chooses the key.
 </Callout>
 
 Omitted, the table stores the key. `global` and `via` come from `okmodel/tenancy`. Anything else is OKM1060: `Table notes tenancy must be global("reason") or via().`
