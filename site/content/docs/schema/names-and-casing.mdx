@@ -2,6 +2,10 @@
 title: "Names"
 description: "The field name is the TypeScript name."
 ---
+Names are the SQL spelling PostgreSQL stores, and casing rewrites a name you did not set. The names section sets a SQL name, a previous name, or a comment. The casing section chooses snake case or camel case.
+
+## Names
+
 <Callout type="info" title="Where this fits">
 TypeScript sees the field name. This page is the SQL name, a rename that keeps the old column, and the comment. [Visibility](/docs/schema/visibility) decides who can read or write it.
 </Callout>
@@ -10,7 +14,7 @@ Insert, update, and `where` use the field name. The SQL name is what the stateme
 
 ### SQL name
 
-The SQL name is the field name, unless you replace it. [Casing](/docs/schema/casing) `"snake"` and `"camel"` rewrite a name you did not set. `publishedAt` is `published_at`. `userID` is `user_id`. Casing does not rewrite a name you set.
+The SQL name is the field name, unless you replace it. [Casing](/docs/schema/names-and-casing#casing) `"snake"` and `"camel"` rewrite a name you did not set. `publishedAt` is `published_at`. `userID` is `user_id`. Casing does not rewrite a name you set.
 
 | Call | Result |
 | --- | --- |
@@ -156,3 +160,102 @@ An empty table `comment` is refused.
 <Callout type="error" title="OKM1122">
 A comment that contains a control character is refused.
 </Callout>
+
+## Casing
+
+`casing` is the SQL spelling of a name you did not set. Insert, update, and `where` still use the field name. The client name stays the name you passed to [`table()`](/docs/schema/tables).
+
+| Value | Result |
+| --- | --- |
+| omitted | The SQL name is the field name, and the table name. |
+| `"snake"` | Words are lowercased and joined with `_`. A run of two or more capitals is one word. A single capital is its own word. |
+| `"camel"` | The first word is lowercase and the others start with a capital. |
+| any other value | Refused. |
+
+### omitted
+
+Leave `casing` out and Postgres stores the name you wrote.
+
+```ts title="omitted.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  publishedAt: t.timestamptz().nullable(), // [!code focus]
+});
+
+export default schema({ tables: [notes] });
+```
+
+### snake
+
+`"snake"` rewrites a table name and a field. A run of capitals is one word only when it has two or more letters, and a single capital is its own word. `userID` is `user_id`, `getURLs` is `get_urls`, and `HTMLParser` is `html_parser`. `iOS` is `i_os`, `IPv6Address` is `i_pv6_address`, and `userId2FA` is `user_id2_fa`. A digit stays with the word before it: `address2` is `address2` and `line1Text` is `line1_text`. An underscore at either end is kept, and a letter outside ASCII passes through unchanged.
+
+[sqlName](/docs/schema/names-and-casing#sql-name) and `renamedFrom` are stored as you wrote them. Indexes, checks, and foreign keys then use that SQL name.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("publishedNotes", {
+  id: t.identity(),
+  publishedAt: t.timestamptz().nullable(), // [!code focus]
+  headline: t.text().sqlName("title"), // [!code focus]
+});
+
+export default schema({
+  tables: [notes],
+  casing: "snake", // [!code focus]
+});
+```
+
+<Callout type="info" title="Stored names">
+The table is `published_notes`. `publishedAt` is `published_at`. `headline` is `title`, because `sqlName` wins.
+</Callout>
+
+### camel
+
+`"camel"` splits a name into the same words and joins them as `camelCase`. `user_id` is `userId`, and `HTMLParser` is `htmlParser`. `iOS` is `iOs`, `IPv6Address` is `iPv6Address`, and `userId2FA` is `userId2Fa`. `publishedNotes` and `publishedAt` stay as written. Use it when the database already spells names that way.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("publishedNotes", {
+  id: t.identity(),
+  publishedAt: t.timestamptz().nullable(),
+});
+
+export default schema({
+  tables: [notes],
+  casing: "camel", // [!code focus]
+});
+```
+
+### pull
+
+`okm pull` keeps each database name as the TypeScript key. `--casing snake` or `--casing camel` is opt-in. The key is the other spelling, so `schema({ casing })` can write the database name back. `user_id` with `--casing snake` is `userId`. `userId` with `--casing camel` is `user_id`.
+
+`.sqlName()` is added when that key does not spell the database name exactly. `a_b_c` with `--casing snake` is `aBC`, and `aBC` spells `a_bc`, so the column is `aBC: t.text().sqlName("a_b_c")`. Each of those names is a line in the pull report.
+
+### What casing covers
+
+Casing spells every name you did not set: tables, columns, and the names derived from them (constraints, indexes, identity sequences, policies, and the `okm_touch` function). Views, enums, domains, functions, and triggers use the name you wrote.
+
+### Changing casing
+
+The stored name changes, so a database that already holds the old spelling gets a rename plan, not a silent rewrite. An unexplained change is OKM1530, and the message names casing as the cause. Keep the stored name with [sqlName](/docs/schema/names-and-casing#sql-name) (`.sqlName()` on a column, `sqlName` on a table), or declare the rename with `.renamedFrom()` or `renamedFrom`.
+
+### Refused
+
+<Callout type="error" title="OKM1023">
+Two fields of one table that spell the same SQL name, such as `userID` and `user_id` under `"snake"`, are refused with a message that names both. Name one with `sqlName`.
+</Callout>
+
+<Callout type="error" title="OKM1122">
+An empty name, or a name over 63 bytes after casing, is refused at `schema()`.
+</Callout>
+
+Any value other than `"snake"` or `"camel"` is OKM1060: `schema() casing <value> must be snake or camel.`
+
+| Next | You use it for |
+| --- | --- |
+| [Traits](/docs/schema/traits#on-one-table) | Columns added to one table or to every table. |

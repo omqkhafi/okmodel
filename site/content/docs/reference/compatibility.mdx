@@ -3,7 +3,7 @@ title: Compatibility
 description: Driver, error, and transaction results for postgres.js, node-postgres, Bun.sql, and PGlite.
 ---
 
-The same suite runs against postgres.js, node-postgres, Bun.sql, and PGlite. `pass` means the case ran and matched. `skip` means the adapter does not offer that behaviour. `fail` means it ran and did not match. `not-run` means the suite did not reach it. The command is [`okm driver test`](/docs/reference/cli#driver-test). The cells below are generated from `tests/driver-suite.test.ts` and `tests/error-suite.test.ts`. The floor is [Minimum Postgres](/docs/schema/min-postgres).
+The same suite runs against postgres.js, node-postgres, Bun.sql, and PGlite. `pass` means the case ran and matched. `skip` means the adapter does not offer that behaviour. `fail` means it ran and did not match. `not-run` means the suite did not reach it. The command is [`okm driver test`](/docs/reference/cli#driver-test). The cells below are generated from `tests/driver-suite.test.ts` and `tests/error-suite.test.ts`. The floor is [Minimum Postgres](/docs/schema/the-schema#minimum-postgres).
 
 Supported majors are Postgres 15, 16, 17, and 18. The floor is 15: Postgres 13 is past end of life, 14 ends in November 2026, and 15 gives us features we can use later. `connect()` refuses an older server with OKM1803. `minPostgres` is 15, 16, 17, or 18. `requires: { postgres: ">=17" }` is the same floor and is deprecated. Identity columns need Postgres 10. A bare `t.id()` stores `gen_random_uuid()`, which is built in from Postgres 13. An explicit `uuidv7()` needs Postgres 18. A pull request runs Postgres 18 when the diff touches dialects, migrate, or runtime. `bun run verify` runs the suite on this machine. A push to main, the nightly run, and a release cover each supported major. A failure on an older major in this list stays in the run.
 
@@ -58,5 +58,5 @@ The package copy is [`docs/compatibility.md`](https://github.com/omqkhafi/okmode
 | Next | You use it for |
 | --- | --- |
 | [Drivers](/docs/operate/drivers) | Pick a driver and a `prepared` mode. |
-| [Minimum Postgres](/docs/schema/min-postgres) | What PostgreSQL 15 through 18 can run. |
+| [Minimum Postgres](/docs/schema/the-schema#minimum-postgres) | What PostgreSQL 15 through 18 can run. |
 | [driver test](/docs/reference/cli#driver-test) | Run the suite that fills this table. |

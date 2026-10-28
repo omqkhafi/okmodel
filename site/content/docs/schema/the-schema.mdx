@@ -2,6 +2,8 @@
 title: "Overview"
 description: "schema() compiles the tables into one catalog. Each option is a page."
 ---
+schema() compiles the tables into one catalog. This page holds the declaration, the tables list, and the oldest PostgreSQL major the catalog allows. Each other option is linked from the declaration to the page that now holds it.
+
 <Anatomy call="schema" shape="object" exported>
   <AnatomyPart slot="tables" label="Tables" code="tables: [notes]," mark="required">
     The list, in the order you write it. A reference names a table in this list, earlier or later. [`table()`](/docs/schema/tables) only stores the columns. Names and the catalog hash are fixed here. Calling `schema()` twice on the same tables returns equal catalog bytes.
@@ -17,17 +19,201 @@ Each option is a page. Tables come first, because every other option refers to t
 
 | Order | Page | You use it for |
 | --- | --- | --- |
-| 1 | [Tables](/docs/schema/the-schema-tables) | The list `schema()` compiles. |
-| 2 | [Casing](/docs/schema/casing) | The SQL name of a camelCase field. |
-| 3 | [Codecs](/docs/schema/codecs) | The TypeScript value. The SQL type stays. |
-| 4 | [Row types](/docs/schema/row-types) | Emitted types, or types kept in the checker. |
-| 5 | [Id default](/docs/schema/id-default) | What a bare `t.id()` means. |
-| 6 | [Minimum Postgres](/docs/schema/min-postgres) | The oldest major. Omitted means 15. |
-| 7 | [Traits](/docs/schema/traits-schema) | Columns added to every table. |
-| 8 | [Tenancy](/docs/schema/tenancy-schema) | Tenant keys on every table. |
-| 9 | [Validation](/docs/schema/validation-schema) | Whether rules run. |
+| 1 | [Tables](/docs/schema/the-schema#tables) | The list `schema()` compiles. |
+| 2 | [Casing](/docs/schema/names-and-casing#casing) | The SQL name of a camelCase field. |
+| 3 | [Codecs](/docs/schema/codecs-and-row-types#codecs) | The TypeScript value. The SQL type stays. |
+| 4 | [Row types](/docs/schema/codecs-and-row-types#row-types) | Emitted types, or types kept in the checker. |
+| 5 | [Id default](/docs/schema/keys-and-identity#id-default) | What a bare `t.id()` means. |
+| 6 | [Minimum Postgres](/docs/schema/the-schema#minimum-postgres) | The oldest major. Omitted means 15. |
+| 7 | [Traits](/docs/schema/traits#on-the-schema) | Columns added to every table. |
+| 8 | [Tenancy](/docs/schema/tenancy#on-the-schema) | Tenant keys on every table. |
+| 9 | [Validation](/docs/schema/validation#on-the-schema) | Whether rules run. |
 | 10 | [Extensions](/docs/schema/extensions) | Extensions the catalog names. |
 | 11 | [Functions](/docs/schema/functions) | Routines the catalog stores. |
 | 12 | [Triggers](/docs/schema/triggers) | Triggers that call those functions. |
 | 13 | [Views](/docs/schema/views) | Views and materialized views. |
 | 14 | [Several catalogs](/docs/schema/several-catalogs) | `external()`, a snapshot, and one history per namespace. |
+
+## Tables
+
+`tables` is every [`table()`](/docs/schema/tables) this schema compiles. The client name is the name you passed to `table()`.
+
+The list order is the order of the emitted interfaces. The catalog is sorted by identity, so swapping two tables does not change the catalog hash. Calling `schema()` twice on the same tables returns equal catalog bytes.
+
+| Field | Required | Default | Role |
+| --- | --- | --- | --- |
+| `tables` | yes | — | The list. A reference names one entry, earlier or later. |
+
+### one
+
+One table is a schema. The module default-exports it. [Config](/docs/reference/config#schema) points `schema` at this file.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+export default schema({ tables: [notes] }); // [!code focus]
+```
+
+### several
+
+`.references("notes")` looks up `notes` in this list. `comments` is first here. `notes` is second. Either order resolves.
+
+```ts title="several.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const comments = table("comments", {
+  id: t.identity(),
+  noteId: t.bigint().references("notes"), // [!code focus]
+  body: t.text(),
+});
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+export default schema({ tables: [comments, notes] }); // [!code focus]
+```
+
+<Callout type="error" title="OKM1020">
+A name that is not in the list is `Table posts is not in the schema.` The message lists the accepted names.
+</Callout>
+
+<Callout type="error" title="OKM1023">
+The same name twice is `Table notes is declared more than once.` `note-items` and `note_items` both emit `NoteItems`, which is `Table note_items and note-items both emit NoteItems.` Two tables that store the same SQL name are `Table posts uses SQL name notes, which another table already uses.` A table named `capabilities` is `Table capabilities uses the client name capabilities.` That name is [`db.capabilities`](/docs/operate/drivers).
+</Callout>
+
+<Callout type="error" title="OKM1060">
+A value that is not a list is `schema() needs a tables array.`
+</Callout>
+
+<Callout type="info" title="Empty">
+An empty list is a schema with no tables.
+</Callout>
+
+## Minimum Postgres
+
+`minPostgres` is a major. [Connect](/docs/operate/connect) checks the server against it. Omitted means 15, the oldest major okmodel runs. A feature below its major is refused when `schema()` runs. A bare `t.id()` stores `gen_random_uuid()` and does not need 18.
+
+<Callout type="info" title="Not the catalog">
+This field is not part of the catalog hash. Changing the floor does not change it.
+</Callout>
+
+### omitted
+
+Omitted names 15. A bare `t.id()` stores `gen_random_uuid()`.
+
+Connect accepts PostgreSQL 15 and newer. `okm migrate apply` still looks for an explicit `default uuidv7()` before the first statement. A server below 18 that has no `uuidv7()` function is refused, and nothing is changed. A server that already defines `uuidv7()` is accepted. A migration with no such expression does not ask the server.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.id(),
+  title: t.text(),
+});
+
+export default schema({
+  tables: [notes],
+});
+```
+
+<Callout type="error" title="OKM1803">
+A server below 15, when no floor is named, is `The server is PostgreSQL 14. This schema needs PostgreSQL 15 or higher (minPostgres: 15).`
+</Callout>
+
+<Callout type="error" title="OKM1812">
+A server below 18 with no `uuidv7()` function is `Column notes.id has a uuidv7() default (migration 0001_init, step 1), and the server is PostgreSQL 17. uuidv7() needs PostgreSQL 18 or higher. minPostgres: 18. Nothing was changed.` The message names the column, the migration, the step, and the server. The step counts from 1, the same number apply prints in `failed at step N`.
+</Callout>
+
+### floor
+
+`minPostgres: 18` asks for 18 or newer. A server below that major is refused. The majors are 15, 16, 17, and 18.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.id(),
+  title: t.text(),
+});
+
+export default schema({
+  tables: [notes],
+  minPostgres: 18, // [!code focus]
+});
+```
+
+### features
+
+Each row is a feature that refuses a lower floor. The number is the major that feature needs.
+
+| Feature | Needs |
+| --- | --- |
+| `uuidv7()` database default | Needs PostgreSQL 18 or higher. |
+
+#### below 18
+
+`minPostgres` of 15, 16, or 17 refuses a column whose default is `uuidv7()` when `schema()` runs. A bare `t.id()` is `gen_random_uuid()` and is accepted. `"uuidv4"` stores the same function. A client generator is the other way through. Both are on [id default](/docs/schema/keys-and-identity#id-default). An omitted floor does not refuse an explicit `uuidv7()` here. Apply checks the server.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.id({ default: "uuidv4" }), // [!code focus]
+  title: t.text(),
+});
+
+export default schema({
+  tables: [notes],
+});
+```
+
+<Callout type="error" title="OKM1812">
+`uuidv7() needs PostgreSQL 18 or higher. minPostgres: 18.`
+</Callout>
+
+<Callout type="error" title="OKM1802">
+A server below the floor is `The server is PostgreSQL 16. This schema needs PostgreSQL 17 or higher (minPostgres: 17).`
+</Callout>
+
+### together
+
+A schema written for 17. Both bare `t.id()` columns already store `gen_random_uuid()`. This example sets that same function on the schema. A large write-heavy table can set `uuidv7` instead, and that choice needs Postgres 18 and `minPostgres: 18`.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.id(),
+  title: t.text(),
+});
+
+const sessions = table("sessions", {
+  id: t.id(),
+  name: t.text(),
+});
+
+export default schema({
+  tables: [notes, sessions],
+  minPostgres: 17, // [!code focus]
+  defaults: { id: "uuidv4" },
+});
+```
+
+### string
+
+`requires: { postgres: ">=17" }` is the same floor as `minPostgres: 17`. The string form is deprecated. Passing both is an error that names both keys. `">= 17"`, `"17"`, `">=17.2"`, and a major outside 15 through 18 are errors. The error names `minPostgres` and those majors.
+
+<Callout type="warning" title="OKM1060">
+A major outside the list is `minPostgres: 15-18.` Passing both keys is `minPostgres or requires.postgres, not both.`
+</Callout>
+
+| Next | You use it for |
+| --- | --- |
+| [Keys](/docs/schema/keys-and-identity#keys) | The primary key, the id default, and a generator. |

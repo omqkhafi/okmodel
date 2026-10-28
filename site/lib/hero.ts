@@ -105,7 +105,7 @@ export const HERO_SCENARIOS: ReadonlyArray<HeroMigrateSpec> = [
     label: "Add a unique key",
     name: "unique_name",
     note: "the unique index is built concurrently, then attached to the table",
-    href: "/docs/schema/keys-and-identity",
+    href: "/docs/schema/keys-and-identity#keys",
     edits: [{ find: "  name: t.text(),", replace: "  name: t.text().unique()," }],
   },
   {
@@ -141,7 +141,7 @@ export const HERO_SCENARIOS: ReadonlyArray<HeroMigrateSpec> = [
     label: "Rename a column",
     name: "rename_title",
     note: "renamedFrom makes it a rename, not a drop and add, and the linter flags it for readers of the old name",
-    href: "/docs/schema/names-and-casing",
+    href: "/docs/schema/names-and-casing#names",
     edits: [
       {
         find: "title: t.text().nullable()",
@@ -194,7 +194,7 @@ export const HERO_SCENARIOS: ReadonlyArray<HeroMigrateSpec> = [
     label: "Timestamps",
     name: "add_timestamps",
     note: "one trait adds createdAt and updatedAt, with defaults, and the row type gains both",
-    href: "/docs/schema/traits-schema",
+    href: "/docs/schema/traits#on-the-schema",
     edits: [
       {
         find: 'import { schema, table, t } from "okmodel/pg";',
@@ -213,7 +213,7 @@ export const HERO_SCENARIOS: ReadonlyArray<HeroMigrateSpec> = [
     label: "Soft delete",
     name: "archivable_notes",
     note: "archivable adds the columns and the partial index, and every read then skips archived rows",
-    href: "/docs/schema/traits",
+    href: "/docs/schema/traits#on-one-table",
     edits: [
       {
         find: 'import { schema, table, t } from "okmodel/pg";',
@@ -273,7 +273,7 @@ export default schema({ tables: [authors, notes], views: [titled] });`,
     label: "Tenant column",
     name: "tenant_notes",
     note: "a tenant table gets its key in the primary key, and every statement the client writes carries it",
-    href: "/docs/schema/tenancy-schema",
+    href: "/docs/schema/tenancy#on-the-schema",
     base: HERO_EMPTY_SCHEMA,
     edits: [
       {
@@ -299,7 +299,7 @@ export default schema({
     label: "Row-level security",
     name: "tenant_rls",
     note: "the database enables and forces row-level security, so it refuses a statement that forgets the tenant",
-    href: "/docs/schema/tenancy-schema",
+    href: "/docs/schema/tenancy#on-the-schema",
     base: HERO_EMPTY_SCHEMA,
     edits: [
       {

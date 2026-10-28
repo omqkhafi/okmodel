@@ -9,7 +9,7 @@ An [index](/docs/schema/indexes) does not reject a row. A check does. A [picklis
 `checks` is an object. Each key is a name you choose. Each value receives column handles and returns `sql` text. `schema()` stores that text. This is not a query builder. A return that is not `sql` text is OKM1060: `Check notes.title_present must return sql text.`
 
 <Callout type="info" title="SQL name">
-`sql` inserts a handle as the SQL name `schema()` stores, unquoted. A [casing](/docs/schema/casing) of `"snake"` has already been applied. A string is inserted as you wrote it. A number or a boolean is inserted as text.
+`sql` inserts a handle as the SQL name `schema()` stores, unquoted. A [casing](/docs/schema/names-and-casing#casing) of `"snake"` has already been applied. A string is inserted as you wrote it. A number or a boolean is inserted as text.
 </Callout>
 
 ### Name

@@ -141,4 +141,4 @@ A declaration with a name that has no dot is `Setting userId name needs a dot, l
 
 It does not authenticate. Your application decides the value. A role that can run SQL can run `set_config('app.user_id', ..., true)` itself, so the setting is not a credential and the role's privileges are still what protects the data.
 
-It is Postgres only. The MySQL family has only connection-level variables, which a pooled connection hands to the next client, and SQLite has none. Both refuse with OKM1860 and point at [column, composite, or path tenancy](/docs/schema/tenancy-schema).
+It is Postgres only. The MySQL family has only connection-level variables, which a pooled connection hands to the next client, and SQLite has none. Both refuse with OKM1860 and point at [column, composite, or path tenancy](/docs/schema/tenancy#on-the-schema).

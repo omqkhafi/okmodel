@@ -176,7 +176,7 @@ await db.pages.insert({ title: "Deploy guide", body: "'deploy':1 'guide':2 'roll
     group: "query",
     label: "Scoped to a tenant",
     note: "for() adds the tenant to the statement, so the other tenant's rows cannot come back",
-    href: "/docs/schema/tenancy",
+    href: "/docs/schema/tenancy#on-a-table",
     schema: TENANT_NOTES,
     model: `const app = schema({
   tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
@@ -196,7 +196,7 @@ await db.for({ tenantId: globex }).notes.insert({ title: "globex plan" });
     group: "query",
     label: "Archived rows",
     note: "an archived row is kept and skipped: every read carries the predicate, with no where from you",
-    href: "/docs/schema/traits",
+    href: "/docs/schema/traits#on-one-table",
     schema: ARCHIVE_NOTES,
     model: `const notes = table("notes", { id: t.identity(), title: t.text() }, { traits: [archivable()] });`,
     seed: `await db.notes.insert({ title: "keep" });

@@ -3,7 +3,7 @@ title: "Columns"
 description: "Each field is a data type. The builder name is that type."
 ---
 <Callout type="info" title="Where this fits">
-The [key](/docs/schema/keys-and-identity) is one column. Each other field is a builder on this page. Use the table first, then the section for that storage. [Defaults](/docs/schema/defaults) come after the type.
+The [key](/docs/schema/keys-and-identity#keys) is one column. Each other field is a builder on this page. Use the table first, then the section for that storage. [Defaults](/docs/schema/defaults) come after the type.
 </Callout>
 
 Each field is a data type. The builder name is that type. Postgres is the only database today. A cell is `yes` when that database has the type built in, and `extension` when the schema must list that extension. Another database is another column on the same row. A missing extension declaration is OKM1020. See [extensions](/docs/schema/extensions).
@@ -158,7 +158,7 @@ A value that is not an integer in that range is refused when it is encoded.
 
 #### Bigint
 
-`t.bigint()` is `bigint`. The range is -9223372036854775808 to 9223372036854775807. The TypeScript value is a decimal string, so a value past a safe integer stays exact. Storage is 8 bytes. A bare call stays a string. A schema [bigint codec](/docs/schema/codecs) other than `"string"` needs the same `as` on this column. A [safe integer](#safe-integer) or a [JavaScript bigint](#javascript-bigint) selects the other modes.
+`t.bigint()` is `bigint`. The range is -9223372036854775808 to 9223372036854775807. The TypeScript value is a decimal string, so a value past a safe integer stays exact. Storage is 8 bytes. A bare call stays a string. A schema [bigint codec](/docs/schema/codecs-and-row-types#codecs) other than `"string"` needs the same `as` on this column. A [safe integer](#safe-integer) or a [JavaScript bigint](#javascript-bigint) selects the other modes.
 
 ```ts title="bigint.ts"
 import { table, t } from "okmodel/pg";
@@ -221,7 +221,7 @@ export const counts = table("counts", {
 
 ### Numbers
 
-`t.numeric()` is exact. Money, rates, and quantities use it. Postgres `decimal` is this same type. The size is two bytes for each group of four decimal digits, plus 3 to 8 bytes. Leading and trailing zeros are not stored. A bare call stays a string. A schema [numeric codec](/docs/schema/codecs) of `"number"` needs `{ as: "number" }` on this column.
+`t.numeric()` is exact. Money, rates, and quantities use it. Postgres `decimal` is this same type. The size is two bytes for each group of four decimal digits, plus 3 to 8 bytes. Leading and trailing zeros are not stored. A bare call stays a string. A schema [numeric codec](/docs/schema/codecs-and-row-types#codecs) of `"number"` needs `{ as: "number" }` on this column.
 
 #### Unconstrained
 
@@ -327,7 +327,7 @@ Infinity and NaN are refused when the value is encoded.
 
 ### Time
 
-The value is a `Temporal` object. The schema [timestamps codec](/docs/schema/codecs) is `"temporal"`. [Fractional seconds](#fractional-seconds) apply to `timestamptz`, `timestamp`, `time`, and `timetz`.
+The value is a `Temporal` object. The schema [timestamps codec](/docs/schema/codecs-and-row-types#codecs) is `"temporal"`. [Fractional seconds](#fractional-seconds) apply to `timestamptz`, `timestamp`, `time`, and `timetz`.
 
 Bun and Node 26 provide a `Temporal` global. Node 22 and 24 need a polyfill assigned to `globalThis.Temporal` before these columns run. okmodel does not ship one. A missing global is OKM1210.
 
@@ -485,7 +485,7 @@ export const notes = table("notes", {
 | `t.uuid()` | `uuid` | `string` | 16 | yes |
 | `t.id()` | `uuid` | `string` | 16 | yes |
 
-`t.uuid()` has no default. The text is 8-4-4-4-12 hexadecimal digits, 128 bits. `t.id()` is a primary key. A bare `t.id()` is `uuid`, 16 bytes. The default is covered in [keys](/docs/schema/keys-and-identity). An [OKID](#okid) default is `text`, not this row.
+`t.uuid()` has no default. The text is 8-4-4-4-12 hexadecimal digits, 128 bits. `t.id()` is a primary key. A bare `t.id()` is `uuid`, 16 bytes. The default is covered in [keys](/docs/schema/keys-and-identity#keys). An [OKID](#okid) default is `text`, not this row.
 
 ```ts title="notes.ts"
 import { table, t } from "okmodel/pg";
@@ -511,7 +511,7 @@ A default body is 21 characters on a URL-safe alphabet, so the stored value is 2
 
 `length` is the body. The prefix is extra. `sortable` keeps time order under collation `C`. `lowercase`, `uppercase`, `numbers`, and `symbols` default to included. `lookAlikes: false` drops characters that are easy to confuse.
 
-`schema({ defaults: { id: okid() } })` applies to every bare `t.id()`. A column option wins. See [id default](/docs/schema/id-default).
+`schema({ defaults: { id: okid() } })` applies to every bare `t.id()`. A column option wins. See [id default](/docs/schema/keys-and-identity#id-default).
 
 ```ts title="users.ts"
 import { okid } from "okmodel/ids";

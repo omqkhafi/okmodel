@@ -72,7 +72,7 @@ A generator is `uuidv4`, `uuidv7`, or [OKID](/docs/schema/columns#okid) (`okid(.
 
 ### Already filled
 
-`t.id()` and `t.identity()` already carry a default. Both are omitted from insert and update, so input cannot set them. The schema [id default](/docs/schema/id-default) changes what a bare `t.id()` means. A column option wins.
+`t.id()` and `t.identity()` already carry a default. Both are omitted from insert and update, so input cannot set them. The schema [id default](/docs/schema/keys-and-identity#id-default) changes what a bare `t.id()` means. A column option wins.
 
 | Call | What fills it | Insert |
 | --- | --- | --- |

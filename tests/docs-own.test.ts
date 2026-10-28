@@ -25,7 +25,7 @@ import { run } from "../src/tooling/migrate/commands.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
 
 const root = join(import.meta.dir, "..");
-const pages = ["extensions", "functions", "triggers", "traits-schema"] as const;
+const pages = ["extensions", "functions", "triggers", "traits"] as const;
 
 const imports: readonly (readonly [string, string])[] = [
   ["okmodel/pg/postgresjs", join(root, "src/runtime/pg/postgresjs.ts")],

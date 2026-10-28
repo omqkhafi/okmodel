@@ -14,7 +14,7 @@ Import `connect` from the driver you installed. The calls on the client do not c
 
 A string or a pool returns the client for postgres.js, node-postgres, and Bun.sql. `{ primary, replicas }` returns a promise. That object is [Topology](/docs/operate/replicas-and-topology). PGlite returns a promise for a string, a pool, omitted memory, and a topology. Neon returns a promise for a string, a pool, and a topology.
 
-When the schema names no floor, a server below 15 is OKM1803. [minPostgres](/docs/schema/min-postgres) is that floor. The test suite runs on 15, 16, 17, and 18.
+When the schema names no floor, a server below 15 is OKM1803. [minPostgres](/docs/schema/the-schema#minimum-postgres) is that floor. The test suite runs on 15, 16, 17, and 18.
 
 `db.capabilities` is that adapter's frozen flags: `transactions`, `stream`, `listen`, and `cancel`. A table named `capabilities` is OKM1023, because the client writes this key after the tables on the root, on a scoped client, and inside `tx()`. `prepared` and `describe` were removed from `DriverCapabilities`. That removal is breaking. Prepared-statement mode stays a connect option (`prepared: "named" | "unnamed" | "none"`). A driver that can describe a statement still exposes `pool.describe`.
 

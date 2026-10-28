@@ -52,7 +52,7 @@ The same name on the same table is `Duplicate identity for trigger notes_touch.`
 
 ### update of
 
-`updateOf` is SQL column names for `UPDATE OF`. Each one is a column dependency. The trigger needs an `update` event and `level: "row"`. With [casing](/docs/schema/casing) `"snake"`, `updatedAt` is `updated_at`.
+`updateOf` is SQL column names for `UPDATE OF`. Each one is a column dependency. The trigger needs an `update` event and `level: "row"`. With [casing](/docs/schema/names-and-casing#casing) `"snake"`, `updatedAt` is `updated_at`.
 
 ```ts title="update-of.ts"
 import { fn, trigger } from "okmodel/fn";
@@ -169,7 +169,7 @@ export default schema({
 
 ### Create your own
 
-There is no built-in trigger on this list. `trigger()` from `okmodel/fn` is the declaration. The function it calls has to be in [functions](/docs/schema/functions). `timestamps({ enforce: "trigger" })` adds its own function and trigger; that option is on [traits](/docs/schema/traits-schema).
+There is no built-in trigger on this list. `trigger()` from `okmodel/fn` is the declaration. The function it calls has to be in [functions](/docs/schema/functions). `timestamps({ enforce: "trigger" })` adds its own function and trigger; that option is on [traits](/docs/schema/traits#on-the-schema).
 
 #### Simple
 
