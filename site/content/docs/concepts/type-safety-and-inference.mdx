@@ -1,0 +1,43 @@
+---
+title: "Type safety and inference"
+description: "The client is typed by the schema passed to connect. Row, Insert, and Update read Register when no schema is passed."
+---
+
+The client is typed by the schema you pass to `connect`. `Row`, `Insert`, and `Update` use that schema when you pass it, and they read `Register` when you do not.
+
+## The problem
+
+A client typed by a global, and a helper typed by a different global, drift as soon as a project has two schemas. A query result typed by reading the SQL text drifts when the SQL is a string the checker cannot see.
+
+## How OKModel handles it
+
+`connect` requires `schema`. The client type is that value: one property per table, from `~byName`. `Register` does not replace it. postgres.js, node-postgres, Bun.sql, Neon, and PGlite all require that option.
+
+`table()` stores `~row`, `~insert`, and `~update`. Those are the shapes the calls use. `Row`, `Insert`, and `Update` take an optional schema type. An explicit schema wins. With the argument omitted, the lookup is `Register["schema"]`. An empty `Register` makes that lookup `never`, and an error's column names stay `string` until an augmentation names the table.
+
+`okm init` writes one `declare module "okmodel"` that sets `Register["schema"]` to the schema that file exports. A lookup for a different schema passes that schema type.
+
+`types` is `"emitted"` when you omit it, and `"inferred"` when you set that. Both leave the row shapes on the schema value you pass to `connect`. `okm build` and `okm generate` write `.okm/types.d.ts` from those shapes. The header line is the mode. The flag is not a second set of query types.
+
+## What is not inferred
+
+`raw(db, sql, params)` does not infer the row from the SQL text. The row and the parameters come from `.okm/raw.lock.json`. A statement that is not in the lock is OKM1601. The other `raw` call uses the class you pass: each initializer is a result column.
+
+A `json` or `jsonb` type argument is erased at runtime. The written interfaces keep it by reading the schema source. That rule is [Row types](/docs/schema/codecs-and-row-types#row-types).
+
+## Limits and trade-offs
+
+`"inferred"` is the other stored mode. The written interfaces come from the same shapes either way. What the flag is for, and the file layout, are [Row types](/docs/schema/codecs-and-row-types#row-types).
+
+`Register` holds one schema. A second schema is an explicit type argument on `Row`, `Insert`, and `Update`.
+
+Typed raw SQL is as precise as the lock or the class. It is not a substitute for the table calls. The call is [Typed raw SQL](/docs/queries/typed-raw-sql).
+
+## Where to read the detail
+
+| Page | You use it for |
+| --- | --- |
+| [Row types](/docs/schema/codecs-and-row-types#row-types) | `"emitted"`, `"inferred"`, and `.okm/types.d.ts`. |
+| [Codecs](/docs/schema/codecs-and-row-types#codecs) | The TypeScript value of `bigint`, `numeric`, and timestamps. |
+| [Connect](/docs/operate/connect) | The `schema` option. |
+| [Queries](/docs/queries) | The calls those types describe. |

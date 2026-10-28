@@ -3,6 +3,7 @@
   "pages": [
     "index",
     "start",
+    "concepts",
     "schema",
     "queries",
     "migrations",
