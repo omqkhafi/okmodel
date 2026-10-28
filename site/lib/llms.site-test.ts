@@ -45,6 +45,14 @@ test("sitemap and robots advertise the handbook", () => {
   expect(urls).toContain(`${SITE_ORIGIN}/llms.txt`);
   expect(urls).toContain(`${SITE_ORIGIN}/llms-full.txt`);
   expect(urls).toContain(`${SITE_ORIGIN}/docs/reference/cli`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/reference/compatibility`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/operate/production-checklist`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/operate/testing`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/operate/protected-targets-and-roles`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/migrations/checks-and-lint`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/migrations/backfill`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/migrations/failures`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/migrations/environments`);
   expect(urls).toContain(`${SITE_ORIGIN}/docs/ai/skills`);
 
   expect(urls).toContain(`${SITE_ORIGIN}/.well-known/agent-skills/index.json`);

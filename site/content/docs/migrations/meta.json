@@ -1,4 +1,12 @@
 {
   "title": "Migrations",
-  "pages": ["from-drizzle", "adopt-existing-database", "type-change"]
+  "pages": [
+    "adopt-existing-database",
+    "from-drizzle",
+    "checks-and-lint",
+    "backfill",
+    "type-change",
+    "failures",
+    "environments"
+  ]
 }

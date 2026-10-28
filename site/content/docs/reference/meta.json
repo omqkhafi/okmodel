@@ -2,6 +2,7 @@
   "title": "Reference",
   "pages": [
     "cli",
+    "compatibility",
     "schema-api",
     "github-action",
     "errors",

@@ -36,7 +36,7 @@ description: "database is one target named default. targets replaces it."
 
 `okm migrate apply`, `okm push` when it connects, `provision()`, `okm seed`, `okm migrate check`, and `okm check` when it compares a database run the host check. `okm migrate plan` and `okm migrate status` do not. Naming the URL does not refuse it.
 
-`okm migrate apply`, `okm push` when it connects, `provision()`, and that same `okm check` comparison also read `pg_backend_pid()` twice. A change is OKM1854. The same opt-in skips the probe.
+`okm migrate apply`, `okm push` when it connects, `provision()`, and that same `okm check` comparison also read `pg_backend_pid()` eight times (`assertStableBackend`). A change is OKM1854. The same opt-in skips the probe.
 
 | Case | Result |
 | --- | --- |

@@ -2,6 +2,9 @@
   "title": "Operate",
   "pages": [
     "using-okmodel-safely",
+    "production-checklist",
+    "testing",
+    "protected-targets-and-roles",
     "connect",
     "target",
     "drivers",

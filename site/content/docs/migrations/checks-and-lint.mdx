@@ -1,0 +1,79 @@
+---
+title: Checks and lint
+description: Replay a migration history on a throwaway database before it runs on a real one.
+---
+
+`okm migrate check` proves a migration history is sound. It is a CI command. It takes no prompt, and the result does not depend on colour. Exit zero prints `ok N migrations`, then one line that this command replays empty tables and does not catch a step that fails only on real data. A reprinted domain check or `LANGUAGE sql` body adds warning [OKM1552](/docs/reference/errors#okm1552) on the following lines. The warning does not fail the command. Any failure exits non-zero. One failure prints its code, the message, and the fix. Several failures print one greppable line per failure.
+
+Point it at a throwaway Postgres. A protected target is [OKM1850](/docs/reference/errors#okm1850), and `--allow-protected` does not lift that refusal. The message and the JSON fields are on [migrate check](/docs/reference/cli#migrate-check). The composite action is [GitHub Action](/docs/reference/github-action).
+
+Run the check as a non-superuser. A superuser replay executes each step as written, and a step can reach `COPY ... PROGRAM` and `lo_import`. A `NOSUPERUSER` owner of the database cannot. `CREATEROLE` is not required.
+
+## The four checks
+
+1. **History.** Every migration is replayed, in order, into a scratch schema created inside one transaction. The schema name starts with `okm_check_`. The transaction always ends with `ROLLBACK`, and the schema is dropped at the end, including after a failure. The replay does not edit a system catalog or a real ACL. After each migration the scratch schema is introspected and planned back to that file's catalog. A remaining step is [OKM1547](/docs/reference/errors#okm1547) and names the migration and the steps. On PostgreSQL 18 a `NOT NULL … NOT VALID` constraint that the file never validates is such a step: `VALIDATE CONSTRAINT`. Before that plan, a domain check or a `LANGUAGE sql` function body that reprints differently is warning OKM1552. `-- okm-allow OKM1552: reason` silences it. An empty reason, or an allow when the stored text matches, is [OKM1510](/docs/reference/errors#okm1510). A reprinted domain check, table check (including a picklist), or btree index expression is sealed before that plan, so it is not OKM1547. A `using` index tail is not that seal. Two migrations generated from the same parent fail here. `COMMIT`, `END`, `ABORT`, `ROLLBACK`, `BEGIN`, `START TRANSACTION`, `PREPARE TRANSACTION`, and `COMMIT PREPARED` in a step are [OKM1551](/docs/reference/errors#okm1551) before any replay, even when `-- okm-allow OKM1551` silenced the lint. A `BEGIN ATOMIC` body of `CREATE FUNCTION` or `CREATE PROCEDURE` is one statement and is supported. Its closing `END` is not OKM1551. `BEGIN ATOMIC` outside those statements is still refused. Apply honors that allow. The check still throws OKM1551. A passing run also lists every `-- okm-allow` line in the directory. A weak reason is warning [OKM2300](/docs/reference/errors#okm2300). The lint codes are the [Errors](/docs/reference/errors) index. `VACUUM`, `CREATE DATABASE`, `DROP DATABASE`, and `ALTER SYSTEM` are not executed. The success line names them. A concurrent index, reindex, or refresh runs without `CONCURRENTLY`. `ALTER TYPE … ADD VALUE` runs inside the transaction and rolls back with it. Extension replay and a `uuidv7()` default are on [migrate check](/docs/reference/cli#migrate-check).
+2. **Previous catalog.** For migration N, catalog N−1 is the previous release. Every table, column, constraint, and type in N−1 must still exist in N with the same type, and nullability must not be tightened without a default. A gap is allowed only when the recomputed class is `contract`. The class comes from the SQL steps' kinds, or from planning N−1 to N again when a step has no kind. A hand-edited `-- class:` line is not trusted. A gap in an expand migration is [OKM1548](/docs/reference/errors#okm1548). This is schema-level. It does not prove application behaviour.
+3. **Head.** The last migration's catalog must equal the current schema. Otherwise the command fails with [OKM1549](/docs/reference/errors#okm1549) and the fix is to run `okm generate`.
+4. **Lint.** The whole history is linted. An error fails. An override with a reason is respected. Apply is unchanged: it still lints only migrations that are pending on the target. [`lintFrom`](/docs/reference/config#lint-from) is the first migration id `okm migrate check` lints. Files before that id are not linted. The id itself is linted. Apply does not read `lintFrom`.
+
+## What the empty replay does not prove
+
+The scratch schema starts empty. The replay runs the migration files, not a copy of the selected database's rows. A step that fails only when rows are already stored is not caught: `NOT NULL` on a populated column, including `SET NOT NULL` and a not-null check, a unique index over duplicate values, a check constraint over existing rows that violate it, a foreign key validation over rows that do not match, or a cast of values already stored.
+
+A lock timeout while a step waits is not a bad migration. The fix says to run `okm migrate check` again when that lock is free, and that the step does not need a change.
+
+A passing run prints that limit on the line after `ok N migrations`:
+
+```text
+This check replays empty tables. A step that only fails on real data is not caught: NOT NULL on a populated column, a unique index over duplicates, a check over existing rows, a foreign key validation, or a cast.
+```
+
+The first line stays `ok N migrations`. Skipped statements and OKM1552 warnings follow the limit. A data-aware `--with-data` mode is not this command.
+
+## Provision
+
+`okm migrate check --provision` installs the head snapshot into one scratch schema and replays the history into another. Each side is its own transaction and ends with `ROLLBACK`. Both schemas start with `okm_check_` and are dropped at the end, including after a failure. Type names are normalised before the comparison. A difference is [OKM1521](/docs/reference/errors#okm1521) and names the object. The default command does not do this. A protected target is still refused, and `--allow-protected` does not apply.
+
+Tenant targets and schema-per-tenant checking are not in this version.
+
+## In a workflow
+
+The job starts Postgres, then runs the check. The URL belongs to that service. Do not point this command at a protected database. The checkout and the Bun setup are pinned to the commits this repository's workflows use.
+
+```yaml title="migrate-check.yml"
+name: migrate
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - run: bun install --frozen-lockfile
+      - run: bunx okm migrate check
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+```
+
+`okmodel.config.ts` reads `DATABASE_URL` for that target, and the target is not `protected`.
+
+The package copy is [`docs/migrate-check.md`](https://github.com/omqkhafi/okmodel/blob/main/docs/migrate-check.md) on main.
+
+| Next | You use it for |
+| --- | --- |
+| [Backfill](/docs/migrations/backfill) | A data step that runs outside the check transaction. |
+| [Failures](/docs/migrations/failures) | What a failed step leaves behind. |
+| [migrate check](/docs/reference/cli#migrate-check) | Extensions, `uuidv7()`, and the JSON fields. |
+| [GitHub Action](/docs/reference/github-action) | The composite action this repository publishes. |

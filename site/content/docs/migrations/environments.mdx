@@ -1,0 +1,66 @@
+---
+title: Environments
+description: Name every database. A pipeline passes --target. OKModel does not drop a preview.
+---
+
+An environment is a named target. Nothing about it is inferred from `NODE_ENV` or from the name. Protection is `protected: true` on that entry. A pipeline always passes `--target`. With more than one target, the commands that must pick one database are [OKM1853](/docs/reference/errors#okm1853) when it is omitted. Those commands are on [Database](/docs/reference/config-database). The checklist is [Production checklist](/docs/operate/production-checklist).
+
+An empty target installs the head snapshot and `reference` rows. The snapshot rules are [Required rows](/docs/schema/required-rows). A target that already has history replays pending files. The command is [migrate apply](/docs/reference/cli#migrate-apply).
+
+## Preview
+
+One ephemeral database per pull request. Infrastructure creates it: a branch, `CREATE DATABASE`, or a container. OKModel does not drop it.
+
+1. Create the empty database.
+2. Register it as a target, for example `preview`.
+3. `okm migrate apply --target preview`. An empty database installs the head snapshot and `reference` rows.
+4. Optionally seed, then deploy the application with the preview URL. [`okm seed`](/docs/reference/cli#seed) loads the file.
+5. Deleting the database when the pull request closes is the infrastructure's job.
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+const url = process.env.PREVIEW_DATABASE_URL;
+if (url === undefined || url.length === 0) {
+  throw new Error("PREVIEW_DATABASE_URL is not set");
+}
+
+export default defineConfig({
+  schema: "./schema.ts",
+  targets: {
+    preview: url,
+  },
+});
+```
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", { id: t.identity(), title: t.text() });
+
+export default schema({ tables: [notes] });
+```
+
+```sh title="preview.sh"
+okm migrate apply --target preview
+```
+
+## Rehearsal
+
+To try pending migrations against realistic data, clone or branch the production database, register the clone as a target, and run:
+
+```sh title="rehearsal.sh"
+okm migrate apply --target rehearsal
+```
+
+A clone already has history, so this replays the pending migration files. The report is the command's stdout: which migrations ran, and the error if a step stops. Per-step duration, locks, and retries as a separate rehearsal command are not in this version. The recipe is still `apply` on a clone, not a new command.
+
+A preview built from the head snapshot and a rehearsal built by replaying history are required to match. [`okm migrate check --provision`](/docs/reference/cli#migrate-check) is that comparison. A difference is [OKM1521](/docs/reference/errors#okm1521). How the two scratch schemas are compared is [Checks and lint](/docs/migrations/checks-and-lint).
+
+The package copy is [`docs/environments.md`](https://github.com/omqkhafi/okmodel/blob/main/docs/environments.md) on main.
+
+| Next | You use it for |
+| --- | --- |
+| [Checks and lint](/docs/migrations/checks-and-lint) | Replay the files, then compare the snapshot with `--provision`. |
+| [Existing database](/docs/migrations/adopt-existing-database) | A database that already has tables. |
+| [Production checklist](/docs/operate/production-checklist) | `protected: true` and a direct connection. |
