@@ -391,16 +391,14 @@ async function indexBuildInProgress(
 /**
  * Advice when another session is still building the index.
  *
+ * One sentence, used once. It does not name `DROP INDEX`.
+ *
  * @param quoted - Quoted index name
  * @returns A cleanup error that does not name DROP INDEX
  */
 function waitForIndex(quoted: string): PartialCleanupError {
-  return new PartialCleanupError(
-    ` Index ${quoted} is being built by another session.`,
-    "Wait and apply again.",
-    undefined,
-    "wait and apply again",
-  );
+  const message = `Index ${quoted} is being built by another session. Wait for it to finish, then apply again.`;
+  return new PartialCleanupError(` ${message}`, message, undefined, message);
 }
 
 type IndexShape = {
