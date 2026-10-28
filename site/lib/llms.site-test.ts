@@ -46,7 +46,7 @@ test("sitemap and robots advertise the handbook", () => {
   expect(urls).toContain(`${SITE_ORIGIN}/docs/concepts/type-safety-and-inference`);
   expect(urls).toContain(`${SITE_ORIGIN}/docs/concepts/migrations-and-drift`);
   expect(urls).toContain(`${SITE_ORIGIN}/docs/concepts/the-safety-model`);
-  expect(urls).toContain(`${SITE_ORIGIN}/docs/concepts/tenancy`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/concepts/tenant-isolation`);
   expect(urls).toContain(`${SITE_ORIGIN}/changelog`);
   expect(urls).toContain(`${SITE_ORIGIN}/llms.txt`);
   expect(urls).toContain(`${SITE_ORIGIN}/llms-full.txt`);

@@ -1,9 +1,9 @@
 ---
 title: "How OKModel works"
-description: "One schema produces the types, the queries, the migrations, and the checks."
+description: "One schema produces the types, the queries, the migrations, the drift check, and the check constraints."
 ---
 
-One `schema()` call is the source. The types, the queries, the migrations, and the checks are read from that object.
+One `schema()` call is the source. The types, the queries, the migrations, the drift check, and the check constraints are read from that object.
 
 ## The problem
 
@@ -22,13 +22,14 @@ A table that lives in three places drifts. The type names one column, a query se
 | Types for the client, and for `Row`, `Insert`, and `Update` | [Type safety and inference](/docs/concepts/type-safety-and-inference) |
 | Queries on each table | [Queries](/docs/queries) |
 | Migration SQL from one catalog to the next | [Migrations and drift](/docs/concepts/migrations-and-drift) |
-| Check constraints in the catalog | [Checks](/docs/schema/checks) |
+| The `okm check` comparison | [Migrations and drift](/docs/concepts/migrations-and-drift) |
+| Check constraints | [Checks](/docs/schema/checks) |
 
-The two commands that read the catalog are [check](/docs/reference/cli#check) and [Checks and lint](/docs/migrations/checks-and-lint).
+`okm check` reads the same catalog ([check](/docs/reference/cli#check)); the scratch replay is [Checks and lint](/docs/migrations/checks-and-lint), a page, not a command.
 
 ## Limits and trade-offs
 
-The catalog document and the TypeScript shapes are two fields of one object. They are not the same bytes. Swapping two tables does not change the catalog hash, and it does change the order of the emitted interfaces. That split is [The schema](/docs/schema/the-schema).
+The catalog hash does not depend on table order. The emitted interfaces do. Swapping two tables leaves the hash the same and changes the order of those interfaces. That split is [The schema](/docs/schema/the-schema).
 
 Roles and grants are not fields of `schema()`. When the config names `roles`, the tooling attaches them before a plan or a check. `connect` hashes the schema catalog without those privileges.
 

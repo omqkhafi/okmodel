@@ -52,7 +52,7 @@ test("pages sit flat under the capability groups", () => {
     "/docs/concepts/type-safety-and-inference",
     "/docs/concepts/migrations-and-drift",
     "/docs/concepts/the-safety-model",
-    "/docs/concepts/tenancy",
+    "/docs/concepts/tenant-isolation",
   ]);
   expect(childUrls(operate)).toEqual([
     "/docs/operate/using-okmodel-safely",

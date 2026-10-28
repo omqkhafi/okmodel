@@ -25,11 +25,9 @@ A client typed by a global, and a helper typed by a different global, drift as s
 
 A `json` or `jsonb` type argument is erased at runtime. The written interfaces keep it by reading the schema source. That rule is [Row types](/docs/schema/codecs-and-row-types#row-types).
 
-A where value may be the column's own value. An object column takes `eq`, not a bare object. The operand type is the where type the client and presets share.
-
 ## Limits and trade-offs
 
-Omitted means `"emitted"`. `"inferred"` is the other stored mode. The written interfaces come from the same shapes either way. What the flag is for, and the file layout, are [Row types](/docs/schema/codecs-and-row-types#row-types).
+`"inferred"` is the other stored mode. The written interfaces come from the same shapes either way. What the flag is for, and the file layout, are [Row types](/docs/schema/codecs-and-row-types#row-types).
 
 `Register` holds one schema. A second schema is an explicit type argument on `Row`, `Insert`, and `Update`.
 

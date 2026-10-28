@@ -96,7 +96,7 @@ const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/docs/concepts/type-safety-and-inference": Type,
   "/docs/concepts/migrations-and-drift": GitCompare,
   "/docs/concepts/the-safety-model": Shield,
-  "/docs/concepts/tenancy": Landmark,
+  "/docs/concepts/tenant-isolation": Landmark,
   "/docs/operate/using-okmodel-safely": Lock,
   "/docs/operate/production-checklist": ClipboardCheck,
   "/docs/operate/testing": FlaskConical,

@@ -6,6 +6,6 @@
     "type-safety-and-inference",
     "migrations-and-drift",
     "the-safety-model",
-    "tenancy"
+    "tenant-isolation"
   ]
 }
