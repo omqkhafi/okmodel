@@ -296,3 +296,56 @@ export async function concurrentInsert(make: MakeLimits, size: number): Promise<
   expect(notices.filter((n) => n.code === "OKM2011")).toHaveLength(1);
   await writer.notes.delete({ where: { rank: gte(10) } }).all("cleanup");
 }
+
+/**
+ * `distinct` and `distinctOn` take `limits.find` and `limits.max`.
+ *
+ * Without `limits` both still throw OKM1101. A limit above `max` is OKM1101.
+ * `.all(reason)` reads with no limit. A distinct find that returns exactly the
+ * default fires OKM2011.
+ *
+ * @param make - Client factory
+ */
+export async function distinctLimits(make: MakeLimits): Promise<void> {
+  const bare = await make(undefined, []);
+  expect(await code(bare.notes.find({ distinct: true, select: ["title"] }))).toBe("OKM1101");
+  expect(
+    await code(bare.notes.find({ distinctOn: ["rank"], orderBy: { rank: "asc", id: "asc" } })),
+  ).toBe("OKM1101");
+
+  const notices: WarningNotice[] = [];
+  const db = await make({ find: 2, max: 4 }, notices);
+  const kinds = await db.notes.find({
+    distinct: true,
+    select: ["title"],
+    orderBy: { title: "asc" },
+  });
+  expect(kinds).toHaveLength(2);
+  const on = await db.notes.find({
+    distinctOn: ["rank"],
+    orderBy: { rank: "asc", id: "asc" },
+  });
+  expect(on).toHaveLength(2);
+  expect(
+    notices.filter((notice) => notice.code === "OKM2011").map((notice) => notice.limit),
+  ).toEqual(["limits.find = 2"]);
+
+  const over = await failure(
+    db.notes.find({ distinct: true, select: ["title"], orderBy: { title: "asc" }, limit: 5 }),
+  );
+  expect(over.code).toBe("OKM1101");
+  expect(over.message).toContain("limits.max");
+
+  const every = await db.notes
+    .find({ distinct: true, select: ["title"], orderBy: { title: "asc" } })
+    .all("export");
+  expect(every).toHaveLength(5);
+  const inspected = await db.notes
+    .find({ distinct: true, select: ["title"], orderBy: { title: "asc" } })
+    .inspect();
+  expect(inspected.intent.limit).toBe(2);
+  const onInspected = await db.notes
+    .find({ distinctOn: ["rank"], orderBy: { rank: "asc", id: "asc" } })
+    .inspect();
+  expect(onInspected.intent.limit).toBe(2);
+}
