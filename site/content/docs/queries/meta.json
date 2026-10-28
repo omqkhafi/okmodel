@@ -6,6 +6,7 @@
     "write-rows",
     "shape-results",
     "search-and-trees",
+    "where-operators",
     "transactions",
     "typed-raw-sql",
     "presets",

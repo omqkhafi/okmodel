@@ -103,7 +103,7 @@ export async function byStatus(url: string) {
 
 #### having
 
-`having` keeps the groups whose aggregates match. It is the `where` predicate form over `count` and the names in `select`, and it needs `groupBy`. It takes `eq`, `not`, `lt`, `lte`, `gt`, `gte`, `between`, `inList`, `notIn`, and `or()`. A text `min` or `max` also takes the text patterns. A NULL aggregate matches no comparison, and `null` matches it. A list-form aggregate has no name, so `having` cannot reach it.
+`having` keeps the groups whose aggregates match. It is the `where` predicate form over `count` and the names in `select`, and it needs `groupBy`. The operators are [Where operators](/docs/queries/where-operators). It takes `eq`, `not`, `lt`, `lte`, `gt`, `gte`, `between`, `inList`, `notIn`, and `or()`. A text `min` or `max` also takes the text patterns. A NULL aggregate matches no comparison, and `null` matches it. A list-form aggregate has no name, so `having` cannot reach it.
 
 ```ts title="having.ts"
 import { connect } from "okmodel/pg/postgresjs";

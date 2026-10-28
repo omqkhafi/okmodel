@@ -6,7 +6,7 @@ description: "filters() allowlists what a caller may send."
 The table is declared. This page is the allowlist a caller may send. [Queries](/docs/queries) are the calls that use the result.
 </Callout>
 
-`filters()` checks the allowlist when you call it. `parse` loads the parser the first time a request arrives and returns `{ where, orderBy }`. Spread that into `find`. `orderBy` is absent when the request has no `sort`. A request that is not an object is OKM1121: `filters parse expects an object of fields.`
+The operators and the SQL they write are [Where operators](/docs/queries/where-operators). `filters()` checks the allowlist when you call it. `parse` loads the parser the first time a request arrives and returns `{ where, orderBy }`. Spread that into `find`. `orderBy` is absent when the request has no `sort`. A request that is not an object is OKM1121: `filters parse expects an object of fields.`
 
 A scalar equality is a plain value. Every other operator is a value `parse` builds. Copying that value through JSON drops it, and `find` throws OKM1121: `where must be an object of fields. Wrap an object value with eq.`
 

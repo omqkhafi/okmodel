@@ -1,0 +1,328 @@
+---
+title: "Where operators"
+description: "A where is an object of fields. Operators are tagged helpers, and each one compiles to SQL."
+---
+
+A `where` is an object of fields. A plain value is equality. Any other filter is a tagged operator from `okmodel/pg`. JSON cannot build a tag.
+
+Families: text is `text`, `citext`, `varchar(n)`, `char(n)`, or a name starting with `character`. array ends in `[]`. range ends in `range`. json, jsonb, and tsvector are those types. scalar is every other type. A clause is the `where` or `order by` from `sql()`, alias `t`.
+
+### How a where is built
+
+A scalar writes `=`. An object needs `eq`: json, jsonb, Temporal, an array, a range, or another object the codec accepts. A bare object is refused on every column. A `Date` is refused inside `eq` too.
+
+Fields of one object join with `and`, in key order. Two operators on one field do too. There is no `and()` helper. The caller's predicate is first, then a preset `where`. [Request filters](/docs/queries/request-filters) builds that `and` when one field sends two operators. `undefined` adds no predicate. `or()` takes one array.
+
+```ts title="where.ts"
+import { OkmError } from "okmodel";
+import { connect } from "okmodel/pg/postgresjs";
+import { eq, lt, matches, or, schema, startsWith, table, t } from "okmodel/pg";
+
+const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+    rank: t.integer(),
+    meta: t.jsonb(),
+  },
+  { presets: { prefix: (q) => q.where({ title: startsWith("ship") }) } },
+);
+export const app = schema({ tables: [notes] });
+
+function clause(text: string): string {
+  const whereAt = text.indexOf(" where ");
+  const start = whereAt < 0 ? 0 : whereAt + " where ".length;
+  const limitAt = text.indexOf(" limit ", start);
+  return text.slice(start, limitAt < 0 ? undefined : limitAt).trim();
+}
+
+function line(error: unknown): string {
+  if (error instanceof OkmError) return `${error.code} ${error.message}`;
+  throw error;
+}
+
+async function show(name: string, handle: { sql(): { text: string } | Promise<{ text: string }> }) {
+  const plan = await handle.sql();
+  console.log(`${name} ${clause(plan.text)}`);
+  await handle;
+}
+
+async function refuse(name: string, run: () => Promise<unknown>, withFix: boolean) {
+  try {
+    await run();
+    console.log(`${name} did not throw`);
+  } catch (error) {
+    console.log(`${name} ${line(error)}`);
+    if (withFix && error instanceof OkmError) console.log(`${name}-fix ${error.fix.summary}`);
+  }
+}
+
+export async function built(url: string) {
+  await using db = connect(url, { schema: app });
+  await show("scalar", db.notes.find({ where: { title: "ship" }, limit: 1 }));
+  await show("object", db.notes.find({ where: { meta: eq({ on: true }) }, limit: 1 }));
+  await show(
+    "fields",
+    db.notes.find({ where: { title: startsWith("ship"), rank: lt(3) }, limit: 1 }),
+  );
+  await show("same", db.notes.prefix().find({ where: { title: lt("m") }, limit: 1 }));
+  await refuse("bare", () => db.notes.find({ where: { meta: { on: true } }, limit: 1 }), true);
+  await refuse("fit", () => db.notes.find({ where: { rank: startsWith("a") as never }, limit: 1 }), true);
+  await refuse("search", () => db.notes.find({ where: { title: matches("ship") }, limit: 1 }), false);
+  try {
+    const call = or as (left: unknown, right: unknown) => unknown;
+    call({ title: "ship" }, { rank: 1 });
+    console.log("or-call did not throw");
+  } catch (error) {
+    console.log(`or-call ${line(error)}`);
+  }
+}
+```
+
+```text title="where.out"
+scalar t."title" = $1
+object t."meta" = $1
+fields t."title" like $1 escape E'\\' and t."rank" < $2
+same t."title" < $1 and t."title" like $2 escape E'\\'
+bare OKM1121 Field meta rejects that object.
+bare-fix Use eq for an object value, or has, none, or every for a relation.
+fit OKM1124 Operator startsWith does not apply to integer column rank. Accepted operators: eq, not, lt, lte, gt, gte, between, inList, notIn, inc.
+fit-fix Use one of: eq, not, lt, lte, gt, gte, between, inList, notIn, inc.
+search OKM1124 Operator matches does not apply to text column title. Accepted operators: eq, not, lt, lte, gt, gte, between, startsWith, contains, endsWith, like, ilike, inList, notIn. Search needs a column built for search, not a plain text column.
+or-call OKM1121 Pass an array: or([a, b]).
+```
+
+`bare` is a bare object. The fix names `eq`. `fit` lists the operators that family accepts. `inc` there is a write ([Increment](/docs/queries/write-rows#increment)). `search` is `matches` on plain text.
+
+### Equality and comparison
+
+`between` is inclusive, not a range operator.
+
+| Operator | Types | Value | Example | SQL |
+| --- | --- | --- | --- | --- |
+| `eq` | every family | an object the codec accepts | `eq({ on: true })` | `t."meta" = $1` |
+| `lt` | text, range, scalar | the bound | `lt(3)` | `t."rank" < $1` |
+| `lte` | text, range, scalar | the bound | `lte(3)` | `t."rank" <= $1` |
+| `gt` | text, range, scalar | the bound | `gt(3)` | `t."rank" > $1` |
+| `gte` | text, range, scalar | the bound | `gte(3)` | `t."rank" >= $1` |
+| `between` | text, scalar | the two bounds | `between(1, 3)` | `t."rank" between $1 and $2` |
+
+### Lists and null
+
+`null` is `is null`. An empty `inList([])` writes `false`. An empty `notIn([])` writes `true`.
+
+| Operator | Types | Value | Example | SQL |
+| --- | --- | --- | --- | --- |
+| `inList` | text, array, scalar | a list of values | `inList(["open", "closed"])` | `t."status" in ($1, $2)` |
+| `notIn` | text, array, scalar | a list of values | `notIn(["draft"])` | `t."status" not in ($1)` |
+| `null` | any column | no operand | `null` | `t."title" is null` |
+
+### Text patterns
+
+`startsWith`, `contains`, and `endsWith` escape the text and add `escape`. A percent sign, an underscore, or a backslash is escaped. These examples bind `ship%`, `%ship%`, and `%ship`. `like` and `ilike` bind the pattern you wrote, with no escape.
+
+| Operator | Types | Value | Example | SQL |
+| --- | --- | --- | --- | --- |
+| `startsWith` | text | a string | `startsWith("ship")` | `t."title" like $1 escape E'\\'` |
+| `contains` | text | a string | `contains("ship")` | `t."title" like $1 escape E'\\'` |
+| `endsWith` | text | a string | `endsWith("ship")` | `t."title" like $1 escape E'\\'` |
+| `like` | text | a pattern | `like("ship%")` | `t."title" like $1` |
+| `ilike` | text | a pattern | `ilike("ship%")` | `t."title" ilike $1` |
+
+### Boolean trees
+
+`not(null)` is `is not null`. Any other value is wrapped in `not`. An empty `or([])` writes `false`. An empty branch is [OKM1121](/docs/reference/errors#okm1121). `and` is the join [above](#how-a-where-is-built).
+
+| Operator | Types | Value | Example | SQL |
+| --- | --- | --- | --- | --- |
+| `not` | every family | null, a value, or an operator | `not(null)` | `t."title" is not null` |
+| `or` | a where | an array of where objects | `or([{ title: "ship" }, { rank: lt(3) }])` | `((t."title" = $1) or (t."rank" < $2))` |
+| `and` | fields of a where | no helper | `{ title: startsWith("ship"), rank: lt(3) }` | `t."title" like $1 escape E'\\' and t."rank" < $2` |
+
+### Arrays and ranges
+
+A bare array or range is refused. Equality is `eq` and writes `=`. SQL casts the parameter.
+
+| Operator | Types | Value | Example | SQL |
+| --- | --- | --- | --- | --- |
+| `contains` | array, jsonb, range | an array, a JSON value, or a range | `contains(["a"])` | `t."tags" @> $1::text[]` |
+| `containedBy` | array, jsonb, range | an array, a JSON value, or a range | `containedBy(["a", "b"])` | `t."tags" <@ $1::text[]` |
+| `overlaps` | array, range | an array or a range | `overlaps(["a"])` | `t."tags" && $1::text[]` |
+
+### JSON
+
+`hasKey` and `hasAnyKey` are function calls, so the SQL has no `?`. `path` compares the text at the segments. A number casts it to numeric, a boolean to boolean, a string to text. The comparison is `eq`, `lt`, `lte`, `gt`, or `gte`.
+
+| Operator | Types | Value | Example | SQL |
+| --- | --- | --- | --- | --- |
+| `hasKey` | jsonb | one key | `hasKey("published")` | `jsonb_exists(t."meta", $1)` |
+| `hasAnyKey` | jsonb | a list of keys | `hasAnyKey(["published", "title"])` | `jsonb_exists_any(t."meta", $1::text[])` |
+| `path` | json, jsonb | segments and a comparison | `path(["author", "name"], eq("ada"))` | `(t."meta" #>> $1::text[])::text = $2` |
+
+### Search and similarity
+
+`matches` and `relevance` need tsvector. `relevance` is `orderBy`, descending. In a `where` it is [OKM1121](/docs/reference/errors#okm1121): `relevance on body belongs in orderBy.` Match and language are [Search and trees](/docs/queries/search-and-trees#text-search). `similar` and `wordSimilar` come from [pgTrgm()](/docs/schema/extensions#trigram). The fit table does not list them. Postgres applies them to text. Another type is a driver error.
+
+| Operator | Types | Value | Example | SQL |
+| --- | --- | --- | --- | --- |
+| `matches` | tsvector | the text to find | `matches("deploy rollback")` | `t."body" @@ websearch_to_tsquery($1)` |
+| `relevance` | tsvector | the same text, in `orderBy` | `relevance("deploy rollback")` | `order by ts_rank(t."body", websearch_to_tsquery($1)) desc` |
+| `similar` | text | the text to compare | `trgm.similar("ship")` | `t."title" operator("public".%) $1` |
+| `wordSimilar` | text | the text to compare | `trgm.wordSimilar("ship")` | `t."title" operator("public".<%) $1` |
+
+### Relation quantifiers
+
+`has`, `none`, and `every` are the filters on a relation. Anything else is [OKM1121](/docs/reference/errors#okm1121). The related `where` uses these operators. The shape is [Relations](/docs/schema/relations#filter).
+
+| Operator | Types | Value | Example | SQL |
+| --- | --- | --- | --- | --- |
+| `has` | a relation | a where on the related table | `has({ body: "ship it" })` | `exists (select 1 from "comments" r0_comments where r0_comments."noteId" = t."id" and r0_comments."body" = $1)` |
+| `none` | a relation | a where on the related table | `none({ body: "ship it" })` | `not exists (select 1 from "comments" r0_comments where r0_comments."noteId" = t."id" and r0_comments."body" = $1)` |
+| `every` | a relation | a where on the related table | `every({ body: "ship it" })` | `not exists (select 1 from "comments" r0_comments where r0_comments."noteId" = t."id" and not (r0_comments."body" = $1))` |
+
+### Callers and code
+
+[Request filters](/docs/queries/request-filters) is what a caller may send. `parse` builds those operators. A listed relation becomes `has`.
+
+Code writes `path`, `matches`, `relevance`, `similar`, `wordSimilar`, `or`, `none`, and `every`. `filters()` refuses those names in `allow`. `inc`, `json.set`, `arr.append`, and `arr.remove` are writes.
+
+```ts title="operators.ts"
+import { OkmError } from "okmodel";
+import { pgTrgm } from "okmodel/pg/pg_trgm";
+import { connect } from "okmodel/pg/postgresjs";
+import {
+  between,
+  containedBy,
+  contains,
+  endsWith,
+  eq,
+  every,
+  gt,
+  gte,
+  has,
+  hasAnyKey,
+  hasKey,
+  ilike,
+  inList,
+  like,
+  lt,
+  lte,
+  many,
+  matches,
+  none,
+  not,
+  notIn,
+  or,
+  overlaps,
+  path,
+  relevance,
+  schema,
+  startsWith,
+  table,
+  t,
+} from "okmodel/pg";
+
+const trgm = pgTrgm();
+
+const comments = table("comments", {
+  id: t.identity(),
+  noteId: t.bigint().references("notes"),
+  body: t.text(),
+});
+
+const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+    rank: t.integer(),
+    status: t.text(),
+    tags: t.text().array(),
+    meta: t.jsonb(),
+    body: t.tsvector(),
+  },
+  { relations: { comments: many("comments") } },
+);
+
+export const app = schema({ tables: [notes, comments], extensions: [trgm] });
+
+type Plan = { readonly text: string; readonly params: readonly (string | null)[] };
+type Handle = { sql(): Plan | Promise<Plan> } & PromiseLike<unknown>;
+
+function clause(text: string): string {
+  const whereAt = text.indexOf(" where ");
+  const orderAt = text.indexOf(" order by ");
+  if (whereAt < 0 && orderAt >= 0) {
+    const limitAt = text.indexOf(" limit ", orderAt);
+    return text.slice(orderAt, limitAt < 0 ? undefined : limitAt).trim();
+  }
+  const start = whereAt < 0 ? 0 : whereAt + " where ".length;
+  let end = text.length;
+  const limitAt = text.indexOf(" limit ", start);
+  const order = text.indexOf(" order by ", start);
+  if (limitAt >= 0) end = Math.min(end, limitAt);
+  if (order >= 0) end = Math.min(end, order);
+  return text.slice(start, end).trim();
+}
+
+async function row(kind: "ROW" | "EXTRA", example: string, handle: Handle) {
+  const plan = await handle.sql();
+  console.log(`${kind}\t${example}\t${clause(plan.text)}`);
+  if (
+    example === 'startsWith("ship")' ||
+    example === 'contains("ship")' ||
+    example === 'endsWith("ship")'
+  ) {
+    console.log(`PARAM\t${example}\t${plan.params[0] ?? ""}`);
+  }
+  await handle;
+}
+
+export async function operators(url: string) {
+  await using db = connect(url, { schema: app });
+  type Filter = NonNullable<Parameters<typeof db.notes.find>[0]>["where"];
+  const run = async <W extends Filter>(kind: "ROW" | "EXTRA", example: string, where: W) => {
+    await row(kind, example, db.notes.find({ where: where as never, limit: 1 }));
+  };
+  await run("ROW", "eq({ on: true })", { meta: eq({ on: true }) });
+  await run("ROW", "lt(3)", { rank: lt(3) });
+  await run("ROW", "lte(3)", { rank: lte(3) });
+  await run("ROW", "gt(3)", { rank: gt(3) });
+  await run("ROW", "gte(3)", { rank: gte(3) });
+  await run("ROW", "between(1, 3)", { rank: between(1, 3) });
+  await run("ROW", 'inList(["open", "closed"])', { status: inList(["open", "closed"]) });
+  await run("ROW", 'notIn(["draft"])', { status: notIn(["draft"]) });
+  await run("ROW", "null", { title: null });
+  await run("ROW", 'startsWith("ship")', { title: startsWith("ship") });
+  await run("ROW", 'contains("ship")', { title: contains("ship") });
+  await run("ROW", 'endsWith("ship")', { title: endsWith("ship") });
+  await run("ROW", 'like("ship%")', { title: like("ship%") });
+  await run("ROW", 'ilike("ship%")', { title: ilike("ship%") });
+  await run("ROW", "not(null)", { title: not(null) });
+  await run("ROW", 'or([{ title: "ship" }, { rank: lt(3) }])', or([{ title: "ship" }, { rank: lt(3) }]));
+  await run("ROW", '{ title: startsWith("ship"), rank: lt(3) }', { title: startsWith("ship"), rank: lt(3) });
+  await run("ROW", 'contains(["a"])', { tags: contains(["a"]) });
+  await run("ROW", 'containedBy(["a", "b"])', { tags: containedBy(["a", "b"]) });
+  await run("ROW", 'overlaps(["a"])', { tags: overlaps(["a"]) });
+  await run("ROW", 'hasKey("published")', { meta: hasKey("published") });
+  await run("ROW", 'hasAnyKey(["published", "title"])', { meta: hasAnyKey(["published", "title"]) });
+  await run("ROW", 'path(["author", "name"], eq("ada"))', { meta: path(["author", "name"], eq("ada")) });
+  await run("ROW", 'matches("deploy rollback")', { body: matches("deploy rollback") });
+  await row("ROW", 'relevance("deploy rollback")', db.notes.find({ orderBy: { body: relevance("deploy rollback") }, limit: 1 }));
+  await run("ROW", 'trgm.similar("ship")', { title: trgm.similar("ship") });
+  await run("ROW", 'trgm.wordSimilar("ship")', { title: trgm.wordSimilar("ship") });
+  await run("ROW", 'has({ body: "ship it" })', { comments: has({ body: "ship it" }) });
+  await run("ROW", 'none({ body: "ship it" })', { comments: none({ body: "ship it" }) });
+  await run("ROW", 'every({ body: "ship it" })', { comments: every({ body: "ship it" }) });
+  await run("EXTRA", "inList([])", { status: inList([]) });
+  await run("EXTRA", "notIn([])", { status: notIn([]) });
+  await run("EXTRA", "or([])", or([]));
+  try {
+    await db.notes.find({ where: { body: relevance("deploy rollback") as never }, limit: 1 });
+    console.log("MSG\trelevance did not throw");
+  } catch (error) {
+    console.log(`MSG\t${error instanceof OkmError ? error.message : String(error)}`);
+  }
+}
+```
