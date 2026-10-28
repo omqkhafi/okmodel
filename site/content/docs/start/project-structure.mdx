@@ -1,0 +1,183 @@
+---
+title: "Project structure"
+description: "The files the tutorial writes, and the files okm init writes."
+---
+See the files in the project and what each one is for.
+
+You have followed [Installation](/docs/start/installation) and [Your first schema and queries](/docs/start/first-schema), or you have a directory with `package.json` and a Bun lockfile.
+
+<Steps>
+
+<Step>
+### Tutorial files
+
+The tutorial writes these files in the project directory. `schema.ts` default-exports the notes schema. `okmodel.config.ts` is the file `okm push` reads. `db.ts` is the client. `check.ts` waits until the startup check finishes. `insert.ts`, `find.ts`, `one.ts`, `count.ts`, `exists.ts`, `update.ts`, and `delete.ts` are the calls. `find-without-limit.ts` and `update-without-where.ts` are the calls that throw OKM1101 and OKM1102.
+
+</Step>
+
+<Step>
+### `okm init`
+
+`okm init` writes starter files. It does not connect. In a directory whose `package.json` name is `notes`, with a `bun.lock` and no driver package, and with no terminal, `bunx okm init` printed this. A Bun project with no driver package selects `bun-sql`. The tutorial installs postgres.js and imports `okmodel/pg/postgresjs`.
+
+```sh
+bunx okm init
+```
+
+```text title="init.out"
+pm: bun
+driver: bun-sql
+runtime: bun
+untrusted package.json: "notes"
+database env: DATABASE_URL
+config: okmodel.config.ts
+create db/schema.ts (absent)
+--- db/schema.ts
++++ db/schema.ts
++import { schema, table, t } from "okmodel/pg";
++
++// Example table. Delete `users` and take it out of `tables` when you add your own.
++// Requires PostgreSQL 15 or newer (minPostgres: 15).
++
++export const users = table("users", {
++  id: t.id(),
++  email: t.text(),
++  createdAt: t.timestamptz(),
++});
++
++export const app = schema({
++  minPostgres: 15,
++  tables: [users],
++});
++
++declare module "okmodel" {
++  interface Register {
++    readonly schema: typeof app;
++  }
++}
+create db/client.ts (absent)
+--- db/client.ts
++++ db/client.ts
++import { connect } from "okmodel/pg/bun";
++
++import { app } from "./schema.ts";
++
++const url = process.env.DATABASE_URL;
++if (url === undefined || url.length === 0) {
++  throw new Error("DATABASE_URL is not set");
++}
++
++export const db = connect(url, { schema: app });
+create migrations/.gitkeep (absent)
+create .env.example (absent)
+--- .env.example
++++ .env.example
++DATABASE_URL=
+create .gitattributes (absent)
+--- .gitattributes
++++ .gitattributes
++migrations/*.sql text eol=lf
++*.catalog.json text eol=lf
++.okm/** text eol=lf
+create .gitignore (absent)
+--- .gitignore
++++ .gitignore
++.env
++.env.local
+update package.json (managed-diff)
+--- package.json
++++ package.json
+ {
+   "name": "notes",
+-  "private": true
++  "private": true,
++  "dependencies": {
++    "okmodel": "0.10.0"
++  },
++  "scripts": {
++    "db:check": "bun run --bun okm check",
++    "db:plan": "bun run --bun okm migrate plan",
++    "db:apply": "bun run --bun okm migrate apply",
++    "db:status": "bun run --bun okm migrate status"
++  }
+ }
+create .okm/init.json (absent)
+--- .okm/init.json
++++ .okm/init.json
++{
++  "version": 1,
++  "choices": {
++    "dialect": "postgres",
++    "driver": "bun-sql",
++    "dir": "db",
++    "tenancy": "none"
++  },
++  "files": {
++    ".env.example": "f2c7a12f3d7a26de910138d64ad392e5e4d9a0bbcaa9ccfce159a2582ecfc50f",
++    ".gitattributes": "7c48c9816972a93f41b3ba93a1be8b9c3533b4757d672da22f7b5d194a7bdc17",
++    ".gitignore": "529ed90506083c9f12c1946acec9e46e6633bd61f9227fb4d8984fbce33079f0",
++    "db/client.ts": "1caf6687ca01b53fca4589ae7042acc7877b4b08507eb4ac5defb513c0bc416b",
++    "db/schema.ts": "c4d6f9a9c31352fc5d1111e9856059d8989ae77e0735528de34660c79d4daa64",
++    "migrations/.gitkeep": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
++    "okmodel.config.ts": "51dc181971ee16d3ec10ef0948459deb9330541b4e8917d818cdc3173cf8a911",
++    "package.json": "085b15c0263ed2c0dba3ff515781bf76cb521ad07538160fa19a8e48885cdcf3"
++  }
++}
+create okmodel.config.ts (absent)
+--- okmodel.config.ts
++++ okmodel.config.ts
++import { defineConfig } from "okmodel/migrate";
++
++// `database` is one target named default. A protected target is
++// `{ url, protected: true }` and refuses non-expand work (OKM1850).
++// Several environments use `targets`. Pass --target when there is more
++// than one. Omitting it is OKM1853.
++// Reviewed migrations are linted strict (lint: { migrations: "strict" }).
++// `okm init` writes this file. `okm generate init` writes the first migration.
++
++const database = process.env.DATABASE_URL;
++
++export default defineConfig({
++  schema: "./db/schema.ts",
++  migrations: "./migrations",
++  ...(typeof database === "string" && database.length > 0 ? { database } : {}),
++});
+package.json
+  add dependencies.okmodel 0.10.0
+  add scripts.db:check bun run --bun okm check
+  add scripts.db:plan bun run --bun okm migrate plan
+  add scripts.db:apply bun run --bun okm migrate apply
+  add scripts.db:status bun run --bun okm migrate status
+bun run --bun okm check
+bun run --bun okm migrate plan init
+bun run --bun okm migrate apply
+```
+
+</Step>
+
+<Step>
+### Files `okm init` writes
+
+| File | What it is for |
+| --- | --- |
+| `db/schema.ts` | Example `users` table. `t.id()`, `minPostgres: 15`, and a named `app` schema. |
+| `db/client.ts` | The client. An empty `DATABASE_URL` is refused. This run imports `okmodel/pg/bun`. |
+| `okmodel.config.ts` | `schema` is `./db/schema.ts`. `migrations` is `./migrations`. `database` is set only when `DATABASE_URL` is a non-empty string. |
+| `migrations/.gitkeep` | The migrations directory. |
+| `.env.example` | `DATABASE_URL=` with no value. Init does not write `.env`. |
+| `.gitattributes` | Line endings for migration SQL, catalog JSON, and `.okm`. |
+| `.gitignore` | `.env` and `.env.local`. |
+| `package.json` | Adds the `okmodel` dependency and `db:check`, `db:plan`, `db:apply`, and `db:status`. |
+| `.okm/init.json` | The choices and the hash of each file init wrote. |
+
+The last three lines are the next commands: `bun run --bun okm check`, `bun run --bun okm migrate plan init`, and `bun run --bun okm migrate apply`. [`okm generate init`](/docs/reference/cli#generate) writes the first migration. That is a different command. The tutorial uses [`okm push`](/docs/reference/cli#push).
+
+</Step>
+
+</Steps>
+
+| Next | You use it for |
+| --- | --- |
+| [Queries](/docs/queries) | The rest of the calls on a table. |
+| [Config](/docs/reference/config) | Targets, paths, timeouts, and roles. |
+| [Using OKModel safely](/docs/operate/using-okmodel-safely) | Pin the lockfile, wait before updating, and read provenance. |

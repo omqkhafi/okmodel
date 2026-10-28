@@ -73,7 +73,9 @@ import { createElement, type ReactNode } from "react";
 /** Docs path → Lucide component. `/docs` is the landing and is not a sidebar row. */
 const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/docs/start": Terminal,
-  "/docs/start/basic-usage": Play,
+  "/docs/start/installation": Cable,
+  "/docs/start/first-schema": Play,
+  "/docs/start/project-structure": ListTree,
   "/docs/operate/using-okmodel-safely": Lock,
   "/docs/migrations/from-drizzle": FileInput,
   "/docs/migrations/adopt-existing-database": FolderInput,
