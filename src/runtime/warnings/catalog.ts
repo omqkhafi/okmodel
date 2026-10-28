@@ -114,7 +114,7 @@ export const WARNING_RULES: readonly WarningRule[] = [
     rule: "unordered-limit",
     title: "Unordered limit",
     summary:
-      "A limit whose order does not end in a unique key can return a different row set each time.",
+      "A limit whose order does not end in a unique key can return a different row set each time. Under for(), the tenant key is ignored, so the rest of that unique counts.",
     fix: "End orderBy with the primary key or a unique column.",
     defaultLevel: "warn",
     severity: "high",

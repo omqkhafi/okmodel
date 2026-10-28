@@ -7,7 +7,7 @@
 
 import { isOperator, operatorName, operatorValue } from "../../dialects/pg/operators.js";
 import type { QuerySchema, RelationModel, TableModel } from "../../dialects/pg/model.js";
-import type { IncludeOut, ReadDone } from "../plan.js";
+import type { CallScope, IncludeOut, ReadDone } from "../plan.js";
 import {
   FANOUT_LIMIT,
   isWarningRecord,
@@ -29,6 +29,8 @@ export type WarningCall = {
   readonly build?: unknown;
   /** Key and value of the root default `connect({ limits })` applied. */
   readonly dl?: readonly [key: string, value: number];
+  /** Tenant scope of the call. Absent on a client that has none. */
+  readonly scope?: CallScope;
 };
 
 const LIST_OPS = new Set([
@@ -123,7 +125,41 @@ function unorderedLimit(schema: QuerySchema, call: WarningCall): boolean {
     return false;
   const table = schema.model[call.table];
   if (table === undefined) return false;
-  return !endsWithUnique(call.orderBy, table.uniques);
+  return !endsWithUnique(call.orderBy, uniquesFor(schema, table, call.scope));
+}
+
+/**
+ * Unique sets OKM2005 compares against.
+ *
+ * A `for()` scope pins the tenant key, so that column is not part of the
+ * order. A declared unique stored as `(tenantKey, email)` counts as `email`.
+ * An unscoped call, a root call, and a `via()` table (no tenant column) keep
+ * the sets as stored.
+ */
+function uniquesFor(
+  schema: QuerySchema,
+  table: TableModel,
+  scope: CallScope | undefined,
+): readonly (readonly string[])[] {
+  if (scope === undefined || "unscoped" in scope) return table.uniques;
+  const tenancy = schema.tenancy;
+  if (tenancy === undefined) return table.uniques;
+  const keys = tenancy.keys !== undefined && tenancy.keys.length > 0 ? tenancy.keys : [tenancy.key];
+  let present = false;
+  for (const column of table.columns) {
+    if (keys.includes(column.field)) {
+      present = true;
+      break;
+    }
+  }
+  if (!present) return table.uniques;
+  const next: string[][] = [];
+  for (const unique of table.uniques) {
+    const kept: string[] = [];
+    for (const field of unique) if (!keys.includes(field)) kept.push(field);
+    next.push(kept);
+  }
+  return next;
 }
 
 function endsWithUnique(orderBy: unknown, uniques: readonly (readonly string[])[]): boolean {

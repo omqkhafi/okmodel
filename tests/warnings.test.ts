@@ -20,6 +20,7 @@ import {
   uuid,
 } from "../src/dialects/pg/index.js";
 import { connect } from "../src/runtime/pg/postgresjs.js";
+import { columnTenancy, compositeTenancy, rlsTenancy, via } from "../src/runtime/tenancy/index.js";
 import { WARNING_RULES } from "../src/runtime/warnings/catalog.js";
 import type { WarningOptions } from "../src/runtime/warnings/config.js";
 import { warnings, type WarningNotice } from "../src/runtime/warnings/index.js";
@@ -165,6 +166,102 @@ test("OKM2005 warns when the order does not end in a unique key", async () => {
     await client.notes.find({ limit: 2, orderBy: { title: "asc" } }).catch(() => undefined);
   });
   expect(byTitle.join("\n")).not.toContain("OKM2005");
+});
+
+const TENANT = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const OTHER = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+
+test("OKM2005 ignores a pinned tenant key and still warns without that scope", async () => {
+  const rows = table("notes", {
+    id: id({ default: "none" }),
+    email: text().unique(),
+    createdAt: text(),
+  });
+  const orgs = table("orgs", {
+    id: id({ default: "none" }),
+    name: text(),
+  });
+  const projects = table(
+    "projects",
+    {
+      id: id({ default: "none" }),
+      name: text(),
+      organizationId: uuid().references("orgs"),
+    },
+    {
+      tenancy: via("organization"),
+      relations: { organization: one("orgs", "organizationId") },
+    },
+  );
+  const column = schema({
+    tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
+    tables: [rows, orgs, projects],
+  });
+  const rls = schema({
+    tenancy: rlsTenancy({ key: "tenantId", type: "uuid" }),
+    tables: [rows],
+  });
+  const composite = schema({
+    tenancy: compositeTenancy({ key: ["orgId", "teamId"], type: "uuid" }),
+    tables: [rows],
+  });
+  const open = (source: typeof column) =>
+    connect(pool, { schema: source, warnings: warnings({ env: "development" }) });
+  const scoped = open(column).for({ tenantId: TENANT });
+  const byId = await capture(async () => {
+    await scoped.notes.find({ limit: 2, orderBy: { id: "asc" } }).catch(() => undefined);
+  });
+  expect(byId.join("\n")).not.toContain("OKM2005");
+  const byEmail = await capture(async () => {
+    await scoped.notes.find({ limit: 2, orderBy: { email: "asc" } }).catch(() => undefined);
+  });
+  expect(byEmail.join("\n")).not.toContain("OKM2005");
+  const byCreated = await capture(async () => {
+    await scoped.notes.find({ limit: 2, orderBy: { createdAt: "asc" } }).catch(() => undefined);
+  });
+  expectRule(byCreated, "OKM2005");
+  const missing = await capture(async () => {
+    await scoped.notes.find({ limit: 2 }).catch(() => undefined);
+  });
+  expectRule(missing, "OKM2005");
+  const unscoped = await capture(async () => {
+    await open(column)
+      .unscoped("backfill")
+      .notes.find({ limit: 2, orderBy: { id: "asc" } })
+      .catch(() => undefined);
+  });
+  expectRule(unscoped, "OKM2005");
+  const root = open(column) as { readonly notes?: unknown };
+  expect(root.notes).toBeUndefined();
+  const viaId = await capture(async () => {
+    await scoped.projects.find({ limit: 2, orderBy: { id: "asc" } }).catch(() => undefined);
+  });
+  expect(viaId.join("\n")).not.toContain("OKM2005");
+  const viaName = await capture(async () => {
+    await scoped.projects.find({ limit: 2, orderBy: { name: "asc" } }).catch(() => undefined);
+  });
+  expectRule(viaName, "OKM2005");
+  const rlsId = await capture(async () => {
+    await open(rls)
+      .for({ tenantId: TENANT })
+      .notes.find({ limit: 2, orderBy: { id: "asc" } })
+      .catch(() => undefined);
+  });
+  expect(rlsId.join("\n")).not.toContain("OKM2005");
+  const compositeId = await capture(async () => {
+    await open(composite)
+      .for({ orgId: TENANT, teamId: OTHER })
+      .notes.find({ limit: 2, orderBy: { id: "asc" } })
+      .catch(() => undefined);
+  });
+  expect(compositeId.join("\n")).not.toContain("OKM2005");
+  const compositeEmail = await capture(async () => {
+    await open(composite)
+      .for({ orgId: TENANT, teamId: OTHER })
+      .notes.find({ limit: 2, orderBy: { email: "asc" } })
+      .catch(() => undefined);
+  });
+  expect(compositeEmail.join("\n")).not.toContain("OKM2005");
 });
 
 test("OKM2007 warns on a value list past 500 and stays silent at 500", async () => {
