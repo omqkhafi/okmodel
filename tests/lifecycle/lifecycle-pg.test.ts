@@ -23,7 +23,19 @@ import { repoRoot } from "../../scripts/root.js";
 import { lifecycleCaseArb } from "./grammar.js";
 import { formatLifecycleReport, knownSkipExceedsBudget, type LifecycleReport } from "./report.js";
 import { runLifecycleCase } from "./run.js";
-import { tagsFor, type ColumnModel, type LifecycleCase, type LifecycleCasing } from "./model.js";
+import {
+  tagsFor,
+  type ClashKind,
+  type ColumnModel,
+  type Evolution,
+  type HostileRole,
+  type HostileStart,
+  type IndexModel,
+  type LifecycleCase,
+  type LifecycleCasing,
+  type ProjectPlace,
+  type SchemaModel,
+} from "./model.js";
 
 const gate = await loadPostgresGate();
 const root = repoRoot();
@@ -155,6 +167,269 @@ postgresTest(
   },
   180_000,
 );
+
+postgresTest(
+  gate,
+  "seed 794248870 refuses a foreign okm_steps before the index step",
+  async () => {
+    await expectLifecycle(seed794248870(), 794248870);
+  },
+  180_000,
+);
+
+postgresTest(
+  gate,
+  "seed 3095607538 refuses a foreign okm_steps before the index step",
+  async () => {
+    await expectLifecycle(seed3095607538(), 3095607538);
+  },
+  180_000,
+);
+
+postgresTest(
+  gate,
+  "seed 2954186523 pushes a populated column drop with --allow-data-loss",
+  async () => {
+    await expectLifecycle(seed2954186523(), 2954186523);
+  },
+  180_000,
+);
+
+postgresTest(
+  gate,
+  "seed 3054527222 refuses a foreign okm_steps before the index step",
+  async () => {
+    await expectLifecycle(seed3054527222(), 3054527222);
+  },
+  180_000,
+);
+
+postgresTest(
+  gate,
+  "an empty column drop still pushes with no data-loss flag",
+  async () => {
+    await expectLifecycle(emptyDrop(), 17);
+  },
+  180_000,
+);
+
+async function expectLifecycle(item: LifecycleCase, seed: number): Promise<void> {
+  const outcome = await runLifecycleCase(root, item, seed);
+  if (!outcome.ok) throw new Error(outcome.error);
+}
+
+function seed794248870(): LifecycleCase {
+  return tracked({
+    casing: "camel",
+    namespace: "appns",
+    tenancy: false,
+    name: "o'neil",
+    columns: [identity(), text("title"), domainWeight()],
+    evolutions: [addIndex("title")],
+    withRows: true,
+    role: "owner",
+    start: "clash",
+    clash: "steps",
+    place: "spaces",
+  });
+}
+
+function seed3095607538(): LifecycleCase {
+  return tracked({
+    casing: "omit",
+    namespace: "appns",
+    tenancy: true,
+    name: "notes",
+    columns: [identity(), text("title"), integerN(), varcharExtra()],
+    evolutions: [addIndex("title")],
+    withRows: true,
+    role: "owner",
+    start: "clash",
+    clash: "steps",
+    place: "spaces",
+  });
+}
+
+function seed2954186523(): LifecycleCase {
+  return tracked({
+    casing: "camel",
+    namespace: "appns",
+    tenancy: true,
+    name: 'say "hi"',
+    columns: [identity(), text("title"), colorStatus()],
+    evolutions: [dropColumn("status"), addIndex("title")],
+    withRows: false,
+    role: "superuser",
+    start: "rows",
+    clash: "scratch",
+    place: "symlink",
+  });
+}
+
+function seed3054527222(): LifecycleCase {
+  return tracked({
+    casing: "omit",
+    namespace: "appns",
+    tenancy: true,
+    name: "o'neil",
+    columns: [identity(), text("title"), domainWeight()],
+    evolutions: [dropColumn("weight"), addIndex("title")],
+    withRows: false,
+    role: "owner",
+    start: "clash",
+    clash: "steps",
+    place: "spaces",
+  });
+}
+
+function emptyDrop(): LifecycleCase {
+  return tracked({
+    casing: "omit",
+    tenancy: false,
+    name: "notes",
+    columns: [identity(), text("title"), text("status")],
+    evolutions: [dropColumn("status")],
+    withRows: false,
+    role: "owner",
+    start: "empty",
+    clash: "index",
+    place: "plain",
+  });
+}
+
+function tracked(input: {
+  readonly casing: LifecycleCasing;
+  readonly namespace?: string;
+  readonly tenancy: boolean;
+  readonly name: string;
+  readonly columns: readonly ColumnModel[];
+  readonly evolutions: readonly Evolution[];
+  readonly withRows: boolean;
+  readonly role: HostileRole;
+  readonly start: HostileStart;
+  readonly clash: ClashKind;
+  readonly place: ProjectPlace;
+}): LifecycleCase {
+  const initial: SchemaModel = {
+    casing: input.casing,
+    ...(input.namespace === undefined ? {} : { namespace: input.namespace }),
+    tenancy: input.tenancy,
+    trgm: false,
+    tables: [
+      {
+        key: "tasks",
+        name: input.name,
+        columns: input.columns,
+        indexes: [],
+        checks: [],
+        archive: false,
+        versioned: false,
+      },
+    ],
+    triggers: [],
+    views: [],
+  };
+  const env = {
+    role: input.role,
+    start: input.start,
+    clash: input.clash,
+    place: input.place,
+  };
+  return {
+    initial,
+    evolutions: input.evolutions,
+    withRows: input.withRows,
+    ...env,
+    tags: tagsFor(initial, input.evolutions, input.withRows, env),
+  };
+}
+
+function identity(): ColumnModel {
+  return {
+    key: "id",
+    name: "id",
+    type: "identity",
+    nullable: false,
+    primaryKey: true,
+    unique: false,
+    defaultKind: "none",
+  };
+}
+
+function text(key: string): ColumnModel {
+  return {
+    key,
+    name: key,
+    type: "text",
+    nullable: false,
+    primaryKey: false,
+    unique: false,
+    defaultKind: "none",
+  };
+}
+
+function integerN(): ColumnModel {
+  return {
+    key: "n",
+    name: "n",
+    type: "integer",
+    nullable: true,
+    primaryKey: false,
+    unique: false,
+    defaultKind: "constant",
+    defaultValue: "0",
+  };
+}
+
+function varcharExtra(): ColumnModel {
+  return {
+    key: "extra",
+    name: "extra",
+    type: "varchar",
+    nullable: true,
+    primaryKey: false,
+    unique: false,
+    defaultKind: "none",
+  };
+}
+
+function domainWeight(): ColumnModel {
+  return {
+    key: "weight",
+    name: "weight",
+    type: "domain",
+    nullable: false,
+    primaryKey: false,
+    unique: false,
+    defaultKind: "none",
+    domainName: "pos",
+    domainCheck: "VALUE > 0",
+  };
+}
+
+function colorStatus(): ColumnModel {
+  return {
+    key: "status",
+    name: "status",
+    type: "enum",
+    nullable: false,
+    primaryKey: false,
+    unique: false,
+    defaultKind: "constant",
+    defaultValue: "red",
+    enumName: "color",
+    enumLabels: ["red", "blue"],
+  };
+}
+
+function addIndex(column: string): Evolution {
+  const index: IndexModel = { columns: [column], unique: false, usingTrgm: false };
+  return { kind: "addIndex", tableKey: "tasks", index };
+}
+
+function dropColumn(columnKey: string): Evolution {
+  return { kind: "dropColumn", tableKey: "tasks", columnKey };
+}
 
 function plainCase(casing: LifecycleCasing, tableName: string, columnName: string): LifecycleCase {
   const column = (key: string, type: ColumnModel["type"], primaryKey: boolean): ColumnModel => ({

@@ -9,7 +9,7 @@ import { OkmError } from "../../src/contracts/error.js";
 import { applyEvolution, settleRenames } from "./evolve.js";
 import { PLANTED_SCRATCH_SCHEMA, prepareDatabase, seedThousand } from "./hostile.js";
 import { matchKnownBug } from "./known-bugs.js";
-import { sqlName, type LifecycleCase, type SchemaModel } from "./model.js";
+import { sqlName, type Evolution, type LifecycleCase, type SchemaModel } from "./model.js";
 import { formatRepro, renderSchema } from "./render.js";
 
 /** Outcome of one case. */
@@ -60,6 +60,10 @@ async function runApplyPath(root: string, item: LifecycleCase): Promise<void> {
     const init = await project.cli(commandFor(item, ["generate", "init"]));
     if (!init.includes(".sql")) throw new Error(`generate init wrote nothing: ${init}`);
     await expectOk(project, commandFor(item, ["migrate", "check"]));
+    if (foreignSteps(item)) {
+      await expectForeignLedger(project, item, ["migrate", "apply"]);
+      return;
+    }
     await project.cli(commandFor(item, ["migrate", "apply"]));
     await expectSettled(project, item, prepared.replicaUrl, database.url);
     if (item.start === "rows" && item.evolutions.length === 0) {
@@ -96,6 +100,10 @@ async function runPushPath(root: string, item: LifecycleCase): Promise<void> {
     project.writeConfig(prepared.writeUrl, item.initial.namespace, prepared.replicaUrl);
     let model = item.initial;
     project.writeSchema(renderSchema(model, root));
+    if (foreignSteps(item)) {
+      await expectForeignLedger(project, item, ["push"]);
+      return;
+    }
     const first = await project.cli(commandFor(item, ["push"]));
     if (!/applied push-/.test(first)) throw new Error(`push did not apply: ${first}`);
     await expectCheck(project, item, prepared.replicaUrl);
@@ -112,7 +120,12 @@ async function runPushPath(root: string, item: LifecycleCase): Promise<void> {
       if (item.start === "rows") await seedThousand(database.url, model);
       model = applyEvolution(model, step);
       project.writeSchema(renderSchema(model, root));
-      await project.cli(commandFor(item, ["push"]));
+      if (pushDropsRows(item, step)) {
+        await expectCode(project, item, ["push"], "OKM1898");
+        await project.cli(commandFor(item, ["push", "--allow-data-loss"]));
+      } else {
+        await project.cli(commandFor(item, ["push"]));
+      }
       model = settleRenames(model);
       project.writeSchema(renderSchema(model, root));
       await expectCheck(project, item, prepared.replicaUrl);
@@ -142,6 +155,43 @@ function commandFor(item: LifecycleCase, argv: readonly string[]): readonly stri
   if (head === "generate") return argv;
   if (head === "check") return ["check", "--target", "replica"];
   return [...argv, "--target", "primary"];
+}
+
+function foreignSteps(item: LifecycleCase): boolean {
+  return item.start === "clash" && item.clash === "steps";
+}
+
+function pushDropsRows(item: LifecycleCase, step: Evolution): boolean {
+  return item.start === "rows" && (step.kind === "dropColumn" || step.kind === "dropTable");
+}
+
+async function expectForeignLedger(
+  project: ReturnType<typeof openLifecycleProject>,
+  item: LifecycleCase,
+  argv: readonly string[],
+): Promise<void> {
+  const schema = item.initial.namespace ?? "public";
+  const name = `${quoteIdent(schema)}.${quoteIdent("okm_steps")}`;
+  await expectCode(project, item, argv, "OKM1899", [name, "another table owns the name"]);
+}
+
+async function expectCode(
+  project: ReturnType<typeof openLifecycleProject>,
+  item: LifecycleCase,
+  argv: readonly string[],
+  code: string,
+  parts: readonly string[] = [],
+): Promise<void> {
+  try {
+    const out = await project.cli(commandFor(item, argv));
+    throw new Error(`${argv.join(" ")} was accepted: ${out}`);
+  } catch (error) {
+    if (!(error instanceof OkmError) || error.code !== code) throw error;
+    for (const part of parts) {
+      const haystack = part === part.toLowerCase() ? error.message.toLowerCase() : error.message;
+      if (!haystack.includes(part)) throw error;
+    }
+  }
 }
 
 async function expectSettled(
