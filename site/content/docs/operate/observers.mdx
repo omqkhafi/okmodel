@@ -59,6 +59,6 @@ export const db = connect(process.env.DATABASE_URL!, {
 
 ### onError
 
-`error` is `unknown`. An `afterCommit` callback is one case. That error is reported to `onError` and never changes the commit result.
+`error` is `unknown`. An `afterCommit` callback is one case ([Transactions](/docs/queries/transactions#aftercommit)). That error is reported to `onError` and never changes the commit result.
 
 [OpenTelemetry](/docs/operate/opentelemetry) turns these observers, and `onRoute`, into spans.

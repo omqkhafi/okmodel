@@ -64,6 +64,7 @@ test("sitemap and robots advertise the handbook", () => {
   expect(urls).toContain(`${SITE_ORIGIN}/docs/queries/write-rows`);
   expect(urls).toContain(`${SITE_ORIGIN}/docs/queries/shape-results`);
   expect(urls).toContain(`${SITE_ORIGIN}/docs/queries/search-and-trees`);
+  expect(urls).toContain(`${SITE_ORIGIN}/docs/queries/transactions`);
   expect(urls).toContain(`${SITE_ORIGIN}/docs/queries/typed-raw-sql`);
   expect(urls).toContain(`${SITE_ORIGIN}/docs/queries/presets`);
   expect(urls).toContain(`${SITE_ORIGIN}/docs/queries/request-filters`);

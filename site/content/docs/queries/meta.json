@@ -6,6 +6,7 @@
     "write-rows",
     "shape-results",
     "search-and-trees",
+    "transactions",
     "typed-raw-sql",
     "presets",
     "request-filters"

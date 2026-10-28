@@ -252,7 +252,7 @@ export function reader() {
 }
 ```
 
-A write, a batch, and a transaction run on the primary. On `using("replica")` each of those is OKM1840. A locking `find` with `route: "replica"`, including on that client, is the same code and the other message.
+A write, a batch, and a [transaction](/docs/queries/transactions#one-connection) run on the primary. On `using("replica")` each of those is OKM1840. A locking `find` with `route: "replica"`, including on that client, is the same code and the other message.
 
 <Callout type="error" title="OKM1840">
 A write, a batch, or a transaction on a replica route is `This operation needs the primary.` A locking find is `A locking read needs the primary.`

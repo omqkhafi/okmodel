@@ -106,6 +106,7 @@ test("pages sit flat under the capability groups", () => {
     "/docs/queries/write-rows",
     "/docs/queries/shape-results",
     "/docs/queries/search-and-trees",
+    "/docs/queries/transactions",
     "/docs/queries/typed-raw-sql",
     "/docs/queries/presets",
     "/docs/queries/request-filters",
