@@ -29,6 +29,7 @@ Anything that must survive a crash is an outbox table plus a relay.
 | `keys` | Primary-key records for a table named in `writeObserver({ keys })`. Omitted otherwise. |
 | `source` | `client` or `raw`. |
 | `tenant` | `null`, or the scope keys and values. |
+| `settings` | Setting names from `with()`, in stored order. Never values. `[]` when the client has no `with()`. |
 
 No event carries row values or bound parameters. `keys` carries only the primary-key columns of a table that opted in.
 
@@ -205,10 +206,11 @@ handler may set a `tag` property; a value that fails the grammar is omitted.
 
 ## Query events
 
-`connect({ onQuery })` delivers one `QueryEvent` per statement, reads and writes,
-after the statement settles. Types are exported from `okmodel/observe`. The entry
-stays lazy. With no observer the client does not build an event and does not read
-the clock.
+`connect({ onQuery })` delivers one `QueryEvent` per call, reads and writes, after
+the call settles. The `set_config` prelude, `BEGIN`, `COMMIT`, and `RESET ALL` are
+library statements. They are part of the call and are not a separate event. Types
+are exported from `okmodel/observe`. The entry stays lazy. With no observer the
+client does not build an event and does not read the clock.
 
 ```ts
 type QueryEvent = {

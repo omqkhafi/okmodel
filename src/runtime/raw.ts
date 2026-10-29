@@ -27,7 +27,7 @@ import {
 import { artifactDir, readText } from "./artifact-file.js";
 import { settleCall, withHttp, type Session } from "./client.js";
 import { runSafety, safetyInstalled, type SafetyHatch } from "./safety-hook.js";
-import { runWrite, type WriteObserveMeta } from "./tx.js";
+import { runWrite, settingNames, type WriteObserveMeta } from "./tx.js";
 
 type Columns = readonly {
   readonly name: string;
@@ -203,7 +203,7 @@ async function executeWrite(
     table: null,
     op: "raw",
     tenant: null,
-    settings: [],
+    settings: settingNames(session.settings),
     source: "raw",
     ...(reason !== undefined ? { tag: `trusted: ${reason}` } : {}),
     ...(/\breturning\b/i.test(statement.sql) ? { returning: true } : {}),

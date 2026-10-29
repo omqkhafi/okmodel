@@ -51,7 +51,7 @@ A project ignore may carry a `target`: a table (`events`) or a column (`orders.u
 | Code | Rule | Fires when |
 | --- | --- | --- |
 | OKM2004 | `deep-offset` | `offset` is an integer above 1,000. `page()` has no offset. |
-| OKM2005 | `unordered-limit` | `find` has a numeric `limit` and `orderBy` is missing or does not end in a primary key or unique column. |
+| OKM2005 | `unordered-limit` | `find` has a numeric `limit` and `orderBy` is missing or does not end in a primary key or unique column. Under `for()`, the tenant key is ignored, so the rest of that unique counts. |
 | OKM2007 | `large-in-list` | `inList`, `notIn`, an array operator, or a plain array is longer than 500 elements. `and`, `or`, `not`, and `between` are not value lists. |
 | OKM2008 | `wide-fan-out` | One include path multiplies the parent limit by nested limits above 10,000. A to-one include with no limit counts as 1. Sibling includes are separate products. |
 | OKM2011 | `default-limit-reached` | A read took a default from `connect({ limits })` and returned exactly that many rows. A `find` with a default, a to-many include with a default (at any depth), or an aggregate with `groupBy` and a default. A limit the call wrote, `.all(reason)`, `page()`, and `stream()` never fire it. |

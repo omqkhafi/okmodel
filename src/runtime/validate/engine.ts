@@ -44,10 +44,11 @@ export async function prepare(
   schemaFlag: unknown,
   op: Op,
   input: unknown,
+  keys: readonly string[] = [],
 ): Promise<unknown> {
   engage(model, source, schemaFlag);
-  if (op === "update") return finishUpdate(model, input);
-  return finish(model, "insert", input, false, false, undefined, undefined);
+  if (op === "update") return finishUpdate(model, input, keys);
+  return finish(model, "insert", input, false, false, undefined, undefined, keys);
 }
 
 /**
@@ -75,11 +76,12 @@ export async function stand(
   mode: "valid" | "check",
   pick?: readonly string[],
   omit?: readonly string[],
+  keys: readonly string[] = [],
 ): Promise<unknown> {
   engage(model, source, schemaFlag);
   const input = op === "update" ? patchOf(body) : body;
-  if (mode === "check") return issuesOf(model, op, input, pick, omit);
-  return finish(model, op, input, true, true, pick, omit);
+  if (mode === "check") return issuesOf(model, op, input, pick, omit, keys);
+  return finish(model, op, input, true, true, pick, omit, keys);
 }
 
 function engage(model: TableModel, source: AnyTable, schemaFlag: unknown): void {
@@ -87,14 +89,27 @@ function engage(model: TableModel, source: AnyTable, schemaFlag: unknown): void 
   if (gate !== undefined) (model as { validation?: ValidationModel }).validation = gate;
 }
 
-async function finishUpdate(model: TableModel, input: unknown): Promise<unknown> {
+async function finishUpdate(
+  model: TableModel,
+  input: unknown,
+  keys: readonly string[],
+): Promise<unknown> {
   if (Array.isArray(input)) {
     const items: unknown[] = [];
     const issues: ValidationIssue[] = [];
     for (let index = 0; index < input.length; index += 1) {
       const item = input[index];
       if (!isRecord(item)) failShape("update expects { where, set } or a list of rows.");
-      const set = await oneValue(model, "update", item.set, false, false, undefined, undefined);
+      const set = await oneValue(
+        model,
+        "update",
+        item.set,
+        false,
+        false,
+        undefined,
+        undefined,
+        keys,
+      );
       pushIndexed(issues, index, set.issues);
       items.push({ ...item, set: set.row });
     }
@@ -102,7 +117,7 @@ async function finishUpdate(model: TableModel, input: unknown): Promise<unknown>
     return items;
   }
   if (!isRecord(input) || !isRecord(input.set)) return input;
-  const set = await oneValue(model, "update", input.set, false, false, undefined, undefined);
+  const set = await oneValue(model, "update", input.set, false, false, undefined, undefined, keys);
   if (set.issues.length > 0) throwIssues(set.issues);
   return { ...input, set: set.row };
 }
@@ -115,19 +130,20 @@ async function finish(
   strict: boolean,
   pick: readonly string[] | undefined,
   omit: readonly string[] | undefined,
+  keys: readonly string[],
 ): Promise<unknown> {
   if (Array.isArray(input)) {
     const rows: Record<string, unknown>[] = [];
     const issues: ValidationIssue[] = [];
     for (let index = 0; index < input.length; index += 1) {
-      const one = await oneValue(model, op, input[index], seal, strict, pick, omit);
+      const one = await oneValue(model, op, input[index], seal, strict, pick, omit, keys);
       pushIndexed(issues, index, one.issues);
       rows.push(one.row);
     }
     if (issues.length > 0) throwIssues(issues);
     return seal ? Object.freeze(rows) : rows;
   }
-  const one = await oneValue(model, op, input, seal, strict, pick, omit);
+  const one = await oneValue(model, op, input, seal, strict, pick, omit, keys);
   if (one.issues.length > 0) throwIssues(one.issues);
   return one.row;
 }
@@ -138,16 +154,17 @@ async function issuesOf(
   input: unknown,
   pick: readonly string[] | undefined,
   omit: readonly string[] | undefined,
+  keys: readonly string[],
 ): Promise<readonly ValidationIssue[]> {
   if (Array.isArray(input)) {
     const issues: ValidationIssue[] = [];
     for (let index = 0; index < input.length; index += 1) {
-      const one = await oneValue(model, op, input[index], false, true, pick, omit);
+      const one = await oneValue(model, op, input[index], false, true, pick, omit, keys);
       pushIndexed(issues, index, one.issues);
     }
     return issues;
   }
-  const one = await oneValue(model, op, input, false, true, pick, omit);
+  const one = await oneValue(model, op, input, false, true, pick, omit, keys);
   return one.issues;
 }
 
@@ -167,6 +184,7 @@ async function oneValue(
   strict: boolean,
   pick: readonly string[] | undefined,
   omit: readonly string[] | undefined,
+  keys: readonly string[],
 ): Promise<{ readonly row: Record<string, unknown>; readonly issues: ValidationIssue[] }> {
   if (!isRecord(input)) failShape("insert expects an object or a list of objects.");
   if (isBranded(input, model)) {
@@ -174,7 +192,7 @@ async function oneValue(
     keep(row, pick, omit);
     return { row: seal ? sealRow(row, model) : row, issues: [] };
   }
-  const row = acceptKeys(model, op, input, strict);
+  const row = acceptKeys(model, op, input, strict, keys);
   keep(row, pick, omit);
   const gate = model.validation;
   const issues: ValidationIssue[] = [];
@@ -217,11 +235,12 @@ function acceptKeys(
   op: Op,
   input: Record<string, unknown>,
   strict: boolean,
+  keys: readonly string[],
 ): Record<string, unknown> {
   const row: Record<string, unknown> = {};
   for (const key of Object.keys(input)) {
     const column = findColumn(model, key);
-    if (column === undefined) refuseUnknown(model, key);
+    if (column === undefined) refuseUnknown(model, key, keys);
     const blocked = (op === "update" && column.guardUpdate) || !column.writable;
     if (blocked) {
       if (strict) {
@@ -248,12 +267,17 @@ function acceptKeys(
  * @param model - Table being written
  * @param key - Caller key
  */
-function refuseUnknown(model: TableModel, key: string): never {
+function refuseUnknown(model: TableModel, key: string, keys: readonly string[]): never {
   const names: string[] = [];
-  for (const column of model.columns) names.push(column.field);
+  const shown: string[] = [];
+  for (const column of model.columns) {
+    names.push(column.field);
+    if (!keys.includes(column.field)) shown.push(column.field);
+  }
   // Same order as the core write path (`table.names` is sorted).
   names.sort();
-  const accepted = names.length === 0 ? "(none)" : names.join(", ");
+  shown.sort();
+  const accepted = shown.length === 0 ? "(none)" : shown.join(", ");
   throwNamed(
     "OKM1120",
     key,

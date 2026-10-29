@@ -222,9 +222,10 @@ function wire(entry: Entry, value: unknown): string {
     default:
       if (typeof value === "boolean") return value ? "true" : "false";
   }
+  const article = entry.type === "int" ? "an" : "a";
   return bad(
-    `with() ${entry.key} is not a ${entry.type}.`,
-    `Pass a ${entry.type} for ${entry.key}.`,
+    `with() ${entry.key} is not ${article} ${entry.type}.`,
+    `Pass ${article} ${entry.type} for ${entry.key}.`,
   );
 }
 

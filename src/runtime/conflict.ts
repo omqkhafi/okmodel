@@ -60,7 +60,7 @@ export function readConflict(
     return {
       kind: "update",
       columns: uniqueColumns(table, value.on, tenantKey),
-      update: updateColumns(table, update, allow),
+      update: updateColumns(table, update, allow, tenantKey),
     };
   }
   fail("OKM1120", 'onConflict must be "error", "ignore", { on, update }, or { on, return: true }.');
@@ -234,11 +234,13 @@ function updateColumns(
   table: Indexed,
   value: unknown,
   allow: ReadonlySet<string>,
+  tenantKey?: string | readonly string[],
 ): readonly ColumnModel[] {
   if (!Array.isArray(value) || value.length === 0) {
     fail("OKM1120", "onConflict update must name at least one column.");
   }
   const columns: ColumnModel[] = [];
+  const shown = writeNames(table, tenantKey);
   for (const name of value) {
     if (typeof name !== "string") fail("OKM1120", "onConflict update must name columns.");
     const column = table.columns.get(name);
@@ -247,7 +249,7 @@ function updateColumns(
         "OKM1120",
         name,
         table.names,
-        `Field ${name} is not on ${table.model.name}. Accepted names: ${list(table.names)}.`,
+        `Field ${name} is not on ${table.model.name}. Accepted names: ${list(shown)}.`,
       );
     }
     if (
@@ -260,6 +262,19 @@ function updateColumns(
     columns.push(column);
   }
   return columns;
+}
+
+/** Column names an upsert update may name. The tenant key stays in the hint list. */
+function writeNames(
+  table: Indexed,
+  tenantKey: string | readonly string[] | undefined,
+): readonly string[] {
+  const keys =
+    tenantKey === undefined ? [] : typeof tenantKey === "string" ? [tenantKey] : tenantKey;
+  if (keys.length === 0) return table.names;
+  const names: string[] = [];
+  for (const name of table.names) if (!keys.includes(name)) names.push(name);
+  return names;
 }
 
 function conflictNames(on: unknown): readonly string[] {

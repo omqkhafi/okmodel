@@ -230,6 +230,24 @@ test("artifactDir drops a trailing slash or backslash", () => {
   expect(artifactDir("C:\\proj\\.okm")).toBe("C:\\proj\\.okm");
 });
 
+test("artifactDir uses ./.okm when process.cwd is missing or throws", () => {
+  const proc = globalThis.process as { cwd: (() => string) | undefined };
+  const previous = proc.cwd;
+  try {
+    proc.cwd = undefined;
+    expect(artifactDir(undefined)).toBe("./.okm");
+    proc.cwd = () => {
+      throw new Error("edge");
+    };
+    expect(artifactDir(undefined)).toBe("./.okm");
+    expect(artifactDir("/proj/.okm")).toBe("/proj/.okm");
+  } finally {
+    proc.cwd = previous;
+  }
+  if (previous === undefined) throw new Error("process.cwd was missing");
+  expect(artifactDir(undefined)).toBe(`${previous()}/.okm`);
+});
+
 test("callerLocation reads a backslash frame", () => {
   expect(locationFromLines(["Error", "    at table (C:\\work\\schema.ts:8:2)"], 0)).toBe(
     "schema.ts:8",

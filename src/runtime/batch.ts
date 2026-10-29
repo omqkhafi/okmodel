@@ -13,7 +13,7 @@ import { OkmError } from "../contracts/error.js";
 import { settleCall, withHttp, type Session } from "./client.js";
 import { fail, isRecord, rejectKeys } from "./plan.js";
 import { refuseUncancellableTimeout } from "./inflight.js";
-import { runWrite } from "./tx.js";
+import { runWrite, settingNames } from "./tx.js";
 import { statementObserve, type PreparedWrite } from "./write.js";
 
 /** A write handle, as `batch` reads it: it can plan itself without running. */
@@ -127,8 +127,9 @@ async function run(
   }
   if (statements.length === 0) return prepared.map((item) => item.finish([]));
   const watching = session.o !== undefined || session.q !== undefined;
+  const names = settingNames(session.settings);
   const observe = watching
-    ? prepared.flatMap((item) => statementObserve(true, item) ?? rawObserve(item))
+    ? prepared.flatMap((item) => statementObserve(true, item) ?? rawObserve(item, names))
     : undefined;
   if (session.q !== undefined && wantsQueryParams(session.q)) {
     const { rememberSecrets } = await import("./observe-query.js");
@@ -140,7 +141,7 @@ async function run(
   } catch (error) {
     throw at(error, starts);
   }
-  const extra = await recover(session, prepared, results, starts, options);
+  const extra = await recover(session, prepared, results, starts, options, names);
   const decode = (): readonly unknown[] =>
     prepared.map((item, index) => {
       const from = starts[index] ?? 0;
@@ -160,6 +161,7 @@ async function recover(
   results: readonly ExecuteResult[],
   starts: readonly number[],
   options: Record<string, unknown>,
+  names: readonly string[],
 ): Promise<{
   readonly found: Map<number, readonly ExecuteResult[]>;
   readonly ran?: readonly ExecuteResult[];
@@ -186,7 +188,7 @@ async function recover(
   const observe = watching
     ? pending.flatMap((item) => {
         const base = prepared[item.index]?.observe;
-        if (base === undefined) return rawStatements(item.statements);
+        if (base === undefined) return rawStatements(item.statements, names);
         return item.statements.map((statement) =>
           /\breturning\b/i.test(statement.text) ? { ...base, returning: true } : base,
         );
@@ -219,32 +221,41 @@ function wantsQueryParams(handler: object | undefined): boolean {
   return (handler as { observeParams?: boolean } | undefined)?.observeParams === true;
 }
 
-const RAW_OBSERVE = {
-  table: null,
-  op: "raw" as const,
-  tenant: null,
-  settings: [] as readonly string[],
-  source: "client" as const,
-};
-
 /**
  * Fallback metadata when a batched operation recorded none.
  *
  * @param item - Planned operation
+ * @param names - Setting names from `db.with()`
  * @returns One raw meta per statement
  */
-function rawObserve(item: PreparedWrite): (typeof RAW_OBSERVE)[] {
-  return item.statements.map(() => RAW_OBSERVE);
+function rawObserve(item: PreparedWrite, names: readonly string[]): ReturnType<typeof rawMeta>[] {
+  const meta = rawMeta(names);
+  return item.statements.map(() => meta);
 }
 
 /**
  * Fallback metadata for follow-up statements that have no base meta.
  *
  * @param statements - Follow-up statements
+ * @param names - Setting names from `db.with()`
  * @returns One raw meta per statement
  */
-function rawStatements(statements: readonly Statement[]): (typeof RAW_OBSERVE)[] {
-  return statements.map(() => RAW_OBSERVE);
+function rawStatements(
+  statements: readonly Statement[],
+  names: readonly string[],
+): ReturnType<typeof rawMeta>[] {
+  const meta = rawMeta(names);
+  return statements.map(() => meta);
+}
+
+function rawMeta(names: readonly string[]) {
+  return {
+    table: null,
+    op: "raw" as const,
+    tenant: null,
+    settings: names,
+    source: "client" as const,
+  };
 }
 
 function mapExtra(

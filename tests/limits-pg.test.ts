@@ -14,6 +14,7 @@ import { warnings, type WarningNotice } from "../src/runtime/warnings/index.js";
 import {
   absentLimits,
   concurrentInsert,
+  distinctLimits,
   findDefault,
   independence,
   maxCeiling,
@@ -73,6 +74,7 @@ async function withSeed(
 const cases = [
   ["absent limits keep today's behaviour", absentLimits],
   ["find takes limits.find, an explicit limit and .all win", findDefault],
+  ["distinct and distinctOn take limits.find", distinctLimits],
   ["limits.max is a hard ceiling that .all(reason) passes", maxCeiling],
   ["include and groupBy never inherit from find", independence],
   ["page() takes limits.page", pageDefault],

@@ -140,6 +140,7 @@ function plan(
       { items: columns.map((column) => ({ kind: "column", column })), ordinals },
       head,
     ),
+    ...(session.l !== undefined ? { limits: session.l } : {}),
   };
   return readHandle(session, table, call, mods, (compiled, rows) =>
     decodeRows(compiled, rows, table),
