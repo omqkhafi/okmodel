@@ -6,6 +6,7 @@ import { expect, test } from "bun:test";
 
 import {
   compositionRelevant,
+  examplesRelevant,
   lifecycleRelevant,
   postgres18Relevant,
   runtimeRelevant,
@@ -52,6 +53,17 @@ test("tooling and dialects run the site tests", () => {
   expect(siteTestsRelevant(["site/lib/hero-derived.json"])).toBe(false);
   expect(siteTestsRelevant(["docs/errors/OKM1510.md"])).toBe(false);
   expect(siteTestsRelevant([])).toBe(false);
+});
+
+test("examples, runtime, dialects, and Frameworks pages run the examples job", () => {
+  expect(examplesRelevant(["examples/express/src/server.ts"])).toBe(true);
+  expect(examplesRelevant(["src/runtime/client.ts"])).toBe(true);
+  expect(examplesRelevant(["src/dialects/pg/ddl.ts"])).toBe(true);
+  expect(examplesRelevant(["site/content/docs/frameworks/nextjs.mdx"])).toBe(true);
+  expect(examplesRelevant(["scripts/examples-test.ts"])).toBe(true);
+  expect(examplesRelevant(["site/content/docs/start/installation.mdx"])).toBe(false);
+  expect(examplesRelevant(["docs/github.md"])).toBe(false);
+  expect(examplesRelevant([])).toBe(false);
 });
 
 test("packed paths, src, scripts, and package.json run the pack contract", () => {

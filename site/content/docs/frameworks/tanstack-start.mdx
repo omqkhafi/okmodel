@@ -1,0 +1,77 @@
+---
+title: "TanStack Start"
+description: "OKModel in TanStack Start server routes with a process-scoped client."
+---
+Use OKModel from TanStack Start server route handlers on Node.
+
+## Runtime and driver
+
+| | |
+| --- | --- |
+| Runtime | Node.js 22.18+ (Bun for install and scripts) |
+| Driver | `okmodel/pg/postgresjs` + `postgres` |
+| Example | `examples/tanstack-start` |
+
+## Install
+
+```sh
+bun add okmodel postgres @tanstack/react-start @tanstack/react-router
+```
+
+## `db` module and lifecycle
+
+One client per process for the Vite / Nitro server.
+
+```ts title="src/db.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { app } from "./schema";
+
+export const db = connect(process.env.DATABASE_URL!, { schema: app });
+```
+
+## Routes
+
+```ts title="src/routes/api/notes.ts"
+import { createFileRoute } from "@tanstack/react-router";
+import { db } from "../../db";
+
+export const Route = createFileRoute("/api/notes")({
+  server: {
+    handlers: {
+      GET: async () =>
+        Response.json(await db.example_notes.find({ limit: 50 })),
+      POST: async ({ request }) => {
+        const body = (await request.json()) as { title?: string };
+        const row = await db.example_notes.insert({
+          title: body.title ?? "untitled",
+        });
+        return Response.json(row, { status: 201 });
+      },
+    },
+  },
+});
+```
+
+## Dev and test
+
+```sh
+bun run build
+bun run db:up
+bun install --cwd examples/tanstack-start
+bunx --cwd examples/tanstack-start vite dev --port 3105
+bun test examples/tanstack-start/tanstack-start.test.ts
+```
+
+## Deploy and migrate
+
+Build with `bunx vite build`, then deploy the Nitro output to your host. Run `bunx okm migrate apply` on the target before traffic moves.
+
+## Gotchas
+
+- Server handlers run on the Node server, not in the browser bundle.
+- Keep `DATABASE_URL` out of client code.
+- Deno is unsupported. D1 has no adapter.
+
+## Verification
+
+**CI** — `examples/tanstack-start/tanstack-start.test.ts` boots `vite dev` and calls `GET`/`POST /api/notes` against the repository Postgres topology.

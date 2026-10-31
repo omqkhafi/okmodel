@@ -1,0 +1,32 @@
+{
+  "name": "@okmodel/example-tanstack-start",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#/*": "./src/*"
+  },
+  "scripts": {
+    "dev": "bunx vite dev --port 3105",
+    "generate-routes": "bunx tsr generate",
+    "build": "bunx vite build",
+    "start": "bunx vite preview --port 3105",
+    "test": "bun test ./tanstack-start.test.ts"
+  },
+  "dependencies": {
+    "@tanstack/react-router": "1.170.46",
+    "@tanstack/react-start": "1.169.4",
+    "nitro": "3.0.260610-beta",
+    "postgres": "^3.4.9",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@tanstack/router-cli": "^1.132.0",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.0.1",
+    "typescript": "^5.9.2",
+    "vite": "^8.0.0"
+  }
+}

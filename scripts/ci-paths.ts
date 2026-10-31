@@ -8,15 +8,19 @@
  *
  *   bun ./scripts/ci-paths.ts --base <sha> --head <sha>
  *
- * Writes `runtime=`, `workflows=`, `postgres=`, `lifecycle=`, `site=`, and
- * `pack=` lines to `GITHUB_OUTPUT` when that file is set, and always prints
- * the same lines.
+ * Writes `runtime=`, `workflows=`, `postgres=`, `lifecycle=`, `site=`,
+ * `examples=`, and `pack=` lines to `GITHUB_OUTPUT` when that file is set, and
+ * always prints the same lines.
  * `postgres` is true when the diff touches dialects, migrate, or runtime: the
  * pull request then runs Postgres 18. `lifecycle` is true when the diff
  * touches dialects, migrate, or `tests/lifecycle`: the pull request then runs
  * the migration lifecycle property on Postgres 18. `site` is true when the
  * diff touches `src/tooling` or `src/dialects`: the pull request then runs the
  * site tests, because that is where CLI output the hero reads is produced.
+ * `examples` is true when the diff touches `examples/`, `src/runtime/`,
+ * `src/dialects/`, or Frameworks handbook pages under
+ * `site/content/docs/frameworks/`. The pull request then runs the examples
+ * job.
  * `pack` is true when the diff touches a path `package.json` `files` packs
  * (`dist`, `docs`, `schemas`, `skills`, `README.md`, `LICENSE`), a root
  * README, LICENSE, LICENCE, CHANGELOG, CHANGES, or HISTORY name npm always
@@ -136,6 +140,31 @@ export function siteTestsRelevant(paths: readonly string[]): boolean {
 }
 
 /**
+ * Whether a pull request runs the framework examples job inside `gate / check`.
+ *
+ * The paths are `examples/`, `src/runtime/`, `src/dialects/`, and the
+ * Frameworks handbook pages. After-merge Nightly also runs the Workers live
+ * Neon test when credentials are present.
+ *
+ * @param paths - Paths from the repository root
+ * @returns True when any path is in those trees
+ */
+export function examplesRelevant(paths: readonly string[]): boolean {
+  return paths.some(
+    (path) =>
+      path === "examples" ||
+      path.startsWith("examples/") ||
+      path === "src/runtime" ||
+      path.startsWith("src/runtime/") ||
+      path === "src/dialects" ||
+      path.startsWith("src/dialects/") ||
+      path === "site/content/docs/frameworks" ||
+      path.startsWith("site/content/docs/frameworks/") ||
+      path === "scripts/examples-test.ts",
+  );
+}
+
+/**
  * Whether a pull request runs the pack contract inside `gate / check`.
  *
  * The packed file list drifts when a path in `package.json` `files` changes,
@@ -217,6 +246,7 @@ function writeOutputs(paths: readonly string[]): void {
     `lifecycle=${lifecycleRelevant(paths) ? "true" : "false"}\n` +
     `composition=${compositionRelevant(paths) ? "true" : "false"}\n` +
     `site=${siteTestsRelevant(paths) ? "true" : "false"}\n` +
+    `examples=${examplesRelevant(paths) ? "true" : "false"}\n` +
     `pack=${packContractRelevant(paths) ? "true" : "false"}\n`;
   const output = process.env.GITHUB_OUTPUT;
   if (output !== undefined && output.length > 0) appendFileSync(output, text);

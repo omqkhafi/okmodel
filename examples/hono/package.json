@@ -1,0 +1,16 @@
+{
+  "name": "@okmodel/example-hono",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun ./src/server.ts",
+    "dev:node": "bun build ./src/server-node.ts --target=node --outdir=.run --packages=external && node .run/server-node.js",
+    "start": "bun ./src/server.ts",
+    "test": "bun test ./hono.test.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.0",
+    "hono": "^4.13.14",
+    "postgres": "^3.4.9"
+  }
+}

@@ -196,6 +196,34 @@ test("a pull request that does not touch those paths allows a skipped pack job",
   ).toEqual(["pack"]);
 });
 
+test("examples may skip unless requested", () => {
+  const skipped = [...READY, { name: "examples", result: "skipped" }];
+  expect(
+    gateFailures(skipped, {
+      postgres: false,
+      lifecycle: false,
+      site: false,
+      examples: true,
+    }).map((slice) => slice.name),
+  ).toEqual(["examples"]);
+  expect(
+    gateFailures([...READY, { name: "examples", result: "success" }], {
+      postgres: false,
+      lifecycle: false,
+      site: false,
+      examples: true,
+    }),
+  ).toEqual([]);
+  expect(
+    gateFailures([...READY, { name: "examples", result: "skipped" }], {
+      postgres: false,
+      lifecycle: false,
+      site: false,
+      examples: false,
+    }),
+  ).toEqual([]);
+});
+
 test("parseGateSlices reads name=result and ignores flags", () => {
   expect(parseGateSlices(["lint=success", "suite=skipped", "--postgres"])).toEqual([
     { name: "lint", result: "success" },

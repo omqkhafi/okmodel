@@ -48,6 +48,7 @@ test("small groups flatten; Schema and Operate stay folders", () => {
   expect(folders.map((folder) => folder.name)).toEqual([
     "Get started",
     "Concepts",
+    "Frameworks",
     "Schema",
     "Queries",
     "Migrations",
@@ -63,13 +64,14 @@ test("small groups flatten; Schema and Operate stay folders", () => {
   expect(separators).toEqual([
     "1. Get started",
     "2. Concepts",
-    "3. Schema",
-    "4. Queries",
-    "5. Migrations",
-    "6. Operate",
-    "7. Guides",
-    "8. Reference",
-    "9. AI Resources",
+    "3. Frameworks",
+    "4. Schema",
+    "5. Queries",
+    "6. Migrations",
+    "7. Operate",
+    "8. Guides",
+    "9. Reference",
+    "10. AI Resources",
   ]);
 
   const flat = flattenSectionFolders(raw);
@@ -80,6 +82,8 @@ test("small groups flatten; Schema and Operate stay folders", () => {
   expect(labels).toContain("/docs/start");
   expect(labels).toContain("/docs/start/first-schema");
   expect(labels).toContain("/docs/concepts/how-okmodel-works");
+  expect(labels).toContain("/docs/frameworks/nextjs");
+  expect(labels).not.toContain("Frameworks");
   expect(labels).toContain("/docs/queries/read-rows");
   expect(labels).toContain("/docs/migrations/from-drizzle");
   expect(labels).toContain("/docs/guides/soft-delete");

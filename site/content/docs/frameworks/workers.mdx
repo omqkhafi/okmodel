@@ -1,0 +1,88 @@
+---
+title: "Cloudflare Workers"
+description: "OKModel on Cloudflare Workers with Neon, per-request connect and close."
+---
+Workers have no TCP sockets for Postgres. Use the Neon driver over WebSocket or HTTP. Create the client inside `fetch` and close it with `ctx.waitUntil`.
+
+## Runtime and driver
+
+| | |
+| --- | --- |
+| Runtime | Cloudflare Workers with `nodejs_compat` |
+| Driver | `okmodel/pg/neon` + `@neondatabase/serverless` |
+| Example | `examples/workers-neon` |
+
+## Install
+
+```sh
+bun add okmodel @neondatabase/serverless
+bun add -D wrangler miniflare
+```
+
+`wrangler.toml` must set `compatibility_flags = ["nodejs_compat"]`.
+
+## `db` module and lifecycle
+
+Per request. Do not keep a pool on the isolate across requests.
+
+```ts title="src/db.ts"
+import { connect, type NeonMode } from "okmodel/pg/neon";
+import { app } from "./schema";
+
+export function openRequestDb(url: string, mode: NeonMode = "websocket") {
+  return connect(url, { schema: app, mode });
+}
+```
+
+```ts title="src/worker.ts"
+import { openRequestDb } from "./db";
+
+export default {
+  async fetch(request: Request, env: { DATABASE_URL: string; NEON_MODE?: string }, ctx: ExecutionContext) {
+    const mode = env.NEON_MODE === "http" ? "http" : "websocket";
+    const db = await openRequestDb(env.DATABASE_URL, mode);
+    try {
+      // read / write routes…
+      return Response.json({ ok: true });
+    } finally {
+      ctx.waitUntil(Promise.resolve(db.close()));
+    }
+  },
+};
+```
+
+## Modes
+
+- **websocket** (default): interactive `tx()` works on a direct connection.
+- **http**: `batch([...writes])` is one atomic transaction; `tx()` is [OKM1111](/docs/reference/errors#okm1111). A positive `timeout` is [OKM1120](/docs/reference/errors#okm1120).
+
+## Dev and test
+
+```sh
+bun run build
+bun install --cwd examples/workers-neon
+bunx --cwd examples/workers-neon wrangler dev
+bun test examples/workers-neon/workers-neon.test.ts
+```
+
+The live Neon read/write test runs when `OKM_EXAMPLES_NIGHTLY=1` and `NEON_URL` are set. Without them it skips. The bundle size check always runs.
+
+## Deploy and migrate
+
+```sh
+bunx wrangler deploy
+bunx okm migrate apply --target production
+```
+
+Migrate from CI or a machine with TCP to Postgres. The Worker itself is not the migrate host.
+
+## Gotchas
+
+- Require `nodejs_compat`.
+- Bundle size in the example measured about 1 MiB upload / ~237 KiB gzip — under Cloudflare’s free ~3 MiB compressed limit.
+- No D1 adapter. Deno is unsupported.
+- A suspended Neon compute cold-starts on the first request.
+
+## Verification
+
+**Nightly** — `examples/workers-neon/workers-neon.test.ts` drives the Worker in miniflare/workerd for both Neon modes when credentials are present. **CI** always checks the bundle size and `nodejs_compat`.
