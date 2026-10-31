@@ -1,0 +1,102 @@
+---
+title: "Multi-tenant app"
+description: "Scope every read and write with for(), and keep orderBy stable under the tenant key."
+---
+
+Goal: isolate two tenants with schema tenancy, prove a scoped read cannot see the other tenant, and fix OKM2005.
+
+Detail lives on [Tenancy](/docs/schema/tenancy), [Tenant isolation](/docs/concepts/tenant-isolation), and [Testing](/docs/operate/testing#isolation).
+
+## 1. Declare the key
+
+`columnTenancy` adds a guarded uuid to every tenant table. Uniques and the primary key include that key. Insert stamps it from `for()`; input cannot set it.
+
+```ts title="tenancy.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { id, schema, table, text } from "okmodel/pg";
+import { columnTenancy } from "okmodel/tenancy";
+import { warnings } from "okmodel/warnings";
+import { OkmError } from "okmodel";
+
+const notes = table("notes", {
+  id: id({ default: "none" }),
+  title: text().unique(),
+  createdAt: text(),
+});
+export const app = schema({
+  tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
+  tables: [notes],
+});
+
+const TENANT_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const TENANT_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const NOTE_A = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c41";
+const NOTE_B = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c42";
+
+export async function isolate(url: string): Promise<void> {
+  await using db = connect(url, {
+    schema: app,
+    warnings: warnings({
+      env: "development",
+      onWarning: (notice) => {
+        console.log(`${notice.code}: ${notice.summary}`);
+        console.log(`Fix: ${notice.fix.summary}`);
+      },
+    }),
+  });
+  const a = db.for({ tenantId: TENANT_A });
+  const b = db.for({ tenantId: TENANT_B });
+  await a.notes.insert({ id: NOTE_A, title: "A", createdAt: "1" });
+  await b.notes.insert({ id: NOTE_B, title: "B", createdAt: "1" });
+  console.log(
+    JSON.stringify((await a.notes.find({ orderBy: { title: "asc" }, limit: 10 })).map((row) => row.title)),
+  );
+  console.log(
+    JSON.stringify((await b.notes.find({ orderBy: { title: "asc" }, limit: 10 })).map((row) => row.title)),
+  );
+  await a.notes.find({ limit: 2, orderBy: { createdAt: "asc" } });
+  await a.notes.find({ limit: 2, orderBy: { createdAt: "asc", id: "asc" } });
+  try {
+    await a.notes.insert({
+      id: "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c43",
+      title: "x",
+      tenatId: TENANT_A,
+    } as never);
+  } catch (error) {
+    if (error instanceof OkmError) console.log(`${error.code}: ${error.message}`);
+  }
+}
+```
+
+```text title="tenancy.out"
+["A"]
+["B"]
+OKM2005: A limit whose order does not end in a unique key can return a different row set each time. Under for(), the tenant key is ignored, so the rest of that unique counts.
+Fix: End orderBy with the primary key or a unique column.
+OKM1120: Field tenatId is not on notes. Accepted names: createdAt, id, title. Did you mean `tenantId`?
+```
+
+## 2. OKM2005 under `for()`
+
+Under `for()`, the tenant key is already pinned, so it does not count toward a unique tail. `orderBy: { createdAt: "asc" }` warns. End with `id` (or another unique column): `orderBy: { createdAt: "asc", id: "asc" }`.
+
+`title` is unique per tenant, so `orderBy: { title: "asc" }` is enough inside a scope.
+
+## 3. OKM1120 on a write
+
+A mistyped write key is [OKM1120](/docs/reference/errors#okm1120). The accepted-names list omits the tenant key. A hint may still name `tenantId` when the typo is close.
+
+## 4. Test isolation
+
+`testing(...).isolation()` inserts as tenant B and reads and writes as tenant A. A leak fails with the table and the query. Use a non-superuser on real Postgres for `rlsTenancy`. See [Testing](/docs/operate/testing#isolation).
+
+## What can go wrong
+
+- [OKM1701](/docs/reference/errors#okm1701): a tenant table used without `for()`.
+- [OKM1190](/docs/reference/errors#okm1190) / [OKM1704](/docs/reference/errors#okm1704): input that sets the tenant key.
+- [OKM2005](/docs/reference/errors#okm2005): unstable `orderBy` under a limit.
+
+| Next | You use it for |
+| --- | --- |
+| [Tenancy](/docs/schema/tenancy) | `global`, `via`, composite keys, and RLS. |
+| [Warnings](/docs/reference/warnings) | Levels and ignores for OKM2005. |

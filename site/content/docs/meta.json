@@ -14,9 +14,11 @@
     "migrations",
     "---6. Operate---",
     "operate",
-    "---7. Reference---",
+    "---7. Guides---",
+    "guides",
+    "---8. Reference---",
     "reference",
-    "---8. AI Resources---",
+    "---9. AI Resources---",
     "ai"
   ]
 }
