@@ -9,7 +9,9 @@
  * Tenancy and the active set apply on the start row, on every step, and on
  * the rows that come back. `where` and presets filter those rows and do not
  * cut the walk short. A missing id returns no rows, including with `self`.
- * The root has no ancestors. Loaded on the first call.
+ * The root has no ancestors. `limit` bounds the rows after the walk's order,
+ * the same rule as `find`. `depth` is steps and does not bound rows. Loaded
+ * on the first call.
  */
 
 import { OkmError, throwNamed } from "../contracts/error.js";
@@ -19,6 +21,7 @@ import {
   decodeResult,
   emitOrder,
   emitWhere,
+  readLimit,
   fail,
   indexes,
   isRecord,
@@ -38,6 +41,7 @@ const OPTIONS = [
   "where",
   "select",
   "orderBy",
+  "limit",
   "depth",
   "self",
   "relation",
@@ -103,6 +107,7 @@ function open(
     ...(user.where !== undefined ? { where: user.where } : {}),
     ...(user.select !== undefined ? { select: user.select } : {}),
     ...(user.orderBy !== undefined ? { orderBy: user.orderBy } : {}),
+    ...(user.limit !== undefined ? { limit: user.limit } : {}),
     ...(user.signal !== undefined ? { signal: user.signal } : {}),
     ...(user.timeout !== undefined ? { timeout: user.timeout } : {}),
     ...(user.route !== undefined ? { route: user.route } : {}),
@@ -122,6 +127,7 @@ function open(
   const call: ReadCall = {
     ...base,
     op: packed.walk,
+    ...(session.l !== undefined ? { limits: session.l } : {}),
     build: (schema, planned, sink, outputs, source) => {
       emitTree(schema, planned, sink, outputs, source, spec);
     },
@@ -206,17 +212,69 @@ function emitTree(
   }
   if (call.orderBy !== undefined) {
     emitOrder(table, call.orderBy, sink, "t");
+  } else {
+    sink.text(" order by w.depth asc");
+    sink.mark("order:depth");
+    for (const field of table.model.primary) {
+      const item = table.columns.get(field);
+      if (item === undefined) continue;
+      sink.text(", t.");
+      sink.text(quote(item.sql));
+      sink.text(" asc");
+    }
+  }
+  emitWalkLimit(call, sink, direction);
+  rememberBound(call);
+}
+
+/**
+ * Writes the row bound after the walk's order.
+ *
+ * The same rule as `find`: `.all("")` and a missing limit are OKM1101.
+ * `.all(reason)` writes no bound unless the caller also passed `limit`.
+ * This stays in the tree chunk. `emitLimit` is the find copy on the startup path.
+ *
+ * @param call - The walk
+ * @param sink - Statement being built
+ * @param direction - `descendants` or `ancestors`
+ */
+function emitWalkLimit(call: ReadCall, sink: Sink, direction: Direction): void {
+  const label = `${direction}()`;
+  if (call.all !== undefined) {
+    if (call.all.length === 0) fail("OKM1101", `${label} .all needs a reason.`);
+    sink.mark(`all:${call.all}`);
+    if (call.limit !== undefined) writeLimit(call, sink);
     return;
   }
-  sink.text(" order by w.depth asc");
-  sink.mark("order:depth");
-  for (const field of table.model.primary) {
-    const item = table.columns.get(field);
-    if (item === undefined) continue;
-    sink.text(", t.");
-    sink.text(quote(item.sql));
-    sink.text(" asc");
-  }
+  if (call.limit === undefined) fail("OKM1101", `${label} needs a limit.`);
+  writeLimit(call, sink);
+}
+
+/**
+ * Records the `bounded` rule on the call so `.inspect()` can read it.
+ *
+ * `appliedRules` already lists `ruleLines`. The contribution is decided
+ * here, after `limits.find` has filled `limit`, and the startup graph
+ * does not grow a second copy of that rule.
+ *
+ * @param call - The walk, after the default limit is applied
+ */
+function rememberBound(call: ReadCall): void {
+  const dl = call.dl;
+  const rule = {
+    rule: "bounded" as const,
+    contribution: call.all ?? (dl === undefined ? "limit" : `limits.${dl[0]}`),
+    provenance: dl === undefined ? ("caller" as const) : ("connect" as const),
+  };
+  const lines = call.ruleLines === undefined ? [rule] : [...call.ruleLines, rule];
+  (call as unknown as { ruleLines: typeof lines }).ruleLines = lines;
+}
+
+function writeLimit(call: ReadCall, sink: Sink): void {
+  const value = readLimit(call.limit);
+  sink.text(" limit ");
+  sink.param(String(value));
+  sink.mark(`l:${String(value)}`);
 }
 
 function emitKeyList(sink: Sink, alias: string, columns: readonly string[], prefix: string): void {

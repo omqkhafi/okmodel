@@ -791,6 +791,12 @@ export type TreeOptions<S extends QuerySchema, K extends keyof S["~byName"]> = C
   readonly where?: WhereOf<S, K>;
   readonly select?: readonly (keyof RowOf<S, K> & string)[];
   readonly orderBy?: OrderBy<RowOf<S, K>>;
+  /**
+   * How many rows come back, after the walk's order. Required unless the
+   * client set `limits.find` or the caller uses `.all(reason)`. `depth` is
+   * steps, not rows.
+   */
+  readonly limit?: number;
   /** Suppress a warning rule. Absent when every firing rule should report. */
   readonly ignore?: CallIgnore;
   readonly depth?: number;
@@ -1662,6 +1668,11 @@ type ArchiveOps<S extends QuerySchema, K extends keyof S["~byName"] & string, L>
 type Unbounded<S, Key extends keyof Limits, R> =
   Defaults<S, Key> extends true ? R : { all(reason: string): R };
 
+/** A tree walk. `.all(reason)` reads past `limits.max`. */
+type TreeQuery<T> = Query<T> & {
+  all(reason: string): Query<T>;
+};
+
 /** `page` options with no `limit`, for a client with `limits.page`. Otherwise `never`. */
 type DefaultPage<
   S extends QuerySchema,
@@ -1992,27 +2003,61 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
    * data returns. A missing id returns no rows. `where` and a preset filter
    * the rows that come back. Tenancy and the active set apply at every step.
    */
+  descendants<
+    const O extends TreePlainOptions<S, K, WhereOfTarget<O>, OrderOfTarget<O>> & {
+      readonly limit: number;
+    },
+  >(
+    id: unknown,
+    options: O,
+  ): TreeQuery<readonly ResultRow<S, K, O>[]>;
+  descendants<
+    const O extends ExactConstraint<
+      O,
+      TreeFilterOptions<S, K, WhereOfTarget<O>, OrderOfTarget<O>> & { readonly limit: number }
+    >,
+  >(
+    id: unknown,
+    options: O,
+  ): TreeQuery<readonly ResultRow<S, K, O>[]>;
   descendants<const O extends TreePlainOptions<S, K, WhereOfTarget<O>, OrderOfTarget<O>>>(
     id: unknown,
     options?: O,
-  ): Query<readonly ResultRow<S, K, O>[]>;
+  ): Unbounded<S, "find", TreeQuery<readonly ResultRow<S, K, O>[]>>;
   descendants<
     const O extends ExactConstraint<O, TreeFilterOptions<S, K, WhereOfTarget<O>, OrderOfTarget<O>>>,
   >(
     id: unknown,
     options?: O,
-  ): Query<readonly ResultRow<S, K, O>[]>;
+  ): Unbounded<S, "find", TreeQuery<readonly ResultRow<S, K, O>[]>>;
   /** Rows above `id`. The options match {@link TableApi.descendants}. */
+  ancestors<
+    const O extends TreePlainOptions<S, K, WhereOfTarget<O>, OrderOfTarget<O>> & {
+      readonly limit: number;
+    },
+  >(
+    id: unknown,
+    options: O,
+  ): TreeQuery<readonly ResultRow<S, K, O>[]>;
+  ancestors<
+    const O extends ExactConstraint<
+      O,
+      TreeFilterOptions<S, K, WhereOfTarget<O>, OrderOfTarget<O>> & { readonly limit: number }
+    >,
+  >(
+    id: unknown,
+    options: O,
+  ): TreeQuery<readonly ResultRow<S, K, O>[]>;
   ancestors<const O extends TreePlainOptions<S, K, WhereOfTarget<O>, OrderOfTarget<O>>>(
     id: unknown,
     options?: O,
-  ): Query<readonly ResultRow<S, K, O>[]>;
+  ): Unbounded<S, "find", TreeQuery<readonly ResultRow<S, K, O>[]>>;
   ancestors<
     const O extends ExactConstraint<O, TreeFilterOptions<S, K, WhereOfTarget<O>, OrderOfTarget<O>>>,
   >(
     id: unknown,
     options?: O,
-  ): Query<readonly ResultRow<S, K, O>[]>;
+  ): Unbounded<S, "find", TreeQuery<readonly ResultRow<S, K, O>[]>>;
   /**
    * Sets a to-many relation to exactly `ids`.
    *

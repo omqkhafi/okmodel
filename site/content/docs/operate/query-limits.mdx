@@ -1,8 +1,8 @@
 ---
 title: "Query limits"
-description: "Opt-in default limits for find, to-many include, page, and groupBy, with a hard ceiling."
+description: "Opt-in default limits for find, tree walks, to-many include, page, and groupBy, with a hard ceiling."
 ---
-By default a read with no `limit` is refused (OKM1101 for `find`, `page`, and a grouped aggregate; OKM1105 for a to-many `include`). `limits` is an opt-in default for those calls. Leave it out and nothing changes.
+By default a read with no `limit` is refused (OKM1101 for `find`, `descendants`, `ancestors`, `page`, and a grouped aggregate; OKM1105 for a to-many `include`). `limits` is an opt-in default for those calls. Leave it out and nothing changes.
 
 ```ts
 import { connect } from "okmodel/pg/postgresjs";
@@ -23,11 +23,11 @@ Every key is optional and independent. `include` and `groupBy` never take the va
 
 | Key | Applies to |
 | --- | --- |
-| `find` | `find` with no `limit` and no `.all(reason)`. That includes `search`, `matches`, presets, and relation filters. |
+| `find` | `find`, `descendants`, and `ancestors` with no `limit` and no `.all(reason)`. That includes `search`, `matches`, presets, and relation filters. `depth` on a tree walk is steps, not this row bound. |
 | `include` | A to-many `include` (`many` and `manyThrough`, at any depth) with no `limit`. A to-one include has no limit. |
 | `page` | The page size of `page()` with no `limit`. |
 | `groupBy` | `aggregate` with `groupBy` and no `limit`. |
-| `max` | A ceiling for the `limit` you write, on `find`, `page()`, `aggregate`, and `include`. |
+| `max` | A ceiling for the `limit` you write, on `find`, `descendants`, `ancestors`, `page()`, `aggregate`, and `include`. |
 
 ```ts
 const notes = await db.notes.find({ orderBy: { id: "asc" } }); // limit 50
@@ -60,6 +60,6 @@ await db.notes.find({ orderBy: { id: "asc" }, limit: 5000 }).all("backfill"); //
 
 ## OKM2011
 
-A default can hide rows. With `warnings` on, a read that took a default and returned exactly that many rows is OKM2011 in development: the call site, the key (`limits.find = 50`), and the fix. The fix is a `limit` that fits the call, `page()`, or `.all(reason)`.
+A default can hide rows. With `warnings` on, a read that took a default and returned exactly that many rows is OKM2011 in development: the call site, the key (`limits.find = 50`), and the fix. `descendants` and `ancestors` take `limits.find` and do not emit OKM2011. The fix is a `limit` that fits the call, `page()`, or `.all(reason)`.
 
 The warning never fires for a limit you wrote, for `.all(reason)`, or for `page()`. In production every warning is off until `levels` turns it on. See [Warnings](/docs/reference/warnings).

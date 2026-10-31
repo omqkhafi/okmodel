@@ -163,7 +163,7 @@ connect(url, { schema: appSchema, tenancy: { registry } });                  // 
 
 - `connect({ schema })` is the authoritative runtime configuration. `Register` is a TypeScript convenience for inference and defaults only; nothing at runtime reads it.
 - Module augmentation applies to the TypeScript program (project) that includes the declaration, not automatically to a whole monorepo.
-- Every public type also accepts an explicit schema: `Row<"events", typeof reportsSchema>`, `Client<typeof reportsSchema>`, `TableName<typeof reportsSchema>`. `okm check` warns on more than one `Register` augmentation in one project (OKM1025).
+- Every public type also accepts an explicit schema: `Row<"events", typeof reportsSchema>`, `Client<typeof reportsSchema>`, `TableName<typeof reportsSchema>`. Two `Register` declarations that give `schema` different types are a TypeScript error (TS2717).
 
 Monorepo pattern — a shared package owns the schema and its registration; apps consume it:
 
@@ -190,7 +190,7 @@ Any project that imports `@app/db` includes the augmentation and gets inference;
 | `archivable` strategy | `column` | none in M1 |
 | `delete` | permanent | never changed by traits |
 | Unbounded reads, unfiltered writes | rejected | `.all("reason")` |
-| Unknown input keys | dropped | none |
+| Unknown input keys | refused with OKM1120 (D291) | none |
 | Hidden fields | excluded from reads | named in `select` |
 | Extensions | none installed; each is declared in `extensions` | add to `extensions` |
 | Cancellation | none unless `signal` or `timeout` is given; `connect({ timeouts })` sets ceilings | per call |
@@ -1081,7 +1081,7 @@ Specified before M1 and tested on every driver through the conformance suite:
 
 Tool 2 is a to-many `include` with `orderBy` and `limit`: the first N related rows for each parent, one lateral join, with the primary key as the tie-break (D251, section 10). Tool 12 is `rowNumber`, `rank`, `denseRank`, and `runningTotal` in `select` on `find` or `one` (D251, section 10). Tool 13 is `find({ search })` and `count({ search })` (D250, section 10). Tool 15 adds no call: a named query is a preset (section 6.2.1) or a function that returns `find` options.
 
-Tool 11 is `descendants(id, options)` and `ancestors(id, options)` (D252). One recursive statement walks a self-relation. `depth` is how many steps from the starting row. Omit it to walk the whole tree. `self` includes that row. `relation` is required when the table has more than one self-relation. `where`, `select`, and `orderBy` match `find`. A row already on the path is not entered again, so a cycle returns. A missing id returns no rows, including with `self`. The root has no ancestors. `where` and a preset filter the rows that come back. Tenancy and the active set apply on the start row, on every step, and on the result. There is no `include`. The statement starts with `WITH`, so it runs on the primary.
+Tool 11 is `descendants(id, options)` and `ancestors(id, options)` (D252). One recursive statement walks a self-relation. `depth` is how many steps from the starting row. Omit it to walk the whole tree. `self` includes that row. `relation` is required when the table has more than one self-relation. `where`, `select`, and `orderBy` match `find`. `limit` matches `find`: it bounds the rows after that order. No `limit` and no `.all(reason)` takes `limits.find`, or is OKM1101. A `limit` above `limits.max` is OKM1101, and `.all(reason)` reads past it. `depth` does not bound rows. A row already on the path is not entered again, so a cycle returns. A missing id returns no rows, including with `self`. The root has no ancestors. `where` and a preset filter the rows that come back. Tenancy and the active set apply on the start row, on every step, and on the result. There is no `include`. The statement starts with `WITH`, so it runs on the primary.
 
 Tool 10 is `sync(id, relation, ids)` (D252, section 11). One transaction. The first statement locks the parent row. The second adds the missing links and removes the extra ones, and sees links a sync that just committed. A join table gains and loses link rows. A one-to-many sets or clears a nullable foreign key and leaves the related row in place. A link that would have to delete that row is refused (OKM1120). Duplicate ids count once. An id that is not in the related table, or a parent that is not in this table, writes nothing and throws `not_found`. The missing-id message gives the count, not the values. `{ added, removed }` are the related ids whose links changed. `expect(n)` throws `not_found` when `added` plus `removed` is not `n`, after the statements, the same as `update`. Inside `tx()` that throw rolls the transaction back. `sync` is not a batch member.
 
@@ -1568,7 +1568,6 @@ test("today view runs one query", async () => {
 |---|---|---|
 | Unknown table, FK problems, duplicate names | types + startup | OKM1020–1023 |
 | Table file not in schema | `okm check` | OKM1024 |
-| More than one `Register` | `okm check` | OKM1025 |
 | Dependency cycle in the catalog | schema | OKM1026 |
 | Catalog document this version cannot read (unknown version or malformed) | load | OKM1027 |
 | Invalid column definition, `.unique()` on a gin or gist index, or a `schema()` casing other than snake or camel | schema | OKM1060 |

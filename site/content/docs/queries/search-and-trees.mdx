@@ -82,8 +82,9 @@ A missing text search configuration is OKM1122, including `public.english`. A ma
 
 | Option | Result |
 | --- | --- |
+| `limit` | How many rows come back, after the walk's order. Required unless `connect({ limits: { find } })` is set or the caller uses `.all(reason)`. A `limit` above `limits.max` is OKM1101. |
 | `relation` | Required when the self-relations use different columns. The fix lists the names. |
-| `depth` | Stops after that many steps. `0` returns nothing unless `self: true`, which returns the start row. |
+| `depth` | Stops after that many steps. `0` returns nothing unless `self: true`, which returns the start row. It does not bound rows. |
 | `where` | Filters the rows that come back. It does not cut the walk short. |
 | a missing id | No rows. |
 | a cycle | A row already on the path is not entered again. |
@@ -91,7 +92,7 @@ A missing text search configuration is OKM1122, including `public.english`. A ma
 
 ### descendants
 
-`descendants(id)` reads the rows below `id`. `depth` stops the walk.
+`descendants(id)` reads the rows below `id`. `depth` stops the walk. `limit` is how many of those rows come back. No `limit` and no `.all(reason)` uses `limits.find`, or fails with OKM1101 (`descendants() needs a limit.`).
 
 ```ts title="descendants.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -110,13 +111,13 @@ const app = schema({ tables: [nodes] });
 
 export async function below(url: string, id: string) {
   await using db = connect(url, { schema: app });
-  return db.nodes.descendants(id, { depth: 2, select: ["id", "name"] }); // [!code focus]
+  return await db.nodes.descendants(id, { depth: 2, select: ["id", "name"], limit: 20 }); // [!code focus]
 }
 ```
 
 ### ancestors
 
-`ancestors(id)` reads the rows above `id`.
+`ancestors(id)` reads the rows above `id`. `limit` follows the same rule (`ancestors() needs a limit.`).
 
 ```ts title="ancestors.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -135,7 +136,7 @@ const app = schema({ tables: [nodes] });
 
 export async function above(url: string, id: string) {
   await using db = connect(url, { schema: app });
-  return db.nodes.ancestors(id, { select: ["id", "name"] }); // [!code focus]
+  return await db.nodes.ancestors(id, { select: ["id", "name"], limit: 20 }); // [!code focus]
 }
 ```
 

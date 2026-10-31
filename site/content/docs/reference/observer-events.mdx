@@ -28,7 +28,7 @@ One event per call after it settles, reads and writes. The connection prelude (`
 | `route` | `{ endpoint, role }` | Replica that served a read, or the primary. |
 | `error` | `{ kind, category, code, sqlstate? }?` | No message and no row values. |
 | `tag` | `string?` | From `queryObserver({ tag })`. |
-| `limit` | `{ value, source }?` | Limit used and where it came from. |
+| `limit` | `{ value, source }?` | Limit used and where it came from (`caller`, `limits.find`, `limits.page`, or `limits.groupBy`). `descendants` and `ancestors` use `limits.find`. |
 | `params` | `readonly unknown[]?` | Only when `params: true`. Sensitive, hidden, and tenant values are `[redacted]`. |
 | `stack` | `string?` | Only when `stack: true`. |
 

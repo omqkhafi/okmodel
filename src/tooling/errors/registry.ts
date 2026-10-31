@@ -109,12 +109,6 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     fix: "Add the file's table to the schema() call that okm check reads.",
   },
   {
-    code: "OKM1025",
-    title: "Multiple Register",
-    summary: "More than one Register augmentation is in the project.",
-    fix: 'Keep a single declare module "okmodel" that sets schema. Pass an explicit schema type everywhere else.',
-  },
-  {
     code: "OKM1026",
     title: "Dependency cycle",
     summary: "The catalog dependency graph contains a cycle, so objects cannot be ordered.",
@@ -754,7 +748,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1709",
     title: "Session setting",
     summary:
-      'A sessionSettings() declaration or a db.with() value is not accepted: a name without a dot, a name that starts with a setting okm reserves for tenancy or is a built-in setting, a type that is not text, uuid, int, or bool, a value of the wrong type, an unknown key, or a required key that is missing. A wrong int says "an int". Every other type says "a". A client with a required setting refuses every statement until db.with() gives it. Nothing reached the database.',
+      "A sessionSettings() declaration or a db.with() value is not accepted: a name without a dot, a name that starts with a setting okm reserves for tenancy or is a built-in setting, a type that is not text, uuid, int, or bool, a value of the wrong type, an unknown key, or a required key that is missing. A client with a required setting refuses every statement until db.with() gives it. Nothing reached the database.",
     fix: "Declare names like app.user_id, pass each value as its declared type, and call db.with({ ... }) with every required key before the first query.",
   },
   {

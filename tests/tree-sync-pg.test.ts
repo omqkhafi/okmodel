@@ -69,21 +69,30 @@ postgresTest(
       const a = db.for({ tenantId: TENANT_A });
       await a.nodes.insert({ id: row(1), name: "a", parentId: null, managerId: null });
       await a.nodes.insert({ id: row(2), name: "b", parentId: row(1), managerId: null });
-      expect(await a.nodes.ancestors(row(1), { relation: "children", depth: 0 })).toEqual([]);
       expect(
-        (await a.nodes.descendants(row(1), { relation: "children", depth: 0, self: true })).map(
-          (item) => item.id,
-        ),
+        await a.nodes.ancestors(row(1), { relation: "children", limit: 20, depth: 0 }),
+      ).toEqual([]);
+      expect(
+        (
+          await a.nodes.descendants(row(1), {
+            relation: "children",
+            limit: 20,
+            depth: 0,
+            self: true,
+          })
+        ).map((item) => item.id),
       ).toEqual([row(1)]);
       await a.nodes.insert({ id: row(3), name: "root", parentId: null, managerId: null });
-      expect(await a.nodes.ancestors(row(3), { relation: "children" })).toEqual([]);
+      expect(await a.nodes.ancestors(row(3), { relation: "children", limit: 20 })).toEqual([]);
       expect(
-        (await a.nodes.ancestors(row(3), { relation: "children", self: true })).map(
+        (await a.nodes.ancestors(row(3), { relation: "children", limit: 20, self: true })).map(
           (item) => item.name,
         ),
       ).toEqual(["root"]);
       const missing = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0cffff";
-      expect(await a.nodes.descendants(missing, { relation: "children", self: true })).toEqual([]);
+      expect(
+        await a.nodes.descendants(missing, { relation: "children", limit: 20, self: true }),
+      ).toEqual([]);
     });
   },
   15_000,
@@ -129,42 +138,52 @@ postgresTest(
       await b.nodes.insert({ id: row(9), name: "hidden", parentId: row(1), managerId: null });
       const names = async (rows: readonly { readonly name: string }[]) =>
         rows.map((item) => item.name);
-      expect(await names(await a.nodes.descendants(row(1), { relation: "children" }))).toEqual([
-        "mid",
-        "other",
-        "keep",
-        "drop",
-      ]);
       expect(
-        await names(await a.nodes.descendants(row(1), { relation: "children", depth: 1 })),
+        await names(await a.nodes.descendants(row(1), { relation: "children", limit: 20 })),
+      ).toEqual(["mid", "other", "keep", "drop"]);
+      expect(
+        await names(
+          await a.nodes.descendants(row(1), { relation: "children", limit: 20, depth: 1 }),
+        ),
       ).toEqual(["mid", "other"]);
       expect(
         await names(
-          await a.nodes.descendants(row(1), { relation: "children", where: { name: "keep" } }),
+          await a.nodes.descendants(row(1), {
+            relation: "children",
+            limit: 20,
+            where: { name: "keep" },
+          }),
         ),
       ).toEqual(["keep"]);
       expect(
-        await names(await a.nodes.called("keep").descendants(row(1), { relation: "children" })),
+        await names(
+          await a.nodes.called("keep").descendants(row(1), { relation: "children", limit: 20 }),
+        ),
       ).toEqual(["keep"]);
-      expect(await names(await a.nodes.descendants(row(1), { relation: "reports" }))).toEqual([
-        "mid",
-      ]);
+      expect(
+        await names(await a.nodes.descendants(row(1), { relation: "reports", limit: 20 })),
+      ).toEqual(["mid"]);
       const selected = await a.nodes.descendants(row(3), {
         relation: "children",
+        limit: 20,
         select: ["id", "name"],
         self: true,
       });
       expect(Object.keys(selected[0] ?? {}).sort()).toEqual(["id", "name"]);
       expect(
         await names(
-          await a.nodes.ancestors(row(3), { relation: "children", orderBy: { name: "desc" } }),
+          await a.nodes.ancestors(row(3), {
+            relation: "children",
+            limit: 20,
+            orderBy: { name: "desc" },
+          }),
         ),
       ).toEqual(["root", "mid"]);
       await a.nodes.archive({ where: { id: row(2) } });
-      expect(await names(await a.nodes.descendants(row(1), { relation: "children" }))).toEqual([
-        "other",
-      ]);
-      expect(await a.nodes.descendants(row(1), { relation: "children" })).not.toEqual(
+      expect(
+        await names(await a.nodes.descendants(row(1), { relation: "children", limit: 20 })),
+      ).toEqual(["other"]);
+      expect(await a.nodes.descendants(row(1), { relation: "children", limit: 20 })).not.toEqual(
         expect.arrayContaining([expect.objectContaining({ name: "hidden" })]),
       );
     });

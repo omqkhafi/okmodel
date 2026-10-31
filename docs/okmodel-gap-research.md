@@ -42,7 +42,7 @@ The research confirms 12 of the 15 gaps and adds four new findings. The three mo
 **Finding.** OWASP API Security Top 10 (2023) merges both into API3, Broken Object Property Level Authorization. The recommended controls: never bind client input directly to object properties, restrict updatable fields to those clients legitimately need, and never return objects through generic serialisation — select properties explicitly ([OWASP API3:2023](https://api-security.owasp.org/editions/2023/en/0xa3-broken-object-property-level-authorization/)).
 
 **Recommendation.**
-- **Input side:** unknown keys are always stripped. `.guarded()` fields are never filled from input; the tenant key, primary key, trait fields (`createdAt`, `updatedAt`, `deletedAt`, `version`) are guarded automatically. Per-call exceptions: `{ allow: ["role"] }`.
+- **Input side:** unknown keys on a write are refused with OKM1120 (D291). `.guarded()` fields are never filled from input; the tenant key, primary key, trait fields (`createdAt`, `updatedAt`, `deletedAt`, `version`) are guarded automatically. Per-call exceptions: `{ allow: ["role"] }`.
 - **Output side (new):** `.hidden()` fields (for example `passwordHash`, `resetToken`) are excluded from default selects and from `include`; they are returned only when named in `select` explicitly. This closes the "excessive data exposure" half of API3.
 
 ## 4. Injection through identifiers and operators
@@ -95,7 +95,7 @@ This is a real API change from draft 3 (object operators like `{ lt: date }` bec
 **Recommendation.** Keep `Register` as the default for the common single-schema app, and make every public type and API accept an explicit schema:
 - `Row<"events", typeof reportsSchema>`, `Client<typeof reportsSchema>`, `TableName<typeof reportsSchema>`.
 - Each `connect()` returns a client typed by the schema it was given, regardless of `Register`.
-- `okm check` warns when more than one `Register` augmentation exists in a project (OKM1025).
+- Two `Register` declarations that give `schema` different types are a TypeScript error (TS2717).
 
 ## 9. Drivers without interactive transactions
 
@@ -149,7 +149,7 @@ No external research needed; it follows from the existing `limit` rule. To-many 
 |---|---|---|
 | 1 | Tenant-scoped `unique`, composite FKs, tenant-leading index lint | decision |
 | 2 | `softDelete()` with partial uniques, scoped includes, `cascade`; new `archiveOnDelete()` recommended by default | decision |
-| 3 | Unknown keys stripped; `.guarded()` (auto for keys and trait fields); `.hidden()` for output | decision |
+| 3 | Unknown keys on a write refused with OKM1120 (D291); `.guarded()` (auto for keys and trait fields); `.hidden()` for output | decision |
 | 4 | Runtime identifier validation; **tagged operators** (`lt(x)`, `startsWith(x)`, `has({...})`); `tasks.filters({ allow })` for API filters; `sql.raw` needs a reason | decision, API change |
 | 5 | Expand/contract classification, compatibility-based drift check, `lock_timeout` by default, pipeline-only migrations | decision |
 | 6 | Linter seeded from Squawk, strong_migrations and Atlas categories; safe rewrites generated automatically | decision |

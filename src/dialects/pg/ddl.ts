@@ -478,13 +478,16 @@ export function createTableSql(tableObject: TableObject, source: Catalog, schema
     (object): object is ColumnObject =>
       object.kind === "column" && object.identity.parent.name === parent,
   );
+  // Generated columns follow the plain columns. The list otherwise stays in
+  // identity-key order, so a table with no generated column keeps its SQL.
+  const listed = generatedLast(columns);
   const primary = source.objects.find(
     (object): object is ConstraintObject =>
       object.kind === "constraint" &&
       object.definition.constraintKind === "primaryKey" &&
       object.identity.parent.name === parent,
   );
-  const lines = columns.map((column) => columnSql(column, schema));
+  const lines = listed.map((column) => columnSql(column, schema));
   if (primary !== undefined) {
     const cols = primary.definition.columns.map((name) => quoteIdent(name)).join(", ");
     lines.push(`constraint ${quoteIdent(primary.identity.name)} primary key (${cols})`);
@@ -495,6 +498,26 @@ export function createTableSql(tableObject: TableObject, source: Catalog, schema
       ? ""
       : ` partition by ${partition.method} (${partition.columns.map((name) => quoteIdent(name)).join(", ")})`;
   return `create table ${qualify(schema, parent)} (\n  ${lines.join(",\n  ")}\n)${tail}`;
+}
+
+/**
+ * Puts generated columns after the plain columns of the same list.
+ *
+ * Each group keeps the order it already had. A table with no generated
+ * column returns that list unchanged.
+ *
+ * @param columns - Columns of one table, in identity-key order
+ * @returns The list written into `create table`
+ */
+function generatedLast(columns: readonly ColumnObject[]): readonly ColumnObject[] {
+  if (!columns.some((column) => column.definition.generated !== undefined)) return columns;
+  const plain: ColumnObject[] = [];
+  const after: ColumnObject[] = [];
+  for (const column of columns) {
+    if (column.definition.generated === undefined) plain.push(column);
+    else after.push(column);
+  }
+  return plain.concat(after);
 }
 
 function collateSql(collation: string | undefined): string {

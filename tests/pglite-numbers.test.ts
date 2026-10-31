@@ -101,12 +101,12 @@ test("a number or bigint id round-trips, and a protocol error is not unavailable
       "renamed",
     );
 
-    const down = await db.nodes.descendants(1);
-    const downBig = await db.nodes.descendants(1n);
+    const down = await db.nodes.descendants(1, { limit: 20 });
+    const downBig = await db.nodes.descendants(1n, { limit: 20 });
     expect(down.map((row) => row.id).sort()).toEqual(["2", "3"]);
     expect(downBig.map((row) => row.id).sort()).toEqual(["2", "3"]);
-    const up = await db.nodes.ancestors(3);
-    const upBig = await db.nodes.ancestors(3n);
+    const up = await db.nodes.ancestors(3, { limit: 20 });
+    const upBig = await db.nodes.ancestors(3n, { limit: 20 });
     expect(up.map((row) => row.id).sort()).toEqual(["1", "2"]);
     expect(upBig.map((row) => row.id).sort()).toEqual(["1", "2"]);
 
