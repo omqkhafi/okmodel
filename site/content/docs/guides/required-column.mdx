@@ -1,0 +1,115 @@
+---
+title: "Add a required column safely"
+description: "Add the column nullable, backfill, then tighten to NOT NULL with the plan okm accepts."
+---
+
+Goal: add a required column without a one-step `NOT NULL` add that lint refuses.
+
+Detail lives on [First migration](/docs/start/first-migration), [Backfill](/docs/migrations/backfill), and [Lint](/docs/migrations/checks-and-lint).
+
+## 1. Plan refuses a required add
+
+`body: t.text()` on a live table plans `add column ... not null` with no default. Lint is [OKM1525](/docs/reference/errors#okm1525); the plan exits 1 as [OKM1510](/docs/reference/errors#okm1510).
+
+```text title="plan-required.out"
+-- class: contract
+-- name: add-body
+
+-- class: contract
+-- kind: add-column-required
+-- action: ddl
+-- lock: ACCESS EXCLUSIVE on notes, rows unknown (table not analyzed)
+alter table "public"."notes" add column "body" text not null;
+error OKM1525 step 1: adds NOT NULL without a default -- fix: Add the column nullable, backfill, then set it NOT NULL.
+```
+
+```text title="lint.err"
+error OKM1510: error OKM1525 step 1: adds NOT NULL without a default -- fix: Add the column nullable, backfill, then set it NOT NULL.
+Change the statement so the finding is gone. An override must name a code that a statement in the step triggered, and the reason must not be empty.
+```
+
+`okm migrate plan` refuses that step (lint finding OKM1525, wrapped as OKM1510). An empty `-- okm-allow` does not clear it. There is no separate `okm migrate lint` command.
+
+## 2. Add it nullable
+
+```ts title="schema-nullable.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity().primaryKey(),
+  title: t.text(),
+  body: t.text().nullable(),
+});
+
+export default schema({ tables: [notes] });
+```
+
+```text title="plan-nullable.out"
+-- class: expand
+-- name: add-body
+
+-- class: expand
+-- kind: add-column
+-- action: ddl
+-- lock: ACCESS EXCLUSIVE on notes, rows unknown (table not analyzed)
+alter table "public"."notes" add column "body" text;
+```
+
+Generate and apply that expand migration.
+
+## 3. Backfill
+
+Fill every row before you tighten nullability. A one-shot update is fine on a small table:
+
+```sql title="backfill.sql"
+update "public"."notes" set "body" = '' where "body" is null;
+```
+
+For a large table, put a `-- backfill` step in a migration and let apply resume by key. See [Backfill](/docs/migrations/backfill).
+
+## 4. Make it required
+
+Change the field to `body: t.text()` and plan again. The planner writes a validated check, then `SET NOT NULL`, then drops the check:
+
+```text title="plan-require.out"
+-- class: contract
+-- name: require-body
+
+-- class: expand
+-- kind: add-constraint
+-- action: ddl
+-- lock: ACCESS EXCLUSIVE on notes, rows unknown (table not analyzed); safe rewrite applied
+alter table "public"."notes" add constraint "notes_body_notnull" check ("body" is not null) not valid;
+
+-- class: expand
+-- kind: validate-constraint
+-- action: ddl
+-- lock: SHARE UPDATE EXCLUSIVE on notes, rows unknown (table not analyzed); safe rewrite applied
+alter table "public"."notes" validate constraint "notes_body_notnull";
+
+-- class: contract
+-- kind: set-not-null
+-- action: ddl
+-- lock: ACCESS EXCLUSIVE on notes, rows unknown (table not analyzed); safe rewrite applied
+alter table "public"."notes" alter column "body" set not null;
+
+-- class: expand
+-- kind: drop-not-null-check
+-- action: ddl
+-- lock: ACCESS EXCLUSIVE on notes, rows unknown (table not analyzed); safe rewrite applied
+alter table "public"."notes" drop constraint "notes_body_notnull";
+```
+
+Generate and apply. On a protected target, a contract apply needs `--allow-protected`.
+
+## What can go wrong
+
+- [OKM1525](/docs/reference/errors#okm1525) / [OKM1510](/docs/reference/errors#okm1510): required add without a default.
+- A `SET NOT NULL` on rows that still hold null fails at apply time; `okm migrate check` does not catch that on empty replay.
+- [OKM1850](/docs/reference/errors#okm1850): contract on a protected target without `--allow-protected`.
+
+| Next | You use it for |
+| --- | --- |
+| [First migration](/docs/start/first-migration) | The same nullable add in the getting-started path. |
+| [Type change](/docs/migrations/type-change) | Expand / backfill / contract for a rewriting type. |
+| [Failures](/docs/migrations/failures) | What a failed step leaves behind. |

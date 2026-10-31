@@ -1,0 +1,93 @@
+---
+title: "Soft delete"
+description: "Archive a row, hide it from ordinary reads, then restore it."
+---
+
+Goal: soft-delete a row with the archive trait, see what a default read returns, then restore it.
+
+Detail lives on [Traits](/docs/schema/traits#archive) and [Write rows](/docs/queries/write-rows).
+
+## 1. Mark the table
+
+`archivable()` adds guarded `archivedAt` and `archiveId`. Uniques on that table become partial.
+
+```ts title="archive.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { id, schema, table, text } from "okmodel/pg";
+import { archivable } from "okmodel/traits";
+
+const notes = table(
+  "notes",
+  { id: id({ default: "none" }), title: text() },
+  { traits: [archivable()] },
+);
+export const app = schema({ tables: [notes] });
+
+const NOTE = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c41";
+
+export async function retire(url: string): Promise<void> {
+  await using db = connect(url, { schema: app });
+  await db.notes.insert({ id: NOTE, title: "Keep" });
+  const saved = await db.notes.archive({ where: { id: NOTE } });
+  console.log(JSON.stringify({ count: saved.count }));
+  console.log(JSON.stringify(await db.notes.find({ where: { id: NOTE }, limit: 1 })));
+  const withArchived = await db.notes.withArchived().find({ where: { id: NOTE }, limit: 1 });
+  console.log(
+    JSON.stringify(
+      withArchived.map((row) => ({
+        id: row.id,
+        title: row.title,
+        archived: row.archivedAt != null,
+      })),
+    ),
+  );
+  console.log(
+    JSON.stringify(
+      (await db.notes.onlyArchived().find({ where: { id: NOTE }, limit: 1 })).map((row) => ({
+        id: row.id,
+        title: row.title,
+      })),
+    ),
+  );
+  console.log(JSON.stringify(await db.notes.restore({ archiveId: saved.archiveId })));
+  console.log(
+    JSON.stringify(
+      (await db.notes.find({ where: { id: NOTE }, limit: 1 })).map((row) => ({
+        id: row.id,
+        title: row.title,
+      })),
+    ),
+  );
+}
+```
+
+```text title="archive.out"
+{"count":1}
+[]
+[{"id":"01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c41","title":"Keep","archived":true}]
+[{"id":"01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c41","title":"Keep"}]
+{"count":1}
+[{"id":"01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c41","title":"Keep"}]
+```
+
+## 2. What each read returns
+
+| Call | Set |
+| --- | --- |
+| `find` / `one` / `page` | Active rows only (`archivedAt` is null). |
+| `withArchived()` | Active and archived. |
+| `onlyArchived()` | Archived only. |
+| `restore({ archiveId })` | The whole archive operation, including cascaded children. |
+
+`archive({ where })` returns `{ count, archiveId }`. Pass that `archiveId` to `restore`.
+
+## What can go wrong
+
+- [OKM1052](/docs/reference/errors#okm1052): `archive` or `restore` on a table that is not archivable.
+- [OKM1061](/docs/reference/errors#okm1061): `strategy: "table"` is not available yet.
+- Archiving an already archived row again returns `{ count: 0 }` for that call; `.expect(1)` fails as not found.
+
+| Next | You use it for |
+| --- | --- |
+| [Traits](/docs/schema/traits#archive) | `cascade`, partial uniques, and `strategy`. |
+| [Write rows](/docs/queries/write-rows) | `archive` beside `update` and `delete`. |

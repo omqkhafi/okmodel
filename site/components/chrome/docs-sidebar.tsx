@@ -30,6 +30,8 @@ const FLAT_SECTIONS = new Set([
   "Queries",
   "migrations",
   "Migrations",
+  "guides",
+  "Guides",
   "reference",
   "Reference",
   "ai",

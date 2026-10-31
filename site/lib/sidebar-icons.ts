@@ -8,6 +8,7 @@ import type { LoaderPlugin } from "fumadocs-core/source";
 import {
   Activity,
   ALargeSmall,
+  Archive,
   ArrowLeftRight,
   BadgeCheck,
   Binary,
@@ -51,6 +52,7 @@ import {
   ListFilter,
   ListTree,
   Lock,
+  Map,
   Network,
   OctagonAlert,
   PenLine,
@@ -176,6 +178,12 @@ const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/docs/reference/environment-variables": Variable,
   "/docs/ai/skills": Sparkles,
   "/docs/ai/llm": FileCode,
+  "/docs/guides/soft-delete": Archive,
+  "/docs/guides/multi-tenant": Building2,
+  "/docs/guides/paginate": GalleryHorizontal,
+  "/docs/guides/required-column": Columns3,
+  "/docs/guides/migrations-in-ci": GitPullRequest,
+  "/docs/guides/from-prisma": Map,
 };
 
 /**

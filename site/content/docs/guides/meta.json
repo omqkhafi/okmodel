@@ -1,0 +1,11 @@
+{
+  "title": "Guides",
+  "pages": [
+    "soft-delete",
+    "multi-tenant",
+    "paginate",
+    "required-column",
+    "migrations-in-ci",
+    "from-prisma"
+  ]
+}
