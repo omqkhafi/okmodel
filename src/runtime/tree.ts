@@ -20,8 +20,8 @@ import { attachHttp, readCall, readHandle, type Mods, type Session } from "./cli
 import {
   decodeResult,
   emitOrder,
-  emitRowLimit,
   emitWhere,
+  readLimit,
   fail,
   indexes,
   isRecord,
@@ -223,7 +223,58 @@ function emitTree(
       sink.text(" asc");
     }
   }
-  emitRowLimit(call, sink, `${direction}()`);
+  emitWalkLimit(call, sink, direction);
+  rememberBound(call);
+}
+
+/**
+ * Writes the row bound after the walk's order.
+ *
+ * The same rule as `find`: `.all("")` and a missing limit are OKM1101.
+ * `.all(reason)` writes no bound unless the caller also passed `limit`.
+ * This stays in the tree chunk. `emitLimit` is the find copy on the startup path.
+ *
+ * @param call - The walk
+ * @param sink - Statement being built
+ * @param direction - `descendants` or `ancestors`
+ */
+function emitWalkLimit(call: ReadCall, sink: Sink, direction: Direction): void {
+  const label = `${direction}()`;
+  if (call.all !== undefined) {
+    if (call.all.length === 0) fail("OKM1101", `${label} .all needs a reason.`);
+    sink.mark(`all:${call.all}`);
+    if (call.limit !== undefined) writeLimit(call, sink);
+    return;
+  }
+  if (call.limit === undefined) fail("OKM1101", `${label} needs a limit.`);
+  writeLimit(call, sink);
+}
+
+/**
+ * Records the `bounded` rule on the call so `.inspect()` can read it.
+ *
+ * `appliedRules` already lists `ruleLines`. The contribution is decided
+ * here, after `limits.find` has filled `limit`, and the startup graph
+ * does not grow a second copy of that rule.
+ *
+ * @param call - The walk, after the default limit is applied
+ */
+function rememberBound(call: ReadCall): void {
+  const dl = call.dl;
+  const rule = {
+    rule: "bounded" as const,
+    contribution: call.all ?? (dl === undefined ? "limit" : `limits.${dl[0]}`),
+    provenance: dl === undefined ? ("caller" as const) : ("connect" as const),
+  };
+  const lines = call.ruleLines === undefined ? [rule] : [...call.ruleLines, rule];
+  (call as { ruleLines: typeof lines }).ruleLines = lines;
+}
+
+function writeLimit(call: ReadCall, sink: Sink): void {
+  const value = readLimit(call.limit);
+  sink.text(" limit ");
+  sink.param(String(value));
+  sink.mark(`l:${String(value)}`);
 }
 
 function emitKeyList(sink: Sink, alias: string, columns: readonly string[], prefix: string): void {

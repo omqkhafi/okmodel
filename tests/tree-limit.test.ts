@@ -37,9 +37,9 @@ function names(rows: readonly { readonly name: string }[]): string[] {
   return rows.map((item) => item.name);
 }
 
-async function code(pending: PromiseLike<unknown>): Promise<string> {
+async function code(pending: unknown): Promise<string> {
   try {
-    await pending;
+    await (pending as Promise<unknown>);
   } catch (error) {
     if (error instanceof OkmError) return error.code;
     throw error;
@@ -47,9 +47,9 @@ async function code(pending: PromiseLike<unknown>): Promise<string> {
   return "";
 }
 
-async function failure(pending: PromiseLike<unknown>): Promise<OkmError> {
+async function failure(pending: unknown): Promise<OkmError> {
   try {
-    await pending;
+    await (pending as Promise<unknown>);
   } catch (error) {
     if (error instanceof OkmError) return error;
     throw error;

@@ -766,7 +766,7 @@ export function appliedRules(
   if (call.where !== undefined) {
     rules.push({ rule: "filter", contribution: "caller", provenance: "caller" });
   }
-  if (rowBounded(call.op) || hasMany(call.include)) {
+  if (call.op === "find" || hasMany(call.include)) {
     const dl = call.dl;
     rules.push({
       rule: "bounded",
@@ -1344,36 +1344,17 @@ export function emitLimit(call: ReadCall, sink: Sink): void {
     return;
   }
   if (call.op !== "find") return;
-  emitRowLimit(call, sink, "find()");
+  if (call.all !== undefined) {
+    if (call.all.length === 0) fail("OKM1101", "find() .all needs a reason.");
+    sink.mark(`all:${call.all}`);
+    if (call.limit !== undefined) emitBound(sink, " limit ", "l:", readLimit(call.limit));
+  } else {
+    if (call.limit === undefined) fail("OKM1101", "find() needs a limit.");
+    emitBound(sink, " limit ", "l:", readLimit(call.limit));
+  }
   if (call.offset !== undefined) {
     emitBound(sink, " offset ", "off:", readLimit(call.offset, "offset"));
   }
-}
-
-/**
- * Writes the row bound shared by `find` and a tree walk.
- *
- * `.all("")` is OKM1101. A missing limit is OKM1101. `.all(reason)` writes
- * no bound unless the caller also passed `limit`.
- *
- * @param call - The read
- * @param sink - Statement being built
- * @param label - `find()`, `descendants()`, or `ancestors()`
- */
-export function emitRowLimit(call: ReadCall, sink: Sink, label: string): void {
-  if (call.all !== undefined) {
-    if (call.all.length === 0) fail("OKM1101", `${label} .all needs a reason.`);
-    sink.mark(`all:${call.all}`);
-    if (call.limit !== undefined) emitBound(sink, " limit ", "l:", readLimit(call.limit));
-    return;
-  }
-  if (call.limit === undefined) fail("OKM1101", `${label} needs a limit.`);
-  emitBound(sink, " limit ", "l:", readLimit(call.limit));
-}
-
-/** `find`, `descendants`, and `ancestors` take `limits.find`. */
-export function rowBounded(op: ReadOp): boolean {
-  return op === "find" || op === "descendants" || op === "ancestors";
 }
 
 /** Writes `limit` or `offset` as one parameter and one plan mark. */

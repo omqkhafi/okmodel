@@ -1668,6 +1668,11 @@ type ArchiveOps<S extends QuerySchema, K extends keyof S["~byName"] & string, L>
 type Unbounded<S, Key extends keyof Limits, R> =
   Defaults<S, Key> extends true ? R : { all(reason: string): R };
 
+/** A tree walk. `.all(reason)` reads past `limits.max`. */
+type TreeQuery<T> = Query<T> & {
+  all(reason: string): Query<T>;
+};
+
 /** `page` options with no `limit`, for a client with `limits.page`. Otherwise `never`. */
 type DefaultPage<
   S extends QuerySchema,
@@ -2005,7 +2010,7 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   >(
     id: unknown,
     options: O,
-  ): Query<readonly ResultRow<S, K, O>[]>;
+  ): TreeQuery<readonly ResultRow<S, K, O>[]>;
   descendants<
     const O extends ExactConstraint<
       O,
@@ -2014,17 +2019,17 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   >(
     id: unknown,
     options: O,
-  ): Query<readonly ResultRow<S, K, O>[]>;
+  ): TreeQuery<readonly ResultRow<S, K, O>[]>;
   descendants<const O extends TreePlainOptions<S, K, WhereOfTarget<O>, OrderOfTarget<O>>>(
     id: unknown,
     options?: O,
-  ): Unbounded<S, "find", Query<readonly ResultRow<S, K, O>[]>>;
+  ): Unbounded<S, "find", TreeQuery<readonly ResultRow<S, K, O>[]>>;
   descendants<
     const O extends ExactConstraint<O, TreeFilterOptions<S, K, WhereOfTarget<O>, OrderOfTarget<O>>>,
   >(
     id: unknown,
     options?: O,
-  ): Unbounded<S, "find", Query<readonly ResultRow<S, K, O>[]>>;
+  ): Unbounded<S, "find", TreeQuery<readonly ResultRow<S, K, O>[]>>;
   /** Rows above `id`. The options match {@link TableApi.descendants}. */
   ancestors<
     const O extends TreePlainOptions<S, K, WhereOfTarget<O>, OrderOfTarget<O>> & {
@@ -2033,7 +2038,7 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   >(
     id: unknown,
     options: O,
-  ): Query<readonly ResultRow<S, K, O>[]>;
+  ): TreeQuery<readonly ResultRow<S, K, O>[]>;
   ancestors<
     const O extends ExactConstraint<
       O,
@@ -2042,17 +2047,17 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   >(
     id: unknown,
     options: O,
-  ): Query<readonly ResultRow<S, K, O>[]>;
+  ): TreeQuery<readonly ResultRow<S, K, O>[]>;
   ancestors<const O extends TreePlainOptions<S, K, WhereOfTarget<O>, OrderOfTarget<O>>>(
     id: unknown,
     options?: O,
-  ): Unbounded<S, "find", Query<readonly ResultRow<S, K, O>[]>>;
+  ): Unbounded<S, "find", TreeQuery<readonly ResultRow<S, K, O>[]>>;
   ancestors<
     const O extends ExactConstraint<O, TreeFilterOptions<S, K, WhereOfTarget<O>, OrderOfTarget<O>>>,
   >(
     id: unknown,
     options?: O,
-  ): Unbounded<S, "find", Query<readonly ResultRow<S, K, O>[]>>;
+  ): Unbounded<S, "find", TreeQuery<readonly ResultRow<S, K, O>[]>>;
   /**
    * Sets a to-many relation to exactly `ids`.
    *

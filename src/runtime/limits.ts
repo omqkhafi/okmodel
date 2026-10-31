@@ -6,7 +6,7 @@
 
 import { OkmError } from "../contracts/error.js";
 import { attachHttp, type Session } from "./client.js";
-import { fail, rowBounded, type Plan, type ReadCall } from "./plan.js";
+import { fail, type Plan, type ReadCall } from "./plan.js";
 import type { Limits } from "./plan.js";
 
 const KEYS = ["find", "include", "page", "groupBy", "max"];
@@ -70,7 +70,13 @@ export function capLimit(value: number, max: number | undefined): void {
  */
 export function limit(session: Session, call: ReadCall): ReadCall {
   const limits = call.limits as Limits;
-  if (!rowBounded(call.op) || call.all !== undefined || call.size !== undefined) return call;
+  if (
+    (call.op !== "find" && call.op !== "descendants" && call.op !== "ancestors") ||
+    call.all !== undefined ||
+    call.size !== undefined
+  ) {
+    return call;
+  }
   if (call.limit !== undefined) {
     try {
       capLimit(call.limit as number, limits.max);
