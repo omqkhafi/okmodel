@@ -1,9 +1,9 @@
 ---
 title: "Schema API"
-description: "describe() and buildCatalog() on okmodel/migrate turn a schema into JSON and back."
+description: "describe, buildCatalog, plan, apply, status, provision, and baseline on okmodel/migrate."
 ---
 
-`describe` and `buildCatalog` live on `okmodel/migrate`. A codegen tool, a CI check, or a dashboard imports them. They are not on the runtime entry, and `schema()` does not change.
+`okmodel/migrate` exports `describe`, `buildCatalog`, `plan`, `apply`, `status`, `provision`, and `baseline`. A codegen tool, a CI check, or a dashboard imports them. They are not on the runtime entry, and `schema()` does not change. The CLI migrate commands call the same engine.
 
 `describe(schema)` returns JSON. `logical` is the schema identity: `namespace`, `name`, and `format`. That identity is `public`, the namespace `schema()` compiles. `defineConfig({ namespace })` places the catalog into another Postgres schema. That placement changes the catalog hash and does not change `logical`. `catalog` is the catalog document. Object keys are sorted. There are no functions in it.
 
@@ -49,3 +49,27 @@ export const catalog = buildCatalog(JSON.parse(JSON.stringify(description)));
 ```
 
 `catalog` is the catalog `okm` plans. Apply that catalog the same way as `app.catalog`.
+
+## plan, apply, and status
+
+`plan`, `apply`, and `status` match `okm migrate plan`, `okm migrate apply`, and `okm migrate status`. They do not exit the process, prompt, or read stdin. Shared options are `cwd`, `config`, `target`, `allowProtected`, `allowPooler`, `lockTimeoutMs`, and `statementTimeoutMs`.
+
+`plan(name, options?)` returns `name`, `class`, `steps`, `lint`, the same `text` the CLI prints, and `json` (the document `okm migrate plan --json` puts in envelope `data`). `plan` options also take `replace`, the same as repeated `--replace`.
+
+`apply(options?)` returns `target`, `applied`, and `text`. Pass `onProgress` to receive each backfill progress line.
+
+`status(options?)` returns one row per configured target (or the selected `--target`), with the same columns the CLI prints.
+
+```ts title="migrate-api.ts"
+import { apply, plan, status } from "okmodel/migrate";
+
+const planned = await plan("add-body");
+await apply({ target: "dev" });
+const rows = await status();
+```
+
+## provision and baseline
+
+`provision(target, cwd?)` installs the head snapshot on an empty configured target, the same rules as `okm migrate apply` on an empty database. A non-empty target is OKM1851. It returns the same text apply prints for that run.
+
+`baseline(target, cwd?)` records the head snapshot as applied history without schema changes, the same as [`okm migrate baseline`](/docs/reference/cli/migrate#migrate-baseline). `default` is the `database` target. A live catalog that differs from the head is OKM1858. A target that already has OKModel history is OKM1857.

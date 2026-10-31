@@ -1,8 +1,8 @@
 ---
 title: "Environment Variables"
-description: "connect and defineConfig do not read the environment. okm reads OKM_DEBUG. Local Postgres reads POSTGRES_VERSION and REQUIRE_DOCKER."
+description: "connect and defineConfig do not read the environment. okm reads OKM_DEBUG and the protect store paths. Local Postgres reads POSTGRES_VERSION and REQUIRE_DOCKER."
 ---
-`connect` and `defineConfig` do not read the environment. `okm` reads `OKM_DEBUG`. Local Postgres reads `POSTGRES_VERSION`, `REQUIRE_DOCKER`, and the three host ports.
+`connect` and `defineConfig` do not read the environment. `okm` reads `OKM_DEBUG`. Protect reads `XDG_CONFIG_HOME` or `APPDATA` for the fingerprint store. Local Postgres reads `POSTGRES_VERSION`, `REQUIRE_DOCKER`, and the three host ports.
 
 ## Client
 
@@ -51,13 +51,15 @@ A replica URL is the same kind of argument. [Topology](/docs/operate/replicas-an
 
 ## CLI
 
-`okm` reads one variable, and only when a command throws.
+`okm` reads `OKM_DEBUG` when a command throws. [`okm protect`](/docs/reference/cli/protect#protect) also reads the user config directory for the fingerprint store.
 
 | Variable | Read by | Accepted | Default | Unset |
 | --- | --- | --- | --- | --- |
 | `OKM_DEBUG` | the `okm` bin | `1` | none | `error <code>: <message>`, then the fix. No stack. |
+| `XDG_CONFIG_HOME` | `okm protect` on Unix | a directory path | none | `~/.config` is used for `okm/protected.json` |
+| `APPDATA` | `okm protect` on Windows | a directory path | none | Windows falls back to the user profile when unset |
 
-`1` appends the stack after those two lines. Any other string leaves the stack off. `--verbose` prints the stack for that invocation.
+`1` for `OKM_DEBUG` appends the stack after those two lines. Any other string leaves the stack off. `--verbose` prints the stack for that invocation. The protect store path is `$XDG_CONFIG_HOME/okm/protected.json` (or `~/.config/okm/protected.json`), and on Windows `%APPDATA%\okm\protected.json`. The file holds fingerprints, not URLs.
 
 ```sh
 OKM_DEBUG=1 okm check
