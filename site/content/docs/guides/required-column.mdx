@@ -28,7 +28,7 @@ error OKM1510: error OKM1525 step 1: adds NOT NULL without a default -- fix: Add
 Change the statement so the finding is gone. An override must name a code that a statement in the step triggered, and the reason must not be empty.
 ```
 
-`okm migrate lint` / plan refuse that step. An empty `-- okm-allow` does not clear it.
+`okm migrate plan` refuses that step (lint finding OKM1525, wrapped as OKM1510). An empty `-- okm-allow` does not clear it. There is no separate `okm migrate lint` command.
 
 ## 2. Add it nullable
 
