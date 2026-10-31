@@ -9,8 +9,8 @@
 /**
  * Project schema slot.
  *
- * Augment `okmodel` with one `schema` property. `okm check` warns on a
- * second augmentation later (OKM1025).
+ * Augment `okmodel` with one `schema` property. Two declarations that give
+ * `schema` different types are a TypeScript error (TS2717).
  */
 export interface Register {
   // Filled by `declare module "okmodel"`.

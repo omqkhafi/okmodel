@@ -163,7 +163,7 @@ connect(url, { schema: appSchema, tenancy: { registry } });                  // 
 
 - `connect({ schema })` is the authoritative runtime configuration. `Register` is a TypeScript convenience for inference and defaults only; nothing at runtime reads it.
 - Module augmentation applies to the TypeScript program (project) that includes the declaration, not automatically to a whole monorepo.
-- Every public type also accepts an explicit schema: `Row<"events", typeof reportsSchema>`, `Client<typeof reportsSchema>`, `TableName<typeof reportsSchema>`. `okm check` warns on more than one `Register` augmentation in one project (OKM1025).
+- Every public type also accepts an explicit schema: `Row<"events", typeof reportsSchema>`, `Client<typeof reportsSchema>`, `TableName<typeof reportsSchema>`. Two `Register` declarations that give `schema` different types are a TypeScript error (TS2717).
 
 Monorepo pattern — a shared package owns the schema and its registration; apps consume it:
 
@@ -190,7 +190,7 @@ Any project that imports `@app/db` includes the augmentation and gets inference;
 | `archivable` strategy | `column` | none in M1 |
 | `delete` | permanent | never changed by traits |
 | Unbounded reads, unfiltered writes | rejected | `.all("reason")` |
-| Unknown input keys | dropped | none |
+| Unknown input keys | refused with OKM1120 (D291) | none |
 | Hidden fields | excluded from reads | named in `select` |
 | Extensions | none installed; each is declared in `extensions` | add to `extensions` |
 | Cancellation | none unless `signal` or `timeout` is given; `connect({ timeouts })` sets ceilings | per call |
@@ -1568,7 +1568,6 @@ test("today view runs one query", async () => {
 |---|---|---|
 | Unknown table, FK problems, duplicate names | types + startup | OKM1020–1023 |
 | Table file not in schema | `okm check` | OKM1024 |
-| More than one `Register` | `okm check` | OKM1025 |
 | Dependency cycle in the catalog | schema | OKM1026 |
 | Catalog document this version cannot read (unknown version or malformed) | load | OKM1027 |
 | Invalid column definition, `.unique()` on a gin or gist index, or a `schema()` casing other than snake or camel | schema | OKM1060 |

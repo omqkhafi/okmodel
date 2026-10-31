@@ -22,7 +22,6 @@ const SPEC_CODES = [
   "OKM1022",
   "OKM1023",
   "OKM1024",
-  "OKM1025",
   "OKM1026",
   "OKM1027",
   "OKM1030",

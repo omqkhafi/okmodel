@@ -146,10 +146,9 @@ export const NEEDS_DATABASE = [
 /**
  * Registered codes this build does not throw.
  *
- * OKM1025 is a second `Register` augmentation. OKM1051, OKM1110, and OKM1191
- * have no raising path.
+ * OKM1051, OKM1110, and OKM1191 have no raising path.
  */
-export const NOT_THROWN = ["OKM1025", "OKM1051", "OKM1110", "OKM1191"] as const;
+export const NOT_THROWN = ["OKM1051", "OKM1110", "OKM1191"] as const;
 
 /** One offline pair. `bad` and `fixed` are the source the page prints. */
 export type OfflineExample = {

@@ -18,7 +18,7 @@ Every decision states what was chosen and why. The spec states the rules; this f
 | D11 | Validation | Inline `.validate([...])` or options section; one place per field; base rules derived from the type; transforms in the rule array |
 | D12 | Validation at write time | `validation: false` by default; overridable per table and per call; validated values are not re-validated |
 | D13 | Standalone validation | `tasks.insert.validate(x)` throws; `tasks.insert.check(x)` returns a result; `tasks.insert` is a Standard Schema |
-| D14 | Input and output protection | Unknown keys stripped; `.guarded()` fields never filled from input (keys and trait fields automatically); `.hidden()` fields excluded unless selected by name |
+| D14 | Input and output protection | Unknown keys on a write are refused with OKM1120 (D291); `.guarded()` fields never filled from input (keys and trait fields automatically); `.hidden()` fields excluded unless selected by name |
 | D15 | Operators | Tagged helpers (`lt(x)`, `startsWith(x)`, `has({...})`), never plain objects; runtime identifier validation; allowlisted `filters()` for user-driven filtering |
 | D16 | Traits | Replace spreads; defaults in the schema; explicit opt-out |
 | D16a | Presets | Named, typed query refinements on a table are called `presets` (formerly scopes); `tasks.filters()` is the allowlisted builder for client-supplied filters |

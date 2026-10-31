@@ -74,7 +74,7 @@ test("every code is an offline pair, needs a database, or is not thrown", async 
     "OKM1554",
     "OKM1555",
   ]);
-  expect(silent).toEqual(["OKM1025", "OKM1051", "OKM1110", "OKM1191"]);
+  expect(silent).toEqual(["OKM1051", "OKM1110", "OKM1191"]);
   expect(offline.length + database.length + silent.length).toBe(ERROR_DOCS.length);
   const failed: string[] = [];
   for (const code of offline) {
