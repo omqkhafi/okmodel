@@ -1,0 +1,11 @@
+{
+  "title": "CLI",
+  "pages": [
+    "index",
+    "project",
+    "check",
+    "migrate",
+    "introspect",
+    "protect"
+  ]
+}

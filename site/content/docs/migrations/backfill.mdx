@@ -3,7 +3,7 @@ title: Backfill
 description: Update rows in batches, outside the migration transaction, and resume from the last key.
 ---
 
-A backfill is a step in a migration file. It is not a function exported from `okmodel`, and there is no `okm backfill` command. `okm migrate plan` and `okm generate` write the step. `okm migrate apply` runs it. The statement stays one `UPDATE`. It runs outside the migration transaction, one transaction per batch, and a later apply continues from the last committed key. A type change that uses one is [Type change](/docs/migrations/type-change). The config fields are [backfill](/docs/reference/config#backfill).
+A backfill is a step in a migration file. It is not a function exported from `okmodel`, and there is no `okm backfill` command. `okm migrate plan` and `okm generate` write the step. `okm migrate apply` runs it. The statement stays one `UPDATE`. It runs outside the migration transaction, one transaction per batch, and a later apply continues from the last committed key. A type change that uses one is [Type change](/docs/reference/type-change). The config fields are [backfill](/docs/reference/config#backfill).
 
 ## Step format
 
@@ -53,7 +53,7 @@ The primary key is `(migration_id, step_index)`.
 
 After every committed batch the runner writes that row. The final batch also writes the normal `okm_history` row, in the same transaction, and sets `state` to `done`. A step already in `okm_history` is skipped. A rerun loads `last_key` and does not issue a finished batch again. `okm_history` is unchanged. There is no backfill row in `okm_steps`.
 
-Apply progress lines print a 1-based step index (`backfill <id> step 1 batch …`). [`okm migrate status`](/docs/reference/cli#migrate-status) keeps its target columns. Under them, an unfinished backfill prints the migration, the stored step index, the rows so far, the last key, and the state. A finished step is not listed there. Status `failed at step N` also uses that stored index. Apply's own `failed at step N` counts from 1. Those lines are on [migrate apply](/docs/reference/cli#migrate-apply).
+Apply progress lines print a 1-based step index (`backfill <id> step 1 batch …`). [`okm migrate status`](/docs/reference/cli/migrate#migrate-status) keeps its target columns. Under them, an unfinished backfill prints the migration, the stored step index, the rows so far, the last key, and the state. A finished step is not listed there. Status `failed at step N` also uses that stored index. Apply's own `failed at step N` counts from 1. Those lines are on [migrate apply](/docs/reference/cli/migrate#migrate-apply).
 
 A protected target refuses a backfill unless `--allow-protected`. That check runs before every batch, so a target that becomes protected between batches stops at the next one. The committed batches stay. Which classes the flag lifts are on [Database](/docs/reference/config-database).
 
@@ -71,6 +71,6 @@ The package copy is [`docs/backfill.md`](https://github.com/omqkhafi/okmodel/blo
 
 | Next | You use it for |
 | --- | --- |
-| [Type change](/docs/migrations/type-change) | Expand, backfill, and contract for a column type. |
+| [Type change](/docs/reference/type-change) | Expand, backfill, and contract for a column type. |
 | [Failures](/docs/migrations/failures) | `okm_history` and `okm_steps` around a failed apply. |
 | [backfill](/docs/reference/config#backfill) | `batchSize`, `pauseMs`, and `statementTimeoutMs`. |

@@ -1,8 +1,8 @@
 /**
  * Docs sidebar. The tree comes from `meta.json`. Numbered separators mark each
- * group. Small groups are flattened so pages sit under the label; Schema and
- * Operate stay collapsible. `/docs` itself is omitted; the header tab already
- * opens it.
+ * group. Small groups are flattened so pages sit under the label; Schema,
+ * Operate, and Reference stay collapsible. `/docs` itself is omitted; the
+ * header tab already opens it.
  */
 
 "use client";
@@ -19,7 +19,7 @@ import { useMemo, useState, type ReactNode } from "react";
 
 /**
  * Section folders whose children belong directly under the numbered label.
- * Schema and Operate stay as collapsible folders.
+ * Schema, Operate, and Reference stay as collapsible folders.
  */
 const FLAT_SECTIONS = new Set([
   "start",
@@ -34,8 +34,6 @@ const FLAT_SECTIONS = new Set([
   "Migrations",
   "guides",
   "Guides",
-  "reference",
-  "Reference",
   "ai",
   "AI Resources",
 ]);

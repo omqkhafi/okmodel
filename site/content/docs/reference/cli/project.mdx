@@ -1,0 +1,51 @@
+---
+title: "Project commands"
+description: "okm schema, init, agents, and build."
+---
+## schema
+
+`okm schema <command>` prints the JSON Schema for that command's `--json` `data`. The same documents ship in the package under `schemas/cli-1/`. `--json` puts that schema in `data`.
+
+```sh
+okm schema migrate plan
+```
+
+## init
+
+`okm init [dir]` writes starter files and does not open a connection. One package gets `okmodel.config.ts`, `db/schema.ts`, `db/client.ts`, a migrations folder, and scripts. A workspace can initialise one package per service (`--workspace`, repeatable, or `--all-workspaces`) or one shared database package (`--shared`). `okm generate init` writes the first migration and is a different command. The default directory for `schema.ts` and `client.ts` is `db`. `--dir <path>` sets that base directory. `--json` prints one `okm.cli/1` document whose `data` schema is `schemas/cli-1/init.json`. A package name read from `package.json` is untrusted.
+
+From inside a workspace package, with no workspace flag, only that package is initialised. From the workspace root, two or more candidates and no flag ask on a terminal (multi-select) and exit 3 with OKM1892 otherwise. The plan names the detected layout. Two or more packages, or a package under an ancestor `okmodel.config.ts`, also get `okmodel.base.ts` at the workspace root: shared lint, roles, and target names, and no database URL or protected flag. Each package config spreads that object. The root `package.json` gains forwarding scripts only when the repo already has a task runner (`turbo.json`, `nx.json`, `pnpm -r`, or `bun --filter`). `okmodel` is added in each package that imports it, and only in the database package for a shared layout. A pnpm catalog spec is `catalog:` only when the catalog already lists `okmodel`. Two packages that would use one migrations directory exit 4 with OKM1893 and write nothing.
+
+`--yes` accepts defaults and does not prompt, and it does not mean every workspace. `--dry-run` prints the plan and writes nothing. `--dialect` accepts `postgres`. `--driver` accepts `postgresjs`, `pg`, `bun-sql`, `pglite`, or `neon`. `--pm` accepts `bun`, `npm`, `pnpm`, or `yarn`. `--tenancy` accepts `none` (the default) or `column`. `schema` and `database` are OKM1867 and exit 3. `--install` installs dependencies once at the workspace root. `--no-install` does not. `--json` does not install, and `--yes` installs only together with `--install`. `--force-file <path>` replaces that one user-modified file. There is no global overwrite flag. `--plan-hash <hash>` on apply exits 4 with OKM1866 when the directory changed since the plan. `--agents <block|claude|agents|all>` (repeatable) also writes the [agent files](#agents). `--no-agents` records that the project has none, and init does not ask again. Init asks about agent files only on a terminal. An unknown flag exits 2.
+
+Every command that loads a config uses the nearest `okmodel.config.ts` above the working directory, or the only config at that distance below it. `--config` overrides that. On success the resolved path is printed on stderr, so the report on stdout stays the report. A failure names that path after the fix. Two configs at the same distance exit 3 with OKM1891 and the list, instead of picking one.
+
+A finished project prints `nothing to do` and exits 0. The text ends with three commands in the package manager's syntax: `check`, `migrate plan init`, and `migrate apply`.
+
+## agents
+
+`okm agents status | update | remove [dir]` manages three kinds of file for a coding agent and nothing else: a block in `AGENTS.md`, a `CLAUDE.md` that imports it, and the packaged `okmodel` skill in `.claude/skills/okmodel/` and `.agents/skills/okmodel/`. `okm init --agents` writes them first. Content comes from the installed package, never from the network. The `agents` section of `.okm/init.json` records the choice and the SHA-256 of each file okm wrote.
+
+The block sits between `<!-- BEGIN OKMODEL v<version> -->` and `<!-- END OKMODEL -->`. Text outside the markers is never changed. A missing `AGENTS.md` is created with only the block. An existing `CLAUDE.md` with no `@AGENTS.md` import gets the line inside a managed block, after the diff is shown. A skill is copied only when its tool directory exists or `--agents claude` or `--agents agents` names it.
+
+```sh
+bunx okm agents status
+bunx okm agents update --dry-run
+bunx okm agents update --yes
+bunx okm agents remove --yes
+```
+
+`status` prints `current`, `stale`, `missing`, or `modified` for each file and exits 1 with OKM1881 when any file is not current. It warns when `CLAUDE.local.md` exists. `update` rewrites the block and any skill file that still matches its recorded hash. A skill file you edited is `modified`, and neither `update` nor `remove` touches it. `remove` deletes the block and the files whose hash still matches. A file okm created is deleted, and a file it only added to keeps its own text.
+
+`--dry-run` prints the plan with a diff and writes nothing. A change to an existing file needs `--yes`, or an answer on a terminal, and exits 3 with OKM1884 otherwise. `--plan-hash <hash>` applies only the plan you reviewed. On `agents update`, `--tenancy <none|column|schema|database>` sets the tenancy line the block prints, and `--protected yes` or `--protected no` sets whether the block says protected targets are configured. Damaged markers are OKM1882 and a repeated block is OKM1883. Both are refused and never repaired. The writable paths are a closed list, and `.claude/settings*.json`, hooks, `.vscode/tasks.json`, `.cursor/rules`, and MCP entries are never written. `--json` data is `schemas/cli-1/agents-status.json`, `agents-update.json`, or `agents-remove.json`.
+
+## build
+
+`okm build` validates the schema and writes the [out](/docs/reference/config#out) directory. The default is `.okm`. It prints that directory. It does not connect.
+
+The files are `catalog.json`, `catalog.hash`, and `types.d.ts`. `catalog.hash` is the SHA-256 of `catalog.json`. `types.d.ts` is the row types. The mode header is on [Types](/docs/schema/codecs-and-row-types#row-types).
+
+```sh
+bunx okm build
+```
+

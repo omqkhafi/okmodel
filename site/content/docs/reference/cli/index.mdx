@@ -1,0 +1,106 @@
+---
+title: "CLI"
+description: "okm reads okmodel.config.ts. okmodel is the same program."
+---
+`okm` reads `okmodel.config.ts` from the directory it starts in. Pass `--config <path>` to load another file (absolute, or relative to the working directory); the project root is that file's directory. The `okmodel` bin is the same program. The file default-exports `defineConfig` from `okmodel/migrate`. Each option is a page under [Config](/docs/reference/config). `plan`, `apply`, and `status` from `okmodel/migrate` share the same engine as the migrate commands. Command details are grouped under [Project](/docs/reference/cli/project), [Check and doctor](/docs/reference/cli/check), [Migrate](/docs/reference/cli/migrate), [Pull and import](/docs/reference/cli/introspect), and [Protect](/docs/reference/cli/protect).
+
+`okm push` is for a database you can recreate. A shared database uses reviewed migrations: `okm generate init`, then `okm migrate apply`.
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+});
+```
+
+## Run
+
+Node.js 22.18 or newer loads the config. `bunx okm` uses Node. `bun --bun okm` uses Bun.
+
+<Callout type="info" title="Node.js">
+A process that cannot load a `.ts` config exits 2. The line is `okm needs Node.js >=22.18 to load a .ts config (type stripping). This process is <version>. Run bun --bun okm to use the Bun runtime.`
+</Callout>
+
+| Invocation | Result |
+| --- | --- |
+| No arguments, `help`, `--help`, or `-h` | Prints `okm <command>` and one line per command. |
+| `okm <command> --help` | Prints that command. `-h` is the same flag. |
+| `--version`, `-V` | Prints the package version and does not run a command. The Node.js check still runs first. |
+| A failure | The exit code is the outcome below. Human stderr is `error <code>: <message>` and a fix line. |
+| `--verbose`, `-v`, or `OKM_DEBUG=1` | That failure also prints the stack. |
+
+An unknown command is `Unknown command <name>.` A group without its subcommand (`okm migrate`, `okm ext`, `okm catalog`, `okm import`, `okm driver`) names the subcommands. A close spelling adds `Did you mean`. With `--json`, that failure's envelope reports `command: null`.
+
+Exit codes are by outcome. `0` is done, or nothing to do. `1` is a command that ran and failed, including an error finding and an unexpected internal error. `2` is usage or configuration: an unknown flag, a missing config, a missing flag value. `3` is a decision the command will not ask for (OKM1530), a committed step that needs a person (OKM1553, OKM1555), an init choice with no terminal (OKM1863), a tenancy mode init does not write (OKM1867), two configs the same distance from the working directory (OKM1891), a workspace choice with no terminal (OKM1892), or agent files that change an existing file with no `--yes` and no terminal (OKM1884). `4` is a guard: a protected target without `--allow-protected` (OKM1850), a store fingerprint with no terminal (OKM1859), two targets that alias one database and disagree about protection (OKM1852), a file the user already has (OKM1855), a different driver already installed (OKM1862), a user-modified init file (OKM1864), a plan hash that no longer matches (OKM1866), two packages that share one migrations directory (OKM1893), or an agent file that is refused: damaged or repeated markers (OKM1882, OKM1883), a path off the closed list (OKM1886), a file that changed after the plan (OKM1887), or a damaged `.okm/init.json` (OKM1888). `5` is a target that cannot be reached, a refused feature, or a project init cannot use: no connection, a server older than the floor (OKM1803), a missing extension (OKM1811), a pooler host, OKM1860, or OKM1865. A code with no outcome in that list stays `1`.
+
+`--json` on every command prints one `okm.cli/1` document on stdout and nothing else. Stderr is empty on success. A failure still prints that document; a terminal also gets one terse stderr line, and a pipe does not, so `2>&1` stays one JSON document. There are no prompts and no color. The keys, in order, are `schema`, `command`, `okmVersion`, `capabilities`, `ok`, `exit`, `target` (omitted when the command did not select a database), `data`, `errors`, `warnings`, `truncated`, `outFile`. `ok` is true only when `exit` is 0. `target.fingerprint.hostDb` is the SHA-256 of lower-cased `host:port/database`. `identity` is null. The fingerprint has no URL, host, or credential. `--out <file>` writes `data` to that file (`-` keeps it on stdout) and the envelope records `outFile` (`path`, `bytes`). Commands that already used `--out` for their own file or directory keep that meaning.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| `build` | Writes the catalog under [out](/docs/reference/config#out). |
+| `catalog export` | Writes the catalog snapshot a dependent verifies. |
+| `check` | Lints the schema. Compares one database when a target is selected. |
+| `dev` | Names a target called `dev`, or creates a PGlite database and prints its directory. |
+| `doctor [code]` | Lists triggers, checks [minPostgres](/docs/reference/schema-api) and required extensions against the target, checks [roles](/docs/reference/config-roles) when they are set, or prints one error code. |
+| `doctor --production` | Checks one target for production misuse and reads it only: protection, pooler, `okm_meta`, login role, timeouts, server, extensions. Exits 1 on a `fail` finding. See [doctor --production](/docs/reference/cli/check#doctor---production). |
+| `doctor --bundle` | Writes `.okm/doctor-bundle.json`, a local diagnostics file a tester sends by hand. Needs no database and makes no network call. See [doctor](/docs/reference/cli/check#doctor). |
+| `driver test <driver>` | Runs the conformance suites against one driver. |
+| `ext list` | Lists extensions the server can install. |
+| `ext check` | Compares declared extensions with the server. |
+| `ext scaffold <name>` | Prints a starting `extension()` definition, including composite types. `--out` writes it and never overwrites. |
+| `ext test <file>` | Checks that definition against the server. |
+| `generate [name]` | Writes the next migration. |
+| `init [dir]` | Writes starter files for one package or the workspace packages you select. Does not connect. This is not `generate init`. |
+| `agents status [dir]` | Reports whether the AGENTS.md block, the CLAUDE.md import, and the skill are current. Exits 1 when one is not. |
+| `agents update [dir]` | Rewrites the AGENTS.md block and any unmodified skill from the package. |
+| `agents remove [dir]` | Deletes the AGENTS.md block and the agent files whose hash still matches. |
+| `import drizzle <path>` | Converts a Drizzle schema into table files. Runs that file. Needs no database. |
+| `migrate plan <name>` | Prints the plan. Adds lock estimates when one target answers. `--json` prints a document. |
+| `migrate apply` | Applies pending migrations. |
+| `migrate status` | Prints each target's version and state. |
+| `migrate resolve <step>` | Records a committed step, or marks it to run again. |
+| `migrate check` | Replays migration history in a scratch schema and rolls it back. |
+| `migrate baseline` | Records the head snapshot as applied on an existing database. No schema changes. |
+| `push` | Applies the schema diff. Writes no SQL file. |
+| `pull` | Reads one database and writes one table file per table, plus the schema file. |
+| `raw sync` | Describes every static `raw()` call from `okmodel/pg` and writes `.okm/raw.lock.json` and `.okm/raw.d.ts`. `--check` writes nothing and exits 1 when either file would change. |
+| `seed <file>` | Runs the file's default export on one target. |
+| `protect add` | Records the selected target's fingerprint in the user protection store. |
+| `protect remove` | Removes that fingerprint. Requires a terminal, otherwise exit 4. |
+| `protect list` | Prints the stored fingerprints. |
+| `schema <command>` | Prints the JSON Schema for that command's `--json` `data`. |
+
+`raw sync` scans `.ts`, `.tsx`, and `.mts` files under `src` for `raw` imported from `okmodel/pg`, including `import { raw as q }`. `defineConfig({ raw: { include } })` replaces those globs. `node_modules`, `dist`, and `.okm` are skipped. The SQL argument has to be a string literal or a template literal with no substitutions. The command describes each statement and does not run it. `okm check` fails when a call is missing from the lock (OKM1604) and warns when a lock entry is no longer called (OKM1605). With a target, a signature that no longer matches the database is OKM1601.
+
+## Flags
+
+Every command parses the flags in this table. An unknown flag is a usage error, including on `build` and `dev`. `driver test` also reads `--url`, in [driver test](/docs/reference/cli/check#driver-test). `pull` reads `--schema` as a Postgres schema name. That name is not a schema file. `okm schema` is the command that prints a JSON Schema.
+
+| Flag | Read by |
+| --- | --- |
+| `--config <path>`, `-c <path>` | Every command that loads a config. Loads that file instead of `okmodel.config.ts` in the working directory. |
+| `--target <name>`, `-t <name>` | `check`, `raw sync`, `migrate plan`, `migrate apply`, `migrate status`, `migrate resolve`, `migrate check`, `migrate baseline`, `push`, `pull`, `seed`, `protect add`, `protect remove`, `ext`, and `doctor`. Who requires it is [Database](/docs/reference/config-database). |
+| `--allow-protected` | `migrate apply`, `migrate resolve`, `migrate baseline`, `push`, and `seed`. One invocation. Blocked work is [Protection](/docs/reference/config-database#protection). `migrate check` ignores the flag. |
+| `--allow-pooler` | `migrate apply`, `migrate resolve`, `migrate baseline`, `push`, `seed`, `migrate check`, `raw sync`, and `check` when it compares a database. On `doctor --production` it marks a pooler URL as a fail instead of a warning, and changes no connection. Same opt-in as [allowPooler](/docs/reference/config#pooler). Either one is enough. |
+| `--allow-data-loss` | `push`. Applies a plan that drops columns and tables that hold rows. One invocation. No short form. Not read from the environment. |
+| `--lock-timeout <milliseconds>` | `migrate apply` and `raw sync`. Overrides [timeouts.lock](/docs/reference/config#timeouts). `0` disables it. |
+| `--statement-timeout <milliseconds>` | `migrate apply` and `raw sync`. Overrides [timeouts.statement](/docs/reference/config#timeouts). |
+| `--check` | `raw sync`. Writes nothing and exits 1 when the lock or the generated types would change. |
+| `--json` | Every command. Prints one `okm.cli/1` document. The command's previous JSON is `data`. |
+| `--out <file>`, `-o <file>` | With `--json`, writes `data` to the file unless the command already owns `--out`. `-` keeps `data` on stdout. |
+| `--production` | `doctor`. Checks one target for production misuse. Long form only. Needs `--target` when several targets are configured. |
+| `--bundle` | `doctor`. Writes the diagnostics bundle instead of the target report. `--out <file>` is the bundle path, with or without `--json`. |
+| `--force-file` | `doctor --bundle`. Replaces an existing bundle file. `init` takes `--force-file <path>`. |
+| `--dry-run`, `-n` | `migrate baseline`. Prints what would be recorded and writes nothing. |
+| `--replace <table>.<column>.<old>=<new>` | `generate` and `migrate plan`. Repeat it for each removed value. `=null` is the null replacement, on a nullable column. |
+| `--provision` | `migrate check`. Compares a snapshot install with a full replay. |
+| `--schema <name>`, `--schema=<name>` | `pull`. Repeat it, or separate names with a comma. The default is the target's current schema. |
+| `--out <directory>`, `--out=<directory>` | `pull` and `import drizzle`. Writes `schema.ts` and `tables/` there. Without it, the command uses the schema path and the tables directory from the config, or `schema.ts` and `tables/` when `import drizzle` has no config yet. |
+| `--import-ext ts\|js\|none` | `pull`. Extension on relative imports. The default is `ts`. `js` is for `nodenext`. `none` is for bundler resolution that does not allow a `.ts` import. The files on disk stay `.ts`. |
+
+A missing `--target` name is OKM1853: `--target needs a name.` A missing `--replace` value is OKM1541: `--replace needs table.column.old=new.` Both exit 2. `--lock-timeout` and `--statement-timeout` need a finite number of milliseconds that is not negative. The message names the flag. `--allow-protected`, `--allow-pooler`, `--allow-data-loss`, and `--replace` have no short form and are not read from the environment. `-f` is not a flag. Only boolean shorts combine (`-vn`). `-h` is help. `-V` is version. `-v` is verbose.
+

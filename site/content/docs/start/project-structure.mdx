@@ -6,7 +6,7 @@ See the files in the project and what each one is for.
 
 You have followed [Installation](/docs/start/installation) and [First schema](/docs/start/first-schema), or you have a directory with `package.json` and a Bun lockfile.
 
-Use the tutorial layout when the files stay flat, the driver is postgres.js, you apply with [`okm push`](/docs/reference/cli#push), and the database can be recreated. Use the `okm init` layout when the schema and the client live in `db/`, the SQL files live in `migrations/`, and the scripts are check, plan, apply, and status.
+Use the tutorial layout when the files stay flat, the driver is postgres.js, you apply with [`okm push`](/docs/reference/cli/migrate#push), and the database can be recreated. Use the `okm init` layout when the schema and the client live in `db/`, the SQL files live in `migrations/`, and the scripts are check, plan, apply, and status.
 
 <Steps>
 
@@ -67,7 +67,7 @@ bun run --bun okm migrate plan init
 bun run --bun okm migrate apply
 ```
 
-[`okm generate init`](/docs/reference/cli#generate) writes the first migration. That is a different command. The tutorial uses [`okm push`](/docs/reference/cli#push).
+[`okm generate init`](/docs/reference/cli/migrate#generate) writes the first migration. That is a different command. The tutorial uses [`okm push`](/docs/reference/cli/migrate#push).
 
 </Step>
 
