@@ -74,14 +74,18 @@ export function ruleFires(
  * Names the defaults whose row count equals the default.
  *
  * `page()` is left out: it returns a cursor, so a full page is not a cut-off.
- * An include counts when any parent got exactly the default.
+ * A tree walk is left out too. Its stack is taken after the lazy import, so
+ * the caller frame is missing and the notice would share a key with every
+ * other limit that also has no caller. An include counts when any parent got
+ * exactly the default.
  */
 function defaultReached(call: WarningCall, done: ReadDone | undefined): false | string {
   if (done === undefined) return false;
   const rows = rowsOf(done.value);
   const found: string[] = [];
   const root = call.dl;
-  if (root !== undefined && root[0] !== "page" && rows.length === root[1]) {
+  const walk = call.op === "descendants" || call.op === "ancestors";
+  if (root !== undefined && root[0] !== "page" && !walk && rows.length === root[1]) {
     found.push(`limits.${root[0]} = ${String(root[1])}`);
   }
   const limit = includeReached(done.plan.outputs.includes, rows);

@@ -60,6 +60,6 @@ await db.notes.find({ orderBy: { id: "asc" }, limit: 5000 }).all("backfill"); //
 
 ## OKM2011
 
-A default can hide rows. With `warnings` on, a read that took a default and returned exactly that many rows is OKM2011 in development: the call site, the key (`limits.find = 50`), and the fix. `descendants` and `ancestors` that took `limits.find` are included. The fix is a `limit` that fits the call, `page()`, or `.all(reason)`.
+A default can hide rows. With `warnings` on, a read that took a default and returned exactly that many rows is OKM2011 in development: the call site, the key (`limits.find = 50`), and the fix. `descendants` and `ancestors` take `limits.find` and do not emit OKM2011. The fix is a `limit` that fits the call, `page()`, or `.all(reason)`.
 
 The warning never fires for a limit you wrote, for `.all(reason)`, or for `page()`. In production every warning is off until `levels` turns it on. See [Warnings](/docs/reference/warnings).

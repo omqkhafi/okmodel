@@ -24,7 +24,7 @@ export const db = connect(process.env.DATABASE_URL ?? "", {
 });
 ```
 
-`offset` above 1,000 is OKM2004. A `limit` whose order does not end in a unique key is OKM2005. Under `for()`, the tenant key is ignored. A value list above 500 elements is OKM2007. An include whose row product is above 10,000 is OKM2008. A `find`, `descendants`, or `ancestors` read that took a default from [`connect({ limits })`](/docs/operate/query-limits) and returned exactly that many rows is OKM2011. `page()` is the cursor alternative to a deep offset.
+`offset` above 1,000 is OKM2004. A `limit` whose order does not end in a unique key is OKM2005. Under `for()`, the tenant key is ignored. A value list above 500 elements is OKM2007. An include whose row product is above 10,000 is OKM2008. A `find` that took a default from [`connect({ limits })`](/docs/operate/query-limits) and returned exactly that many rows is OKM2011. `descendants` and `ancestors` take that default and do not emit OKM2011. `page()` is the cursor alternative to a deep offset.
 
 ## Schema rules in `okm check`
 

@@ -107,7 +107,7 @@ test("limit bounds the rows after the walk order, and depth still counts steps",
   }
 });
 
-test("limits.find, limits.max, inspect, onQuery, and OKM2011 follow find", async () => {
+test("limits.find, limits.max, inspect, and onQuery follow find", async () => {
   const { pool } = await seeded();
   try {
     const notices: WarningNotice[] = [];
@@ -149,9 +149,7 @@ test("limits.find, limits.max, inspect, onQuery, and OKM2011 follow find", async
       { value: 2, source: "limits.find" },
       { value: 4, source: "caller" },
     ]);
-    expect(
-      notices.filter((notice) => notice.code === "OKM2011").map((notice) => notice.limit),
-    ).toEqual(["limits.find = 2"]);
+    expect(notices.filter((notice) => notice.code === "OKM2011")).toEqual([]);
   } finally {
     await pool.close();
   }
