@@ -136,3 +136,26 @@ test("with() fills setting names on autocommit, tx, raw, archive, and restore", 
     await bare.close();
   }
 });
+
+test("sql() under with() emits no write event; explain settings stay []", async () => {
+  const { settingNames } = await import("../src/runtime/tx.js");
+  const pool = await open();
+  await pool.execute("create table notes (id int primary key, title text not null)");
+  const events: ObserveEvent[] = [];
+  const onWrite = writeObserver({
+    onEvent(event) {
+      events.push(event);
+    },
+  });
+  const db = await connect(pool, { schema: plain, session: one, onWrite });
+  try {
+    const me = db.with({ userId: USER });
+    await me.notes.insert({ id: 10, title: "plan" }).sql();
+    await onWrite.flush();
+    expect(events).toEqual([]);
+    // explainWrite always passes undefined for settings (src/runtime/write.ts).
+    expect(settingNames(undefined)).toEqual([]);
+  } finally {
+    await db.close();
+  }
+});

@@ -67,8 +67,7 @@ test("pages sit flat under the capability groups", () => {
     "/docs/operate/startup-check",
     "/docs/operate/replicas-and-topology",
     "/docs/operate/session-settings",
-    "/docs/operate/observers",
-    "/docs/operate/opentelemetry",
+    "/docs/operate/observability",
     "/docs/operate/errors",
   ]);
   expect(childUrls(schema)).toEqual([

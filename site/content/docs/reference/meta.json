@@ -6,6 +6,7 @@
     "schema-api",
     "github-action",
     "errors",
+    "observer-events",
     "warnings",
     "okid",
     "environment-variables",

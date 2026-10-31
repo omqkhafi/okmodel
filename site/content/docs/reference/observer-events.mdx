@@ -1,0 +1,76 @@
+---
+title: "Observer events"
+description: "QueryEvent, WriteEvent, SavepointEvent, and OutcomeEvent shapes for okmodel/observe."
+---
+Types are exported from `okmodel/observe`. How to attach observers is [Observability](/docs/operate/observability). The contract is additive inside `okm.observe/1`.
+
+## QueryEvent
+
+One event per call after it settles, reads and writes. The connection prelude (`set_config`), `BEGIN`, `COMMIT`, and `RESET ALL` are library statements. They are part of the call and are not reported as their own events.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | `string` | Opaque id for this event. |
+| `unit` | `string?` | Set inside a transaction, a batch, or an autocommit write unit. |
+| `seq` | `number?` | 0-based inside that unit. |
+| `dialect` | `"postgres"` | Only dialect in this train. |
+| `table` | `string \| null` | Schema table name, or `null` for typed raw. |
+| `op` | `string` | Call name (`find`, `insert`, `raw`, …). |
+| `summary` | `string` | Low-cardinality label (`SELECT tasks`). |
+| `fingerprint` | `string` | Stable fingerprint; `toOtel` puts it on `db.query.summary`. |
+| `text` | `string` | Statement text. |
+| `durationMs` | `number` | Wall time for the call. |
+| `queueMs` | `number \| null` | Time waiting for a connection. |
+| `queryMs` | `number` | Time in the driver. |
+| `decodeMs` | `number \| null` | Decode time when measured. |
+| `rowCount` | `number \| null` | `null` when the mode is `unknown`. |
+| `rowCountMode` | `changed \| matched \| returned \| unknown` | From the driver command tag. |
+| `route` | `{ endpoint, role }` | Replica that served a read, or the primary. |
+| `error` | `{ kind, category, code, sqlstate? }?` | No message and no row values. |
+| `tag` | `string?` | From `queryObserver({ tag })`. |
+| `limit` | `{ value, source }?` | Limit used and where it came from. |
+| `params` | `readonly unknown[]?` | Only when `params: true`. Sensitive, hidden, and tenant values are `[redacted]`. |
+| `stack` | `string?` | Only when `stack: true`. |
+
+## WriteEvent
+
+Delivered to `onWrite` for each surviving write in a unit. Values never appear: `settings` is names only.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `type` | `"write"` | Discriminator. |
+| `unit` | `string` | Opaque unit id. |
+| `seq` | `number` | 0-based per unit. |
+| `dialect` | `"postgres"` | Only dialect in this train. |
+| `table` | `string \| null` | Schema table, or `null` for typed raw. |
+| `op` | `insert \| update \| delete \| upsert \| archive \| restore \| raw` | |
+| `rowCount` | `number \| null` | `null` when the mode is `unknown`. |
+| `rowCountMode` | `changed \| matched \| returned \| unknown` | |
+| `keys` | `readonly Record<string, unknown>[]?` | Primary-key records when that table was named in `writeObserver({ keys })`. |
+| `tenant` | `Record<string, unknown> \| null` | Scope keys and values, or `null`. |
+| `settings` | `readonly string[]` | Setting **names** from `with()`, in stored order. Never values. `[]` without `with()`. |
+| `durationMs` | `number` | Statement time. |
+| `tag` | `string?` | From `writeObserver({ tag })`, or `trusted: <reason>` under `trusted()`. |
+| `source` | `"client" \| "raw"` | |
+
+`sql()`, `inspect()`, and `describe()` plan a write and do not emit an event. That plan path builds observe metadata with `settings: []` — it does not receive the client's `with()` pairs.
+
+## SavepointEvent
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `type` | `"savepoint"` | Discriminator. |
+| `unit` | `string` | Same unit as the surrounding transaction. |
+| `name` | `string` | Savepoint name. |
+| `state` | `"released" \| "rolled_back"` | |
+| `depth` | `number` | 1 and up. |
+
+## OutcomeEvent
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `type` | `"outcome"` | Discriminator. Last event of a unit. |
+| `unit` | `string` | |
+| `outcome` | `"committed" \| "rolled_back" \| "unknown"` | `unknown` is a lost COMMIT ([OKM1401](/docs/reference/errors#okm1401)). |
+| `writes` | `number` | Surviving writes after savepoint rollbacks. |
+| `dbTxId` | `string?` | When the driver reported one. |
