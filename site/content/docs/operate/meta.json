@@ -13,8 +13,7 @@
     "startup-check",
     "replicas-and-topology",
     "session-settings",
-    "observers",
-    "opentelemetry",
+    "observability",
     "errors"
   ]
 }

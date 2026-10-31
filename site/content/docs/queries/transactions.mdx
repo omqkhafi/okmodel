@@ -40,7 +40,7 @@ The savepoint is released when the callback resolves. When the callback throws, 
 
 `afterCommit` registers a function on the transaction client. The functions run in registration order after the outermost transaction commits, and before `tx()` resolves. A function registered on a savepoint joins that list only when the savepoint is released. A rollback of the outermost transaction runs none of them.
 
-An error in a function is reported to `hookm.onError` and the next function still runs. The value `tx()` returns stays the callback's value. Observers are [Observers](/docs/operate/observers). Passing a value that is not a function is OKM1121: `afterCommit expects a function.`
+An error in a function is reported to `hookm.onError` and the next function still runs. The value `tx()` returns stays the callback's value. Observers are [Observability](/docs/operate/observability). Passing a value that is not a function is OKM1121: `afterCommit expects a function.`
 
 ### batch
 
