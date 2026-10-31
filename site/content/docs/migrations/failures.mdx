@@ -3,7 +3,7 @@ title: Failures
 description: What a failed migration step leaves in okm_history and okm_steps, and how to resume.
 ---
 
-`okm migrate apply` records a finished step in `okm_history` and an in-flight step in `okm_steps`. A step that can share a transaction rolls back with its history row. A step that committed outside that transaction is probed or left for a person. The command that records the person's decision is [migrate resolve](/docs/reference/cli#migrate-resolve). Status lines are [migrate status](/docs/reference/cli#migrate-status).
+`okm migrate apply` records a finished step in `okm_history` and an in-flight step in `okm_steps`. A step that can share a transaction rolls back with its history row. A step that committed outside that transaction is probed or left for a person. The command that records the person's decision is [migrate resolve](/docs/reference/cli/migrate#migrate-resolve). Status lines are [migrate status](/docs/reference/cli/migrate#migrate-status).
 
 ## Two tables
 
@@ -42,7 +42,7 @@ Renaming `okm_steps` or `okm_history` in the schema is [OKM1899](/docs/reference
 | --- | --- | --- |
 | The statement was inside the migration transaction and it failed. | Nothing. The transaction rolls back, and so does the history row. | Fix the migration and run `okm migrate apply` again. |
 | The statement committed, and this kind has a built-in probe. | An `okm_steps` row. | Run `okm migrate apply` again. The probe decides. |
-| The statement committed, and the kind has no probe. | An `okm_steps` row. The next apply stops. | Finish the work, then [`okm migrate resolve`](/docs/reference/cli#migrate-resolve). |
+| The statement committed, and the kind has no probe. | An `okm_steps` row. The next apply stops. | Finish the work, then [`okm migrate resolve`](/docs/reference/cli/migrate#migrate-resolve). |
 | The connection dropped after the server committed and before the client heard. | The same as a committed statement. | Probe if the kind has one. Otherwise resolve. |
 
 A built-in probe reads the catalog. It does not re-run the statement to find out.
@@ -164,7 +164,7 @@ There is no cleanup for a declared probe. A raw step has to be atomic. If a cras
 
 `okm migrate resolve <migration>:<step> --retry` sets the row to `retry`. The next apply probes first when a probe exists, and otherwise runs the statement again.
 
-There is no skip. A protected target is a history repair and needs `--allow-protected`. The invocation and the JSON fields are on [migrate resolve](/docs/reference/cli#migrate-resolve).
+There is no skip. A protected target is a history repair and needs `--allow-protected`. The invocation and the JSON fields are on [migrate resolve](/docs/reference/cli/migrate#migrate-resolve).
 
 The package copy is [`docs/migration-failure.md`](https://github.com/omqkhafi/okmodel/blob/main/docs/migration-failure.md) on main.
 
@@ -172,4 +172,4 @@ The package copy is [`docs/migration-failure.md`](https://github.com/omqkhafi/ok
 | --- | --- |
 | [Lint](/docs/migrations/checks-and-lint) | Catch a replay failure before apply. |
 | [Backfill](/docs/migrations/backfill) | A step that resumes from `okm_backfill` instead of `okm_steps`. |
-| [migrate resolve](/docs/reference/cli#migrate-resolve) | `--applied`, `--retry`, and `--accept-unverified`. |
+| [migrate resolve](/docs/reference/cli/migrate#migrate-resolve) | `--applied`, `--retry`, and `--accept-unverified`. |

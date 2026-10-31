@@ -1,0 +1,104 @@
+---
+title: "Check and doctor"
+description: "okm check, doctor, driver test, catalog export, raw sync, and dev."
+---
+## check
+
+`okm check` lints the schema against the previous snapshot, then prints warning findings, one `allow` line for each `-- okm-allow` override in the migrations directory, and `ok`. `--json` adds the same list as `allows[]`. An error finding is OKM1510 and the command exits 1. A finding line is `<severity> <code> <place>: <reason> -- fix: <fix>`. An external table is checked against each [`external`](/docs/reference/config#external) snapshot and, when a target is selected, against that database. A stale or missing snapshot is OKM1841. A foreign key whose namespaces differ is a `coupling` warning. A foreign key into another database is OKM1842.
+
+A [tables](/docs/reference/config#tables) directory is scanned for a `.ts` file whose name is absent from the schema module. That is OKM1024: `Table file not in schema: <file>.` A schema that would validate on write, with no runtime import of `okmodel/validate`, is OKM1201. The rules are on [Validation](/docs/schema/validation#on-the-schema).
+
+With one configured target, or with `--target`, the command checks `minPostgres` first, then compares a database that already has `okm_meta` with the schema (OKM1520 when they differ; on PostgreSQL 18 a `NOT NULL … NOT VALID` constraint counts as weaker than `NOT NULL` and the message names the column). A policy the schema does not declare stays in the database, including enable and force row level security, so a pull plus baseline is not OKM1520 for that security. A btree index expression is reprinted on a temporary table before that comparison, so `lower( email )` is not OKM1520 against `lower(email)`, and a pure expression's empty key list is not either. A `using` tail is not reprinted. A check or picklist uses a temporary table with a random name, so the role needs no `CREATE` on the schema and parallel runs do not collide. An extension type on that table names the schema that owns it, so citext outside the table schema still resolves. An enum or domain stays a temporary stand-in. A read-only session is OKM1896: point the command at a writable primary and grant `TEMP`. The command then checks required extensions. An extension a pending migration creates is not OKM1811 for a missing install while the package is available, and neither is a declared extension the initial migration will create when the database has no history and no migration files yet. An operator class whose extension is not declared is still OKM1811. An applied migration does not hide a later drop. Several targets and no `--target` skip those server checks and print `server checks skipped: N targets, pass --target <name>`. No target skips them too. An unknown `--target` is still OKM1845. A protection mismatch on the same database is OKM1852. Both cases are on [Database](/docs/reference/config-database).
+
+## dev
+
+`okm dev` looks for a target named `dev`. It prints `target dev` when that target is configured. With no such target it creates a PGlite database at `<out>/dev-db`, runs `select 1`, closes it, and prints that directory. The default `out` is `.okm`. The command then returns. It does not watch the schema, does not reload, and does not apply migrations.
+
+```sh
+bunx okm dev
+```
+
+## driver test
+
+`okm driver test <driver>` runs the conformance suites against one driver and prints a report. `<driver>` is `pglite`, `postgresjs`, `pg`, `bun`, `neon`, or a path to a module. The module exports `name`, `capabilities`, `open`, and `connect`. `memory: true` means one in-process connection. `notices: false` means the driver does not surface `RAISE NOTICE`. `size` is the pool size the stats case expects. Omitted, `memory` is false, `notices` is true, and `size` is 1 for an in-process driver and 4 otherwise. Bun must be `>=1.4.0` (`package.json` `engines.bun`); a lower Bun stops with a clear message. Each wire and error case drops its `okm_*` tables before the pool closes.
+
+`--url <postgres-url>` is the database. `--url=<postgres-url>` is the same. `DATABASE_URL` is used when the flag is omitted. `pglite` does not connect to it. The other built-in drivers need one of the two. The command does not read `okmodel.config.ts`.
+
+The report starts with `driver <name>` and `dialect postgres`. Then one row per case, tab-separated: case id, behavior, result, capability. The result is `pass`, `fail`, or `unsupported`. A case that does not run is `unsupported` (or `fail`), never `pass`. The capability is set on an unsupported row and names the limit (`cancel`, `describe`, `stream`, `listen`, `notices`, `one connection`, `no socket to cut`). A failure exits 1. An unsupported case does not.
+
+PGlite has no socket to cut, so COMMIT loss is `unsupported` with capability `no socket to cut`. Neon uses the same row: the harness cut is a TCP relay, and Neon speaks WebSocket or HTTP.
+
+```sh
+okm driver test pglite
+okm driver test postgresjs --url "$DATABASE_URL"
+```
+
+## doctor
+
+`okm doctor <code>` prints one registry entry and does not load the project.
+
+```text
+OKM1520: Schema drift
+The database has drifted past what an expand migration can repair.
+Inspect the diff and repair the database, or generate a migration that matches the drift.
+```
+
+An unknown code is `Unknown code <code>.`
+
+With no code, the command lists each table's triggers, one line `<table>: <name>, <name>`, in table order. No trigger is `no triggers`. When a target is configured, it also connects and compares the server to [`describe()`](/docs/reference/schema-api) requirements: a major below `minPostgres` is OKM1802 (or OKM1803 at the project floor), and a missing extension is OKM1811 unless a pending migration creates it, or the database has no history and no migration files yet so the initial migration will create a declared extension (then `okm migrate apply` installs it once the files exist; a package absent from the server still refuses and the fix names apply when a file already creates it). A role that is not a superuser still gets OKM1811 when that extension's default version is not trusted, or when the role has no CREATE on the database. The message names the role and the extension. `okm migrate check` and `okm migrate apply` refuse the same way before `CREATE EXTENSION`. An applied migration does not hide a later drop. Several targets and no `--target` print `server checks skipped: N targets, pass --target <name>` and skip that connection. When [roles](/docs/reference/config-roles) is set, it also checks external roles, `CREATEROLE` when a role is managed, and the application role's grants. A missing managed role is left for the plan. That connection is the read-only `check` class. A protected target is allowed. The command does not change the database.
+
+```sh
+bunx okm doctor OKM1520
+```
+
+### doctor --production
+
+`okm doctor --production` reads one target and reports findings. Every query runs in one `READ ONLY` transaction on one fresh session, and the command makes no network call beyond the target database. Several targets and no `--target` is OKM1853 (exit 2), not a skip. It takes no error code and cannot be combined with `--bundle`. The output names the target as ``target `<name>` ``. It never prints the URL, host, user, or password. A failed connection says ``Could not read target `<name>` `` and exits 5. When the driver message contains `ECONNREFUSED`, `ENOTFOUND`, `ETIMEDOUT`, `ECONNRESET`, `EHOSTUNREACH`, `28P01`, `28000`, `3D000`, or `57P03`, that token is appended in parentheses.
+
+```sh
+bunx okm doctor --production --target production
+bunx okm doctor --production --target production --json
+```
+
+Each finding has a stable id, a severity (`fail`, `warn`, `ok`), and a one-line fix. The command exits 1 when any finding is `fail` (OKM2204). The ids, in order: `target-protection`, `pooler`, `okm-meta`, `role-privilege`, `role-owns-tables`, `role-config` (only when [roles](/docs/reference/config-roles) is set), `lock-timeout`, `statement-timeout`, `server-version`, `extensions`. With `--json`, `data.production` holds `target`, `summary`, and `findings`; warn and fail findings are also in `warnings`. `okm schema doctor` prints the JSON Schema.
+
+| Id | Fails when | Warns when |
+| --- | --- | --- |
+| `target-protection` | the target does not set `protected: true` (OKM2202). A name, `NODE_ENV`, and a store fingerprint do not count | never |
+| `pooler` | the URL looks like a pooler and `--allow-pooler` or `allowPooler` is on (OKM2203) | the URL looks like a pooler |
+| `okm-meta` | `okm_meta` is missing (OKM1520). The check cannot see `connect()` options such as `requireMeta` | never |
+| `role-privilege` | the login role is a superuser or has `BYPASSRLS` (OKM1707) | never |
+| `role-owns-tables` | never | the login role owns the catalog tables (OKM1707) |
+| `role-config` | the role check for `roles` fails | never |
+| `lock-timeout` | never | apply's `lock_timeout` is 0 (OKM2201). Apply sets its own value, 5000 ms by default, and that is the one reported |
+| `statement-timeout` | never | the role's `statement_timeout` is 0 in a fresh session (OKM2201) |
+| `server-version` | the major is below 15 or below `minPostgres` (OKM1802, OKM1803) | the major is above 18 |
+| `extensions` | a required extension is not installed (OKM1811) | never |
+
+### doctor --bundle
+
+`okm doctor --bundle` writes one JSON file for a tester to send by hand. It needs no database and makes no network call. The file holds versions, codes, closed `.okm/` artifact names with hashes, and counts. It holds no connection string, host, user, URL, table or column name, SQL text, row value, path outside the project, or environment variable value.
+
+```sh
+bunx okm doctor --bundle
+bunx okm doctor --bundle --out ./okm-bundle.json
+bunx okm doctor --bundle --force-file
+```
+
+The default path is `.okm/doctor-bundle.json`. An existing file is refused with exit 4 unless `--force-file` is passed. `--out -` prints the document. `--bundle` takes no code and no `--target`. With `--json`, `data.bundle` is the document and `outFile` names the file.
+
+The document has `bundleFormat: 1` and these top-level keys, sorted: `adapters`, `artifacts`, `bundleFormat`, `capabilities`, `checks`, `config`, `dialect`, `layout`, `okmodel`, `packageManager`, `runtime`. `checks` runs the lint and schema rules that need no database and lists a code and a pass or fail for each rule. `okm schema doctor` prints the JSON Schema, and the same file ships as `schemas/cli-1/doctor.json`. The [guide](https://github.com/omqkhafi/okmodel/blob/main/docs/guide.md#sending-a-bundle) lists each key.
+
+## catalog export
+
+`okm catalog export` writes the column snapshot of the schema this project owns: table names plus each column's name, type, and nullability. It is not the full catalog; that is [`describe(schema)`](/docs/reference/schema-api). It does not connect. With no flags, the JSON is printed. `--out <file>` writes that file and prints the path. `--json` puts the snapshot in envelope `data`. `--json` and `--out` together write the snapshot to the file; `data` is `{}` and `outFile` names the file and its size.
+
+The file has `catalogHash` and `logical` (`namespace`, `name`, `format`). A table is a namespace, a name, and columns. There is no function and no connection URL. A dependent lists the path in [`external`](/docs/reference/config#external).
+
+```sh
+okm catalog export --out identity.okm.json
+```
+
+## raw sync
+
+`raw sync` scans `.ts`, `.tsx`, and `.mts` files under `src` for `raw` imported from `okmodel/pg`, including `import { raw as q }`. `defineConfig({ raw: { include } })` replaces those globs. `node_modules`, `dist`, and `.okm` are skipped. The SQL argument has to be a string literal or a template literal with no substitutions. The command describes each statement and does not run it. `okm check` fails when a call is missing from the lock (OKM1604) and warns when a lock entry is no longer called (OKM1605). With a target, a signature that no longer matches the database is OKM1601.

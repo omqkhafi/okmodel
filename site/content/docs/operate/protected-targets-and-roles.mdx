@@ -11,11 +11,11 @@ Project config sets `protected: true` on a target. `--allow-protected` is that i
 
 The user store is `$XDG_CONFIG_HOME/okm/protected.json`, or `~/.config/okm/protected.json` when `XDG_CONFIG_HOME` is unset. On Windows the file is `%APPDATA%\okm\protected.json`. There is no environment variable that moves this file.
 
-[`okm protect add`](/docs/reference/cli#protect) records the selected target. `okm protect list` prints the stored fingerprints. `okm protect remove` deletes the selected target's fingerprint and requires a terminal. Without one it exits 4. Removing `protected: true` from the project config does not delete a stored fingerprint.
+[`okm protect add`](/docs/reference/cli/protect#protect) records the selected target. `okm protect list` prints the stored fingerprints. `okm protect remove` deletes the selected target's fingerprint and requires a terminal. Without one it exits 4. Removing `protected: true` from the project config does not delete a stored fingerprint.
 
 The fingerprint is `hostDb`, the SHA-256 of lower-cased `host:port/database`. The user, the password, and the query string are not part of it. `identity` is null. This build does not read `pg_control_system()`. The store holds those hashes, not URLs. Command output does not print the URL.
 
-A state-changing command against a stored fingerprint exits 4 when the process has no terminal, including when the invocation passed `--allow-protected`. Project-config protection is unchanged: `--allow-protected` still lifts contract, push, seed, backfill, and history repair for that invocation. [`okm migrate check`](/docs/reference/cli#migrate-check) still refuses a protected target, and the flag does not lift it. `drop` and `rollback` are not commands. They stay policy refusals: there is no down migration.
+A state-changing command against a stored fingerprint exits 4 when the process has no terminal, including when the invocation passed `--allow-protected`. Project-config protection is unchanged: `--allow-protected` still lifts contract, push, seed, backfill, and history repair for that invocation. [`okm migrate check`](/docs/reference/cli/migrate#migrate-check) still refuses a protected target, and the flag does not lift it. `drop` and `rollback` are not commands. They stay policy refusals: there is no down migration.
 
 Protection covers the target. A destructive or unsafe migration step is covered by the migration file instead. The step runs only when a `-- okm-allow CODE: reason` line sits on it, and `okm check` lists those lines. Apply lints pending files before any statement, so the line is the acknowledgement and a protected target still needs a terminal on top of it. The lint codes are the [Errors](/docs/reference/errors) index.
 
@@ -54,12 +54,12 @@ A role that lacks `CREATE` still cannot apply DDL when someone passes `--allow-p
 
 ## Check the login
 
-[`okm doctor --production`](/docs/reference/cli#doctor---production) reports what the role in the target URL can do. A superuser or `BYPASSRLS` login fails (OKM1707), and a login that owns the tables warns, because that is right for the migrator and wrong for the app role. With `roles` set in the config it also runs the role health check. Run it once per login: the migrator's URL warns about ownership by design, and the app's URL must not. The checklist is [Production checklist](/docs/operate/production-checklist).
+[`okm doctor --production`](/docs/reference/cli/check#doctor---production) reports what the role in the target URL can do. A superuser or `BYPASSRLS` login fails (OKM1707), and a login that owns the tables warns, because that is right for the migrator and wrong for the app role. With `roles` set in the config it also runs the role health check. Run it once per login: the migrator's URL warns about ownership by design, and the app's URL must not. The checklist is [Production checklist](/docs/operate/production-checklist).
 
 The package copy is [`docs/protection.md`](https://github.com/omqkhafi/okmodel/blob/main/docs/protection.md) and [`docs/roles.md`](https://github.com/omqkhafi/okmodel/blob/main/docs/roles.md) on main.
 
 | Next | You use it for |
 | --- | --- |
 | [Production checklist](/docs/operate/production-checklist) | `requireMeta`, the pooler probe, and the doctor sample. |
-| [protect](/docs/reference/cli#protect) | `add`, `list`, and `remove`. |
+| [protect](/docs/reference/cli/protect#protect) | `add`, `list`, and `remove`. |
 | [Database](/docs/reference/config-database) | Which classes `--allow-protected` lifts. |
