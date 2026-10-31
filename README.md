@@ -149,13 +149,13 @@ export async function removeNote(id: string) {
 
 | Want…                   | Go to                                                                  |
 | ----------------------- | ---------------------------------------------------------------------- |
-| Pull a database         | [pull](https://okm.omqkhafi.dev/docs/reference/cli#pull)               |
+| Pull a database         | [pull](https://okm.omqkhafi.dev/docs/reference/cli/introspect#pull)    |
 | Import Drizzle          | [From Drizzle](https://okm.omqkhafi.dev/docs/migrations/from-drizzle)  |
 | Several catalogs        | [Catalogs](https://okm.omqkhafi.dev/docs/schema/several-catalogs)      |
 | `describe`              | [Schema API](https://okm.omqkhafi.dev/docs/reference/schema-api)       |
 | Extension packs         | [Extensions](https://okm.omqkhafi.dev/docs/schema/extensions)          |
 | The GitHub Action       | [GitHub Action](https://okm.omqkhafi.dev/docs/reference/github-action) |
-| A rewriting type change | [Type change](https://okm.omqkhafi.dev/docs/migrations/type-change)    |
+| A rewriting type change | [Type change](https://okm.omqkhafi.dev/docs/reference/type-change)     |
 
 ## Next
 

@@ -1,6 +1,6 @@
 /**
  * Sidebar routes stay flat under the numbered labels for small groups.
- * Schema and Operate stay collapsible. Every page has an icon.
+ * Schema, Operate, and Reference stay collapsible. Every page has an icon.
  */
 
 import { expect, test } from "bun:test";
@@ -42,7 +42,7 @@ test("section folders become the routes under their label", () => {
   ).toEqual(["/docs", "1. Get started", "/docs/start", "3. Schema", "Schema"]);
 });
 
-test("small groups flatten; Schema and Operate stay folders", () => {
+test("small groups flatten; Schema, Operate, and Reference stay folders", () => {
   const raw = source.getPageTree();
   const folders = raw.children.flatMap((node) => (node.type === "folder" ? [node] : []));
   expect(folders.map((folder) => folder.name)).toEqual([
@@ -80,17 +80,16 @@ test("small groups flatten; Schema and Operate stay folders", () => {
   expect(labels).toContain("/docs/concepts/how-okmodel-works");
   expect(labels).toContain("/docs/queries/read-rows");
   expect(labels).toContain("/docs/migrations/from-drizzle");
-  expect(labels).toContain("/docs/reference/cli");
   expect(labels).toContain("/docs/ai/skills");
   expect(labels).toContain("/docs/ai/llm");
   expect(labels).not.toContain("Get started");
   expect(labels).not.toContain("Concepts");
   expect(labels).not.toContain("Queries");
   expect(labels).not.toContain("Migrations");
-  expect(labels).not.toContain("Reference");
   expect(labels).not.toContain("AI Resources");
   expect(labels).toContain("Schema");
   expect(labels).toContain("Operate");
+  expect(labels).toContain("Reference");
   expect(labels).not.toContain("/docs/ai/mcp");
 
   const byName = new Map(
@@ -98,9 +97,19 @@ test("small groups flatten; Schema and Operate stay folders", () => {
   );
   const schema = byName.get("Schema");
   const operate = byName.get("Operate");
-  if (schema === undefined || operate === undefined) throw new Error("missing collapsible group");
+  const reference = byName.get("Reference");
+  if (schema === undefined || operate === undefined || reference === undefined) {
+    throw new Error("missing collapsible group");
+  }
   const childUrls = (folder: PageTree.Folder): string[] =>
-    folder.children.flatMap((child) => (child.type === "page" ? [child.url] : []));
+    folder.children.flatMap((child) => {
+      if (child.type === "page") return [child.url];
+      if (child.type === "folder") {
+        const nested = child.children.flatMap((inner) => (inner.type === "page" ? [inner.url] : []));
+        return child.index ? [child.index.url, ...nested] : nested;
+      }
+      return [];
+    });
   expect(childUrls(schema)).toContain("/docs/schema/tables");
   expect(childUrls(operate)).toEqual([
     "/docs/operate/using-okmodel-safely",
@@ -118,6 +127,10 @@ test("small groups flatten; Schema and Operate stay folders", () => {
     "/docs/operate/observability",
     "/docs/operate/errors",
   ]);
+  expect(childUrls(reference)).toContain("/docs/reference/cli");
+  expect(childUrls(reference)).toContain("/docs/reference/cli/migrate");
+  expect(childUrls(reference)).toContain("/docs/reference/package-exports");
+  expect(childUrls(reference)).toContain("/docs/reference/type-change");
 });
 
 test("every public page except the landing has a sidebar icon", () => {

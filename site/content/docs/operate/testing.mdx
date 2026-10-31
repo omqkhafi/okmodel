@@ -5,7 +5,7 @@ description: Factories, query counts, and a cross-tenant check on a real databas
 
 `okmodel/testing` opens a real database and returns factories, a query counter, and a cross-tenant isolation check. The pool comes from `open()`. There is no mock database.
 
-`open()` from `okmodel/pg/pglite` is async and returns a driver pool. `open({ url })` from `okmodel/pg/postgresjs` is synchronous and is accepted the same way. `testing` applies the schema's catalog first, which is what an empty database needs. Pass `migrate: false` when the database already has its tables. [`okm seed`](/docs/reference/cli#seed) does that. `close()` drops the objects that apply created, in reverse dependency order, and drops nothing when `migrate` is false.
+`open()` from `okmodel/pg/pglite` is async and returns a driver pool. `open({ url })` from `okmodel/pg/postgresjs` is synchronous and is accepted the same way. `testing` applies the schema's catalog first, which is what an empty database needs. Pass `migrate: false` when the database already has its tables. [`okm seed`](/docs/reference/cli/migrate#seed) does that. `close()` drops the objects that apply created, in reverse dependency order, and drops nothing when `migrate` is false.
 
 ```ts title="factories.ts"
 import { testing } from "okmodel/testing";
@@ -48,9 +48,9 @@ A required column the factory leaves out is filled from its type: text, uuid, in
 
 ## Seed and the driver suites
 
-[`okm seed`](/docs/reference/cli#seed) loads a file and calls it with this harness. Under `rlsTenancy` the command runs as the application role. The owner, a superuser, or a `BYPASSRLS` role gets OKM1707.
+[`okm seed`](/docs/reference/cli/migrate#seed) loads a file and calls it with this harness. Under `rlsTenancy` the command runs as the application role. The owner, a superuser, or a `BYPASSRLS` role gets OKM1707.
 
-The driver, error, and transaction suites share one tag. Run them with [`okm driver test`](/docs/reference/cli#driver-test). The result table is [Compatibility](/docs/reference/compatibility).
+The driver, error, and transaction suites share one tag. Run them with [`okm driver test`](/docs/reference/cli/check#driver-test). The result table is [Compatibility](/docs/reference/compatibility).
 
 `portable(test)` marks a case every dialect runs. `gated(test, feature, profile)` marks a case that needs a registry key or an adapter gate (`transactions`, `stream`, `listen`, `cancel`). The tag is the helper, not the case title.
 
@@ -65,5 +65,5 @@ The package copy is [`docs/testing.md`](https://github.com/omqkhafi/okmodel/blob
 | Next | You use it for |
 | --- | --- |
 | [Production checklist](/docs/operate/production-checklist) | `requireMeta`, a direct connection, and the doctor report. |
-| [seed](/docs/reference/cli#seed) | Load a factory file against one target. |
-| [driver test](/docs/reference/cli#driver-test) | Run the conformance suites. |
+| [seed](/docs/reference/cli/migrate#seed) | Load a factory file against one target. |
+| [driver test](/docs/reference/cli/check#driver-test) | Run the conformance suites. |

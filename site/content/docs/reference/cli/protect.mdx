@@ -1,0 +1,14 @@
+---
+title: "Protect"
+description: "okm protect add, list, and remove for the user fingerprint store."
+---
+## protect
+
+`okm protect add` records the selected target in the user store: `$XDG_CONFIG_HOME/okm/protected.json`, or `~/.config/okm/protected.json`. Windows uses `%APPDATA%\okm\protected.json`. The file holds `hostDb` fingerprints, not URLs. `identity` is null. `okm protect list` prints those fingerprints, or `none`. `okm protect remove` deletes the selected target's fingerprint and requires a terminal. Without a terminal it is OKM1859 and exits 4.
+
+The store is a union with `protected: true`. Deleting the config flag leaves the fingerprint in place. A state-changing command against a stored fingerprint exits 4 with no terminal, and `--allow-protected` does not lift that. Project config alone still honors `--allow-protected`. A terminal is friction, not proof of a human. The refusal names `project config`, `store fingerprint`, or both.
+
+```sh
+bunx okm protect add --target production
+bunx okm protect list
+```

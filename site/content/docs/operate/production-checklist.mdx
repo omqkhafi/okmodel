@@ -5,15 +5,15 @@ description: Protect the target, require the catalog, and point apply at a direc
 
 Nothing about an environment is inferred from `NODE_ENV` or from the target's name. A target named `production` is not protected by that name. Work through this list before the app serves production traffic.
 
-- [ ] Set `protected: true` on the production target. [`okm push`](/docs/reference/cli#push) is refused only when the target is protected. The flag and the user store are on [Protected targets](/docs/operate/protected-targets-and-roles).
-- [ ] Open the app with `connect({ requireMeta: true })`. A missing `okm_meta` is then [OKM1520](/docs/reference/errors#okm1520). The default is off so an existing database can adopt OKModel. A database whose catalog is behind the app is also OKM1520, with or without that option, until [`okm migrate apply`](/docs/reference/cli#migrate-apply). The startup comparison is [Startup check](/docs/operate/startup-check). The connect call is [Connect](/docs/operate/connect).
+- [ ] Set `protected: true` on the production target. [`okm push`](/docs/reference/cli/migrate#push) is refused only when the target is protected. The flag and the user store are on [Protected targets](/docs/operate/protected-targets-and-roles).
+- [ ] Open the app with `connect({ requireMeta: true })`. A missing `okm_meta` is then [OKM1520](/docs/reference/errors#okm1520). The default is off so an existing database can adopt OKModel. A database whose catalog is behind the app is also OKM1520, with or without that option, until [`okm migrate apply`](/docs/reference/cli/migrate#migrate-apply). The startup comparison is [Startup check](/docs/operate/startup-check). The connect call is [Connect](/docs/operate/connect).
 - [ ] Pass `--target` whenever more than one target is configured and the command must pick one database: `okm migrate apply`, `okm push`, `okm seed`, `okm migrate check`, and a one-database `okm check`. Omitting it then is [OKM1853](/docs/reference/errors#okm1853). The cases are on [Database](/docs/reference/config-database).
 - [ ] Point `okm migrate apply`, `okm seed`, and a connecting `okm check` at a direct connection, not a pooler. A host containing `pooler`, `pgbouncer`, or `-pooler`, port `6543` or `6432`, or `?pgbouncer=true` is refused unless `--allow-pooler` is set. Leave `prepared` unset, or set `prepared: "unnamed"`, behind a transaction-mode pooler. The host patterns are on [Pooler](/docs/reference/config#pooler); named statements are on [Drivers](/docs/operate/drivers).
-- [ ] Run [`okm doctor --production`](/docs/reference/cli#doctor---production) against that target and clear every `fail` finding before go-live.
+- [ ] Run [`okm doctor --production`](/docs/reference/cli/check#doctor---production) against that target and clear every `fail` finding before go-live.
 
 `okm migrate status` lists every target and does not require `--target`. It stops at the first unreachable one.
 
-`okm check` with several targets and no `--target` does not connect. It prints `server checks skipped: N targets, pass --target <name>`, then the lint text and `ok`. One target, or `--target`, does connect. That command is [check](/docs/reference/cli#check).
+`okm check` with several targets and no `--target` does not connect. It prints `server checks skipped: N targets, pass --target <name>`, then the lint text and `ok`. One target, or `--target`, does connect. That command is [check](/docs/reference/cli/check#check).
 
 After connecting, apply, seed, and a connecting check probe `pg_backend_pid()` across eight reads on the apply session ([Database](/docs/reference/config-database)). Two or more distinct pids are [OKM1854](/docs/reference/errors#okm1854). That probe catches a transaction-mode pooler that rotates backends between statements (`server_round_robin=1`). Default LIFO PgBouncer (`server_round_robin=0`) on a non-heuristic port can keep one pid for all eight reads, so mark it with `?pgbouncer=true` (or put `pooler` or `pgbouncer` in the host) instead of relying on the probe. Warm-and-hold with a second connection is not used during apply or seed: it deadlocks single-session targets. `--allow-pooler` skips the URL check and the probe. Apply wants a direct connection.
 
@@ -58,17 +58,17 @@ Apply that target by name:
 okm migrate apply --target production
 ```
 
-Lock and statement timeouts, the apply summary, and a backfill progress line are on [migrate apply](/docs/reference/cli#migrate-apply) and [Timeouts](/docs/reference/config#timeouts).
+Lock and statement timeouts, the apply summary, and a backfill progress line are on [migrate apply](/docs/reference/cli/migrate#migrate-apply) and [Timeouts](/docs/reference/config#timeouts).
 
 ## Read the doctor report
 
-[`okm doctor --production`](/docs/reference/cli#doctor---production) reads one target and reports how it differs from the setup above. It is read-only: every query runs in one `READ ONLY` transaction on one fresh session, and the command makes no network call beyond the target database. It needs a target. With several targets and no `--target` it is OKM1853 and exit 2, not a skip. It takes no error code, and `--bundle` is a different command. `--allow-pooler` on this command changes no connection. It tells the check that apply is allowed through a pooler, which turns a pooler URL from a warning into a fail.
+[`okm doctor --production`](/docs/reference/cli/check#doctor---production) reads one target and reports how it differs from the setup above. It is read-only: every query runs in one `READ ONLY` transaction on one fresh session, and the command makes no network call beyond the target database. It needs a target. With several targets and no `--target` it is OKM1853 and exit 2, not a skip. It takes no error code, and `--bundle` is a different command. `--allow-pooler` on this command changes no connection. It tells the check that apply is allowed through a pooler, which turns a pooler URL from a warning into a fail.
 
 ```sh title="doctor.sh"
 okm doctor --production --target production
 ```
 
-A finding has a stable id, a severity (`fail`, `warn`, or `ok`), and a one-line fix. The command exits 1 when any finding is `fail` ([OKM2204](/docs/reference/errors#okm2204)) and 0 otherwise. `--json` prints the `okm.cli/1` envelope with `data.production`. The warn and fail findings are also in `warnings`. The ids and the rule for each one are on [doctor --production](/docs/reference/cli#doctor---production).
+A finding has a stable id, a severity (`fail`, `warn`, or `ok`), and a one-line fix. The command exits 1 when any finding is `fail` ([OKM2204](/docs/reference/errors#okm2204)) and 0 otherwise. `--json` prints the `okm.cli/1` envelope with `data.production`. The warn and fail findings are also in `warnings`. The ids and the rule for each one are on [doctor --production](/docs/reference/cli/check#doctor---production).
 
 The output names the target as ``target `production` ``. It never prints the URL, host, user, or password. A failed connection says ``Could not read target `<name>` `` and exits 5. When the driver message contains `ECONNREFUSED`, `ENOTFOUND`, `ETIMEDOUT`, `ECONNRESET`, `EHOSTUNREACH`, `28P01`, `28000`, `3D000`, or `57P03`, that token is appended in parentheses.
 
@@ -97,4 +97,4 @@ The package copy is [`docs/production.md`](https://github.com/omqkhafi/okmodel/b
 | --- | --- |
 | [Testing](/docs/operate/testing) | Factories, query counts, and a tenant check on a real database. |
 | [Protected targets](/docs/operate/protected-targets-and-roles) | The fingerprint store and the agent roles. |
-| [doctor --production](/docs/reference/cli#doctor---production) | Every finding id. |
+| [doctor --production](/docs/reference/cli/check#doctor---production) | Every finding id. |

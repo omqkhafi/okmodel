@@ -4,7 +4,7 @@ description: "Add a migrations directory, generate the first file, and apply one
 ---
 Push applies the schema directly. It writes no SQL file. It is for a database you can recreate. Migrations are reviewed SQL files in git. They plan, lint, and apply per target.
 
-You have the files from [Installation](/docs/start/installation) and [First schema](/docs/start/first-schema). That page ran [`okm push`](/docs/reference/cli#push). The history version is `push-1`, and `notes` is already there. Apply then runs the new SQL file. Postgres reports that the relation already exists.
+You have the files from [Installation](/docs/start/installation) and [First schema](/docs/start/first-schema). That page ran [`okm push`](/docs/reference/cli/migrate#push). The history version is `push-1`, and `notes` is already there. Apply then runs the new SQL file. Postgres reports that the relation already exists.
 
 ```text title="apply-after-push.err"
 error invalid: Migration 0001_init failed at step 1: relation "notes" already exists
@@ -175,7 +175,7 @@ error OKM1510: error OKM1525 step 1: adds NOT NULL without a default -- fix: Add
 Change the statement so the finding is gone. An override must name a code that a statement in the step triggered, and the reason must not be empty.
 ```
 
-The finding is [OKM1525](/docs/reference/errors#okm1525). The fix it prints is `Add the column nullable, backfill, then set it NOT NULL.` This page adds the column nullable. That is the statement plan accepts. [`okm generate`](/docs/reference/cli#generate) of the rejected plan still writes the file and exits 1. stderr says apply will refuse until it is fixed.
+The finding is [OKM1525](/docs/reference/errors#okm1525). The fix it prints is `Add the column nullable, backfill, then set it NOT NULL.` This page adds the column nullable. That is the statement plan accepts. [`okm generate`](/docs/reference/cli/migrate#generate) of the rejected plan still writes the file and exits 1. stderr says apply will refuse until it is fixed.
 
 </Step>
 
