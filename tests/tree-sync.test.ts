@@ -35,30 +35,33 @@ const db = createClient(app, pool, { ownsPool: false });
 const a = db.for({ tenantId: TENANT_A });
 
 test("a walk is one recursive statement and a cycle cannot repeat a row", async () => {
-  const sql = await a.nodes.descendants(ID, { relation: "children" }).sql();
+  const sql = await a.nodes.descendants(ID, { relation: "children", limit: 20 }).sql();
   expect(sql.text).toContain("with recursive");
   expect(sql.text).toContain("<> all(w.seen)");
   expect(sql.text).toContain('c."parent_id" = w.k0');
   expect(sql.text).not.toContain('c."manager_id" = w.k0');
   expect(sql.text).toContain("where w.depth > 0");
-  const reports = await a.nodes.ancestors(ID, { relation: "reports", depth: 1 }).sql();
+  const reports = await a.nodes.ancestors(ID, { relation: "reports", depth: 1, limit: 20 }).sql();
   expect(reports.text).toContain('s."manager_id" as f0');
   expect(reports.text).toContain('c."id" = w.f0');
   expect(reports.text).toContain("w.depth < 1");
-  const self = await a.nodes.descendants(ID, { relation: "children", self: true }).sql();
+  const self = await a.nodes.descendants(ID, { relation: "children", self: true, limit: 20 }).sql();
   expect(self.text).not.toContain("w.depth > 0");
 });
 
 test("two self-relations need a name", async () => {
-  const error = await catchError(Promise.resolve(a.nodes.descendants(ID).sql()));
+  const error = await catchError(Promise.resolve(a.nodes.descendants(ID, { limit: 1 }).sql()));
   expect(error.code).toBe("OKM1120");
   expect(error.message).toContain("relation");
 });
 
 test("the active set is in the walk, and withArchived leaves it out", async () => {
-  const active = await a.nodes.descendants(ID, { relation: "children" }).sql();
+  const active = await a.nodes.descendants(ID, { relation: "children", limit: 20 }).sql();
   expect(active.text).toContain('archived_at" is null');
-  const archived = await a.nodes.withArchived().descendants(ID, { relation: "children" }).sql();
+  const archived = await a.nodes
+    .withArchived()
+    .descendants(ID, { relation: "children", limit: 20 })
+    .sql();
   expect(archived.text).not.toContain('archived_at" is null');
 });
 

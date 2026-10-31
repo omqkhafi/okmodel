@@ -167,6 +167,7 @@ async function shapes(url: string): Promise<void> {
       secret: "x",
     },
     orderBy: { score: "asc" },
+    limit: 1,
   });
   await db.posts.find({
     orderBy: { score: "desc", id: "asc" },
@@ -191,7 +192,7 @@ async function shapes(url: string): Promise<void> {
     // @ts-expect-error a plain hidden column is not a where key
     where: or([{ title: "a" }, { secret: "x" }]),
   });
-  await db.posts.descendants("a", { where: { score: 1 }, orderBy: { score: "asc" } });
+  await db.posts.descendants("a", { where: { score: 1 }, orderBy: { score: "asc" }, limit: 1 });
   await db.posts.aggregate({ where: { score: 1, title: "a" }, count: true });
   await db.posts.aggregate({ where: { score: gt(1) }, count: true });
   await db.posts.aggregate({ where: { score: eq(1), title: "a" }, count: true });

@@ -9,7 +9,9 @@
  * Tenancy and the active set apply on the start row, on every step, and on
  * the rows that come back. `where` and presets filter those rows and do not
  * cut the walk short. A missing id returns no rows, including with `self`.
- * The root has no ancestors. Loaded on the first call.
+ * The root has no ancestors. `limit` bounds the rows after the walk's order,
+ * the same rule as `find`. `depth` is steps and does not bound rows. Loaded
+ * on the first call.
  */
 
 import { OkmError, throwNamed } from "../contracts/error.js";
@@ -18,6 +20,7 @@ import { attachHttp, readCall, readHandle, type Mods, type Session } from "./cli
 import {
   decodeResult,
   emitOrder,
+  emitRowLimit,
   emitWhere,
   fail,
   indexes,
@@ -38,6 +41,7 @@ const OPTIONS = [
   "where",
   "select",
   "orderBy",
+  "limit",
   "depth",
   "self",
   "relation",
@@ -103,6 +107,7 @@ function open(
     ...(user.where !== undefined ? { where: user.where } : {}),
     ...(user.select !== undefined ? { select: user.select } : {}),
     ...(user.orderBy !== undefined ? { orderBy: user.orderBy } : {}),
+    ...(user.limit !== undefined ? { limit: user.limit } : {}),
     ...(user.signal !== undefined ? { signal: user.signal } : {}),
     ...(user.timeout !== undefined ? { timeout: user.timeout } : {}),
     ...(user.route !== undefined ? { route: user.route } : {}),
@@ -122,6 +127,7 @@ function open(
   const call: ReadCall = {
     ...base,
     op: packed.walk,
+    ...(session.l !== undefined ? { limits: session.l } : {}),
     build: (schema, planned, sink, outputs, source) => {
       emitTree(schema, planned, sink, outputs, source, spec);
     },
@@ -206,17 +212,18 @@ function emitTree(
   }
   if (call.orderBy !== undefined) {
     emitOrder(table, call.orderBy, sink, "t");
-    return;
+  } else {
+    sink.text(" order by w.depth asc");
+    sink.mark("order:depth");
+    for (const field of table.model.primary) {
+      const item = table.columns.get(field);
+      if (item === undefined) continue;
+      sink.text(", t.");
+      sink.text(quote(item.sql));
+      sink.text(" asc");
+    }
   }
-  sink.text(" order by w.depth asc");
-  sink.mark("order:depth");
-  for (const field of table.model.primary) {
-    const item = table.columns.get(field);
-    if (item === undefined) continue;
-    sink.text(", t.");
-    sink.text(quote(item.sql));
-    sink.text(" asc");
-  }
+  emitRowLimit(call, sink, `${direction}()`);
 }
 
 function emitKeyList(sink: Sink, alias: string, columns: readonly string[], prefix: string): void {

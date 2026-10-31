@@ -32,6 +32,16 @@ expectTypeOf(widened.notes.find(order)).not.toHaveProperty("then");
 expectTypeOf(all.notes.find({ ...order, limit: 5 })).toHaveProperty("then");
 expectTypeOf(all.notes.find(order).all("export")).toHaveProperty("then");
 
+expectTypeOf(plain.notes.descendants("1")).not.toHaveProperty("then");
+expectTypeOf(plain.notes.descendants("1")).toHaveProperty("all");
+expectTypeOf(plain.notes.ancestors("1")).not.toHaveProperty("then");
+expectTypeOf(findOnly.notes.descendants("1")).toHaveProperty("then");
+expectTypeOf(all.notes.ancestors("1")).toHaveProperty("then");
+expectTypeOf(maxOnly.notes.descendants("1")).not.toHaveProperty("then");
+expectTypeOf(widened.notes.descendants("1")).not.toHaveProperty("then");
+expectTypeOf(plain.notes.descendants("1", { limit: 5 })).toHaveProperty("then");
+expectTypeOf(plain.notes.descendants("1").all("export")).toHaveProperty("then");
+
 // @ts-expect-error page needs limit unless limits.page is set
 void plain.notes.page({ orderBy: { id: "asc" } });
 // @ts-expect-error limits.find does not set a page size

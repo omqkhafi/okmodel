@@ -6,7 +6,7 @@
 
 import { OkmError } from "../contracts/error.js";
 import { attachHttp, type Session } from "./client.js";
-import { fail, type Plan, type ReadCall } from "./plan.js";
+import { fail, rowBounded, type Plan, type ReadCall } from "./plan.js";
 import type { Limits } from "./plan.js";
 
 const KEYS = ["find", "include", "page", "groupBy", "max"];
@@ -57,11 +57,12 @@ export function capLimit(value: number, max: number | undefined): void {
 }
 
 /**
- * Applies `limits.find` and `limits.max` to a `find`.
+ * Applies `limits.find` and `limits.max` to `find`, `descendants`, and `ancestors`.
  *
- * A `find` with neither `limit` nor `.all(reason)` takes `limits.find`. A
- * written limit is checked against `limits.max`. A `page()`, an `aggregate`,
- * and every other read keep the limit they planned.
+ * A call with neither `limit` nor `.all(reason)` takes `limits.find`. A
+ * written limit is checked against `limits.max`. `.all(reason)` reads past
+ * the ceiling. A `page()`, an `aggregate`, and every other read keep the
+ * limit they planned.
  *
  * @param session - Client session
  * @param call - The read, with `limits` set
@@ -69,7 +70,7 @@ export function capLimit(value: number, max: number | undefined): void {
  */
 export function limit(session: Session, call: ReadCall): ReadCall {
   const limits = call.limits as Limits;
-  if (call.op !== "find" || call.all !== undefined || call.size !== undefined) return call;
+  if (!rowBounded(call.op) || call.all !== undefined || call.size !== undefined) return call;
   if (call.limit !== undefined) {
     try {
       capLimit(call.limit as number, limits.max);

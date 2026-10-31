@@ -12,10 +12,10 @@ declare const a: Scoped;
 
 const id = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0c0001";
 
-const rows = a.nodes.descendants(id, { relation: "children", select: ["id", "name"] });
+const rows = a.nodes.descendants(id, { relation: "children", select: ["id", "name"], limit: 10 });
 expectTypeOf<keyof Awaited<typeof rows>[number]>().toEqualTypeOf<"id" | "name">();
 
-const full = a.nodes.ancestors(id, { relation: "children" });
+const full = a.nodes.ancestors(id, { relation: "children", limit: 10 });
 expectTypeOf<Awaited<typeof full>[number]["name"]>().toEqualTypeOf<string>();
 
 const synced = a.tags.sync(id, "nodes", [id]);
@@ -23,4 +23,4 @@ expectTypeOf<Awaited<typeof synced>["added"]>().toEqualTypeOf<readonly unknown[]
 expectTypeOf<Awaited<typeof synced>["removed"]>().toEqualTypeOf<readonly unknown[]>();
 
 // @ts-expect-error depth is a number of steps
-void a.nodes.descendants(id, { depth: "1" });
+void a.nodes.descendants(id, { depth: "1", limit: 1 });
