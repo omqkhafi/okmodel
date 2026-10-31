@@ -1,17 +1,17 @@
 ---
-title: "Your first migration"
+title: "First migration"
 description: "Add a migrations directory, generate the first file, and apply one change."
 ---
 Push applies the schema directly. It writes no SQL file. It is for a database you can recreate. Migrations are reviewed SQL files in git. They plan, lint, and apply per target.
 
-You have the files from [Installation](/docs/start/installation) and [Your first schema and queries](/docs/start/first-schema). That page ran [`okm push`](/docs/reference/cli#push). The history version is `push-1`, and `notes` is already there. Apply then runs the new SQL file. Postgres reports that the relation already exists.
+You have the files from [Installation](/docs/start/installation) and [First schema](/docs/start/first-schema). That page ran [`okm push`](/docs/reference/cli#push). The history version is `push-1`, and `notes` is already there. Apply then runs the new SQL file. Postgres reports that the relation already exists.
 
 ```text title="apply-after-push.err"
 error invalid: Migration 0001_init failed at step 1: relation "notes" already exists
 Fix the step and run apply again. Finished steps are not repeated.
 ```
 
-This page uses an empty database and the same files. `DATABASE_URL` points at that database.
+Recreate an empty database before you start this page. Drop the one `okm push` used, or point `DATABASE_URL` at a fresh empty database. This page uses that empty database and the same project files.
 
 <Steps>
 
@@ -124,7 +124,21 @@ ok
 <Step>
 ### A column with no default
 
-Insert one row, the same call as [Your first schema and queries](/docs/start/first-schema). The table has that row. Add `body: t.text()`. `t.text()` is `NOT NULL` and has no default.
+Insert one row so the table is not empty. Then add `body: t.text()`. `t.text()` is `NOT NULL` and has no default.
+
+```ts title="insert.ts"
+import { db } from "./db.ts";
+
+const note = await db.notes.insert({ title: "Hello" });
+console.log(note);
+```
+
+```text title="insert.out"
+{
+  id: "1",
+  title: "Hello",
+}
+```
 
 ```ts title="schema-required.ts"
 import { schema, table, t } from "okmodel/pg";
@@ -234,10 +248,10 @@ bunx okm migrate status
 
 ```text title="status.out"
 target	version	catalog	state	protected
-default	0002_add-body	5cce87dcf5cfb0a3d4c2241ae71b2dfac568ea56e70bb67cd03d2f49d5867e28	current	false
+default	0002_add-body	⟨catalog hash⟩	current	false
 ```
 
-`current` means the target is at that version. The catalog column is the catalog hash.
+`current` means the target is at that version. The catalog column is the catalog hash from `.okm/catalog.hash` for the head schema.
 
 </Step>
 

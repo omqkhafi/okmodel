@@ -55,12 +55,12 @@ okm migrate apply --target rehearsal
 
 A clone already has history, so this replays the pending migration files. The report is the command's stdout: which migrations ran, and the error if a step stops. Per-step duration, locks, and retries as a separate rehearsal command are not in this version. The recipe is still `apply` on a clone, not a new command.
 
-A preview built from the head snapshot and a rehearsal built by replaying history are required to match. [`okm migrate check --provision`](/docs/reference/cli#migrate-check) is that comparison. A difference is [OKM1521](/docs/reference/errors#okm1521). How the two scratch schemas are compared is [Checks and lint](/docs/migrations/checks-and-lint).
+A preview built from the head snapshot and a rehearsal built by replaying history are required to match. [`okm migrate check --provision`](/docs/reference/cli#migrate-check) is that comparison. A difference is [OKM1521](/docs/reference/errors#okm1521). How the two scratch schemas are compared is [Lint](/docs/migrations/checks-and-lint).
 
 The package copy is [`docs/environments.md`](https://github.com/omqkhafi/okmodel/blob/main/docs/environments.md) on main.
 
 | Next | You use it for |
 | --- | --- |
-| [Checks and lint](/docs/migrations/checks-and-lint) | Replay the files, then compare the snapshot with `--provision`. |
+| [Lint](/docs/migrations/checks-and-lint) | Replay the files, then compare the snapshot with `--provision`. |
 | [Existing database](/docs/migrations/adopt-existing-database) | A database that already has tables. |
 | [Production checklist](/docs/operate/production-checklist) | `protected: true` and a direct connection. |

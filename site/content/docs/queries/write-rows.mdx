@@ -5,7 +5,7 @@ description: "Insert, update, claim, and sync."
 
 These calls refuse an unknown key, then insert, update, claim, or sync.
 
-### Unknown keys
+## Unknown keys
 
 An unknown key on `insert`, `update`, upsert / `onConflict`, first-or-create, `insert.validate`, `insert.check`, `insert.pick(...).validate`, `insert.pick(...).check`, `insert.omit(...).validate`, `insert.omit(...).check`, `update.validate`, or `insert["~standard"].validate` is OKM1120. The message names the key and the table. `insert.check`, `pick(...).check`, and `omit(...).check` return rule issues and do not throw OKM1200 for a failed rule. An unknown key throws on those calls too, and the rule issues are lost. The Standard Schema `validate` throws that OKM1120. It does not return `{ issues }` for an unknown key. A failed rule on that surface still returns `{ issues }`. Typos are no longer dropped silently. Guarded, sealed, and computed fields keep their existing codes (OKM1190 and the rest).
 
@@ -13,7 +13,7 @@ An unknown key on `insert`, `update`, upsert / `onConflict`, first-or-create, `i
 `Field nope is not on notes.` Use a field from the catalog.
 </Callout>
 
-### Supplied id
+## Supplied id
 
 A client-generator `t.id({ default: uuidv4 })` omits `id` from insert. `{ allow: ["id"] }` writes the id you pass and skips the generator for that row. A list can mix a supplied id with a row that omits it. Without `allow`, a supplied id is OKM1190. On a list, `allow` has to be exactly `["id"]`. A longer list does not open `id` in the type.
 
@@ -40,7 +40,7 @@ export async function keep(url: string, id: string) {
 A supplied id without `allow`, a database-default id named in `allow`, and an update of the key are refused.
 </Callout>
 
-### First or create
+## First or create
 
 `onConflict` decides what an insert does when a unique is already taken.
 
@@ -53,7 +53,7 @@ A supplied id without `allow`, a database-default id named in `allow`, and an up
 
 `on` is a unique or the primary key. `update` and `return` together are refused.
 
-#### return
+### return
 
 `{ on, return: true }` inserts the row. When that unique is taken, it reads the existing row and does not change it. The lookup runs only when the insert returned nothing.
 
@@ -70,7 +70,7 @@ export async function once(url: string) {
 }
 ```
 
-#### ignore
+### ignore
 
 `"ignore"` skips a row whose unique is taken.
 
@@ -87,7 +87,7 @@ export async function keep(url: string) {
 }
 ```
 
-#### update
+### update
 
 `update` names the columns copied from the rejected row.
 
@@ -112,7 +112,7 @@ Anything else is `onConflict must be "error", "ignore", { on, update }, or { on,
 The lookup is a second statement and does not set isolation. A second request that commits while the first is waiting is visible, so both callers get the row. Repeatable read and serializable can still miss it. On an archivable table, a unique that is not the primary key matches only a row that is not archived.
 </Callout>
 
-### List
+## List
 
 `update` of a list writes those rows in one statement. A long list is split so the parameters stay inside the budget. A finished statement over 65,533 parameters is OKM1126 (count and limit in the message). The limit matches postgres.js (which refuses at 65,534) so OKM1126 fires first. The limit is for the whole statement — filters, `inList`, `limit`, and values — not for `inList` alone. Chunk the work, or filter with `= any(array)`.
 
@@ -143,7 +143,7 @@ export async function rename(url: string, first: string, second: string) {
 The same target twice is `update on notes lists the same target twice.` An empty `set` is `update set is empty.`
 </Callout>
 
-### Increment
+## Increment
 
 `inc` adds to a number or bigint column inside `set`. A null number stays null. `undefined` in `set` leaves the field unchanged.
 
@@ -164,7 +164,7 @@ export async function add(url: string, id: string) {
 A text column is `inc adds to a number. title is a text column.`
 </Callout>
 
-### Claim
+## Claim
 
 `update` with `lock: "skip"` and `limit` changes up to that many matching rows and leaves rows another transaction already holds. The database chooses which unlocked rows. The result is `{ count }`, the number of rows changed. `{ returning: true }` returns the updated rows and honors `select`, including when `{ allow }` names a guarded field. Set a `claimedBy` token in `set`, then `find` by that token, or pass `returning: true` and read the rows from the claim. `delete` does not accept `{ returning: true }`. That call is OKM1120 and deletes nothing. Pass the field names, or omit `returning` for `{ count }`.
 
@@ -208,13 +208,13 @@ export async function take(url: string, token: string) {
 `limit` must be a whole number from 1 to 2147483647.
 </Callout>
 
-### Sync
+## Sync
 
 `sync(id, relation, ids)` makes a to-many relation hold exactly those ids. It locks the parent, then writes, and returns `{ added, removed }`. Duplicate ids count once. A join table gains and loses link rows. A nullable foreign key is set or cleared, and the related row stays. A link that would have to delete a row is refused.
 
 A missing parent is `not_found`: `sync on nodes did not find that id.` An id that is not on the related table is `not_found`: `sync on nodes.children is missing 1 ids.` The relation must be `many` or `manyThrough`: `sync on nodes.children is not a to-many relation.` A tree-shaped `many` (the same table, through its own foreign key) refuses a list that contains the parent's own id. `manyThrough` accepts that link, including a row that follows itself. An `update` that sets a tree parent to the row's own id, or to a descendant, is OKM1120 when `where` is the primary key. A filter that is not the key is not checked.
 
-#### simple
+### simple
 
 One call sets the relation to those ids. Duplicate ids count once.
 
@@ -239,7 +239,7 @@ export async function links(url: string, id: string, child: string) {
 }
 ```
 
-#### complex
+### complex
 
 An empty list clears the links. The next call sets one id. Each call returns `{ added, removed }`.
 

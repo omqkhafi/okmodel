@@ -1,5 +1,5 @@
 ---
-title: "Migrations and drift"
+title: "Drift"
 description: "A migration is the SQL between two catalogs. okm check reports a live difference, and only against a reachable target."
 ---
 
@@ -19,7 +19,7 @@ That live comparison is a command. Nothing in the query path runs it for you.
 
 `connect` does a narrower check, and only when `okm_meta` already holds a hash. Equal hashes return without reading history. A database that is ahead by expand migrations is allowed. Ahead by a contract step, or behind, is OKM1520. A missing hash skips this check unless `requireMeta` is set. The cases are [Startup check](/docs/operate/startup-check).
 
-`okm migrate check` is a third command. It replays migration files in a scratch schema. It does not read the selected database's rows, and it is not the live drift report. The four checks are [Checks and lint](/docs/migrations/checks-and-lint).
+`okm migrate check` is a third command. It replays migration files in a scratch schema. It does not read the selected database's rows, and it is not the live drift report. The four checks are [Lint](/docs/migrations/checks-and-lint).
 
 ## Limits and trade-offs
 
@@ -33,8 +33,8 @@ A pooler URL is refused for a connecting check unless you allow it. The rule is 
 
 | Page | You use it for |
 | --- | --- |
-| [Your first migration](/docs/start/first-migration) | Generate, apply, and status. |
+| [First migration](/docs/start/first-migration) | Generate, apply, and status. |
 | [check](/docs/reference/cli#check) | Lint, then the live comparison. |
 | [Startup check](/docs/operate/startup-check) | The hash `connect` compares. |
-| [Checks and lint](/docs/migrations/checks-and-lint) | Replaying history in a scratch schema. |
+| [Lint](/docs/migrations/checks-and-lint) | Replaying history in a scratch schema. |
 | [Type change](/docs/migrations/type-change) | A change that is not a single safe step. |

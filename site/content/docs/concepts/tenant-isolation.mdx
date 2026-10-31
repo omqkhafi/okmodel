@@ -27,7 +27,7 @@ Typed raw SQL has no tenant predicate, so a schema with tenancy refuses it (OKM1
 
 The predicate is on the calls the client plans. `unscoped` and `trusted` are how a reviewed statement leaves it off. They are reasons, not a mode the next call inherits.
 
-Row-level security does not replace the column predicate. A login that bypasses it is a role problem. The doctor check is [Protected targets and roles](/docs/operate/protected-targets-and-roles).
+Row-level security does not replace the column predicate. A login that bypasses it is a role problem. The doctor check is [Protected targets](/docs/operate/protected-targets-and-roles).
 
 Index prefixes, composite keys, path length, and every example stay on the schema page. This page does not repeat them.
 
@@ -38,4 +38,4 @@ Index prefixes, composite keys, path length, and every example stay on the schem
 | [Tenancy](/docs/schema/tenancy) | The key, `global`, `via`, indexes, and `rlsTenancy`. |
 | [References](/docs/schema/references) | A foreign key under a tenant table. |
 | [Typed raw SQL](/docs/queries/typed-raw-sql) | `trusted` and OKM1702. |
-| [The safety model](/docs/concepts/the-safety-model) | The other refusals, beside the tenant key. |
+| [Safety](/docs/concepts/the-safety-model) | The other refusals, beside the tenant key. |

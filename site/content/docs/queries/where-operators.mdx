@@ -7,7 +7,7 @@ A `where` is an object of fields. A plain value is equality. Any other filter is
 
 Families: text is `text`, `citext`, `varchar(n)`, `char(n)`, or a name starting with `character`. array ends in `[]`. range ends in `range`. json, jsonb, and tsvector are those types. scalar is every other type. A clause is the `where` or `order by` from `sql()`, alias `t`.
 
-### How a where is built
+## How a where is built
 
 A scalar writes `=`. An object needs `eq`: json, jsonb, Temporal, an array, a range, or another object the codec accepts. A bare object is refused on every column. A `Date` is refused inside `eq` too.
 
@@ -95,7 +95,7 @@ or-call OKM1121 Pass an array: or([a, b]).
 
 `bare` is a bare object. The fix names `eq`. `fit` lists the operators that family accepts. `inc` there is a write ([Increment](/docs/queries/write-rows#increment)). `search` is `matches` on plain text.
 
-### Equality and comparison
+## Equality and comparison
 
 `between` is inclusive, not a range operator.
 
@@ -108,7 +108,7 @@ or-call OKM1121 Pass an array: or([a, b]).
 | `gte` | text, range, scalar | the bound | `gte(3)` | `t."rank" >= $1` |
 | `between` | text, scalar | the two bounds | `between(1, 3)` | `t."rank" between $1 and $2` |
 
-### Lists and null
+## Lists and null
 
 `null` is `is null`. An empty `inList([])` writes `false`. An empty `notIn([])` writes `true`.
 
@@ -118,7 +118,7 @@ or-call OKM1121 Pass an array: or([a, b]).
 | `notIn` | text, array, scalar | a list of values | `notIn(["draft"])` | `t."status" not in ($1)` |
 | `null` | any column | no operand | `null` | `t."title" is null` |
 
-### Text patterns
+## Text patterns
 
 `startsWith`, `contains`, and `endsWith` escape the text and add `escape`. A percent sign, an underscore, or a backslash is escaped. These examples bind `ship%`, `%ship%`, and `%ship`. `like` and `ilike` bind the pattern you wrote, with no escape.
 
@@ -130,7 +130,7 @@ or-call OKM1121 Pass an array: or([a, b]).
 | `like` | text | a pattern | `like("ship%")` | `t."title" like $1` |
 | `ilike` | text | a pattern | `ilike("ship%")` | `t."title" ilike $1` |
 
-### Boolean trees
+## Boolean trees
 
 `not(null)` is `is not null`. Any other value is wrapped in `not`. An empty `or([])` writes `false`. An empty branch is [OKM1121](/docs/reference/errors#okm1121). `and` is the join [above](#how-a-where-is-built).
 
@@ -140,7 +140,7 @@ or-call OKM1121 Pass an array: or([a, b]).
 | `or` | a where | an array of where objects | `or([{ title: "ship" }, { rank: lt(3) }])` | `((t."title" = $1) or (t."rank" < $2))` |
 | `and` | fields of a where | no helper | `{ title: startsWith("ship"), rank: lt(3) }` | `t."title" like $1 escape E'\\' and t."rank" < $2` |
 
-### Arrays and ranges
+## Arrays and ranges
 
 A bare array or range is refused. Equality is `eq` and writes `=`. SQL casts the parameter.
 
@@ -150,7 +150,7 @@ A bare array or range is refused. Equality is `eq` and writes `=`. SQL casts the
 | `containedBy` | array, jsonb, range | an array, a JSON value, or a range | `containedBy(["a", "b"])` | `t."tags" <@ $1::text[]` |
 | `overlaps` | array, range | an array or a range | `overlaps(["a"])` | `t."tags" && $1::text[]` |
 
-### JSON
+## JSON
 
 `hasKey` and `hasAnyKey` are function calls, so the SQL has no `?`. `path` compares the text at the segments. A number casts it to numeric, a boolean to boolean, a string to text. The comparison is `eq`, `lt`, `lte`, `gt`, or `gte`.
 
@@ -160,7 +160,7 @@ A bare array or range is refused. Equality is `eq` and writes `=`. SQL casts the
 | `hasAnyKey` | jsonb | a list of keys | `hasAnyKey(["published", "title"])` | `jsonb_exists_any(t."meta", $1::text[])` |
 | `path` | json, jsonb | segments and a comparison | `path(["author", "name"], eq("ada"))` | `(t."meta" #>> $1::text[])::text = $2` |
 
-### Search and similarity
+## Search and similarity
 
 `matches` and `relevance` need tsvector. `relevance` is `orderBy`, descending. In a `where` it is [OKM1121](/docs/reference/errors#okm1121): `relevance on body belongs in orderBy.` Match and language are [Search and trees](/docs/queries/search-and-trees#text-search). `similar` and `wordSimilar` come from [pgTrgm()](/docs/schema/extensions#trigram). The fit table does not list them. Postgres applies them to text. Another type is a driver error.
 
@@ -171,7 +171,7 @@ A bare array or range is refused. Equality is `eq` and writes `=`. SQL casts the
 | `similar` | text | the text to compare | `trgm.similar("ship")` | `t."title" operator("public".%) $1` |
 | `wordSimilar` | text | the text to compare | `trgm.wordSimilar("ship")` | `t."title" operator("public".<%) $1` |
 
-### Relation quantifiers
+## Relation quantifiers
 
 `has`, `none`, and `every` are the filters on a relation. Anything else is [OKM1121](/docs/reference/errors#okm1121). The related `where` uses these operators. The shape is [Relations](/docs/schema/relations#filter).
 
@@ -181,7 +181,7 @@ A bare array or range is refused. Equality is `eq` and writes `=`. SQL casts the
 | `none` | a relation | a where on the related table | `none({ body: "ship it" })` | `not exists (select 1 from "comments" r0_comments where r0_comments."noteId" = t."id" and r0_comments."body" = $1)` |
 | `every` | a relation | a where on the related table | `every({ body: "ship it" })` | `not exists (select 1 from "comments" r0_comments where r0_comments."noteId" = t."id" and not (r0_comments."body" = $1))` |
 
-### Callers and code
+## Callers and code
 
 [Request filters](/docs/queries/request-filters) is what a caller may send. `parse` builds those operators. A listed relation becomes `has`.
 

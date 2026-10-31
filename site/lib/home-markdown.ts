@@ -24,7 +24,7 @@ ${install}
 
 - [Introduction](/docs/start)
 - [Installation](/docs/start/installation)
-- [Your first schema and queries](/docs/start/first-schema)
+- [First schema](/docs/start/first-schema)
 - [Project structure](/docs/start/project-structure)
 - [Documentation](/docs)
 - [llms.txt](/llms.txt)

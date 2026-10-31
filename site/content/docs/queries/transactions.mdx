@@ -5,13 +5,13 @@ description: "tx() runs a callback on one connection. batch() runs writes as one
 
 `tx()` runs a callback on one reserved connection of the primary. The callback's client is the one to use. `tx()` commits when the callback resolves and rolls back when it throws. `tx()` returns what the callback returns. `batch()` runs write handles as one atomic unit on the primary, and returns one result per handle, in order.
 
-### Call
+## Call
 
 `tx(fn)` and `tx(options, fn)`. Options go first. `tx(fn, options)` is [OKM1120](/docs/reference/errors#okm1120): `options go first: tx(options, fn).` A missing callback is [OKM1121](/docs/reference/errors#okm1121): `tx expects a callback: tx(fn) or tx(options, fn).` Options that are not an object are the same code. An unknown key is OKM1120 and lists `isolation`, `retry`, `signal`, and `timeout`.
 
 After the callback returns, the connection is released. A later call on that client is `The transaction has finished. Use the client the callback received only while the callback runs.`
 
-### Options
+## Options
 
 | Option | Accepted | Effect |
 | --- | --- | --- |
@@ -22,7 +22,7 @@ After the callback returns, the connection is released. A later call on that cli
 
 Another `isolation` is OKM1120: `isolation must be one of: read committed, repeatable read, serializable.` A `retry` that is not an integer from 0 up, and a `timeout` that is not a number above 0, are OKM1121.
 
-### Retry
+## Retry
 
 `retry` runs the callback again only when the error kind is `serialization` or `deadlock`. Each run is a new transaction, after a short wait. The deadline is set once. When it has passed, the call fails as kind `timeout`: `The transaction timed out.` An aborted `signal` fails as `cancelled` and stops the loop.
 
@@ -30,19 +30,19 @@ Another `isolation` is OKM1120: `isolation must be one of: read committed, repea
 
 A constraint failure, a timeout, a cancel, and every other kind are thrown as they are.
 
-### Nested
+## Nested
 
 A `tx()` inside a transaction is a savepoint on the same connection. It accepts no options. Any of `isolation`, `retry`, `timeout`, or `signal` is OKM1121: `isolation, retry, timeout, and signal belong to the outermost tx(). A nested tx() is a savepoint on the same transaction.`
 
-The savepoint is released when the callback resolves. When the callback throws, the savepoint rolls back. If the caller catches that error, the outer transaction continues. The outer deadline still bounds the savepoint. That ceiling is [Session and pool](/docs/operate/session-and-pool#timeouts).
+The savepoint is released when the callback resolves. When the callback throws, the savepoint rolls back. If the caller catches that error, the outer transaction continues. The outer deadline still bounds the savepoint. That ceiling is [Pool](/docs/operate/session-and-pool#timeouts).
 
-### afterCommit
+## afterCommit
 
 `afterCommit` registers a function on the transaction client. The functions run in registration order after the outermost transaction commits, and before `tx()` resolves. A function registered on a savepoint joins that list only when the savepoint is released. A rollback of the outermost transaction runs none of them.
 
 An error in a function is reported to `hookm.onError` and the next function still runs. The value `tx()` returns stays the callback's value. Observers are [Observability](/docs/operate/observability). Passing a value that is not a function is OKM1121: `afterCommit expects a function.`
 
-### batch
+## batch
 
 `batch()` takes [write](/docs/queries/write-rows) handles and runs them as one unit on the primary. Pass `insert`, `update`, `delete`, and `archive` without awaiting them. A failure rolls the unit back. `batchIndex` is the operation that failed, or `null` when the failure is at commit.
 
@@ -50,21 +50,21 @@ An error in a function is reported to `hookm.onError` and the next function stil
 
 `.replica()` is [OKM1840](/docs/reference/errors#okm1840). `restore`, a write with `expect`, `refresh()`, an update that sets a path column, and an update that sets a tree parent are OKM1121. A versioned update is OKM1121 on `db.batch`. The same update is accepted inside `tx()`.
 
-### One connection
+## One connection
 
-`tx()` holds one connection from `BEGIN` until commit, rollback, or cancellation, then returns it to the pool. With replicas, `reserve` takes the primary. The route reason is `primary-required`. A replica route inside the callback, and `using("replica")`, are OKM1840: `This operation needs the primary.` Routing is [Replicas and topology](/docs/operate/replicas-and-topology).
+`tx()` holds one connection from `BEGIN` until commit, rollback, or cancellation, then returns it to the pool. With replicas, `reserve` takes the primary. The route reason is `primary-required`. A replica route inside the callback, and `using("replica")`, are OKM1840: `This operation needs the primary.` Routing is [Replicas](/docs/operate/replicas-and-topology).
 
-### Drivers
+## Drivers
 
 `tx()` needs `transactions: "interactive"`. Neon over HTTP is `transactions: "batch"`, so `tx()` with no `timeout` is [OKM1111](/docs/reference/errors#okm1111): `tx() needs a driver with transactions: "interactive". This driver has "batch".` The fix names `batch()`. WebSocket mode is interactive, so `tx()` runs. The suite is [Compatibility](/docs/reference/compatibility). Driver setup is [Drivers](/docs/operate/drivers).
 
 A positive `timeout` is OKM1120, and the message is `timeout`, when the driver cannot cancel. That check runs before the capability check. It covers Bun.sql, PGlite, and Neon, on a call, on `tx()`, and on `batch()`. postgres.js and node-postgres accept a positive `timeout`.
 
-### Timeouts
+## Timeouts
 
-`timeout` on `tx()` bounds the whole call, including retries. Omit it and the bound is `timeouts.transaction`. `timeouts.idleInTransaction` bounds the gap between statements. The keys and the messages are [Session and pool](/docs/operate/session-and-pool#timeouts).
+`timeout` on `tx()` bounds the whole call, including retries. Omit it and the bound is `timeouts.transaction`. `timeouts.idleInTransaction` bounds the gap between statements. The keys and the messages are [Pool](/docs/operate/session-and-pool#timeouts).
 
-### A transfer
+## A transfer
 
 The callback moves 40 from `ada` to `grace`, then commits. `afterCommit` prints after the commit.
 
@@ -104,7 +104,7 @@ committed
 [{"id":"ada","balance":60},{"id":"grace","balance":90}]
 ```
 
-### A rollback
+## A rollback
 
 The callback writes, then throws. The write is gone. `afterCommit` does not run.
 
@@ -148,7 +148,7 @@ false
 [{"id":"ada","balance":100},{"id":"grace","balance":50}]
 ```
 
-### A serialization failure
+## A serialization failure
 
 Two `serializable` transactions read the same balances. The second writes after the first commits, so the second fails once and runs again. `retry: 3` allows that extra run. The first line is how many times the callbacks ran.
 
@@ -208,7 +208,7 @@ export async function retry(url: string): Promise<void> {
 
 | Next | You use it for |
 | --- | --- |
-| [Session and pool](/docs/operate/session-and-pool#timeouts) | `timeouts.transaction` and `timeouts.idleInTransaction`. |
+| [Pool](/docs/operate/session-and-pool#timeouts) | `timeouts.transaction` and `timeouts.idleInTransaction`. |
 | [Read rows](/docs/queries/read-rows) | A stream inside `repeatable read`. |
 | [Write rows](/docs/queries/write-rows) | A claim, and a row lock inside `tx()`. |
 | [Drivers](/docs/operate/drivers) | Which driver can cancel, and Neon HTTP. |

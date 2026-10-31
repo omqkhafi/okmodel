@@ -14,13 +14,13 @@ A scalar equality is a plain value. Every other operator is a value `parse` buil
 A hidden field in `allow`, `sort`, or `relations` is refused when you call `filters()`. The message is `Field notes.secret is hidden.` `filterable` does not change that. See [hidden](/docs/schema/visibility#hidden).
 </Callout>
 
-### Allow
+## Allow
 
 `allow` maps a field to operators. A scalar, `null`, or an array is equality when that field lists `eq`. An object names operators. One operator stays that operator. Several operators on one field, or several fields, become `and`.
 
 A field the request names, and that is not in `allow` or `relations`, is OKM1123: `Field rank is not in the allow list.` An own key such as `constructor` is a field name.
 
-#### eq
+### eq
 
 A scalar, `null`, or an array is equality. An array here is the equality value, not `in`. The result is `{ where: { title: "ship" } }`.
 
@@ -37,7 +37,7 @@ export async function named() {
 }
 ```
 
-#### in
+### in
 
 `in` and `inList` both need an array, and both become `inList`. Listing `in` also accepts a request key `inList`. Listing only `inList` does not accept `in`.
 
@@ -56,7 +56,7 @@ export async function statuses() {
 }
 ```
 
-#### notIn
+### notIn
 
 `notIn` needs an array. Anything else is OKM1120: `notIn needs an array.`
 
@@ -75,7 +75,7 @@ export async function excluded() {
 }
 ```
 
-#### lt
+### lt
 
 `lt`, `lte`, `gt`, and `gte` each take the bound.
 
@@ -94,7 +94,7 @@ export async function before() {
 }
 ```
 
-#### between
+### between
 
 `between` needs two bounds. One bound, or three, is OKM1120: `between on rank needs two bounds.`
 
@@ -113,7 +113,7 @@ export async function ranked() {
 }
 ```
 
-#### startsWith
+### startsWith
 
 `startsWith`, `endsWith`, `like`, and `ilike` need a string. Anything else is OKM1120: `startsWith needs a string.`
 
@@ -132,7 +132,7 @@ export async function prefixed() {
 }
 ```
 
-#### contains
+### contains
 
 `contains` takes the value you send. A string, a number, or a list is accepted here.
 
@@ -151,7 +151,7 @@ export async function holding() {
 }
 ```
 
-#### not
+### not
 
 `not` takes a scalar or `null`. An object is OKM1120: `not on title takes a scalar.`
 
@@ -170,7 +170,7 @@ export async function excluded() {
 }
 ```
 
-#### overlaps
+### overlaps
 
 `containedBy` and `overlaps` take the value you send. On an array column that value is a list.
 
@@ -189,7 +189,7 @@ export async function tagged() {
 }
 ```
 
-#### hasKey
+### hasKey
 
 `hasKey` needs a string. `hasAnyKey` needs an array of strings. A number in that array is OKM1120: `hasAnyKey on meta needs an array of strings.`
 
@@ -208,7 +208,7 @@ export async function marked() {
 }
 ```
 
-#### and
+### and
 
 You do not list `and`. Two operators on one field, or two fields, become it.
 
@@ -232,11 +232,11 @@ export async function narrowed() {
 An operator the field does not list is `filters() cannot apply startsWith on title.` A scalar on a field that does not list `eq` is `filters() cannot apply eq on title.` An empty operator object is `filters() cannot apply a value on title.`
 </Callout>
 
-#### Refused
+### Refused
 
 `path`, `matches`, `similar`, `wordSimilar`, boolean trees, relation quantifiers, and write operators. A caller cannot name them in `allow`. Naming one and calling `parse`, even with `{}`, is OKM1120: `filters() cannot apply path on title.`
 
-### Sort
+## Sort
 
 `sort` names the fields a caller may sort. The request key `sort` is one of those names, and `parse` orders that field ascending. There is no descending value. A name outside the list is OKM1123: `Field sort is not in the allow list.`
 
@@ -258,11 +258,11 @@ export async function ordered() {
 
 That result is `{ where: { title: "ship" }, orderBy: { title: "asc" } }`.
 
-### Related fields
+## Related fields
 
 `relations` maps a [relation](/docs/schema/relations) name to fields of that table. You name fields, not operators. Each field accepts every operator under [Allow](#allow). `parse` turns the object into `has`.
 
-#### fields
+### fields
 
 The list is the fields a caller may filter on that relation. `filters()` refuses a hidden field on the related table. It does not check that the field is a column. `find` does, and a missing column is OKM1120: `Field name is not on users. Accepted names: …`.
 
@@ -288,7 +288,7 @@ export async function byAuthor() {
 
 A field outside that relation's list is OKM1123: `Field title is not in the allow list.` A scalar where the relation needs an object is OKM1120: `filters() cannot apply a value on author.`
 
-#### column
+### column
 
 A name in `allow` is the column when that name is also a relation. `{ list: "x" }` stays `{ where: { list: "x" } }`.
 
@@ -311,11 +311,11 @@ export async function listed() {
 }
 ```
 
-### Request
+## Request
 
 Spread the result of `parse` into `find`.
 
-#### simple
+### simple
 
 One field, and a sort. The result is `{ where: { title: "ship" }, orderBy: { title: "asc" } }`.
 
@@ -340,7 +340,7 @@ export async function named(url: string) {
 }
 ```
 
-#### complex
+### complex
 
 Several fields, a relation, and a sort. `parse` joins the fields with `and`. `where` is `and` of `not`, `startsWith`, `inList`, `between`, `overlaps`, `hasKey`, and `has`. `orderBy` is `{ rank: "asc" }`.
 

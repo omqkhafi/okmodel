@@ -3,31 +3,19 @@ title: Production checklist
 description: Protect the target, require the catalog, and point apply at a direct connection.
 ---
 
-Set `protected: true` on the production target, pass `--target` when more than one target is configured, and open the app with `connect({ requireMeta: true })`. Nothing about an environment is inferred from `NODE_ENV` or from the target's name.
+Nothing about an environment is inferred from `NODE_ENV` or from the target's name. A target named `production` is not protected by that name. Work through this list before the app serves production traffic.
 
-A target named `production` is not protected by that name. [`okm push`](/docs/reference/cli#push) is refused only when the target is protected. The flag and the user store are on [Protected targets and roles](/docs/operate/protected-targets-and-roles).
-
-## Require the catalog
-
-`connect({ requireMeta: true })` is for a production database. A missing `okm_meta` is then [OKM1520](/docs/reference/errors#okm1520). The default is off so an existing database can adopt OKModel. A database whose catalog is behind the app is also OKM1520, with or without that option, until [`okm migrate apply`](/docs/reference/cli#migrate-apply). The 0.6 name change is `RENAME CONSTRAINT` and does not drop the table. A protected target needs `--allow-protected` on that invocation.
-
-The startup comparison is [Startup check](/docs/operate/startup-check). The connect call is [Connect](/docs/operate/connect).
-
-## Name the database
-
-Pass `--target` whenever more than one target is configured and the command must pick one database: `okm migrate apply`, `okm push`, `okm seed`, `okm migrate check`, and a one-database `okm check`. Omitting it then is [OKM1853](/docs/reference/errors#okm1853). The cases are on [Database](/docs/reference/config-database).
+- [ ] Set `protected: true` on the production target. [`okm push`](/docs/reference/cli#push) is refused only when the target is protected. The flag and the user store are on [Protected targets](/docs/operate/protected-targets-and-roles).
+- [ ] Open the app with `connect({ requireMeta: true })`. A missing `okm_meta` is then [OKM1520](/docs/reference/errors#okm1520). The default is off so an existing database can adopt OKModel. A database whose catalog is behind the app is also OKM1520, with or without that option, until [`okm migrate apply`](/docs/reference/cli#migrate-apply). The startup comparison is [Startup check](/docs/operate/startup-check). The connect call is [Connect](/docs/operate/connect).
+- [ ] Pass `--target` whenever more than one target is configured and the command must pick one database: `okm migrate apply`, `okm push`, `okm seed`, `okm migrate check`, and a one-database `okm check`. Omitting it then is [OKM1853](/docs/reference/errors#okm1853). The cases are on [Database](/docs/reference/config-database).
+- [ ] Point `okm migrate apply`, `okm seed`, and a connecting `okm check` at a direct connection, not a pooler. A host containing `pooler`, `pgbouncer`, or `-pooler`, port `6543` or `6432`, or `?pgbouncer=true` is refused unless `--allow-pooler` is set. Leave `prepared` unset, or set `prepared: "unnamed"`, behind a transaction-mode pooler. The host patterns are on [Pooler](/docs/reference/config#pooler); named statements are on [Drivers](/docs/operate/drivers).
+- [ ] Run [`okm doctor --production`](/docs/reference/cli#doctor---production) against that target and clear every `fail` finding before go-live.
 
 `okm migrate status` lists every target and does not require `--target`. It stops at the first unreachable one.
 
 `okm check` with several targets and no `--target` does not connect. It prints `server checks skipped: N targets, pass --target <name>`, then the lint text and `ok`. One target, or `--target`, does connect. That command is [check](/docs/reference/cli#check).
 
-## Use a direct connection
-
-Do not point `okm migrate apply`, `okm seed`, or a connecting `okm check` at a pooler. A host containing `pooler`, `pgbouncer`, or `-pooler`, port `6543` or `6432`, or `?pgbouncer=true` is refused unless `--allow-pooler` is set. Migrate strips the `pgbouncer` query parameter before the URL becomes a startup parameter. Other pooler hints in the URL are not interpreted. The host patterns and `allowPooler` are on [Pooler](/docs/reference/config#pooler).
-
-After connecting, those commands probe `pg_backend_pid()` across eight reads on the apply session ([Database](/docs/reference/config-database)). Two or more distinct pids are [OKM1854](/docs/reference/errors#okm1854). That probe catches a transaction-mode pooler that rotates backends between statements (`server_round_robin=1`). Default LIFO PgBouncer (`server_round_robin=0`) on a non-heuristic port can keep one pid for all eight reads, so mark it with `?pgbouncer=true` (or put `pooler` or `pgbouncer` in the host) instead of relying on the probe. Warm-and-hold with a second connection is not used during apply or seed: it deadlocks single-session targets. `--allow-pooler` skips the URL check and the probe. Apply wants a direct connection.
-
-Leave `prepared` unset, or set `prepared: "unnamed"`, behind a transaction-mode pooler. `prepared: "named"` is for a direct connection. Named statements are not for a transaction-mode pooler. The option is on [Drivers](/docs/operate/drivers).
+After connecting, apply, seed, and a connecting check probe `pg_backend_pid()` across eight reads on the apply session ([Database](/docs/reference/config-database)). Two or more distinct pids are [OKM1854](/docs/reference/errors#okm1854). That probe catches a transaction-mode pooler that rotates backends between statements (`server_round_robin=1`). Default LIFO PgBouncer (`server_round_robin=0`) on a non-heuristic port can keep one pid for all eight reads, so mark it with `?pgbouncer=true` (or put `pooler` or `pgbouncer` in the host) instead of relying on the probe. Warm-and-hold with a second connection is not used during apply or seed: it deadlocks single-session targets. `--allow-pooler` skips the URL check and the probe. Apply wants a direct connection.
 
 ```ts title="okmodel.config.ts"
 import { defineConfig } from "okmodel/migrate";
@@ -101,12 +89,12 @@ ok    extensions                  The schema requires no extension.
 0 fail, 3 warn, 6 ok
 ```
 
-The doctor cannot see `connect()` options. `requireMeta: true` is an application option, so a present `okm_meta` is reported as `ok` with a reminder, and a missing one is a fail because `requireMeta` would refuse that database (OKM1520). It also cannot tell whether a login is the migrator or the app role: the role finding says what the login role can do, and you read it against the role you meant. A `--lock-timeout` or `--statement-timeout` on one `okm migrate apply` run overrides the apply value the doctor reports. The check does not report whether an exposed table has validation off: the catalog does not record `validation`, so there is no finding for it ([known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md)). The role recipe is [Protected targets and roles](/docs/operate/protected-targets-and-roles).
+The doctor cannot see `connect()` options. `requireMeta: true` is an application option, so a present `okm_meta` is reported as `ok` with a reminder, and a missing one is a fail because `requireMeta` would refuse that database (OKM1520). It also cannot tell whether a login is the migrator or the app role: the role finding says what the login role can do, and you read it against the role you meant. A `--lock-timeout` or `--statement-timeout` on one `okm migrate apply` run overrides the apply value the doctor reports. The check does not report whether an exposed table has validation off: the catalog does not record `validation`, so there is no finding for it ([known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md)). The role recipe is [Protected targets](/docs/operate/protected-targets-and-roles).
 
 The package copy is [`docs/production.md`](https://github.com/omqkhafi/okmodel/blob/main/docs/production.md) on main.
 
 | Next | You use it for |
 | --- | --- |
-| [Testing and isolation](/docs/operate/testing) | Factories, query counts, and a tenant check on a real database. |
-| [Protected targets and roles](/docs/operate/protected-targets-and-roles) | The fingerprint store and the agent roles. |
+| [Testing](/docs/operate/testing) | Factories, query counts, and a tenant check on a real database. |
+| [Protected targets](/docs/operate/protected-targets-and-roles) | The fingerprint store and the agent roles. |
 | [doctor --production](/docs/reference/cli#doctor---production) | Every finding id. |

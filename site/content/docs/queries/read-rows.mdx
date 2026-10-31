@@ -5,7 +5,7 @@ description: "Page, distinct, stream, and explain."
 
 `page` returns the next rows, then distinct, stream, and explain.
 
-### Page
+## Page
 
 `page` returns `{ items, next }`. `next` is `null` on the last page. Pass it back as `after` with the same `orderBy`. The cursor encodes that order.
 
@@ -20,7 +20,7 @@ When `orderBy` names a hidden or sensitive column, the cursor carries only the p
 | `after` | The cursor from `next`. |
 | `next` | `null` on the last page. |
 
-#### first
+### first
 
 `limit` is required. Omit `after` for the first page.
 
@@ -37,7 +37,7 @@ export async function first(url: string) {
 }
 ```
 
-#### next
+### next
 
 Pass `next` back as `after`, with the same `orderBy`.
 
@@ -62,7 +62,7 @@ Omitting `limit` is `page() needs a limit.`
 A cursor this call did not return is `after is not a cursor that page() returned.` A key cursor whose row is gone is `The cursor is no longer valid.`
 </Callout>
 
-### Order by a relation
+## Order by a relation
 
 `orderBy` can name more than one relation, and `page` keeps that order. A to-one column is a left join, so a row whose relation is missing stays in the result. A to-many relation orders by `count`, the number of related rows: `{ notes: { count: "desc" } }`. `find`, `one`, `stream`, and `page` accept it. The related table's tenant predicate and archive filter sit on the join, so another tenant or an archived row does not supply the sort value.
 
@@ -98,7 +98,7 @@ orderBy on a relation is not available with distinct or distinctOn.
 orderBy on a relation is not available in aggregate.
 </Callout>
 
-### Distinct
+## Distinct
 
 `find` takes `distinct: true` with a `select`. It keeps one row per different combination of the selected fields, and NULL counts as one value. `orderBy` may name selected fields only. `distinctOn` is Postgres only: it keeps the first row of each key, so `orderBy` must start with the same keys and the keys after them pick the row. `include`, `search`, `page`, and `one` refuse both.
 
@@ -135,7 +135,7 @@ export async function statuses(url: string) {
 `distinctOn needs an orderBy that starts with status.`
 </Callout>
 
-### Stream
+## Stream
 
 `.stream()` walks `find` in keyset batches. It does not open a server cursor. Leaving the loop does not hold a connection.
 
@@ -150,7 +150,7 @@ export async function statuses(url: string) {
 
 `select`, `include`, a preset, and the archive set work as they do on `page()`. A row committed while the stream runs can show up, or not. The snapshot in the next example is a [transaction](/docs/queries/transactions#options). On a client with replicas, the first batch chooses the endpoint and later batches stay there.
 
-#### limit
+### limit
 
 `limit` is the total. `batch` is how many rows each query reads.
 
@@ -171,7 +171,7 @@ export async function titles(url: string): Promise<string[]> {
 }
 ```
 
-#### snapshot
+### snapshot
 
 `.all(reason)` is the whole set. The call below is one snapshot. What that isolation does is [Transactions](/docs/queries/transactions#options).
 
@@ -204,7 +204,7 @@ A stream with no `limit` and no `.all(reason)` is refused.
 `batch` outside 1 to 2147483647 is refused. A `timeout` that is not a number above 0 is refused.
 </Callout>
 
-### Explain
+## Explain
 
 `explain` describes a query you already built. Outside production it returns the `EXPLAIN` lines with the statement text and parameters. A hidden or sensitive parameter is `[redacted]` in `params` and in the plan text. Postgres still receives the real parameter, so the plan and its costs stay the ones it chose. An ordinary column stays in both. In production it does not send the statement: `plan` is null and `params` is empty.
 
