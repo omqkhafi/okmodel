@@ -1,0 +1,48 @@
+---
+title: "Package exports"
+description: "Stable, experimental, and internal entry points on the okmodel package."
+---
+
+Every export CI checks is listed in [`tests/fixtures/api-surface.json`](https://github.com/omqkhafi/okmodel/blob/main/tests/fixtures/api-surface.json). An export that is not in that file fails the surface test. Stability is **stable**, **experimental**, or **internal**.
+
+Stable exports are the application API this release commits to. Experimental exports exist and may change. Internal exports are for dialect authors and sibling entries. They are not the application API.
+
+## `okmodel`
+
+Exports `OkmError`, `safe`, the row types (`Row`, `Insert`, `Update`, `Register`), and the driver types. Catalog builders are not on this entry. `table` and `index` for a schema are `okmodel/pg`.
+
+## `okmodel/internal`
+
+Holds `sha256`, `throwNamed`, `nearestName`, `catalogError`, and the catalog builders, including the catalog `table` and `index`. The subpath is not an application import. It has no stability promise. Its exports are marked `@internal`.
+
+## `okmodel/pg`
+
+The schema API: column builders, `table`, `schema`, `index`, operators, `one`, `many`, `manyThrough`, `morph`, `morphMany`, and `morphTo`. It also exports `bucket`, `matches`, `relevance`, `rowNumber`, `rank`, `denseRank`, `runningTotal`, `fragment`, `ident`, `raw`, and `explain`. `raw` and `explain` take a table handle. An app that does not import them drops them. `ExplainResult` is the `explain` return type. Catalog compilation, row-type emit, Postgres error mapping, and the operator tag helpers are not exported.
+
+## Drivers
+
+`okmodel/pg/postgresjs`, `okmodel/pg/pglite`, `okmodel/pg/pg`, `okmodel/pg/bun`, and `okmodel/pg/neon` export `connect` and the pool opener for that driver. Neon `connect` returns a promise for a string, a pool, and a topology. `httpCapabilities` is the HTTP mode. The client has `close()`. A second `close()` waits on the same call. When the runtime defines `Symbol.asyncDispose`, the client implements it, and `await using` calls `close()`. A client that adopted an existing pool resolves `close()` without ending that pool.
+
+## `okmodel/migrate`
+
+Exports `defineConfig`, `MigrateConfig`, `TargetInput`, `describe`, `buildCatalog`, `plan`, `apply`, `status`, `provision`, and `baseline`. `plan`, `apply`, and `status` match the CLI migrate commands. `provision` installs the head snapshot on an empty target. `baseline` records the head as applied history without schema changes. See [Schema API](/docs/reference/schema-api).
+
+## `okmodel/testing`
+
+Exports `testing`. It opens a real driver pool and returns factories, `expectQueries`, and `isolation`. See [Testing](/docs/operate/testing).
+
+## `okmodel/otel`
+
+Experimental. Exports `otel`. You pass a tracer. The package does not import OpenTelemetry. Spans use the `db.*` attributes. `db.query.summary` is the fingerprint from `inspect()`. Statement text stays off unless you set `statement: true`. Parameters and tenant ids are not attributes.
+
+## `okmodel/warnings`
+
+Experimental. Exports `warnings`. Pass the function to `connect({ warnings })`. `defineConfig({ warnings })` holds levels and project ignores. `okm check` lists those ignores and runs the schema rules OKM2101, OKM2102, and OKM2103. See [Warnings](/docs/reference/warnings).
+
+## `okmodel/traits`
+
+Exports `versioned` and `sortable`. `domain` is experimental.
+
+## `okmodel/observe`
+
+Exports the write-observer helpers and the event types on [Observer events](/docs/reference/observer-events).

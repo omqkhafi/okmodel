@@ -74,3 +74,7 @@ Delivered to `onWrite` for each surviving write in a unit. Values never appear: 
 | `outcome` | `"committed" \| "rolled_back" \| "unknown"` | `unknown` is a lost COMMIT ([OKM1401](/docs/reference/errors#okm1401)). |
 | `writes` | `number` | Surviving writes after savepoint rollbacks. |
 | `dbTxId` | `string?` | When the driver reported one. |
+
+## Buffer overflow
+
+When the per-client pending-event buffer exceeds its ceiling, the oldest unit is dropped and `onObserverError` receives [OKM2200](/docs/reference/errors#okm2200). The write path never waits on that delivery.
