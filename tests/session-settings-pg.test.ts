@@ -553,10 +553,10 @@ postgresTest(
  */
 async function replicaRows(read: () => Promise<readonly string[]>): Promise<readonly string[]> {
   let last: unknown;
-  // The Postgres 18 selection shard runs this file beside the rest of the
-  // suite. A replica can stay behind the watermark for longer than a quiet
-  // machine needs.
-  for (let attempt = 0; attempt < 200; attempt += 1) {
+  // The file is dealt onto a suite shard. On Postgres 18 isolation the
+  // replica can stay behind the watermark for longer than 20s.
+  const deadline = Date.now() + 45_000;
+  while (Date.now() < deadline) {
     try {
       const rows = await read();
       if (rows.length > 0) return rows;
@@ -602,7 +602,7 @@ postgresTest(
       });
     });
   },
-  60_000,
+  120_000,
 );
 
 postgresTest(
