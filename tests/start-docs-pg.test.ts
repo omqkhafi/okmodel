@@ -108,8 +108,8 @@ postgresTest(
       expect(checked.status, checked.stderr).toBe(0);
       expect(checked.stdout).toBe(fence(migration, "text", "check.out"));
 
-      const inserted = spawnOk(cwd, "insert.ts", fence(first, "ts", "insert.ts"));
-      expect(inserted.stdout).toBe(fence(first, "text", "insert.out"));
+      const inserted = spawnOk(cwd, "insert.ts", fence(migration, "ts", "insert.ts"));
+      expect(inserted.stdout).toBe(fence(migration, "text", "insert.out"));
 
       writeFence(cwd, "schema.ts", fence(migration, "ts", "schema-required.ts"));
       const rejected = cliProc(cwd, ["migrate", "plan", "add-body"]);
@@ -144,7 +144,10 @@ postgresTest(
 
       const status = cliProc(cwd, ["migrate", "status"]);
       expect(status.status, status.stderr).toBe(0);
-      expect(status.stdout).toBe(fence(migration, "text", "status.out"));
+      const catalogHash = readFileSync(join(cwd, ".okm", "catalog.hash"), "utf8").trim();
+      expect(status.stdout).toBe(
+        fence(migration, "text", "status.out").replaceAll("⟨catalog hash⟩", catalogHash),
+      );
     } finally {
       if (previous === undefined) delete process.env.DATABASE_URL;
       else process.env.DATABASE_URL = previous;

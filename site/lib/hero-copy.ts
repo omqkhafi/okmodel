@@ -7,7 +7,7 @@
 export const HERO_HEADLINE_LINES = ["Edit your schema.", "Get a safe migration."] as const;
 
 /** Positioning pill above the headline. */
-export const HERO_PILL = "A catalog-first ORM for PostgreSQL";
+export const HERO_PILL = "A TypeScript ORM for PostgreSQL";
 
 /** One-paragraph pitch under the headline. */
 export const HERO_SUBHEAD =

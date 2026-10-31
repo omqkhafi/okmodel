@@ -2,13 +2,21 @@
   "title": "Documentation",
   "pages": [
     "index",
+    "---1. Get started---",
     "start",
+    "---2. Concepts---",
     "concepts",
+    "---3. Schema---",
     "schema",
+    "---4. Queries---",
     "queries",
+    "---5. Migrations---",
     "migrations",
+    "---6. Operate---",
     "operate",
+    "---7. Reference---",
     "reference",
+    "---8. AI Resources---",
     "ai"
   ]
 }

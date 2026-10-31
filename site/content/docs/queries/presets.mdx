@@ -12,9 +12,9 @@ Return the builder you were given. Anything else is OKM1121: `Preset pending on 
 
 `inspect()` records one line per call, such as `pending filters status`, from `table notes` or `trait flagged`. A preset that adds no `where` records `filters nothing`.
 
-### where
+## where
 
-#### field
+### field
 
 A fixed value. `notes.pending()` keeps `status` equal to `"pending"`.
 
@@ -36,7 +36,7 @@ export async function pending(url: string) {
 }
 ```
 
-#### argument
+### argument
 
 The arguments after the builder are the method's arguments.
 
@@ -62,7 +62,7 @@ export async function mine(url: string, owner: string) {
 }
 ```
 
-#### list
+### list
 
 A rest argument passes a list. `inList` comes from `okmodel/pg`.
 
@@ -88,7 +88,7 @@ export async function openOrPending(url: string) {
 }
 ```
 
-#### bound
+### bound
 
 `gte` is a predicate, the same as a fixed value.
 
@@ -110,7 +110,7 @@ export async function urgent(url: string) {
 }
 ```
 
-#### or
+### or
 
 `or` takes an array of filters. `or(a, b)` is OKM1121: `Pass an array: or([a, b]).`
 
@@ -137,7 +137,7 @@ export async function mineOrOpen(url: string, owner: string) {
 }
 ```
 
-#### several
+### several
 
 Each `where` adds. The first predicate stays.
 
@@ -163,7 +163,7 @@ export async function stale(url: string) {
 }
 ```
 
-### Calls
+## Calls
 
 A preset filters `find`, `one`, `count`, `exists`, `page`, and `aggregate`. It also filters `update`, `delete`, `archive`, and `restore`. Insert does not use it.
 
@@ -171,7 +171,7 @@ A call does not replace the handle it started from. `const pending = db.notes.pe
 
 Update and delete still need their own `where`. A preset does not stand in for one. `notes.pending().delete({})` is OKM1102: `delete on notes needs a where. Pass a filter.` `.all("clear the backlog")` matches every pending row.
 
-#### simple
+### simple
 
 One preset, then `find`.
 
@@ -193,7 +193,7 @@ export async function pending(url: string) {
 }
 ```
 
-#### complex
+### complex
 
 The chain is `pending`, then `ownedBy`, then `urgent`. The caller's `where` stays first. Update uses the same `pending` filter beside its own `where`.
 
@@ -233,11 +233,11 @@ export async function review(url: string, owner: string, id: string) {
 }
 ```
 
-### Names
+## Names
 
 A reserved name is a type error. On a trait, `trait()` throws OKM1040 at the call. On a table, `connect` throws it before the first query: `Preset find on table notes is a client method or a reserved name. Reserved: find, one, page, aggregate, count, exists, insert, update, delete, descendants, ancestors, sync, archive, restore, withArchived, onlyArchived, then, lock, watch, subscribe, stream, inspect, explain, with, for, as.`
 
-### Traits
+## Traits
 
 A trait can add presets. They see the trait's columns. The table's own names are already in the map, so a trait that repeats one is OKM1040: `Preset pending on notes is defined by table notes and by trait flagged.` Two traits that share a name are `Preset pending on notes is defined by trait flagged and by trait other.` Schema traits apply first. See [traits](/docs/schema/traits#on-one-table).
 

@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <em>okmodel is a catalog-first TypeScript ORM, PostgreSQL first. The schema is the single source. Migrations and queries come from it.</em>
+  <em>okmodel is a TypeScript ORM for PostgreSQL 15 to 18 with no runtime dependencies. One schema gives you typed queries and reviewed migrations, and calls with no limit or no filter are refused.</em>
 </p>
 
 <p align="center">
@@ -62,7 +62,7 @@ globalThis.Temporal = Temporal;
 
 ## Quick start
 
-Define the table, compile the schema, point the config at it, push, then connect. The same steps are on [Installation](https://okm.omqkhafi.dev/docs/start/installation) and [Your first schema and queries](https://okm.omqkhafi.dev/docs/start/first-schema).
+Define the table, compile the schema, point the config at it, push, then connect. The same steps are on [Installation](https://okm.omqkhafi.dev/docs/start/installation) and [First schema](https://okm.omqkhafi.dev/docs/start/first-schema).
 
 `schema.ts`:
 
@@ -108,7 +108,7 @@ export const db = connect(process.env.DATABASE_URL!, { schema });
 
 ## Basic usage
 
-Each call on `db`. [Your first schema and queries](https://okm.omqkhafi.dev/docs/start/first-schema) has one example per call.
+Each call on `db`. [First schema](https://okm.omqkhafi.dev/docs/start/first-schema) has one example per call.
 
 `notes.ts`:
 
@@ -161,7 +161,7 @@ export async function removeNote(id: string) {
 
 | Want…                       | Go to                                                                                              |
 | --------------------------- | -------------------------------------------------------------------------------------------------- |
-| One example per client call | [Your first schema and queries](https://okm.omqkhafi.dev/docs/start/first-schema)                  |
+| One example per client call | [First schema](https://okm.omqkhafi.dev/docs/start/first-schema)                                   |
 | Tables, keys, and relations | [Define](https://okm.omqkhafi.dev/docs/schema/tables)                                              |
 | Every feature in one file   | [Guide](https://github.com/omqkhafi/okmodel/blob/main/docs/guide.md)                               |
 | Run it in production        | [Production checklist](https://github.com/omqkhafi/okmodel/blob/main/docs/production.md)           |

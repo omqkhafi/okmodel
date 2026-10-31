@@ -35,7 +35,7 @@ test("the tagline is the README positioning line and the package description", (
   expect(readTagline()).toBe(pkg.description);
   expect(readmePositioningSentence()).toBe(pkg.description);
   expect(pkg.license).toBe("Apache-2.0");
-  expect(pkg.description.startsWith("okmodel is a catalog-first TypeScript ORM")).toBe(true);
+  expect(pkg.description.startsWith("okmodel is a TypeScript ORM for PostgreSQL 15 to 18 with no runtime dependencies")).toBe(true);
 });
 
 test("the install snippet is the README Install fence", () => {

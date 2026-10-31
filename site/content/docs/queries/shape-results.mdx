@@ -5,7 +5,7 @@ description: "Aggregate, include, windows, and period."
 
 `aggregate`, `include`, windows, and `bucket` shape a read.
 
-### Aggregate
+## Aggregate
 
 `aggregate` counts, sums, averages, and finds extremes. `select` names each aggregate, and `having` keeps the groups whose aggregates match.
 
@@ -18,7 +18,7 @@ description: "Aggregate, include, windows, and period."
 | `countDistinct` | A list of field names. Different non-null values, as `countDistinct.<field>`. |
 | `select` | `{ name: { sum: "field" } }`. One function per entry, and the result key is `name`. |
 
-#### count
+### count
 
 With no `groupBy` the result is one row.
 
@@ -39,7 +39,7 @@ export async function totals(url: string) {
 }
 ```
 
-#### grouped
+### grouped
 
 `groupBy` needs `limit`, or `.all(reason)`. `sum` and `countDistinct` are lists of field names. `countDistinct` skips NULL, so a group with only NULLs counts 0.
 
@@ -70,7 +70,7 @@ export async function byStatus(url: string) {
 `aggregate() with groupBy needs a limit.`
 </Callout>
 
-#### named
+### named
 
 `select` gives each aggregate its own flat result key. An entry is one of `count: true`, `countDistinct`, `sum`, `avg`, `min`, or `max`, with one field. The list forms work in the same call. A name that is a group field, `count`, `sum`, `avg`, `min`, `max`, or `countDistinct` is OKM1120.
 
@@ -101,7 +101,7 @@ export async function byStatus(url: string) {
 }
 ```
 
-#### having
+### having
 
 `having` keeps the groups whose aggregates match. It is the `where` predicate form over `count` and the names in `select`, and it needs `groupBy`. The operators are [Where operators](/docs/queries/where-operators). It takes `eq`, `not`, `lt`, `lte`, `gt`, `gte`, `between`, `inList`, `notIn`, and `or()`. A text `min` or `max` also takes the text patterns. A NULL aggregate matches no comparison, and `null` matches it. A list-form aggregate has no name, so `having` cannot reach it.
 
@@ -131,7 +131,7 @@ export async function busyStatuses(url: string) {
 `having needs groupBy.`
 </Callout>
 
-#### orderBy
+### orderBy
 
 A grouped `aggregate` orders by a `groupBy` field, a bucket `as`, `count`, or a name in `select`. Each key takes `"asc"`, `"desc"`, or `{ dir, nulls }`. Without `nulls`, ascending puts NULLs last and descending puts them first. A group with no non-NULL values has a NULL `sum`, `avg`, `min`, and `max`, so name the end you want.
 
@@ -157,7 +157,7 @@ export async function biggestFirst(url: string) {
 }
 ```
 
-### Include
+## Include
 
 `limit` on a to-many `include` is the first N related rows of each parent.
 
@@ -172,7 +172,7 @@ export async function biggestFirst(url: string) {
 | `search` | Stays on `find` and `count`. |
 | a window in `select` | Not in this version. |
 
-#### simple
+### simple
 
 `limit` is the first related rows of each parent.
 
@@ -201,7 +201,7 @@ export async function thread(url: string) {
 }
 ```
 
-#### complex
+### complex
 
 `orderBy` sorts inside that parent. `select` names the fields.
 
@@ -233,7 +233,7 @@ export async function latest(url: string) {
 }
 ```
 
-### Windows
+## Windows
 
 `rowNumber`, `rank`, `denseRank`, and `runningTotal` go in `select` on `find` or `one`.
 
@@ -250,7 +250,7 @@ export async function latest(url: string) {
 | `orderBy` | Required. The order inside the group. |
 | `as` | The name on the row. A column name is refused. |
 
-#### simple
+### simple
 
 `rowNumber` numbers the rows in `orderBy`. Omit `partitionBy` to number the whole result.
 
@@ -274,7 +274,7 @@ export async function numbered(url: string) {
 }
 ```
 
-#### complex
+### complex
 
 `rank` skips after a tie. `denseRank` does not. `runningTotal` adds the column.
 
@@ -313,7 +313,7 @@ export async function numbered(url: string) {
 `runningTotal` on a column that is not a number or a string is refused.
 </Callout>
 
-### Period
+## Period
 
 `bucket(column, unit, { tz, as })` goes in `aggregate` `groupBy`, beside field names. `as` is the result key. A grouped aggregate needs `limit`, or `.all(reason)`. There is no gap filling.
 
@@ -324,7 +324,7 @@ export async function numbered(url: string) {
 
 `tz` is required for `timestamptz` and refused for `date`. A `timestamp` without a zone is refused. `weekStart` applies only to `week` and is `monday` (the default), `sunday`, or `saturday`. A NULL timestamp is one group: the key is present and the value is null.
 
-#### simple
+### simple
 
 One day bucket on `timestamptz`. `tz` is required. A `date` column omits `tz`.
 
@@ -345,7 +345,7 @@ export async function perDay(url: string) {
 }
 ```
 
-#### complex
+### complex
 
 A week starts on Monday unless `weekStart` says otherwise. `sum` is the total `amount` in that week.
 

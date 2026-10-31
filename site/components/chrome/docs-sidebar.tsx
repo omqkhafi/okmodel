@@ -1,7 +1,8 @@
 /**
- * Docs sidebar. The tree comes from `meta.json`. Each group is a folder, and
- * only the group that contains the current page is open. `/docs` itself is
- * omitted; the header tab already opens it.
+ * Docs sidebar. The tree comes from `meta.json`. Numbered separators mark each
+ * group. Small groups are flattened so pages sit under the label; Schema and
+ * Operate stay collapsible. `/docs` itself is omitted; the header tab already
+ * opens it.
  */
 
 "use client";
@@ -17,12 +18,75 @@ import { usePathname } from "next/navigation";
 import { useMemo, useState, type ReactNode } from "react";
 
 /**
+ * Section folders whose children belong directly under the numbered label.
+ * Schema and Operate stay as collapsible folders.
+ */
+const FLAT_SECTIONS = new Set([
+  "start",
+  "Get started",
+  "concepts",
+  "Concepts",
+  "queries",
+  "Queries",
+  "migrations",
+  "Migrations",
+  "reference",
+  "Reference",
+  "ai",
+  "AI Resources",
+]);
+
+/**
  * Whether a node is a folder.
  *
  * @param node - Page-tree node
  */
 function isFolder(node: PageTree.Node): node is PageTree.Folder {
   return node.type === "folder";
+}
+
+/**
+ * Whether this folder is a flat section, not a nested topic folder.
+ *
+ * @param node - Folder node
+ */
+function isSectionFolder(node: PageTree.Folder): boolean {
+  if (typeof node.name === "string" && FLAT_SECTIONS.has(node.name)) return true;
+  const id = node.$id ?? "";
+  const last = id.split("/").pop() ?? id;
+  return FLAT_SECTIONS.has(last);
+}
+
+/**
+ * Replace a section folder with its pages, in order.
+ *
+ * @param node - Section folder
+ */
+function sectionPages(node: PageTree.Folder): PageTree.Node[] {
+  const pages: PageTree.Node[] = [];
+  if (node.index) pages.push(node.index);
+  for (const child of node.children) {
+    if (node.index && child.type === "page" && child.url === node.index.url) continue;
+    pages.push(child);
+  }
+  return pages;
+}
+
+/**
+ * Lift flat sections so the sidebar lists routes under the numbered label.
+ *
+ * @param tree - Fumadocs page tree
+ */
+export function flattenSectionFolders(tree: PageTree.Root): PageTree.Root {
+  const children: PageTree.Node[] = [];
+  for (const node of tree.children) {
+    if (isFolder(node) && isSectionFolder(node)) {
+      children.push(...sectionPages(node));
+    } else {
+      children.push(node);
+    }
+  }
+  return { ...tree, children };
 }
 
 /**
@@ -188,13 +252,14 @@ function GroupBody({
  * @param onNavigate - Called after a link click
  */
 export function DocsTreeNav({
-  tree,
+  tree: rawTree,
   onNavigate,
 }: {
   tree: PageTree.Root;
   onNavigate?: () => void;
 }): ReactNode {
   const pathname = usePathname();
+  const tree = useMemo(() => flattenSectionFolders(rawTree), [rawTree]);
   const folders = useMemo(
     () =>
       tree.children.flatMap((node, index) =>

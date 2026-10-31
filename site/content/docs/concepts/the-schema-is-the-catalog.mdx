@@ -1,5 +1,5 @@
 ---
-title: "The schema is the catalog"
+title: "Catalog"
 description: "schema() is the catalog that generate, plan, check, and the client types read."
 ---
 
@@ -23,7 +23,7 @@ The schema catalog is not everything the tooling can attach. `defineConfig({ rol
 
 `minPostgres` and the row-type mode are fields on the schema value. They are not objects inside the catalog document. Changing them does not change `catalogHash`. The floor is [Minimum Postgres](/docs/schema/the-schema#minimum-postgres). The mode is [Row types](/docs/schema/codecs-and-row-types#row-types).
 
-A catalog hash match is not a row-by-row proof. The live comparison and the startup comparison are [Migrations and drift](/docs/concepts/migrations-and-drift).
+A catalog hash match is not a row-by-row proof. The live comparison and the startup comparison are [Drift](/docs/concepts/migrations-and-drift).
 
 ## Where to read the detail
 

@@ -1,5 +1,5 @@
 ---
-title: "The safety model"
+title: "Safety"
 description: "What OKModel refuses by default, and the pages that hold the detail."
 ---
 
@@ -19,7 +19,7 @@ These are the refusals that hold when you have not opted in. The linked page is 
 | `update` or `delete` with no effective filter, and the same rule for `archive` and `restore` | [Write rows](/docs/queries/write-rows) and [Traits](/docs/schema/traits) |
 | An unknown field on insert or update | [OKM1120](/docs/reference/errors#okm1120) |
 | A guarded field set from input | [Visibility](/docs/schema/visibility) |
-| A destructive migration step, until the file carries `-- okm-allow` | [Checks and lint](/docs/migrations/checks-and-lint) |
+| A destructive migration step, until the file carries `-- okm-allow` | [Lint](/docs/migrations/checks-and-lint) |
 
 `find` without a limit is OKM1101. A to-many `include` without a limit is OKM1105. `.all(reason)` is the hatch for a read or a write you mean to leave unbounded. `limits` on `connect` can supply a default for the read calls. Leave `limits` out and those calls still refuse a missing limit. They do not gain a silent default.
 
@@ -29,13 +29,13 @@ An unknown key is refused and names the key. It is not stored. A guarded column 
 
 Dropping a table or a column is an error finding (OKM1511, OKM1512). An error finding fails the command as OKM1510. `-- okm-allow CODE: reason` on that step silences the code it names. A blank reason is itself OKM1510. The other codes are [Errors](/docs/reference/errors).
 
-A protected target is a flag on the target, or a fingerprint in the user store. It is not implied by the name `production` or by `NODE_ENV`. `connect` does not read it. Which commands it blocks is [Protected targets and roles](/docs/operate/protected-targets-and-roles).
+A protected target is a flag on the target, or a fingerprint in the user store. It is not implied by the name `production` or by `NODE_ENV`. `connect` does not read it. Which commands it blocks is [Protected targets](/docs/operate/protected-targets-and-roles).
 
 ## Limits and trade-offs
 
 Validation does not run on every write. Omitted, or `false`, leaves it off. A column, a table, or the schema can turn it on. The switch is [Validation](/docs/schema/validation).
 
-The refusals above are the library. They are not a review of the package you install. Pinning the lockfile, waiting before a new release, and reading a provenance attestation are [Using OKModel safely](/docs/operate/using-okmodel-safely).
+The refusals above are the library. They are not a review of the package you install. Pinning the lockfile, waiting before a new release, and reading a provenance attestation are [Safe use](/docs/operate/using-okmodel-safely).
 
 What to turn on before a real target — `protected`, `requireMeta`, `--target`, a direct connection — is the [Production checklist](/docs/operate/production-checklist). This page does not repeat that list.
 
@@ -44,6 +44,6 @@ What to turn on before a real target — `protected`, `requireMeta`, `--target`,
 | Page | You use it for |
 | --- | --- |
 | [Query limits](/docs/operate/query-limits) | `limits`, `max`, and `.all(reason)`. |
-| [Protected targets and roles](/docs/operate/protected-targets-and-roles) | The flag, the store, and the grants. |
-| [Using OKModel safely](/docs/operate/using-okmodel-safely) | The lockfile, the wait, and provenance. |
+| [Protected targets](/docs/operate/protected-targets-and-roles) | The flag, the store, and the grants. |
+| [Safe use](/docs/operate/using-okmodel-safely) | The lockfile, the wait, and provenance. |
 | [Production checklist](/docs/operate/production-checklist) | What a production target should have on. |

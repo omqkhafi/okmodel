@@ -4,7 +4,7 @@ description: "The files the tutorial writes, and the files okm init writes."
 ---
 See the files in the project and what each one is for.
 
-You have followed [Installation](/docs/start/installation) and [Your first schema and queries](/docs/start/first-schema), or you have a directory with `package.json` and a Bun lockfile.
+You have followed [Installation](/docs/start/installation) and [First schema](/docs/start/first-schema), or you have a directory with `package.json` and a Bun lockfile.
 
 Use the tutorial layout when the files stay flat, the driver is postgres.js, you apply with [`okm push`](/docs/reference/cli#push), and the database can be recreated. Use the `okm init` layout when the schema and the client live in `db/`, the SQL files live in `migrations/`, and the scripts are check, plan, apply, and status.
 
@@ -75,7 +75,7 @@ bun run --bun okm migrate apply
 
 | Next | You use it for |
 | --- | --- |
-| [Your first migration](/docs/start/first-migration) | Generate the first SQL file, then apply one change. |
+| [First migration](/docs/start/first-migration) | Generate the first SQL file, then apply one change. |
 | [Queries](/docs/queries) | The rest of the calls on a table. |
 | [Config](/docs/reference/config) | Targets, paths, timeouts, and roles. |
-| [Using OKModel safely](/docs/operate/using-okmodel-safely) | Pin the lockfile, wait before updating, and read provenance. |
+| [Safe use](/docs/operate/using-okmodel-safely) | Pin the lockfile, wait before updating, and read provenance. |

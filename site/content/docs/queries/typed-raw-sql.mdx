@@ -5,7 +5,7 @@ description: "A typed raw call."
 
 `raw` runs one typed fragment on a table handle.
 
-### Raw SQL
+## Raw SQL
 
 `raw` and `explain` are functions. Pass the table handle, including one from `for()`. The class names the row: each field needs an initializer, and that order is the select list. `"read"` is one select. `"write"` runs on the primary. A scoped tenant read keeps the tenant predicate outside the fragment, so the select list names the primary key with `ident`.
 

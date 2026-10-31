@@ -1,5 +1,5 @@
 ---
-title: "How OKModel works"
+title: "How it works"
 description: "One schema produces the types, the queries, the migrations, the drift check, and the check constraints."
 ---
 
@@ -19,13 +19,13 @@ A table that lives in three places drifts. The type names one column, a query se
 
 | The schema gives you | Page |
 | --- | --- |
-| Types for the client, and for `Row`, `Insert`, and `Update` | [Type safety and inference](/docs/concepts/type-safety-and-inference) |
+| Types for the client, and for `Row`, `Insert`, and `Update` | [Types](/docs/concepts/type-safety-and-inference) |
 | Queries on each table | [Queries](/docs/queries) |
-| Migration SQL from one catalog to the next | [Migrations and drift](/docs/concepts/migrations-and-drift) |
-| The `okm check` comparison | [Migrations and drift](/docs/concepts/migrations-and-drift) |
+| Migration SQL from one catalog to the next | [Drift](/docs/concepts/migrations-and-drift) |
+| The `okm check` comparison | [Drift](/docs/concepts/migrations-and-drift) |
 | Check constraints | [Checks](/docs/schema/checks) |
 
-`okm check` reads the same catalog ([check](/docs/reference/cli#check)); the scratch replay is [Checks and lint](/docs/migrations/checks-and-lint), a page, not a command.
+`okm check` reads the same catalog ([check](/docs/reference/cli#check)); the scratch replay is [Lint](/docs/migrations/checks-and-lint), a page, not a command.
 
 ## Limits and trade-offs
 
@@ -39,7 +39,7 @@ A query is planned when you call it. The schema does not store the SQL of `find`
 
 | Page | You use it for |
 | --- | --- |
-| [The schema is the catalog](/docs/concepts/the-schema-is-the-catalog) | What `schema().catalog` means for generate, plan, check, and the client. |
+| [Catalog](/docs/concepts/the-schema-is-the-catalog) | What `schema().catalog` means for generate, plan, check, and the client. |
 | [The schema](/docs/schema/the-schema) | The declaration and the tables list. |
-| [Your first schema and queries](/docs/start/first-schema) | One table, then insert and read. |
-| [Your first migration](/docs/start/first-migration) | Generate the first SQL file and apply it. |
+| [First schema](/docs/start/first-schema) | One table, then insert and read. |
+| [First migration](/docs/start/first-migration) | Generate the first SQL file and apply it. |
