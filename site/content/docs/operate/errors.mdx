@@ -1,12 +1,63 @@
 ---
 title: "Errors"
-description: "errors.http sets the statuses OkmError.toHttp uses."
+description: "Read an OkmError, branch on code or kind, map it with toHttp, and know what retryable means."
 ---
-`errors.http` sets the statuses `OkmError.toHttp` uses.
+A failure from the client is an `OkmError`. Import it from `okmodel`. The field list, kinds, categories, and every OKM code live on [Errors](/docs/reference/errors). This page is what to do once you have one.
 
-`toHttp()` uses these when the caller does not pass statuses. `toHttp(statuses)` replaces them for that call. A category absent from the map in use keeps the default.
+## Reading one
 
-| Category | Status |
+| Field | What it is for |
+| --- | --- |
+| `code` | An `OKM1xxx` guard, or the kind name when that kind has no number. Stable to branch on. |
+| `kind` | Spec §14 kind (`unique`, `serialization`, `outcome_unknown`, …). Selects the category. |
+| `category` | One of `input`, `conflict`, `not_found`, `forbidden`, `transient`, `internal`. Drives `toHttp` status. |
+| `retryable` | Whether a *declared* retry may run this error again. See [Retry](#retry). |
+| `fix` | `{ summary, suggestion? }`. What to change. `suggestion` is a nearer accepted name when the input was a typo. |
+| `issues` | Validation checks (`path` + message key). Present on [OKM1200](/docs/reference/errors#okm1200) only. |
+
+There is no `docs` field on the error. Open the matching row on [Errors](/docs/reference/errors), or `docs/errors/<code>.md` in the installed package.
+
+```ts title="read.ts"
+import { OkmError } from "okmodel";
+
+export function describe(error: unknown) {
+  const err = OkmError.from(error);
+  return {
+    code: err.code, // [!code focus]
+    kind: err.kind, // [!code focus]
+    category: err.category, // [!code focus]
+    retryable: err.retryable, // [!code focus]
+    fix: err.fix.summary, // [!code focus]
+    issues: err.issues, // [!code focus]
+  };
+}
+```
+
+`summary` is the same string as `message`. `fields()` maps each named column to a reason and never includes row values. `log()` is the structured record for a log line.
+
+## Branching
+
+Branch on `code` or `kind`, not on `message`. Message text can name values the database sent and is not a contract.
+
+```ts title="branch.ts"
+import { OkmError } from "okmodel";
+
+export function taken(error: unknown): boolean {
+  return error instanceof OkmError && error.kind === "unique"; // [!code focus]
+}
+
+export function badLimit(error: unknown): boolean {
+  return error instanceof OkmError && error.code === "OKM1101"; // [!code focus]
+}
+```
+
+`OkmError.is(error, kind)` and `OkmError.is(error, kind, table)` narrow the same way. `error.match({ input, conflict, _, … })` dispatches by category.
+
+## toHttp()
+
+`toHttp()` returns `{ status, body }` for an HTTP response. The body is `{ code, reason, fields }`. `reason` is the summary. Row values stay out.
+
+| Category | Default status |
 | --- | --- |
 | `input` | 422 |
 | `conflict` | 409 |
@@ -15,17 +66,42 @@ description: "errors.http sets the statuses OkmError.toHttp uses."
 | `transient` | 503 |
 | `internal` | 500 |
 
+`connect({ errors: { http } })` stores overrides on the error. `toHttp()` uses them when you pass no argument. `toHttp(statuses)` replaces the map for that call. A category absent from the map in use keeps the default above.
+
+```ts title="http.ts"
+import { OkmError } from "okmodel";
+
+export function respond(error: unknown) {
+  return OkmError.from(error).toHttp(); // [!code focus]
+}
+```
+
+## Retry
+
+`retryable` marks whether a *declared* retry may run the call again. It does not start a retry by itself.
+
+| Rule | Behaviour |
+| --- | --- |
+| `tx({ retry })` | Retries only when the error kind is `serialization` or `deadlock`. Every other kind is thrown as it is. |
+| [OKM1401](/docs/reference/errors#okm1401) | Commit was sent and the result never arrived (`outcome_unknown`). Never retried. Check whether the write landed before you run it again. |
+| `cancelled` | Never retryable. The caller aborted the call. |
+| Other `transient` kinds | `retryable` is true by default (`timeout`, `lock_timeout`, `unavailable`, …). Your own loop may use that flag. `tx({ retry })` still ignores them. |
+
+Full transaction retry options are [Transactions](/docs/queries/transactions#retry).
+
+## Write errors (OKM1120)
+
+[OKM1120](/docs/reference/errors#okm1120) refuses an unknown field or option on a write. The message lists accepted names. On a tenant-scoped write those names omit the tenant key: the scope sets it, so it is not a field you pass. A close typo can still suggest the tenant key (`Did you mean \`tenantId\`?`), and the accepted-names list still leaves it out. Reads keep the tenant key in their accepted names. `toHttp().body.fields` is empty for this guard.
+
+## On connect
+
+`errors.http` sets the statuses `OkmError.toHttp` uses. `toHttp()` uses these when the caller does not pass statuses. `toHttp(statuses)` replaces them for that call. A category absent from the map in use keeps the default.
+
 | Field | Result |
 | --- | --- |
-| `errors.http` | Statuses for `OkmError.toHttp`. `toHttp()` uses these when the caller does not pass statuses. `toHttp(statuses)` replaces them for that call. |
+| `errors.http` | Statuses for `OkmError.toHttp`. |
 | `errors.includeValues` | `true` stores row values and keeps bound parameters on the cause. Off unless set. A sensitive column stays redacted either way. Values are never logged. |
 | `logger.error` | Receives `{ code, summary }`. |
-
-### Statuses
-
-The keys are `input`, `conflict`, `not_found`, `forbidden`, `transient`, and `internal`. Each value is a status for that category. One key is enough.
-
-`connect` stores the map on the error. `toHttp()` reads it. `toHttp(statuses)` uses the object from that call. A category absent from that object takes the default status in the table.
 
 ### Row values
 
