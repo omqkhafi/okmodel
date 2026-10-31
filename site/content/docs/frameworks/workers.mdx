@@ -27,22 +27,31 @@ Per request. Do not keep a pool on the isolate across requests.
 
 ```ts title="src/db.ts"
 import { connect, type NeonMode } from "okmodel/pg/neon";
-import { app } from "./schema";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("example_notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+const app = schema({ tables: [notes] });
 
 export function openRequestDb(url: string, mode: NeonMode = "websocket") {
   return connect(url, { schema: app, mode });
 }
 ```
 
-```ts title="src/worker.ts"
-import { openRequestDb } from "./db";
+```ts title="src/worker.ts" no-check="Cloudflare Worker types live in examples/workers-neon"
+import { openRequestDb } from "./db.js";
 
 export default {
-  async fetch(request: Request, env: { DATABASE_URL: string; NEON_MODE?: string }, ctx: ExecutionContext) {
+  async fetch(
+    request: Request,
+    env: { DATABASE_URL: string; NEON_MODE?: string },
+    ctx: { waitUntil(promise: Promise<unknown>): void },
+  ) {
     const mode = env.NEON_MODE === "http" ? "http" : "websocket";
     const db = await openRequestDb(env.DATABASE_URL, mode);
     try {
-      // read / write routes…
       return Response.json({ ok: true });
     } finally {
       ctx.waitUntil(Promise.resolve(db.close()));

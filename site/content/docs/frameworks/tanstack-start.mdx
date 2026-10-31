@@ -24,16 +24,22 @@ One client per process for the Vite / Nitro server.
 
 ```ts title="src/db.ts"
 import { connect } from "okmodel/pg/postgresjs";
-import { app } from "./schema";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("example_notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+const app = schema({ tables: [notes] });
 
 export const db = connect(process.env.DATABASE_URL!, { schema: app });
 ```
 
 ## Routes
 
-```ts title="src/routes/api/notes.ts"
+```ts title="src/routes/api/notes.ts" no-check="TanStack Start is installed in examples/tanstack-start"
 import { createFileRoute } from "@tanstack/react-router";
-import { db } from "../../db";
+import { db } from "../../db.js";
 
 export const Route = createFileRoute("/api/notes")({
   server: {

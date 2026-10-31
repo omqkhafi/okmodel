@@ -7,6 +7,10 @@
  * Set `OKM_EXAMPLES_NIGHTLY=1` and Neon credentials for the Workers live test.
  * Each example gets a `node_modules/okmodel` symlink to the repository root so
  * framework deps stay out of the root lockfile.
+ *
+ * Tests run with `cwd` set to the example directory so the root `bunfig.toml`
+ * `pathIgnorePatterns` for `examples/**` (which keeps `bun test --changed`
+ * out of these apps) does not hide the files.
  */
 
 import { existsSync } from "node:fs";
@@ -23,6 +27,9 @@ if (!existsSync(join(root, "dist/contracts/index.js"))) {
   process.exit(1);
 }
 
+const started = Date.now();
+let failed = false;
+
 for (const name of EXAMPLES) {
   const dir = join(root, "examples", name);
   console.log(`\n[examples] install ${name}`);
@@ -36,20 +43,23 @@ for (const name of EXAMPLES) {
     console.error(`[examples] install failed: ${name}`);
     process.exit(install.exitCode ?? 1);
   }
+
+  console.log(`[examples] bun test ./${name}.test.ts (cwd examples/${name})`);
+  const test = Bun.spawnSync(["bun", "test", `./${name}.test.ts`], {
+    cwd: dir,
+    stdout: "inherit",
+    stderr: "inherit",
+    env: {
+      ...process.env,
+      REQUIRE_DOCKER: process.env.REQUIRE_DOCKER ?? "1",
+    },
+  });
+  if (test.exitCode !== 0) {
+    failed = true;
+    console.error(`[examples] test failed: ${name}`);
+  }
 }
 
-const testFiles = EXAMPLES.map((name) => join("examples", name, `${name}.test.ts`));
-console.log(`\n[examples] bun test ${testFiles.join(" ")}`);
-const started = Date.now();
-const test = Bun.spawnSync(["bun", "test", ...testFiles], {
-  cwd: root,
-  stdout: "inherit",
-  stderr: "inherit",
-  env: {
-    ...process.env,
-    REQUIRE_DOCKER: process.env.REQUIRE_DOCKER ?? "1",
-  },
-});
 const elapsedMs = Date.now() - started;
 console.log(`[examples] finished in ${(elapsedMs / 1000).toFixed(1)}s`);
-process.exit(test.exitCode ?? 1);
+process.exit(failed ? 1 : 0);
