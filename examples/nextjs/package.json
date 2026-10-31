@@ -1,0 +1,23 @@
+{
+  "name": "@okmodel/example-nextjs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bunx next dev --port 3104",
+    "build": "bunx next build",
+    "start": "bunx next start --port 3104",
+    "test": "bun test ./nextjs.test.ts"
+  },
+  "dependencies": {
+    "next": "^15.5.4",
+    "postgres": "^3.4.9",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "typescript": "^5.9.2"
+  }
+}

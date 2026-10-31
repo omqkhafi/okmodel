@@ -1,0 +1,15 @@
+{
+  "name": "@okmodel/example-workers-neon",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bunx wrangler dev",
+    "deploy": "bunx wrangler deploy",
+    "test": "bun test ./workers-neon.test.ts"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.2.0",
+    "miniflare": "^4.20250906.0",
+    "wrangler": "^4.40.0"
+  }
+}

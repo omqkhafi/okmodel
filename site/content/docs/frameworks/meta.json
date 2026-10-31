@@ -1,0 +1,12 @@
+{
+  "title": "Frameworks",
+  "pages": [
+    "nextjs",
+    "tanstack-start",
+    "hono",
+    "express",
+    "workers",
+    "vercel",
+    "other"
+  ]
+}

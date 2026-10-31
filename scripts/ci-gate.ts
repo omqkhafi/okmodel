@@ -7,12 +7,14 @@
  * property must be `success` when the diff touches dialects, migrate, or
  * `tests/lifecycle`. The composition cases must be `success` when the diff
  * touches dialects, runtime, or `tests/composition`. The site tests must be
- * `success` when the diff touches `src/tooling` or `src/dialects`. The pack
+ * `success` when the diff touches `src/tooling` or `src/dialects`. The
+ * examples job must be `success` when the diff touches `examples/`,
+ * `src/runtime/`, `src/dialects/`, or Frameworks handbook pages. The pack
  * contract must be `success` when the diff touches a packed path, `src/`,
- * `scripts/`, or `package.json`. Otherwise a skipped suite, lifecycle, composition, site, or
- * pack job is a pass. A failure is not.
+ * `scripts/`, or `package.json`. Otherwise a skipped suite, lifecycle, composition, site,
+ * examples, or pack job is a pass. A failure is not.
  *
- *   bun ./scripts/ci-gate.ts --postgres 0 --lifecycle 0 --composition 0 --site 0 --pack 0 lint=success suite=skipped lifecycle=skipped composition=skipped site=skipped pack=skipped
+ *   bun ./scripts/ci-gate.ts --postgres 0 --lifecycle 0 --composition 0 --site 0 --examples 0 --pack 0 lint=success suite=skipped lifecycle=skipped composition=skipped site=skipped examples=skipped pack=skipped
  */
 
 /** One job result the gate reads from `needs.<job>.result`. */
@@ -30,6 +32,8 @@ export type GateRequest = {
   readonly site: boolean;
   /** Set when the path filter asked for the composition job. */
   readonly composition?: boolean;
+  /** Set when the path filter asked for the framework examples job. */
+  readonly examples?: boolean;
   /** Set when the path filter asked for the pack contract. */
   readonly pack?: boolean;
 };
@@ -40,8 +44,9 @@ export type GateRequest = {
  * `suite` may be `skipped` when Postgres 18 was not requested. `lifecycle` may
  * be `skipped` when the lifecycle property was not requested. `composition`
  * may be `skipped` when those cases were not requested. `site` may be
- * `skipped` when the site tests were not requested. `pack` may be `skipped`
- * when the pack contract was not requested. `paths` may be `skipped`
+ * `skipped` when the site tests were not requested. `examples` may be
+ * `skipped` when the framework examples were not requested. `pack` may be
+ * `skipped` when the pack contract was not requested. `paths` may be `skipped`
  * on a fork, where the token cannot write labels. Any other skip, and every
  * failure or cancellation, fails the gate.
  *
@@ -70,6 +75,7 @@ function skipAllowed(name: string, request: GateRequest): boolean {
   if (name === "lifecycle") return !request.lifecycle;
   if (name === "composition") return request.composition !== true;
   if (name === "site") return !request.site;
+  if (name === "examples") return request.examples !== true;
   if (name === "pack") return request.pack !== true;
   return false;
 }
@@ -126,11 +132,18 @@ if (import.meta.main) {
         : "";
   const siteFlag = flagValue("site");
   const site = siteFlag === undefined ? "0" : siteFlag === "0" || siteFlag === "1" ? siteFlag : "";
+  const examplesFlag = flagValue("examples");
+  const examples =
+    examplesFlag === undefined
+      ? "0"
+      : examplesFlag === "0" || examplesFlag === "1"
+        ? examplesFlag
+        : "";
   const packFlag = flagValue("pack");
   const pack = packFlag === undefined ? "0" : packFlag === "0" || packFlag === "1" ? packFlag : "";
-  if (lifecycle === "" || composition === "" || site === "" || pack === "") {
+  if (lifecycle === "" || composition === "" || site === "" || examples === "" || pack === "") {
     console.error(
-      "usage: bun ./scripts/ci-gate.ts --postgres <0|1> [--lifecycle <0|1>] [--composition <0|1>] [--site <0|1>] [--pack <0|1>] <name=result>...",
+      "usage: bun ./scripts/ci-gate.ts --postgres <0|1> [--lifecycle <0|1>] [--composition <0|1>] [--site <0|1>] [--examples <0|1>] [--pack <0|1>] <name=result>...",
     );
     process.exit(1);
   }
@@ -153,6 +166,7 @@ if (import.meta.main) {
     lifecycle: lifecycle === "1",
     composition: composition === "1",
     site: site === "1",
+    examples: examples === "1",
     pack: pack === "1",
   });
   if (failed.length > 0) process.exit(1);

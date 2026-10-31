@@ -377,6 +377,56 @@ jobs:
         env:
           POSTGRES_VERSION: ${{ matrix.version }}
 
+  examples:
+    name: examples / frameworks
+    needs: [build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup
+        uses: ./.github/actions/setup-bun
+
+      - name: Download dist
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+
+      - name: Dist is present
+        run: test -f dist/contracts/index.js
+
+      - name: Pull Postgres
+        run: docker pull "postgres:${POSTGRES_VERSION}"
+        env:
+          POSTGRES_VERSION: "17"
+
+      - name: Start Postgres
+        run: bun run db:up
+        env:
+          POSTGRES_VERSION: "17"
+
+      - name: Framework examples
+        run: bun ./scripts/examples-test.ts
+        env:
+          REQUIRE_DOCKER: "1"
+          POSTGRES_VERSION: "17"
+          OKM_EXAMPLES_NIGHTLY: ${{ github.event_name == 'schedule' && '1' || '0' }}
+          NEON_URL: ${{ secrets.NEON_URL }}
+          NEON_POOL_URL: ${{ secrets.NEON_POOL_URL }}
+          NEON_R1_URL: ${{ secrets.NEON_R1_URL }}
+          NEON_R1_POOL_URL: ${{ secrets.NEON_R1_POOL_URL }}
+          NEON_R2_URL: ${{ secrets.NEON_R2_URL }}
+          NEON_R2_POOL_URL: ${{ secrets.NEON_R2_POOL_URL }}
+
+      - name: Stop Postgres
+        if: always()
+        run: bun run db:down
+        env:
+          POSTGRES_VERSION: "17"
+
   tarball:
     name: tarball
     needs: build
@@ -407,6 +457,7 @@ jobs:
         suite,
         lifecycle,
         composition,
+        examples,
         tarball,
       ]
     if: always()
@@ -452,4 +503,5 @@ jobs:
           suite=${{ needs.suite.result }}
           lifecycle=${{ needs.lifecycle.result }}
           composition=${{ needs.composition.result }}
+          examples=${{ needs.examples.result }}
           tarball=${{ needs.tarball.result }}

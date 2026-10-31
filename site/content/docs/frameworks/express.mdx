@@ -1,0 +1,88 @@
+---
+title: "Express"
+description: "OKModel with Express and a process-scoped client."
+---
+A small Express server with one read route and one write route.
+
+## Runtime and driver
+
+| | |
+| --- | --- |
+| Runtime | Node.js 22.18+ (Bun can run the same file) |
+| Driver | `okmodel/pg/postgresjs` + `postgres` |
+| Example | `examples/express` |
+
+## Install
+
+```sh
+bun add okmodel postgres express
+bun add -D @types/express @types/node
+```
+
+## `db` module and lifecycle
+
+One client for the process. Close it on `SIGINT` / `SIGTERM`.
+
+```ts title="src/db.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("example_notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+const app = schema({ tables: [notes] });
+
+export const db = connect(process.env.DATABASE_URL!, { schema: app });
+
+export async function closeDb() {
+  await db.close();
+}
+```
+
+## Routes
+
+```ts title="src/server.ts" no-check="express is installed in examples/express"
+import express from "express";
+import { closeDb, db } from "./db.js";
+
+const app = express();
+app.use(express.json());
+
+app.get("/notes", async (_req: express.Request, res: express.Response) => {
+  res.json(await db.example_notes.find({ limit: 50 }));
+});
+
+app.post("/notes", async (req: express.Request, res: express.Response) => {
+  const row = await db.example_notes.insert({
+    title: req.body?.title ?? "untitled",
+  });
+  res.status(201).json(row);
+});
+
+app.listen(Number(process.env.PORT ?? 3101));
+process.on("SIGTERM", () => void closeDb());
+```
+
+## Dev and test
+
+```sh
+bun run build
+bun run db:up
+bun install --cwd examples/express
+bun --cwd examples/express ./src/server.ts
+bun test examples/express/express.test.ts
+```
+
+## Deploy and migrate
+
+Start the same `server.ts` (or a compiled copy) behind your process manager. Run `bunx okm migrate apply` before you send traffic.
+
+## Gotchas
+
+- Do not create a client per request on a long-lived Node process; reuse the pool.
+- Deno is unsupported. D1 has no adapter.
+
+## Verification
+
+**CI** — `examples/express/express.test.ts` boots the server and calls the routes against the repository Postgres topology.

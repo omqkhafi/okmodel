@@ -8,6 +8,7 @@
     "tests/fixtures",
     "packages/attest",
     "site",
+    "examples",
     "*.tgz",
     "src/runtime/ids/okid.ts",
     "src/runtime/ids/okid-shared.ts",

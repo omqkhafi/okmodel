@@ -26,6 +26,8 @@ const FLAT_SECTIONS = new Set([
   "Get started",
   "concepts",
   "Concepts",
+  "frameworks",
+  "Frameworks",
   "queries",
   "Queries",
   "migrations",

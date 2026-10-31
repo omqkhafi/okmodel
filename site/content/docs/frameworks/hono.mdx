@@ -1,0 +1,83 @@
+---
+title: "Hono"
+description: "OKModel with Hono on Bun and on Node."
+---
+The same Hono app runs on Bun and on Node. The example proves both.
+
+## Runtime and driver
+
+| | |
+| --- | --- |
+| Runtime | Bun 1.4+ or Node.js 22.18+ |
+| Driver | `okmodel/pg/postgresjs` + `postgres` |
+| Example | `examples/hono` |
+
+## Install
+
+```sh
+bun add okmodel postgres hono @hono/node-server
+```
+
+## `db` module and lifecycle
+
+One client per process for either runtime.
+
+```ts title="src/db.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("example_notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+const app = schema({ tables: [notes] });
+
+export const db = connect(process.env.DATABASE_URL!, { schema: app });
+```
+
+## Routes
+
+```ts title="src/app.ts" no-check="hono is installed in examples/hono"
+import { Hono } from "hono";
+import { db } from "./db.js";
+
+export const app = new Hono();
+
+app.get("/notes", async (c) =>
+  c.json(await db.example_notes.find({ limit: 50 })),
+);
+
+app.post("/notes", async (c) => {
+  const body = await c.req.json<{ title?: string }>();
+  const row = await db.example_notes.insert({
+    title: body.title ?? "untitled",
+  });
+  return c.json(row, 201);
+});
+```
+
+On Bun, export `{ port, fetch: app.fetch }`. On Node, use `serve` from `@hono/node-server`.
+
+## Dev and test
+
+```sh
+bun run build
+bun run db:up
+bun install --cwd examples/hono
+bun --cwd examples/hono ./src/server.ts
+bun --cwd examples/hono run dev:node
+bun test examples/hono/hono.test.ts
+```
+
+## Deploy and migrate
+
+Deploy the Bun or Node entry your host expects. Run `bunx okm migrate apply` on the target database in the release job.
+
+## Gotchas
+
+- `okmodel/pg/bun` only loads on Bun. The example uses postgres.js so one driver covers both runtimes.
+- Deno is unsupported. D1 has no adapter.
+
+## Verification
+
+**CI** — `examples/hono/hono.test.ts` boots Bun and Node servers and calls the routes against the repository Postgres topology.

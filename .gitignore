@@ -12,3 +12,10 @@ dist
 .attest
 packages/bench/results
 packages/spikes/.m0-measure
+
+# Framework examples
+examples/**/.next/
+examples/**/.run/
+examples/**/.wrangler-bundle/
+examples/**/.tanstack/
+examples/**/dist/
