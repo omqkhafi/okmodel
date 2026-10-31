@@ -267,7 +267,7 @@ function rememberBound(call: ReadCall): void {
     provenance: dl === undefined ? ("caller" as const) : ("connect" as const),
   };
   const lines = call.ruleLines === undefined ? [rule] : [...call.ruleLines, rule];
-  (call as { ruleLines: typeof lines }).ruleLines = lines;
+  (call as unknown as { ruleLines: typeof lines }).ruleLines = lines;
 }
 
 function writeLimit(call: ReadCall, sink: Sink): void {
