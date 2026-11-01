@@ -20,7 +20,7 @@ export type AgentState = "current" | "stale" | "missing" | "modified";
  * @param outcome - Exit outcome
  * @returns Never
  */
-export function agentError(
+function agentError(
   code: string,
   message: string,
   fix: string,

@@ -323,7 +323,7 @@ export function planDecline(root: string): AgentsPlan {
  * @param root - Project directory
  * @returns Targets whose tool directory exists
  */
-export function detectedTargets(root: string): readonly AgentTarget[] {
+function detectedTargets(root: string): readonly AgentTarget[] {
   return AGENT_TARGETS.filter((target) => isDirectory(join(root, TOOL_DIRS[target])));
 }
 

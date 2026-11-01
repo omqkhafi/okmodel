@@ -44,7 +44,7 @@ export const FIELD_CAP = 2000;
  *
  * Names read from a database catalog do not use this. They are untrusted.
  */
-export const CHECKED_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_$]{0,62}$/;
+const CHECKED_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_$]{0,62}$/;
 
 const STRING_CAP_DEFAULT = STRING_CAP;
 const FIELD_CAP_DEFAULT = FIELD_CAP;
@@ -98,7 +98,7 @@ export function untrustedText(
  * @param name - One identifier
  * @returns `true` when the name matches {@link CHECKED_IDENTIFIER}
  */
-export function isCheckedIdentifier(name: string): boolean {
+function isCheckedIdentifier(name: string): boolean {
   return CHECKED_IDENTIFIER.test(name);
 }
 
