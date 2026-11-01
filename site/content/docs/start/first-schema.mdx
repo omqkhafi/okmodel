@@ -91,7 +91,7 @@ console.log(note);
 <Step>
 ### Find
 
-`find` returns a list. `limit: 1` asks for one row. The row is `[0]`.
+`find` returns a list. `limit: 1` asks for one row. The row is `[0]`. A `limits.find` on `connect` makes that `limit` optional. These examples still pass it.
 
 ```ts title="find.ts"
 import { db } from "./db.ts";
@@ -112,11 +112,19 @@ console.log(missing[0]);
 undefined
 ```
 
-`[0]` is `undefined` when nothing matched. Omit the limit and the call throws [OKM1101](/docs/reference/errors#okm1101). The message is `find() needs a limit.` The fix is `Pass a limit.`
+`[0]` is `undefined` when nothing matched. Without `limits` on `connect`, omitting `limit` throws [OKM1101](/docs/reference/errors#okm1101). The message is `find() needs a limit.` The fix is `Pass a limit.` A configured default makes `limit` optional. [Query limits](/docs/operate/query-limits).
 
 ```ts title="find-without-limit.ts"
-import { db } from "./db.ts";
+import { connect } from "okmodel/pg/postgresjs";
 
+import schema from "./schema.ts";
+
+const url = process.env.DATABASE_URL;
+if (url === undefined || url.length === 0) {
+  throw new Error("DATABASE_URL is not set");
+}
+
+const db = connect(url, { schema });
 await db.notes.find({ where: { id: "1" } });
 ```
 

@@ -358,7 +358,7 @@ if (existing.id !== author.id || existing.name !== "Ada") {
 
 ### Find
 
-`find` returns a list, so it needs a `limit` (OKM1101). `include` loads the author on each note. When the relation is itself a list, that include needs its own limit (OKM1105).
+`find` returns a list, so it needs a `limit` (OKM1101). A configured `limits.find` makes that argument optional, and the library never enables the default itself. `include` loads the author on each note. When the relation is itself a list, that include needs its own limit (OKM1105).
 
 ```ts
 // limit is required. include loads the author.
@@ -1461,7 +1461,7 @@ A repository that uses agents should name an owner for `AGENTS.md` and `.claude/
 | `okm protect add`         | Records the selected target's fingerprint in the user store. Does not print the URL.                                                                                                                     |
 | `okm protect remove`      | Deletes that fingerprint. Requires a terminal, otherwise exit 4. Deleting `protected: true` does not do this.                                                                                            |
 | `okm protect list`        | Prints stored fingerprints, or `none`.                                                                                                                                                                   |
-| `okm init`                | Writes starter files for a package or workspace packages. Does not connect. `--agents` and `--no-agents` choose the agent files.                                                                         |
+| `okm init`                | Writes starter files for a package or workspace packages, including `limits` on `connect`. Does not connect. `--limits` adds that object to an unmodified generated client. `--agents` and `--no-agents` choose the agent files. |
 | `okm agents status`       | Reports whether the AGENTS.md block, the CLAUDE.md import, and the skill are current. Exits 1 on drift.                                                                                                  |
 | `okm agents update`       | Rewrites the AGENTS.md block and any unmodified skill from this package.                                                                                                                                 |
 | `okm agents remove`       | Deletes the AGENTS.md block and the agent files whose hash still matches.                                                                                                                                |

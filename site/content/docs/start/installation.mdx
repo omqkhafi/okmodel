@@ -97,7 +97,7 @@ export default schema({ tables: [notes] });
 <Step>
 ### Connect
 
-`connect` takes the URL and the schema. The process keeps `db`. An empty `DATABASE_URL` is refused before `connect`. A non-null assertion on the URL is the other form. The options are on [Connect](/docs/operate/connect).
+`connect` takes the URL and the schema. The process keeps `db`. An empty `DATABASE_URL` is refused before `connect`. A non-null assertion on the URL is the other form. The options are on [Connect](/docs/operate/connect). `limits` is the opt-in default for reads. The library does not turn it on unless you pass it. [Query limits](/docs/operate/query-limits).
 
 ```ts title="db.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -109,7 +109,14 @@ if (url === undefined || url.length === 0) {
   throw new Error("DATABASE_URL is not set");
 }
 
-export const db = connect(url, { schema });
+// Defaults. The library leaves them off until this object is set.
+// find 100: find, descendants, ancestors. include 20: to-many include.
+// page 50: page(). groupBy 500: grouped aggregate. max 1000: ceiling.
+// .all(reason) reads past them. A limit on the call wins.
+export const db = connect(url, {
+  schema,
+  limits: { find: 100, include: 20, page: 50, groupBy: 500, max: 1000 },
+});
 ```
 
 </Step>

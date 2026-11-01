@@ -50,7 +50,7 @@ bunx okm init
 | File | What it is for |
 | --- | --- |
 | `db/schema.ts` | Example `users` table. `t.id()`, `minPostgres: 15`, and a named `app` schema. |
-| `db/client.ts` | The client. An empty `DATABASE_URL` is refused. This run imports `okmodel/pg/bun`. |
+| `db/client.ts` | The client. An empty `DATABASE_URL` is refused. This run imports `okmodel/pg/bun`. `connect` includes `limits`. The library does not set them unless that object is there. [Query limits](/docs/operate/query-limits). |
 | `okmodel.config.ts` | `schema` is `./db/schema.ts`. `migrations` is `./migrations`. `database` is set only when `DATABASE_URL` is a non-empty string. |
 | `migrations/.gitkeep` | The migrations directory. |
 | `.env.example` | `DATABASE_URL=` with no value. Init does not write `.env`. |
@@ -58,6 +58,30 @@ bunx okm init
 | `.gitignore` | `.env` and `.env.local`. |
 | `package.json` | Adds the `okmodel` dependency and `db:check`, `db:plan`, `db:apply`, and `db:status`. |
 | `.okm/init.json` | The choices and the hash of each file init wrote. |
+
+`db/client.ts` passes this `limits` object. `find` 100 covers `find`, `descendants`, and `ancestors`. `include` 20 is a to-many include. `page` 50 is `page()`. `groupBy` 500 is a grouped aggregate. `max` 1000 is the ceiling. `.all(reason)` reads past them. A `limit` on the call wins.
+
+```ts
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const users = table("users", {
+  id: t.id(),
+  email: t.text(),
+  createdAt: t.timestamptz(),
+});
+const app = schema({ minPostgres: 15, tables: [users] });
+
+const url = process.env.DATABASE_URL;
+if (url === undefined || url.length === 0) {
+  throw new Error("DATABASE_URL is not set");
+}
+
+export const db = connect(url, {
+  schema: app,
+  limits: { find: 100, include: 20, page: 50, groupBy: 500, max: 1000 },
+});
+```
 
 The command ends with the next three commands.
 
