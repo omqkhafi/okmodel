@@ -318,6 +318,22 @@ export default schema({
       },
     ],
   },
+  {
+    kind: "migrate",
+    id: "generated",
+    group: "model",
+    label: "Generated column",
+    name: "add_search",
+    note: "a generated column is stored after its sources, and the row type gains it as read-only",
+    href: "/docs/schema/defaults#generated",
+    edits: [
+      {
+        find: "  title: t.text().nullable(),\n  authorId: t.bigint(),\n",
+        replace:
+          "  title: t.text().nullable(),\n  search: t.tsvector().generated(\"to_tsvector('simple', title)\"),\n  authorId: t.bigint(),\n",
+      },
+    ],
+  },
 ];
 
 /** One statement of a generated migration, with the header the file gives it. */
@@ -370,6 +386,13 @@ export interface HeroRule {
   readonly provenance: string;
 }
 
+/** An OkmError the call threw, recorded from the run. */
+export interface HeroQueryError {
+  readonly code: string;
+  readonly message: string;
+  readonly fix: string;
+}
+
 /** What the client produced when the query really ran on PGlite. */
 export interface HeroDerivedQuery {
   readonly kind: "query";
@@ -377,17 +400,19 @@ export interface HeroDerivedQuery {
   /** The model lines and then the query, as shown on the left. */
   readonly code: ReadonlyArray<HeroDiffRow>;
   readonly sql: {
-    /** The statement, split at its top-level clauses. */
+    /** The statement, split at its top-level clauses. Empty when the call was refused. */
     readonly text: string;
     readonly params: ReadonlyArray<string>;
   };
   readonly result: {
-    /** The value the call returned, as text. */
+    /** The value the call returned, as text. For a refuse, the error text. */
     readonly text: string;
     /** Rows returned, when the call returns a list. */
     readonly count: number | null;
   };
   readonly rules: ReadonlyArray<HeroRule>;
+  /** Present when a call threw before or instead of a successful statement. */
+  readonly error: HeroQueryError | null;
 }
 
 /** The generated output for one scenario. */

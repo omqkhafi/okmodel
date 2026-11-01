@@ -71,9 +71,19 @@ test("every scenario has the output its kind shows", () => {
       expect(scenario.plan.steps.length, scenario.id).toBeGreaterThan(0);
     } else {
       expect(scenario.code.some((row) => row.mark === "hot"), scenario.id).toBe(true);
-      expect(scenario.sql.text.length, scenario.id).toBeGreaterThan(0);
       expect(scenario.result.text.length, scenario.id).toBeGreaterThan(0);
-      expect(scenario.rules.length, scenario.id).toBeGreaterThan(0);
+      if (scenario.error !== null && scenario.sql.text.length === 0) {
+        expect(scenario.error.code, scenario.id).toMatch(/^OKM\d+$/);
+        expect(scenario.error.fix.length, scenario.id).toBeGreaterThan(0);
+        expect(scenario.result.text, scenario.id).toContain(scenario.error.code);
+      } else {
+        expect(scenario.sql.text.length, scenario.id).toBeGreaterThan(0);
+        if (scenario.error === null) {
+          expect(scenario.rules.length, scenario.id).toBeGreaterThan(0);
+        } else {
+          expect(scenario.error.code, scenario.id).toMatch(/^OKM\d+$/);
+        }
+      }
     }
   }
 });

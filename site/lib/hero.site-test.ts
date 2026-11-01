@@ -29,7 +29,12 @@ test("every group has scenarios and every scenario names a group", () => {
 
 test("a query scenario shows lines that are in the schema it runs", () => {
   for (const spec of HERO_QUERIES) {
-    expect(spec.schema.includes(spec.model), spec.id).toBe(true);
+    if (spec.limits === undefined) {
+      expect(spec.schema.includes(spec.model), spec.id).toBe(true);
+    } else {
+      expect(spec.model, spec.id).toContain("limits:");
+      expect(spec.limits.find, spec.id).toBeGreaterThan(0);
+    }
     expect(spec.schema, spec.id).toContain("const app =");
   }
 });

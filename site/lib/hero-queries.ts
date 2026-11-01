@@ -21,12 +21,27 @@ export interface HeroQuerySpec {
   readonly href: string;
   /** Whole schema module. It must declare `const app`. */
   readonly schema: string;
-  /** Lines of {@link schema} shown above the query. They must occur in it verbatim. */
+  /**
+   * Lines shown above the query. Usually a slice of {@link schema}. When
+   * {@link limits} is set they may be a `connect` call that names those limits.
+   */
   readonly model: string;
   /** Statements run before the query, with `db` in scope. Not shown. */
   readonly seed: string;
   /** The read or write that is shown and run. It may name variables the seed declares. */
   readonly expr: string;
+  /**
+   * Opt-in `connect({ limits })` applied when the call runs. Shown in
+   * {@link model}. The library never turns a default on without this.
+   */
+  readonly limits?: { readonly find: number };
+  /**
+   * A call that must throw before {@link expr}. Its OkmError is recorded and
+   * shown in the rules area; {@link expr} then supplies the SQL and result.
+   */
+  readonly refuse?: string;
+  /** When true, {@link expr} itself must throw; SQL and result come from that error. */
+  readonly expectError?: boolean;
 }
 
 const AUTHORS_AND_NOTES = `import { many, one, schema, table, t } from "okmodel/pg";
@@ -115,7 +130,7 @@ export const HERO_QUERIES: ReadonlyArray<HeroQuerySpec> = [
     id: "include",
     group: "query",
     label: "Find with a relation",
-    note: "include is one lateral join, the filter is a parameter, and the limit is required",
+    note: "include is one lateral join, the filter is a parameter, and the limit is required unless limits is set in connect",
     href: "/docs/schema/relations",
     schema: AUTHORS_AND_NOTES,
     model: NOTES_MODEL,
@@ -144,7 +159,7 @@ export const HERO_QUERIES: ReadonlyArray<HeroQuerySpec> = [
     id: "aggregate",
     group: "query",
     label: "Aggregate",
-    note: "a group by is a call, not a string, and a grouped read still needs a limit",
+    note: "a group by is a call, not a string, and the limit is required unless limits is set in connect",
     href: "/docs/queries/shape-results#aggregate",
     schema: AUTHORS_AND_NOTES,
     model: NOTES_MODEL,
@@ -221,5 +236,86 @@ await db.notes.archive({ where: { title: "old draft" } });
     seed: `await db.users.insert({ email: "ada@example.com", passwordHash: "$argon2id$..." });
 `,
     expr: `db.users.find({ limit: 5 })`,
+  },
+  {
+    kind: "query",
+    id: "defaultLimits",
+    group: "query",
+    label: "Default limits",
+    note: "the default is yours to set, the library never turns it on",
+    href: "/docs/operate/query-limits",
+    schema: AUTHORS_AND_NOTES,
+    model: `connect(url, {
+  schema: app,
+  limits: { find: 100 },
+});`,
+    limits: { find: 100 },
+    seed: SEED_NOTES,
+    expr: `db.notes.find()`,
+  },
+  {
+    kind: "query",
+    id: "noLimit",
+    group: "query",
+    label: "No limit, refused",
+    note: "without a limit and without limits in connect, the call is refused before a statement runs",
+    href: "/docs/operate/query-limits",
+    schema: AUTHORS_AND_NOTES,
+    model: NOTES_MODEL,
+    seed: SEED_NOTES,
+    expr: `db.notes.find({ where: { title: "hello" } })`,
+    expectError: true,
+  },
+  {
+    kind: "query",
+    id: "writeFilter",
+    group: "query",
+    label: "Write needs a filter",
+    note: "an update with no where is refused, then the same set with a where writes one row",
+    href: "/docs/queries/write-rows",
+    schema: AUTHORS_AND_NOTES,
+    model: NOTES_MODEL,
+    seed: `const ada = await db.authors.insert({ name: "Ada" });
+const note = await db.notes.insert({ title: "draft", authorId: ada.id });
+`,
+    refuse: `db.notes.update({ set: { title: "edited" } })`,
+    expr: `db.notes.update({ set: { title: "edited" }, where: { id: note.id } })`,
+  },
+  {
+    kind: "query",
+    id: "tree",
+    group: "query",
+    label: "Tree",
+    note: "descendants walks the self-relation with a recursive statement and a required limit",
+    href: "/docs/queries/search-and-trees#descendants",
+    schema: `import { many, schema, table, t } from "okmodel/pg";
+
+const nodes = table(
+  "nodes",
+  {
+    id: t.identity(),
+    parentId: t.bigint().nullable().references("nodes"),
+    name: t.text(),
+  },
+  { relations: { children: many("nodes", "parentId") } },
+);
+
+const app = schema({ tables: [nodes] });
+`,
+    model: `const nodes = table(
+  "nodes",
+  {
+    id: t.identity(),
+    parentId: t.bigint().nullable().references("nodes"),
+    name: t.text(),
+  },
+  { relations: { children: many("nodes", "parentId") } },
+);`,
+    seed: `const root = await db.nodes.insert({ name: "root", parentId: null });
+const mid = await db.nodes.insert({ name: "mid", parentId: root.id });
+await db.nodes.insert({ name: "leaf", parentId: mid.id });
+await db.nodes.insert({ name: "other", parentId: root.id });
+`,
+    expr: `db.nodes.descendants(root.id, { relation: "children", limit: 10 })`,
   },
 ];
