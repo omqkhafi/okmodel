@@ -49,6 +49,24 @@ test("workers-neon bundle stays under the Cloudflare size limit", async () => {
   expect(readFileSync(join(exampleDir, "wrangler.toml"), "utf8")).toContain("nodejs_compat");
 });
 
+test("workers-neon rejects an unknown NEON_MODE before opening a client", async () => {
+  const { script } = await bundleWorker();
+  const mf = new Miniflare({
+    modules: true,
+    script,
+    compatibilityDate: "2025-10-01",
+    compatibilityFlags: ["nodejs_compat"],
+    bindings: { DATABASE_URL: "postgres://unused.invalid/db", NEON_MODE: "ws" },
+  });
+  try {
+    const response = await mf.dispatchFetch("http://localhost/health");
+    expect(response.status).toBe(500);
+    expect(await response.text()).toContain('NEON_MODE must be "websocket" or "http"');
+  } finally {
+    await mf.dispose();
+  }
+}, 60_000);
+
 const neonUrl = process.env.NEON_URL;
 const nightly = process.env.OKM_EXAMPLES_NIGHTLY === "1";
 const live = nightly && typeof neonUrl === "string" && neonUrl.length > 0 ? test : test.skip;

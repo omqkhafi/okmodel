@@ -3,43 +3,176 @@ title: "From Prisma"
 description: "Map Prisma models and Client calls to okmodel, then adopt a live database with okm pull."
 ---
 
-Goal: translate a Prisma mental model into okmodel tables and queries, then pull an existing database.
+You get three things: a side-by-side of one Prisma model pair and its okmodel tables, a table that maps each Prisma call and command to its okmodel name, and a walk through `okm pull` that adopts a live database without running any DDL. The walk uses commands and output from a real run.
 
-This page is a map, not feature parity. Prisma documents models and Client CRUD in its own docs; okmodel keeps limits, tenancy, and reviewed migrations as first-class refusals.
+This page is a map, not feature parity. Where okmodel is deliberately different, the difference has its own list below.
 
-## Concept map
+## Setup
+
+You need Node.js or Bun, `okmodel` installed ([Installation](/docs/start/installation)), and a Postgres database. The pull section starts from a database that already has tables, as a Prisma project does. Every command reads `okmodel.config.ts` and connects to the database that `DATABASE_URL` names.
+
+The client in your code is called `db`. It comes from `connect(url, { schema })`, and each table is a property of it, so `prisma.note` becomes `db.notes`. You pass the schema in. There is no generated client to build, so there is no step that stands in for `prisma generate`: the types come from the `schema()` call in your own code.
+
+## Models
+
+Here is one Prisma model pair, and the same two tables in okmodel:
+
+```prisma
+model User {
+  id    Int    @id @default(autoincrement())
+  email String @unique
+  notes Note[]
+}
+
+model Note {
+  id       Int     @id @default(autoincrement())
+  title    String
+  body     String?
+  authorId Int
+  author   User    @relation(fields: [authorId], references: [id])
+}
+```
+
+The program below declares both tables, then runs the Prisma ORM 7 call `findMany({ where, orderBy, take, include })` as one okmodel `find`. It prints the SQL, the rows, and the error you get if you leave `limit` out.
+
+```ts
+import { connect } from "okmodel/pg/postgresjs";
+import { many, one, schema, table, t } from "okmodel/pg";
+import { OkmError } from "okmodel";
+
+const users = table(
+  "users",
+  { id: t.identity(), email: t.text().unique() },
+  { relations: { notes: many("notes") } },
+);
+const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+    body: t.text().nullable(),
+    authorId: t.bigint().references("users"),
+  },
+  { relations: { author: one("users") } },
+);
+export const app = schema({ tables: [users, notes] });
+
+export async function demo(url: string): Promise<void> {
+  await using db = connect(url, { schema: app });
+  const author = await db.users.insert({ email: `${crypto.randomUUID()}@example.com` });
+  await db.notes.insert({ title: "Hello", authorId: author.id });
+
+  const query = {
+    where: { authorId: author.id },
+    orderBy: { id: "asc" },
+    limit: 20,
+    include: { author: true },
+  } as const;
+  console.log((await db.notes.find(query).sql()).text);
+  const rows = await db.notes.find(query);
+  console.log(JSON.stringify(rows.map((row) => ({ title: row.title, author: row.author?.id === author.id }))));
+  try {
+    await db.notes.find({ where: { authorId: author.id } });
+  } catch (error) {
+    if (error instanceof OkmError) console.log(`${error.code}: ${error.message}`);
+  }
+}
+```
+
+```text
+select t."id", t."title", t."body", t."authorId", i0.c0, i0.c1 from "notes" t left join lateral (select r0_author."id" as c0, r0_author."email" as c1 from "users" r0_author where r0_author."id" = t."authorId" limit 1) i0 on true where t."authorId" = $1 order by t."id" asc nulls last limit $2
+[{"title":"Hello","author":true}]
+OKM1101: find() needs a limit.
+```
+
+The `include` became a `left join lateral` inside the same statement, so the author arrives with the note in one round trip. `limit` is a parameter, `$2`. Leaving it out is [OKM1101](/docs/reference/errors#okm1101), which the program catches and prints. The rows carry the included author, and the program checks that its id matches. Run it twice and it behaves the same: the email is a fresh `crypto.randomUUID()` each time.
+
+How each Prisma field became a column:
 
 | Prisma | okmodel |
 | --- | --- |
-| `model` | `table(...)` inside `schema({ tables })` |
-| `@relation` / relation fields | `.references(...)` plus `relations: { ... }` with `one` / `many` |
-| `findMany` | `find({ where, orderBy, limit })` |
-| `findFirst` / `findUnique` | `one({ where })` or `find` with `limit: 1` |
-| `create` | `insert` |
-| `createMany` | `insert([...])` |
-| `update` / `updateMany` | `update({ where, set })` |
-| `delete` / `deleteMany` | `delete({ where })` |
-| `$transaction` | `tx()` or `batch()` |
-| `prisma migrate` | `okm generate` then `okm migrate apply` |
-| `prisma db pull` | `okm pull` |
+| `model User` | `table("users", { ... })`, collected in `schema({ tables })` |
+| `Int @id @default(autoincrement())` | `t.identity()`, a 64-bit identity primary key |
+| `String` / `String?` | `t.text()` / `t.text().nullable()` |
+| `@unique` | `.unique()` on the column |
+| `Boolean` | `t.boolean()` |
+| `DateTime @default(now())` | `t.timestamptz().defaultSql("now()")` |
+| `Json` | `t.jsonb()` |
+| `authorId Int` plus `@relation(fields, references)` | `t.bigint().references("users")`, the foreign key |
+| `author User` (the relation field) | `relations: { author: one("users") }` |
+| `notes Note[]` | `relations: { notes: many("notes") }` |
 
-On a relational database Prisma says a model becomes a table. Relations use a link field plus a relation field. Those ideas land as `table`, `references`, and `relations` here. Client names above are the Prisma ORM 7 Client surface (`findMany`, and so on).
+Prisma attributes with no column builder of their own:
+
+| Prisma | okmodel |
+| --- | --- |
+| `@@index([authorId])` | `indexes: (columns) => [index(columns.authorId)]` in the table options |
+| `@map("author_id")` / `@@map("notes")` | the database name is the key, or `.sqlName()` when the key differs; `schema({ casing })` maps a whole schema |
+| `enum Role { ... }` | a Postgres enum; `okm pull` writes the ones it finds |
+| `@updatedAt` / `@default(now())` on a created column | the `timestamps()` trait: `createdAt` and `updatedAt`, set on insert and update ([Traits](/docs/schema/traits)) |
+
+Two things differ in the example. `t.identity()` is 64-bit, so the foreign key is `t.bigint()` where Prisma had `Int`. Ids come back as strings in the rows, which is how a 64-bit integer stays exact in JavaScript. And `references` is the foreign key while `one` and `many` are the names you query by: you declare the key on the table that holds it, and the relation names the edge.
+
+## Calls
+
+Prisma ORM 7 is the `findMany` family. Prisma ORM 8 chains a builder (`.where(...).all()`) on a model. The first column is the 7 name and the second is its 8 form. Both land on the third.
+
+| Prisma ORM 7 | Prisma ORM 8 | okmodel |
+| --- | --- | --- |
+| `findMany` | `.where(...).all()` | `find({ where, orderBy, limit })` |
+| `findFirst` / `findUnique` | `.first()` / `.whereUnique(...).first()` | `one({ where })`, or `find` with `limit: 1` |
+| `create` | `.create({ ... })` | `insert({ ... })` |
+| `createMany` | `.createAll([...])` | `insert([...])` |
+| `createMany` with `skipDuplicates` | `createAll(rows, { onConflict: "skip" })` | `insert(rows, { onConflict: "ignore" })` |
+| `upsert` | `.upsert({ create, update, conflictOn })` | `insert(row, { onConflict: { on, update } })` |
+| `update` / `updateMany` | `.where(...).updateAll({ ... })` | `update({ where, set })` |
+| `delete` / `deleteMany` | `.where(...).deleteAll()` | `delete({ where })` |
+| `count` | `.aggregate((agg) => ({ total: agg.count() }))` | `count({ where })` |
+| `aggregate` / `groupBy` | `.aggregate(...)` / `.groupBy(...)` | `aggregate({ groupBy, select })` |
+| `select` | `.select("id", "email")` | `find({ select: ["id", "email"] })` |
+| `include` | `.include("notes")` | `find({ include: { notes: { limit: 20 } } })` |
+| `orderBy` | `.orderBy(...)` | `orderBy: { id: "asc" }` |
+| `take` / `skip` | `.limit(n)` / `.offset(n)` | `limit` / `offset` |
+| `take` with `cursor` | `.cursor(...)` | `page({ orderBy, limit, after })` ([Paginate](/docs/guides/paginate)) |
+| `$transaction` | `db.transaction(async (tx) => ...)` | `tx()` or `batch()` |
+| `$queryRaw` | `db.raw.sql` | `raw(db, sql, params)`, typed ([Typed raw SQL](/docs/queries/typed-raw-sql)) |
+
+The migration commands:
+
+| Prisma ORM 7 | Prisma ORM 8 | okmodel |
+| --- | --- | --- |
+| `prisma generate` | `prisma contract emit` | none, the types come from `schema()` |
+| `prisma migrate dev` | `prisma migration plan`, then `prisma db migrate` | `okm migrate plan`, `okm generate <name>`, `okm migrate apply` |
+| `prisma db push` | `prisma db init` / `prisma db update` | `okm push` |
+| `prisma migrate deploy` | `prisma db migrate` | `okm migrate apply --target production` |
+| `prisma migrate status` | `prisma migration status` | `okm migrate status` |
+| `prisma db pull` | `prisma contract infer` | `okm pull` |
+| `prisma migrate resolve` (baseline) | `prisma db sign` | `okm migrate baseline` |
+| `prisma db seed` | none | `okm seed` |
 
 ## Intentionally different
 
-- **Limits.** A `find` or `page` with no `limit` is refused ([OKM1101](/docs/reference/errors#okm1101)) unless you set `connect({ limits })` or call `.all(reason)`. There is no implicit unbounded list.
-- **Tenancy.** `columnTenancy` and `for({ tenantId })` stamp and filter the key. Prisma Client has no built-in tenant scope like `for()`.
-- **Soft delete.** Soft delete is the `archivable()` trait plus `archive` / `restore`, not a Client middleware convention.
-- **Migrations.** Reviewed SQL files, lint codes, lock lines, and protected targets. There is no down migration.
+- **Limits.** A `find` or `page` with no `limit` is refused ([OKM1101](/docs/reference/errors#okm1101)) unless you set `connect({ limits })` or call `.all(reason)`. There is no implicit unbounded list. The first program above prints that error.
+- **Writes need a filter.** `update` and `delete` with no `where` are refused ([OKM1102](/docs/reference/errors#okm1102)). To touch every row, say so with a filter.
+- **Write results.** `insert` returns the row. `update` and `delete` return `{ count }`, and `update({ returning: true })` returns the rows. `one` returns `null` for no match and throws `not_unique` for several, where `findFirst` takes one of them.
+- **Unknown keys.** An unknown key in a write is [OKM1120](/docs/reference/errors#okm1120), even when TypeScript did not see it.
+- **Filters.** A `where` value is equality. Anything else is a tagged operator from `okmodel/pg`, such as `inList`, `startsWith`, or `lt`. A tagged operator cannot arrive from JSON, so a request body cannot inject one ([Where operators](/docs/queries/where-operators)).
+- **Tenancy.** `columnTenancy` and `for({ tenantId })` stamp and filter the key ([Multi-tenant](/docs/guides/multi-tenant)). Prisma Client has no built-in tenant scope like `for()`.
+- **Soft delete.** Soft delete is the `archivable()` trait plus `archive` / `restore` ([Soft delete](/docs/guides/soft-delete)), not a Client middleware convention.
+- **Migrations.** Reviewed SQL files, lint codes, lock lines, and protected targets ([Required column](/docs/guides/required-column), [In CI](/docs/guides/migrations-in-ci)). There is no down migration.
 - **Raw SQL.** Typed raw SQL needs describe and a lock file; a tenant schema refuses raw without `trusted` / `unscoped`.
 
 ## What has no equivalent here
 
-Say these plainly: no Prisma Client extension API, no Prisma Accelerate / Pulse product surface, no MongoDB connector, no implicit many-to-many without a join table in the schema, and no `prisma studio`. Middleware-style query hooks are not the write path; use observers and warnings instead.
+Say these plainly: no Prisma Client extension API, no Prisma Accelerate / Pulse product surface, no MongoDB connector, no implicit many-to-many (write the join table, and name it with `manyThrough`), and no `prisma studio`. Middleware-style query hooks are not the write path; use observers and warnings instead.
 
 A Drizzle schema import exists (`okm import drizzle`). There is no `okm import prisma` in this version.
 
 ## Adopt an existing database
+
+Pull is the Prisma `db pull` step, with one difference: it reads the live database and never your `schema.prisma`. Nothing in this flow touches data or runs DDL, so it is safe against a production copy, and a protected target is allowed.
+
+The three commands:
 
 ```sh title="pull.sh"
 bunx okm pull
@@ -47,7 +180,9 @@ bunx okm generate init
 bunx okm migrate baseline
 ```
 
-`okm pull` writes table files and the schema from the live database. `okm generate init` writes the head snapshot. `okm migrate baseline` records that snapshot as applied history without running DDL. Then develop with generate and apply as usual. The full path is [Existing database](/docs/migrations/adopt-existing-database).
+`okm pull` writes table files and the schema from the live database. `okm generate init` writes the head snapshot, the first migration. `okm migrate baseline` records that snapshot as applied history without running DDL. Then you develop with generate and apply as usual. The full path is [Existing database](/docs/migrations/adopt-existing-database).
+
+The config names the schema file, the folder for table files, and the database:
 
 ```ts title="pull-config.ts"
 import { defineConfig } from "okmodel/migrate";
@@ -59,11 +194,136 @@ export default defineConfig({
 });
 ```
 
+Save it as `okmodel.config.ts`. The test that runs this page writes it and runs `okm pull` against a database that already has a table. Here is the database for the rest of the walk. It is the shape a Prisma project leaves behind:
+
+```sql
+create table users (
+  id bigint generated always as identity primary key,
+  email text not null unique,
+  created_at timestamptz not null default now()
+);
+create table notes (
+  id bigint generated always as identity primary key,
+  title text not null,
+  author_id bigint not null references users (id),
+  body text
+);
+create index notes_author_idx on notes (author_id);
+```
+
+### 1. Pull
+
+```sh
+bunx okm pull
+```
+
+```text
+pulled 2 tables, 0 functions, 0 triggers, 0 views, 0 materialized views
+not pulled yet
+  policies: 0 — a later step writes policies
+  roles: 0 — a later step writes roles and grants
+  grants: 0 — a later step writes roles and grants
+  default privileges: 0 — a later step writes roles and grants
+  aggregates: 0 — the catalog has no aggregate kind
+  procedures: 0 — the catalog has no procedure kind
+  event triggers: 0 — the catalog has no event trigger kind
+  rules: 0 — the catalog has no rule kind
+```
+
+The `not pulled yet` list names what the database holds that `pull` does not write yet. Each count is how many it found. A non-zero count is something you carry over by hand.
+
+It wrote `schema.ts` and one file per table under `tables/`. The files below are as `pull` writes them. Column names are the database's own, so `author_id` stays `author_id`. When `oxfmt` is not on your `PATH`, `pull` prints a notice on stderr and writes the files unformatted, as shown here.
+
+```ts no-check="output of okm pull, shown as written"
+import { schema } from "okmodel/pg";
+import { notes } from "./tables/notes.ts";
+import { users } from "./tables/users.ts";
+
+export default schema({
+  tables: [notes, users],
+});
+```
+
+```ts no-check="output of okm pull, shown as written"
+import { index, t, table } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    author_id: t.bigint().references("users", { columns: ["id"] }),
+    body: t.text().nullable(),
+    id: t.identity(),
+    title: t.text(),
+  },
+  {
+    indexes: (columns) => [
+      index(columns.author_id).name("notes_author_idx"),
+    ],
+  },
+);
+```
+
+The foreign key became `references`, the nullable column `nullable()`, and the index kept its database name so that the baseline matches. `users.ts` has `created_at: t.timestamptz().defaultSql("now()")` and the unique on `email`. Add `relations` by hand where you want `include`, as in the first program.
+
+### 2. Generate and baseline
+
+```sh
+bunx okm generate init
+bunx okm migrate baseline --dry-run
+bunx okm migrate baseline
+```
+
+```text
+<project>/migrations/0001_init.sql
+target default
+would baseline baselined@0001_init
+catalog 013009f76b655cc34672e573d390886689698b630eb60b8b26fd3e1704b305d2
+target default
+baselined baselined@0001_init
+catalog 013009f76b655cc34672e573d390886689698b630eb60b8b26fd3e1704b305d2
+```
+
+`<project>` stands for your project directory. `--dry-run` prints what would be recorded and writes nothing. The real run records `baselined@0001_init` as the history, and no table is touched. The catalog line is the hash of the schema, so it is the same on both runs.
+
+### 3. Confirm
+
+```sh
+bunx okm generate next
+bunx okm migrate check
+```
+
+```text
+no changes
+ok 1 migrations
+This check replays empty tables. A step that only fails on real data is not caught: NOT NULL on a populated column, a unique index over duplicates, a check over existing rows, a foreign key validation, or a cast.
+```
+
+`generate` printing `no changes` means the schema matches the baseline. From here a new field is the usual loop: edit the schema, `okm migrate plan`, `okm generate <name>`, `okm migrate apply`.
+
+Two flags matter most when the database came from Prisma. Prisma usually leaves camelCase or mixed names, and `--casing camel` writes camel keys with `.sqlName()` where the key differs from the column. `--schema <name>` repeats to select namespaces other than the current one, and `--out <directory>` writes somewhere other than the project:
+
+```sh
+bunx okm pull --casing camel --out ./adopted
+```
+
+The `_prisma_migrations` table is an ordinary table to `pull`. Drop it from the pulled files, or leave it out of `schema()`, once okmodel owns the history.
+
+Running `okm pull` again in the same folder refuses to overwrite your files:
+
+```text
+error OKM1855: Pull would overwrite <project>/schema.ts.
+Pass --out <directory> to write somewhere else, or move <project>/schema.ts.
+```
+
 ## What can go wrong
 
-- [OKM1855](/docs/reference/errors#okm1855): pull would replace an existing file.
-- [OKM1857](/docs/reference/errors#okm1857): baseline on a database that already has OKModel history.
-- [OKM1858](/docs/reference/errors#okm1858): baseline sees managed objects that do not match the pulled schema.
+| Code | Exit | When | Fix |
+| --- | --- | --- | --- |
+| [OKM1855](/docs/reference/errors#okm1855) | 4 | Pull would replace an existing file. | Pass `--out <directory>`, or move the file. |
+| [OKM1857](/docs/reference/errors#okm1857) | 1 | Baseline on a database that already has OKModel history. | Use `okm migrate apply`. |
+| [OKM1858](/docs/reference/errors#okm1858) | 1 | Baseline sees managed objects that do not match the pulled schema. | Read the plan it prints, and change the schema or the database. |
+| [OKM1851](/docs/reference/errors#okm1851) | 1 | `okm migrate apply` on a database that has tables and no history. | Run `okm migrate baseline` first. |
+| [OKM1101](/docs/reference/errors#okm1101) | 1 | A `find` with no `limit`. | Pass a `limit`, or set `connect({ limits })`. |
 
 | Next | You use it for |
 | --- | --- |

@@ -92,7 +92,6 @@ import {
   AppWindow,
   Route,
   PanelTop,
-  Globe,
   type LucideIcon,
 } from "lucide-react";
 import { createElement, type ReactNode } from "react";
@@ -116,8 +115,6 @@ const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/docs/frameworks/hono": PanelTop,
   "/docs/frameworks/express": Server,
   "/docs/frameworks/workers": Cloud,
-  "/docs/frameworks/vercel": Globe,
-  "/docs/frameworks/other": Puzzle,
   "/docs/operate/using-okmodel-safely": Lock,
   "/docs/operate/production-checklist": ClipboardCheck,
   "/docs/operate/testing": FlaskConical,

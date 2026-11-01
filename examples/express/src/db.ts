@@ -1,8 +1,7 @@
 /**
  * Process-scoped client for the Express example.
  *
- * One connect for the process. Close on shutdown. Hot reload in frameworks
- * that remount modules creates a new client; call `close()` before exit.
+ * One connect for the process. Close on shutdown.
  */
 
 import { connect } from "okmodel/pg/postgresjs";

@@ -1,56 +1,123 @@
 ---
 title: "TanStack Start"
-description: "OKModel in TanStack Start server routes with a process-scoped client."
+description: "A typed Postgres client in TanStack Start server routes on Node.js, with the example's files, a migrate step, and what CI proves."
 ---
-Use OKModel from TanStack Start server route handlers on Node.
+You get one `db` module that TanStack Start server routes import, a `/api/notes` route that reads and writes a table, and the steps to create that table on an empty database. The server runs on Node.js through Vite and Nitro.
 
 ## Runtime and driver
 
 | | |
 | --- | --- |
-| Runtime | Node.js 22.18+ (Bun for install and scripts) |
+| Runtime | Node.js 22.18 or newer. Bun installs packages and runs scripts. |
+| Not covered | Edge and worker targets. Use [Cloudflare Workers](/docs/frameworks/workers) with Neon there. |
 | Driver | `okmodel/pg/postgresjs` + `postgres` |
 | Example | `examples/tanstack-start` |
 
 ## Install
 
 ```sh
-bun add okmodel postgres @tanstack/react-start @tanstack/react-router
+bun add okmodel postgres @tanstack/react-start @tanstack/react-router nitro react react-dom
+bun add -D vite @vitejs/plugin-react @tanstack/router-cli @types/node @types/react @types/react-dom typescript
+```
+
+The example pins exact TanStack and Nitro versions in `package.json`. Start from those. The Vite config adds the Nitro plugin ahead of the TanStack Start plugin:
+
+```ts title="vite.config.ts" no-check="imports vite and the TanStack Start plugins, which are installed in examples/tanstack-start"
+import { defineConfig } from "vite";
+import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import viteReact from "@vitejs/plugin-react";
+import { nitro } from "nitro/vite";
+
+export default defineConfig({
+  server: { port: 3105 },
+  resolve: { tsconfigPaths: true },
+  plugins: [nitro(), tanstackStart(), viteReact()],
+});
 ```
 
 ## `db` module and lifecycle
 
-One client per process for the Vite / Nitro server.
+There is one client per server process. `src/db.ts` is `connect(...)` at module level, and every server handler in that process shares its pool. It throws at import when `DATABASE_URL` is missing, because `connect` does not read the environment.
 
-```ts title="src/db.ts"
+```ts title="src/db.ts" no-check="imports ./schema without an extension, which the example's bundler resolves and the docs check does not"
+/**
+ * Process-scoped client for the TanStack Start example.
+ */
+
 import { connect } from "okmodel/pg/postgresjs";
+
+import { app } from "./schema";
+
+const url = process.env.DATABASE_URL;
+if (url === undefined || url.length === 0) {
+  throw new Error("DATABASE_URL is required");
+}
+
+/** Shared client for this process. */
+export const db = connect(url, { schema: app });
+
+/** Closes the process client. */
+export async function closeDb(): Promise<void> {
+  await db.close();
+}
+```
+
+```ts title="src/schema.ts"
 import { schema, table, t } from "okmodel/pg";
 
-const notes = table("example_notes", {
+export const notes = table("example_notes", {
   id: t.identity(),
   title: t.text(),
 });
-const app = schema({ tables: [notes] });
 
-export const db = connect(process.env.DATABASE_URL!, { schema: app });
+export const app = schema({ tables: [notes] });
 ```
 
-## Routes
+Import `src/db.ts` only from server handlers. It reads `DATABASE_URL` and imports a TCP driver, and neither belongs in browser code. Nothing in the example calls `closeDb()`. Call it from your own shutdown code or from a script.
 
-```ts title="src/routes/api/notes.ts" no-check="TanStack Start is installed in examples/tanstack-start"
+## Connection config
+
+| Setting | Where | Notes |
+| --- | --- | --- |
+| `DATABASE_URL` | Environment of `vite dev` and of the built server | A direct TCP URL such as `postgres://user:pass@host:5432/app`. |
+| `max` | `connect` option | Omitted, the pool opens up to 10 connections per process. [Pool](/docs/operate/session-and-pool#max). |
+| `ssl` | `connect` option | Forwarded to postgres.js for hosted databases. [Pool](/docs/operate/session-and-pool#tls). |
+| `prepared` | `connect` option | Leave it unset behind a pooler in transaction mode. [Pool](/docs/operate/session-and-pool#prepared). |
+
+## One route that reads and writes
+
+`GET /api/notes` returns up to 50 notes ordered by `id` ascending, so the oldest 50 come back. `POST /api/notes` takes `{ "title": "..." }` and returns the new row with status 201. A body that is not JSON is a 400 with `body must be JSON`. A missing, non-string, or empty `title` is a 400 with `title is required`. `id` is a string in the JSON, because the default codec for `t.identity()` is a string.
+
+```ts title="src/routes/api/notes.ts" no-check="imports @tanstack/react-router, which is installed in examples/tanstack-start"
 import { createFileRoute } from "@tanstack/react-router";
-import { db } from "../../db.js";
+
+import { db } from "../../db";
 
 export const Route = createFileRoute("/api/notes")({
   server: {
     handlers: {
-      GET: async () =>
-        Response.json(await db.example_notes.find({ limit: 50 })),
-      POST: async ({ request }) => {
-        const body = (await request.json()) as { title?: string };
-        const row = await db.example_notes.insert({
-          title: body.title ?? "untitled",
+      GET: async () => {
+        const rows = await db.example_notes.find({
+          orderBy: { id: "asc" },
+          limit: 50,
         });
+        return Response.json(rows);
+      },
+      POST: async ({ request }) => {
+        let body: unknown;
+        try {
+          body = await request.json();
+        } catch {
+          return Response.json({ error: "body must be JSON" }, { status: 400 });
+        }
+        const title =
+          body !== null && typeof body === "object" && "title" in body
+            ? (body as { title: unknown }).title
+            : undefined;
+        if (typeof title !== "string" || title.length === 0) {
+          return Response.json({ error: "title is required" }, { status: 400 });
+        }
+        const row = await db.example_notes.insert({ title });
         return Response.json(row, { status: 201 });
       },
     },
@@ -58,26 +125,119 @@ export const Route = createFileRoute("/api/notes")({
 });
 ```
 
+
+The example has a second route, `src/routes/api/health.ts`. `GET /api/health` returns `{ "ok": true }` without importing `db`, so it answers before the database does. It is the readiness check the test waits on, and the one to point a load balancer at.
+
+`src/routeTree.gen.ts` is generated. The example's `generate-routes` script runs `bunx tsr generate`.
+
 ## Dev and test
+
+Start Postgres, point `DATABASE_URL` at it, create the table, then run the dev server. In this repository, `bun run db:up` starts the local primary/replica Postgres, and the primary URL is `postgres://okm:okm@127.0.0.1:55432/okm`.
+
+```sh
+bun run db:up
+export DATABASE_URL=postgres://okm:okm@127.0.0.1:55432/okm
+```
+
+The example has no `okmodel.config.ts`. In your app, add one next to `package.json`:
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./src/schema.ts",
+  database: process.env.DATABASE_URL!,
+});
+```
+
+Create the table on a fresh database with `okm push`, which writes no SQL file and suits a database you can drop:
+
+```sh
+bunx okm push
+```
+
+For a database you will deploy, write the first migration and apply it, then commit `migrations/`:
+
+```sh
+bunx okm generate init
+bunx okm migrate apply
+```
+
+```sh
+bunx vite dev --port 3105
+```
+
+Call it from another terminal. These responses were captured by hand (Manual, not a CI assertion) against `vite dev` on an empty `example_notes` table:
+
+```sh
+curl -i http://localhost:3105/api/health
+curl -i -X POST http://localhost:3105/api/notes -H 'content-type: application/json' -d '{"title":"hello"}'
+curl -i http://localhost:3105/api/notes
+```
+
+The `POST` answers `201` and the `GET` answers `200`, both with `content-type: application/json`. `id` is a string:
+
+```json
+{ "id": "1", "title": "hello" }
+```
+
+```json
+[{ "id": "1", "title": "hello" }]
+```
+
+| Request | Status | Body |
+| --- | --- | --- |
+| `GET /api/health` | 200 | `{"ok":true}` |
+| `POST /api/notes` with `{"title":"hello"}` | 201 | `{"id":"1","title":"hello"}` |
+| `GET /api/notes` | 200 | an array of rows, oldest first |
+| `POST /api/notes` with `{}` | 400 | `{"error":"title is required"}` |
+| `POST /api/notes` with `nope` as the body | 400 | `{"error":"body must be JSON"}` |
+
+After you change `src/schema.ts` in development, run `bunx okm push` again to bring the dev database along. For a database you will deploy, run `bunx okm generate <name>` then `bunx okm migrate apply`, and commit the new files in `migrations/`.
+
+The example's own test does not run `okm`. It creates an isolated database and applies `NOTES_DDL` through the shared helper in `examples/shared/support.ts`, which is faster than starting the CLI. To run it from a clone:
 
 ```sh
 bun run build
 bun run db:up
 bun install --cwd examples/tanstack-start
-bunx --cwd examples/tanstack-start vite dev --port 3105
-bun test examples/tanstack-start/tanstack-start.test.ts
+cd examples/tanstack-start && REQUIRE_DOCKER=1 bun test ./tanstack-start.test.ts
 ```
 
-## Deploy and migrate
+## Deploy and migrate-on-deploy
 
-Build with `bunx vite build`, then deploy the Nitro output to your host. Run `bunx okm migrate apply` on the target before traffic moves.
+`bunx vite build` is the example's `build` script and produces the Nitro server output. Deploy that output to a Node.js host with `DATABASE_URL` set. CI runs `vite dev`. It does not run the build output.
 
-## Gotchas
+Apply migrations before the new version takes traffic. Run this in your release job, with `DATABASE_URL` pointing at a direct connection to the primary, not a pooler:
 
-- Server handlers run on the Node server, not in the browser bundle.
-- Keep `DATABASE_URL` out of client code.
-- Deno is unsupported. D1 has no adapter.
+```sh
+bunx okm migrate apply
+```
+
+A new version started against a database that has not been migrated fails its first check with OKM1520. A migration that only adds things lets the old version keep running while the release rolls out. [Migrations in CI](/docs/guides/migrations-in-ci), [Environments](/docs/migrations/environments).
+
+## Limits and gotchas
+
+- Keep `src/db.ts` out of client code and keep `DATABASE_URL` out of the browser bundle.
+- The Nitro build output is not run in CI. Check it in your own pipeline.
+- `find` needs a `limit`. The example passes `limit: 50` with `orderBy: { id: "asc" }`, so a table with more than 50 rows returns only the first 50. To read past 50, page through the rest. [Read rows](/docs/queries/read-rows).
+- A new route file under `src/routes/` needs `src/routeTree.gen.ts` regenerated with `bun run generate-routes` before the route is registered.
+- Deno is unsupported, and there is no D1 adapter.
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| `Error: DATABASE_URL is required` | `src/db.ts` ran with no `DATABASE_URL` | Set the variable where the server runs. |
+| [OKM1520](/docs/reference/errors#okm1520) `The database is behind the app` | The app was deployed before `okm migrate apply` | Apply the migrations, then start the app. |
+| [OKM1101](/docs/reference/errors#okm1101) `find() needs a limit.` | A read with no `limit` | Pass `limit`, as the example route does. |
+| `OkmError: relation "example_notes" does not exist` (SQLSTATE `42P01`) | The table was never created on this database | Run `bunx okm push`, or `okm generate init` then `okm migrate apply`. |
+| 400 `body must be JSON` | `POST /api/notes` with a body that does not parse | Send valid JSON with `content-type: application/json`. |
+| 400 `title is required` | A missing, non-string, or empty `title` | Send `{ "title": "..." }`. |
+| `Refusing pooler host <host>. Apply needs a direct connection.` | `okm` pointed at a pooler URL | Point `okm` at the direct host. |
 
 ## Verification
 
-**CI** — `examples/tanstack-start/tanstack-start.test.ts` boots `vite dev` and calls `GET`/`POST /api/notes` against the repository Postgres topology.
+**Evidence level: CI.**
+
+- **CI** — `examples/tanstack-start/tanstack-start.test.ts` creates an isolated database on the local primary/replica Postgres that `bun run db:up` starts for this repository, applies `NOTES_DDL`, boots `vite dev` on a free port, waits for `GET /api/health`, then calls `POST /api/notes` (201) and `GET /api/notes`. It runs in the `examples / frameworks` job on pull requests that touch `examples/`, the runtime, the dialects, or the Frameworks pages, and after each merge.
+- **Manual** — checked by hand on the local primary with `vite dev`: the `curl` calls above returned the status codes and bodies in the table, including both 400s.
+- **Not covered** — the production build output, `okm push` and `okm migrate apply` against this example, and any hosted deployment.
