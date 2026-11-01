@@ -32,6 +32,9 @@ import { repoRoot } from "../scripts/root.js";
 
 const root = repoRoot();
 ensurePackedDocs(root);
+const train = committedDocVersion(
+  (JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version: string }).version,
+);
 
 test("every docs file is public or internal, and the repository is clean", () => {
   expect(docClass("guide.md")).toBe("public");
@@ -40,7 +43,7 @@ test("every docs file is public or internal, and the repository is clean", () =>
   expect(docClass("errors/README.md")).toBeUndefined();
   expect(docClass("capabilities.md")).toBe("public");
   expect(classificationProblems(root)).toEqual([]);
-  expect(hygieneProblems(root, "0.10.0-next.47")).toEqual([]);
+  expect(hygieneProblems(root, `${train}-next.47`)).toEqual([]);
   expect(bannedCasingPhrases('casing: "snake"', "docs/example.md")).toEqual([]);
   expect(bannedCasingPhrases("snake-legacy", "site/content/docs/a.mdx")).toEqual([
     "site/content/docs/a.mdx: snake-legacy",
@@ -53,9 +56,9 @@ test("every docs file is public or internal, and the repository is clean", () =>
 test("the index is the train version, under 8 KB, and bump does not list docs", () => {
   expect(committedDocVersion("0.10.0-next.47")).toBe("0.10.0");
   expect(committedDocVersion("0.10.0")).toBe("0.10.0");
-  const index = renderDocsIndex("0.10.0-next.47");
+  const index = renderDocsIndex(`${train}-next.47`);
   expect(Buffer.byteLength(index, "utf8")).toBeLessThanOrEqual(INDEX_CAP);
-  expect(index).toContain("OKModel 0.10.0 - agent index\n");
+  expect(index).toContain(`OKModel ${train} - agent index\n`);
   expect(index).not.toContain("-next.");
   expect(index).toContain("docs/errors/<code>.md");
   expect(index).toContain("`okm migrate apply`");
