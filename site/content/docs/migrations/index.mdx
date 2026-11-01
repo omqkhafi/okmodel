@@ -1,0 +1,16 @@
+---
+title: "Migrations"
+description: "Reviewed SQL files from one schema catalog to the next, then plan, lint, and apply per target."
+---
+A migration is reviewed SQL from one catalog snapshot to the next. Generate writes the file; plan prints the steps; apply runs them on a target; check reports live drift.
+
+Start with [First migration](/docs/start/first-migration) when the database is empty. An existing database starts at [Existing database](/docs/migrations/adopt-existing-database). A Drizzle schema starts at [From Drizzle](/docs/migrations/from-drizzle).
+
+| Page | You use it for |
+| --- | --- |
+| [Existing database](/docs/migrations/adopt-existing-database) | Pull, generate, then baseline without replaying DDL. |
+| [From Drizzle](/docs/migrations/from-drizzle) | Import a Drizzle schema into okmodel tables. |
+| [Lint](/docs/migrations/checks-and-lint) | Replay history in a scratch schema and read the lint codes. |
+| [Backfill](/docs/migrations/backfill) | A data step that resumes by primary key. |
+| [Failures](/docs/migrations/failures) | What a failed step leaves behind, and how to resolve it. |
+| [Environments](/docs/migrations/environments) | Preview and rehearsal targets. |

@@ -5,15 +5,86 @@ description: "One schema produces the types, the queries, the migrations, the dr
 
 One `schema()` call is the source. The types, the queries, the migrations, the drift check, and the check constraints are read from that object.
 
+A new reader opens [Installation](/docs/start/installation) first, then [First schema](/docs/start/first-schema).
+
 ## The problem
 
 A table that lives in three places drifts. The type names one column, a query sends another, and a migration creates a third. Nothing in the project is left to notice.
 
-## How OKModel handles it
+## One table through the flow
 
-`schema()` compiles the tables and returns one value. That value holds the catalog, and it holds the table names the client is typed from. `connect` requires this value. Each table becomes a set of calls on the client.
+Define `notes`, connect as `db`, generate the first migration, and ask whether the database matches.
 
-`okm generate` and `okm migrate plan` diff the previous catalog snapshot against the catalog this call just built. A check is SQL text stored on the table. `okm check` and `okm migrate check` read that same catalog.
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity().primaryKey(),
+  title: t.text(),
+});
+
+export default schema({ tables: [notes] });
+```
+
+`schema()` compiles the tables into a catalog — the document that names every table, column, and constraint. `connect` takes that value and types `db.notes` from it.
+
+```ts title="find.ts"
+import { connect } from "okmodel/pg/postgresjs";
+
+import schema from "./schema.ts";
+
+export async function sample(url: string) {
+  await using db = connect(url, { schema });
+  return db.notes.find({ where: { id: "1" }, limit: 1 });
+}
+```
+
+```text title="find.out"
+[
+  {
+    id: "1",
+    title: "Hello",
+  }
+]
+```
+
+`okm generate init` diffs an empty previous snapshot — a saved copy of the catalog after the last migration — against the catalog this `schema()` just built, and writes the SQL:
+
+```sql title="0001_init.sql"
+-- class: expand
+-- name: init
+
+-- class: expand
+-- kind: create-table
+-- action: ddl
+-- lock: ACCESS EXCLUSIVE
+create table "public"."notes" (
+  "id" bigint generated always as identity not null,
+  "title" text not null,
+  constraint "notes_pkey" primary key ("id")
+);
+```
+
+After apply, `okm check` compares the live database to the schema. Matching prints `ok`. A difference is drift — the database is not that catalog — and is reported as [OKM1520](/docs/reference/errors#okm1520). The comparison uses the catalog hash, the SHA-256 of the catalog document.
+
+```sh
+bunx okm check
+```
+
+```text title="check.out"
+ok
+```
+
+| Step | What runs |
+| --- | --- |
+| `schema()` | Builds the catalog and the table types |
+| `connect(url, { schema })` | Opens `db` typed from that schema |
+| `db.notes.find({ … })` | Builds SQL when you call it; returns rows |
+| `okm generate init` | Writes migration SQL from the previous snapshot to this catalog |
+| `okm migrate apply` | Runs pending SQL on the default target |
+| `okm check` | Reports drift when a target is reachable |
+
+## How the pieces split
 
 `defineConfig` is the tooling: targets, paths, and roles. `connect` is the runtime. The schema is the model both of them read.
 
@@ -22,18 +93,16 @@ A table that lives in three places drifts. The type names one column, a query se
 | Types for the client, and for `Row`, `Insert`, and `Update` | [Types](/docs/concepts/type-safety-and-inference) |
 | Queries on each table | [Queries](/docs/queries) |
 | Migration SQL from one catalog to the next | [Drift](/docs/concepts/migrations-and-drift) |
-| The `okm check` comparison | [Drift](/docs/concepts/migrations-and-drift) |
+| The live `okm check` comparison | [Drift](/docs/concepts/migrations-and-drift) |
 | Check constraints | [Checks](/docs/schema/checks) |
 
-`okm check` reads the same catalog ([check](/docs/reference/cli/check#check)); the scratch replay is [Lint](/docs/migrations/checks-and-lint), a page, not a command.
+`okm check` compares a reachable database to the schema ([check](/docs/reference/cli/check#check)). Replaying migration files into a scratch schema is a different command, `okm migrate check`, documented on [Lint](/docs/migrations/checks-and-lint). There is no separate `okm lint` command: lint findings surface through plan, apply, and those check commands.
 
 ## Limits and trade-offs
 
 The catalog hash does not depend on table order. The emitted interfaces do. Swapping two tables leaves the hash the same and changes the order of those interfaces. That split is [The schema](/docs/schema/the-schema).
 
 Roles and grants are not fields of `schema()`. When the config names `roles`, the tooling attaches them before a plan or a check. `connect` hashes the schema catalog without those privileges.
-
-A query is planned when you call it. The schema does not store the SQL of `find`.
 
 ## Where to read the detail
 

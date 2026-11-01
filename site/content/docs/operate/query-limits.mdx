@@ -2,7 +2,18 @@
 title: "Query limits"
 description: "Opt-in default limits for find, tree walks, to-many include, page, and groupBy, with a hard ceiling."
 ---
-By default a read with no `limit` is refused (OKM1101 for `find`, `descendants`, `ancestors`, `page`, and a grouped aggregate; OKM1105 for a to-many `include`). `limits` is an opt-in default for those calls. Leave it out and nothing changes.
+By default a read with no `limit` is refused (OKM1101 for `find`, `descendants`, `ancestors`, `page`, and a grouped aggregate; OKM1105 for a to-many `include`). `limits` is an opt-in default for those calls. Leave it out and nothing changes: TypeScript still requires the argument and a `limit` on each of those calls.
+
+When you set a key, TypeScript makes that call's argument and `limit` optional for that key only:
+
+| Key set in `connect` | TypeScript change |
+| --- | --- |
+| `limits.find` | `find()`, `descendants()`, and `ancestors()` may omit the argument; `limit` on the options object is optional |
+| `limits.page` | `page()` may omit the argument; `limit` is optional |
+| `limits.include` | A to-many `include` may omit `limit` |
+| `limits.groupBy` | A grouped `aggregate` may omit `limit` |
+
+Keys you leave out keep today's rule. `max` does not change which arguments TypeScript requires.
 
 ```ts
 import { connect } from "okmodel/pg/postgresjs";
@@ -19,7 +30,7 @@ export const db = connect(process.env.DATABASE_URL ?? "", {
 });
 ```
 
-Every key is optional and independent. `include` and `groupBy` never take the value of `find`. A key you leave out keeps today's rule for that call.
+Every key is optional and independent. `include` and `groupBy` never take the value of `find`.
 
 | Key | Applies to |
 | --- | --- |
@@ -56,7 +67,7 @@ export const db = connect(process.env.DATABASE_URL ?? "", {
 const rows = await db.notes.find();
 ```
 
-A `limit` on the call, or `.all(reason)`, still wins. `max` does not change which arguments TypeScript requires.
+A `limit` on the call, or `.all(reason)`, still wins.
 
 ## max
 

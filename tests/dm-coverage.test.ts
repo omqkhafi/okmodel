@@ -136,7 +136,7 @@ test("area pages record DM and B-07/B-08 honesty statements", () => {
 
   const why = readFileSync(join(root, "site/content/docs/start/why-okmodel.mdx"), "utf8");
   expect(why).toContain("Bun 1.4");
-  expect(why).toContain("Deno is not supported");
+  expect(why).toMatch(/Deno[^\n]*Unsupported|Unsupported[^\n]*Deno/i);
   expect(why).not.toContain("known-limits");
 
   const readme = readFileSync(join(root, "README.md"), "utf8");

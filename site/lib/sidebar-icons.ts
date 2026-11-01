@@ -122,6 +122,7 @@ const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/docs/operate/production-checklist": ClipboardCheck,
   "/docs/operate/testing": FlaskConical,
   "/docs/operate/protected-targets-and-roles": ShieldPlus,
+  "/docs/migrations": ScrollText,
   "/docs/migrations/from-drizzle": FileInput,
   "/docs/migrations/adopt-existing-database": FolderInput,
   "/docs/reference/config": Settings,

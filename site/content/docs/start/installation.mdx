@@ -1,17 +1,47 @@
 ---
 title: "Installation"
-description: "Install a driver, connect, and finish the startup check."
+description: "Install a driver, set DATABASE_URL, connect, and finish the startup check."
 ---
-Install OKModel and open a client.
+Install OKModel, point it at Postgres, and open a client.
 
-You need Bun and a Postgres 15 or newer server. `DATABASE_URL` is its connection string. The database may be empty.
+You need Bun 1.4+ (the examples use Bun commands) or Node.js 22.18+, and a Postgres 15 or newer server. OKModel itself runs on both runtimes. `Bun.sql` works only on Bun. `okm` is the CLI bin shipped with the package (`bunx okm …`).
+
+## Files this page writes
+
+| File | Role |
+| --- | --- |
+| `schema.ts` | The table definitions and `schema()` export |
+| `db.ts` | `connect` and the exported `db` client |
+| Later: `okmodel.config.ts` | Tooling config for `okm` ([First schema](/docs/start/first-schema)) |
+
+## Postgres
+
+If you have no server yet, start one:
+
+```sh
+docker run -d --name okm-pg -e POSTGRES_PASSWORD=okm -e POSTGRES_USER=okm -e POSTGRES_DB=okm -p 5432:5432 postgres:17
+```
+
+`DATABASE_URL` is the connection string. In a shell:
+
+```sh
+export DATABASE_URL=postgres://okm:okm@127.0.0.1:5432/okm
+```
+
+In `.env` (loaded by your runtime or process manager; `okm` and Node do not invent a loader):
+
+```text title=".env"
+DATABASE_URL=postgres://okm:okm@127.0.0.1:5432/okm
+```
+
+The database may be empty. PGlite needs no URL and no server; its tab below skips this variable.
 
 <Steps>
 
 <Step>
 ### Install
 
-`okmodel` has no runtime dependencies. Each driver is an optional peer. Pick the one the runtime already has. The pages after this one use postgres.js.
+`okmodel` has no runtime dependencies. Each driver is an optional peer. Pick the one the runtime already has: postgres.js on Node or Bun when you want the default server driver; node-postgres when `pg` is already installed; Bun.sql only on Bun with no extra package; PGlite when you want Postgres in-process with no server. The pages after this one use postgres.js.
 
 <Tabs items={["postgres.js", "node-postgres", "PGlite", "Bun.sql"]}>
 
@@ -46,7 +76,7 @@ import { connect } from "okmodel/pg/pg";
 
 <Tab value="PGlite">
 
-Postgres runs in the process, on Node or Bun. There is no server to start. The connect target is a data directory, or omit it for memory.
+Postgres runs in the process, on Node or Bun. There is no server to start and no `DATABASE_URL`. The connect target is a data directory, or omit it for memory.
 
 ```sh title="PGlite"
 bun add okmodel @electric-sql/pglite
@@ -54,6 +84,18 @@ bun add okmodel @electric-sql/pglite
 
 ```ts title="pglite-driver.ts"
 import { connect } from "okmodel/pg/pglite";
+```
+
+```ts title="pglite-db.ts"
+import { connect } from "okmodel/pg/pglite";
+
+import schema from "./schema.ts";
+
+// No DATABASE_URL. "./data" is a directory, or omit the first argument for memory.
+export const db = await connect("./data", {
+  schema,
+  limits: { find: 100, include: 20, page: 50, groupBy: 500, max: 1000 },
+});
 ```
 
 </Tab>
@@ -79,7 +121,7 @@ import { connect } from "okmodel/pg/bun";
 <Step>
 ### Save the schema
 
-The client imports this file. [First schema](/docs/start/first-schema) explains each line.
+Put this next to `db.ts`. [First schema](/docs/start/first-schema) explains each line.
 
 ```ts title="schema.ts"
 import { schema, table, t } from "okmodel/pg";
@@ -97,7 +139,7 @@ export default schema({ tables: [notes] });
 <Step>
 ### Connect
 
-`connect` takes the URL and the schema. The process keeps `db`. An empty `DATABASE_URL` is refused before `connect`. A non-null assertion on the URL is the other form. The options are on [Connect](/docs/operate/connect). `limits` is the opt-in default for reads. The library does not turn it on unless you pass it. [Query limits](/docs/operate/query-limits).
+For a server driver, `connect` takes the URL and the schema. Keep `db` for the process. An empty `DATABASE_URL` is refused before `connect`. The options are on [Connect](/docs/operate/connect). `limits` is the opt-in default for reads. The library does not turn it on unless you pass it. [Query limits](/docs/operate/query-limits).
 
 ```ts title="db.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -109,15 +151,17 @@ if (url === undefined || url.length === 0) {
   throw new Error("DATABASE_URL is not set");
 }
 
-// Defaults. The library leaves them off until this object is set.
-// find 100: find, descendants, ancestors. include 20: to-many include.
-// page 50: page(). groupBy 500: grouped aggregate. max 1000: ceiling.
+// Opt-in defaults for reads that omit limit.
+// find: find, descendants, ancestors. include: to-many include.
+// page: page(). groupBy: grouped aggregate. max: ceiling for a written limit.
 // .all(reason) reads past them. A limit on the call wins.
 export const db = connect(url, {
   schema,
   limits: { find: 100, include: 20, page: 50, groupBy: 500, max: 1000 },
 });
 ```
+
+PGlite uses the `pglite-db.ts` form in its tab above, not this file.
 
 </Step>
 

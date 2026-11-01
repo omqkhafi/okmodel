@@ -2,57 +2,60 @@
 title: "Documentation"
 description: "okmodel is a TypeScript ORM for PostgreSQL 15 to 18 with no runtime dependencies."
 ---
-okmodel is a TypeScript ORM for PostgreSQL 15 to 18 with no runtime dependencies. One schema gives you typed queries and reviewed migrations, and calls with no limit or no filter are refused.
+okmodel is a TypeScript ORM for PostgreSQL 15 to 18 with no runtime dependencies. One `schema()` gives typed queries and reviewed migrations, and a read with no `limit` or a write with no `where` is refused.
 
-A new project starts at [Installation](/docs/start/installation). An existing database starts at [Existing database](/docs/migrations/adopt-existing-database) or [From Drizzle](/docs/migrations/from-drizzle). To find an answer, open [Schema](/docs/schema/tables), [Queries](/docs/queries), [Migrations](/docs/reference/type-change), [Operate](/docs/operate/connect), [Guides](/docs/guides/soft-delete), or [Reference](/docs/reference/cli). How the pieces fit is [How it works](/docs/concepts/how-okmodel-works).
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
 
-## Common tasks
+export const notes = table("notes", {
+  id: t.identity().primaryKey(),
+  title: t.text(),
+});
 
-- [Install a driver and open a client](/docs/start/installation)
-- [Define a table and read a row back](/docs/start/first-schema)
-- [See which files the project has](/docs/start/project-structure)
-- [Write the first reviewed migration](/docs/start/first-migration)
-- [Soft-delete a row](/docs/guides/soft-delete)
-- [Scope a multi-tenant app](/docs/guides/multi-tenant)
-- [Paginate a list](/docs/guides/paginate)
-- [Add a required column safely](/docs/guides/required-column)
-- [Run migrations in CI](/docs/guides/migrations-in-ci)
-- [Come from Prisma](/docs/guides/from-prisma)
-- [Pull a database you already run](/docs/migrations/adopt-existing-database)
-- [Import a Drizzle schema](/docs/migrations/from-drizzle)
-- [Open a client on a URL](/docs/operate/connect)
-- [Look up an error code](/docs/reference/errors)
-- [Point the CLI at a target](/docs/reference/config)
-- [Add an index](/docs/schema/indexes)
+export default schema({ tables: [notes] });
+```
 
-## Get started
+```ts title="find.ts"
+import { connect } from "okmodel/pg/postgresjs";
 
-Install a driver, define one table, and write the first migration. Start at [Introduction](/docs/start).
+import schema from "./schema.ts";
 
-## Schema
+export async function sample(url: string) {
+  await using db = connect(url, { schema });
+  return db.notes.find({ where: { id: "1" }, limit: 1 });
+}
+```
 
-Tables, columns, keys, and the catalog. Start at [Tables](/docs/schema/tables).
+```text title="find.out"
+[
+  {
+    id: "1",
+    title: "Hello",
+  }
+]
+```
 
-## Queries
+Without `limits` on `connect`, omitting `limit` is [OKM1101](/docs/reference/errors#okm1101): `find() needs a limit.` [Query limits](/docs/operate/query-limits) is the opt-in default.
 
-The calls on a table. Start at [Queries](/docs/queries): [read rows](/docs/queries/read-rows), [write rows](/docs/queries/write-rows), [shape results](/docs/queries/shape-results), [search and trees](/docs/queries/search-and-trees), [transactions](/docs/queries/transactions), and [typed raw SQL](/docs/queries/typed-raw-sql).
+## Pick a path
 
-## Migrations
+| You are | Open |
+| --- | --- |
+| Starting a new project | [Installation](/docs/start/installation), then [First schema](/docs/start/first-schema) and [First migration](/docs/start/first-migration) |
+| Adopting an existing database | [Existing database](/docs/migrations/adopt-existing-database) |
+| Coming from Prisma | [From Prisma](/docs/guides/from-prisma) |
+| Coming from Drizzle | [From Drizzle](/docs/migrations/from-drizzle) |
+| Wiring a coding agent | [Set up your agent](/docs/ai/skills) |
 
-Adopt a database, check a migration, or change a type. Start at [Existing database](/docs/migrations/adopt-existing-database).
+How the pieces fit is [How it works](/docs/concepts/how-okmodel-works). Why the product looks this way is [Why OKModel](/docs/start/why-okmodel).
 
-## Operate
+## Browse
 
-Connect, the production checklist, and the drivers. Start at [Connect](/docs/operate/connect).
-
-## Guides
-
-Short task paths that link out to Schema, Queries, Migrations, and Operate. Start at [Soft delete](/docs/guides/soft-delete).
-
-## Reference
-
-The CLI, compatibility, and the error codes. Start at [CLI](/docs/reference/cli).
-
-## AI Resources
-
-Skills and the files an assistant reads. Start at [Skills](/docs/ai/skills).
+| Section | Start |
+| --- | --- |
+| Schema | [Tables](/docs/schema/tables) |
+| Queries | [Queries](/docs/queries) |
+| Migrations | [Migrations](/docs/migrations) |
+| Operate | [Connect](/docs/operate/connect) |
+| Guides | [Soft delete](/docs/guides/soft-delete) |
+| Reference | [CLI](/docs/reference/cli) |

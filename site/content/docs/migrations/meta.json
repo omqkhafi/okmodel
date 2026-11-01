@@ -1,6 +1,7 @@
 {
   "title": "Migrations",
   "pages": [
+    "index",
     "adopt-existing-database",
     "from-drizzle",
     "checks-and-lint",
