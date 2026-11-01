@@ -46,6 +46,7 @@ test("the postgres suite runs every test file except the named omissions", () =>
   expect(discovered).toContain("tests/migrate-pg.test.ts");
   expect(discovered).toContain("tests/quickstart.test.ts");
   expect(discovered).toContain("scripts/bump-version.test.ts");
+  expect(discovered.some((file) => file.startsWith("examples/"))).toBe(false);
   for (const item of POSTGRES_EXCLUSIONS) {
     expect(item.reason.trim().length).toBeGreaterThan(0);
     expect(discovered, item.file).toContain(item.file);

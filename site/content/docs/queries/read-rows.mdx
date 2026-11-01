@@ -15,7 +15,7 @@ When `orderBy` names a hidden or sensitive column, the cursor carries only the p
 
 | Input | Result |
 | --- | --- |
-| `limit` | Required. The page size. |
+| `limit` | Required, unless `connect` set `limits.page`. The page size. A configured default makes it optional. The library does not enable that default itself. [Query limits](/docs/operate/query-limits). |
 | omitted `after` | The first page. |
 | `after` | The cursor from `next`. |
 | `next` | `null` on the last page. |

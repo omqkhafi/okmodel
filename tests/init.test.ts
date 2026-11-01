@@ -225,9 +225,84 @@ test("bun, npm, pnpm, and drizzle fixtures plan and apply", () => {
       expect(treeBytes(cwd), name).toEqual(before);
       expect(again.stdout, name).not.toContain("describe");
       expect(again.stdout, name).not.toContain("doctor");
+      expect(readFileSync(join(cwd, "db/client.ts"), "utf8"), name).toContain(
+        "limits: { find: 100, include: 20, page: 50, groupBy: 500, max: 1000 },",
+      );
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
+  }
+});
+
+test("limits are scaffolded, hinted on a later run, and applied only to an unmodified client", () => {
+  const cwd = copyFixture("bun");
+  const client = join(cwd, "db/client.ts");
+  const recordPath = join(cwd, ".okm/init.json");
+  const snippet = "limits: { find: 100, include: 20, page: 50, groupBy: 500, max: 1000 },";
+  try {
+    const apply = run(["init", "--yes"], cwd);
+    expect(apply.code).toBe(0);
+    const schema = readFileSync(join(cwd, "db/schema.ts"));
+    const written = readFileSync(client, "utf8");
+    expect(written).toContain(snippet);
+    expect(written).toContain(".all(reason) reads past them.");
+    const again = run(["init"], cwd);
+    expect(again.code).toBe(0);
+    expect(again.stdout).toContain("nothing to do");
+    expect(again.stdout).not.toContain("has no limits");
+    expect(readFileSync(client, "utf8")).toBe(written);
+
+    const stripped = written.replace(`\n  ${snippet}`, "");
+    expect(stripped).not.toContain("limits:");
+    writeFileSync(client, stripped);
+    const record = JSON.parse(readFileSync(recordPath, "utf8")) as {
+      files: Record<string, string>;
+    };
+    record.files["db/client.ts"] = contentHash(stripped);
+    writeFileSync(recordPath, `${JSON.stringify(record, null, 2)}\n`);
+
+    const hinted = run(["init"], cwd);
+    expect(hinted.code).toBe(0);
+    expect(hinted.stdout).toContain("db/client.ts has no limits.");
+    expect(hinted.stdout).toContain(snippet);
+    expect(hinted.stdout).toContain("okm init --limits");
+    expect(readFileSync(client, "utf8")).toBe(stripped);
+    expect(readFileSync(join(cwd, "db/schema.ts"))).toEqual(schema);
+
+    const dry = run(["init", "--limits", "--dry-run", "--json"], cwd);
+    expect(dry.code).toBe(0);
+    expect(readFileSync(client, "utf8")).toBe(stripped);
+    const planned = envelope(dry.stdout);
+    expect(schemaProblems(schemaFor("init"), planned.data)).toEqual([]);
+    expect(planned.data.status).toBe("planned");
+
+    const applied = run(["init", "--limits", "--json"], cwd);
+    expect(applied.code).toBe(0);
+    const body = envelope(applied.stdout);
+    expect(schemaProblems(schemaFor("init"), body.data)).toEqual([]);
+    expect(body.data.status).toBe("applied");
+    const restored = readFileSync(client, "utf8");
+    expect(restored).toBe(written);
+    expect(readFileSync(join(cwd, "db/schema.ts"))).toEqual(schema);
+    const after = JSON.parse(readFileSync(recordPath, "utf8")) as {
+      files: Record<string, string>;
+    };
+    expect(after.files["db/client.ts"]).toBe(contentHash(restored));
+
+    writeFileSync(client, stripped);
+    after.files["db/client.ts"] = contentHash(stripped);
+    writeFileSync(recordPath, `${JSON.stringify(after, null, 2)}\n`);
+    const edited = `${stripped}// local\n`;
+    writeFileSync(client, edited);
+    const left = run(["init", "--limits"], cwd);
+    expect(left.code).toBe(0);
+    expect(left.stdout).toContain("db/client.ts has no limits.");
+    expect(left.stdout).toContain("okm init --limits");
+    expect(left.stdout).toContain("nothing to do");
+    expect(readFileSync(client, "utf8")).toBe(edited);
+    expect(readFileSync(join(cwd, "db/schema.ts"))).toEqual(schema);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
   }
 });
 

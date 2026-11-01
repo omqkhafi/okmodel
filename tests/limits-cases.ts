@@ -67,6 +67,9 @@ export async function findDefault(make: MakeLimits): Promise<void> {
   const notices: WarningNotice[] = [];
   const db = await make({ find: 3, max: 4 }, notices);
   expect((await db.notes.find({ orderBy: ORDER })).length).toBe(3);
+  expect((await db.notes.find()).length).toBe(3);
+  const bare = await db.notes.find().inspect();
+  expect(bare.intent.limit).toBe(3);
   expect((await db.notes.find({ orderBy: ORDER, limit: 2 })).length).toBe(2);
   expect((await db.notes.find({ orderBy: ORDER }).all("test")).length).toBe(5);
 

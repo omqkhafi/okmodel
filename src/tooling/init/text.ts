@@ -175,8 +175,47 @@ if (url === undefined || url.length === 0) {
   throw new Error("DATABASE_URL is not set");
 }
 
-export const db = ${call}(url, { schema: app });
+// Defaults. The library leaves them off until this object is set.
+// find 100: find, descendants, ancestors. include 20: to-many include.
+// page 50: page(). groupBy 500: grouped aggregate. max 1000: ceiling.
+// .all(reason) reads past them. A limit on the call wins.
+export const db = ${call}(url, {
+  schema: app,
+  ${LIMITS_OBJECT}
+});
 `;
+}
+
+/** The `limits` object `okm init` writes on `connect`. */
+export const LIMITS_OBJECT =
+  "limits: { find: 100, include: 20, page: 50, groupBy: 500, max: 1000 },";
+
+/**
+ * Whether `text` already passes `limits` to `connect`.
+ *
+ * @param text - Client source
+ * @returns `true` when a `limits` property is present
+ */
+export function clientHasLimits(text: string): boolean {
+  return /\blimits\s*:/.test(text);
+}
+
+/**
+ * The block init prints when a generated client has no `limits`.
+ *
+ * @param path - Project-relative client path
+ * @returns The hint, including the snippet and `okm init --limits`
+ */
+export function limitsHint(path: string): string {
+  return [
+    `${path} has no limits. The library does not set them on its own.`,
+    "Add this to connect:",
+    `  ${LIMITS_OBJECT}`,
+    "find 100: find, descendants, ancestors. include 20: to-many include.",
+    "page 50: page(). groupBy 500: grouped aggregate. max 1000: ceiling.",
+    ".all(reason) reads past them. A limit on the call wins.",
+    `okm init --limits applies this when ${path} is still the file init wrote.`,
+  ].join("\n");
 }
 
 /**

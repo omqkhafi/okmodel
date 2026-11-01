@@ -88,6 +88,8 @@ export type ParsedCli = {
   readonly agents: readonly string[];
   /** `okm init --no-agents`. */
   readonly noAgents: boolean;
+  /** `okm init --limits`. Adds limits to an unmodified generated client. */
+  readonly limits: boolean;
   /** `okm agents update --protected`. `yes` or `no`. */
   readonly protectedFlag: string | undefined;
   /** Positionals after the command words. */
@@ -259,6 +261,7 @@ export function parseCli(argv: readonly string[]): ParsedCli {
     shared: values.shared === true,
     agents: stringList(values.agents),
     noAgents: values["no-agents"] === true,
+    limits: values.limits === true,
     protectedFlag: stringValue(values.protected),
     operands,
   };
@@ -352,6 +355,7 @@ function blank(flags: { readonly help: boolean; readonly json: boolean }): Parse
     shared: false,
     agents: [],
     noAgents: false,
+    limits: false,
     protectedFlag: undefined,
     operands: [],
   };

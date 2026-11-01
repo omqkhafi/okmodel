@@ -8,7 +8,7 @@ codes: []
 
 Set `DATABASE_URL` to a direct Postgres URL, not a pooler. The CI test packs the tarball, installs it in a fresh project, and runs the commands and the read and write calls in this file.
 
-`okm init` writes starter files for one package (`okmodel.config.ts`, `db/schema.ts`, `db/client.ts`, a migrations folder, and scripts), or for the workspace packages you select, and does not open a connection. `okm generate init` writes the first migration; that command is separate.
+`okm init` writes starter files for one package (`okmodel.config.ts`, `db/schema.ts`, `db/client.ts`, a migrations folder, and scripts), or for the workspace packages you select, and does not open a connection. The generated `connect` includes `limits`. The library does not apply those defaults unless that object is set. `okm generate init` writes the first migration; that command is separate.
 
 ```sh
 bun add okmodel postgres

@@ -53,6 +53,7 @@ import {
   type InitSelection,
 } from "./monorepo.js";
 import type { PackageVersions } from "./package-json.js";
+import { limitsCommand } from "./limits.js";
 import { normalizeInitPath } from "./paths.js";
 
 /** What `okm` dispatch returns for one command. */
@@ -76,6 +77,7 @@ export async function initCommand(
   cwd: string,
   human: (text: string) => void,
 ): Promise<InitProduced> {
+  if (parsed.limits) return limitsOnly(parsed, cwd, human);
   if (parsed.dialect !== undefined && parsed.dialect !== "postgres") {
     initUsage(`Unknown dialect ${parsed.dialect}.`, "Pass --dialect postgres.");
   }
@@ -118,6 +120,29 @@ export async function initCommand(
   if (choice.kind === "single")
     return singlePackage(parsed, choice.root, dir, pm, force, tty, human);
   return repoPackage(parsed, choice, dir, pm, force, tty, human);
+}
+
+/**
+ * `okm init --limits` edits only an unmodified generated client.
+ *
+ * It does not prompt, install, or rewrite any other file.
+ */
+function limitsOnly(parsed: ParsedCli, cwd: string, human: (text: string) => void): InitProduced {
+  if (parsed.forceFile.length > 0) {
+    initUsage(
+      "--limits does not replace a modified file.",
+      "Drop --force-file. A modified client is printed, not written.",
+    );
+  }
+  if (parsed.workspace.length > 0 || parsed.allWorkspaces || parsed.shared) {
+    initUsage("--limits applies to one package.", "Run it in that package, without --workspace.");
+  }
+  if (parsed.agents.length > 0 || parsed.noAgents) {
+    initUsage("--limits only edits the generated client.", "Run okm init --agents on its own.");
+  }
+  const produced = limitsCommand(parsed, cwd);
+  human(produced.text);
+  return produced;
 }
 
 /**

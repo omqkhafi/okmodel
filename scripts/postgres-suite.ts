@@ -1,8 +1,10 @@
 /**
  * Runs every test file against the Docker Postgres topology.
  *
- * The file list is discovered. `POSTGRES_EXCLUSIONS` is the only place a file
- * may be left out, and each entry says why. `POSTGRES_KNOWN_FAILURES` names a
+ * The file list is discovered. `examples/` is not part of it: those tests run
+ * in the frameworks job with that directory as cwd. `POSTGRES_EXCLUSIONS` is
+ * the only place a discovered file may be left out, and each entry says why.
+ * `POSTGRES_KNOWN_FAILURES` names a
  * file that fails on a major, with the reason. The suite still runs that file.
  * A known failure that starts passing fails the run.
  *
@@ -114,7 +116,11 @@ export function postgresSuitePlan(root: string, version: PostgresVersion): Postg
 
 function walk(root: string, dir: string, files: string[]): void {
   for (const entry of readdirSync(dir)) {
-    if (entry === "node_modules" || entry === "dist" || entry === ".git") continue;
+    // `examples/` tests boot a framework app from that directory. The frameworks
+    // job runs them. This suite and the `test /` groups do not.
+    if (entry === "node_modules" || entry === "dist" || entry === ".git" || entry === "examples") {
+      continue;
+    }
     const path = join(dir, entry);
     const info = statSync(path);
     if (info.isDirectory()) {

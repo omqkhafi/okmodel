@@ -49,6 +49,18 @@ export async function writeRow(url: string): Promise<unknown> {
   return created;
 }
 
+export async function defaultLimit(url: string): Promise<unknown> {
+  const db = connect(url, { schema: app, limits: { find: 100 } });
+  const bare /*@hover bare*/ = await db.users.find();
+  return bare;
+}
+
+export async function bareWithoutLimits(url: string): Promise<unknown> {
+  const db = connect(url, { schema: app });
+  /*@diagnostic bare*/
+  return db.users.find();
+}
+
 export async function missingColumn(url: string): Promise<unknown> {
   const db = connect(url, { schema: app });
   /*@diagnostic missing*/

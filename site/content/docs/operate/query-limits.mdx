@@ -37,6 +37,27 @@ const every = await db.notes.find({ orderBy: { id: "asc" } }).all("nightly expor
 
 A call that states a `limit` or `.all(reason)` never takes a default.
 
+## Set defaults once
+
+`okm init` writes this object on `connect`. The library never turns a default on by itself. Leave `limits` out and `find()` still needs a `limit` (OKM1101). With `limits.find` set, a bare `find()` uses that default.
+
+```ts
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notesTable = table("notes", { id: t.identity(), title: t.text() });
+const app = schema({ tables: [notesTable] });
+
+export const db = connect(process.env.DATABASE_URL ?? "", {
+  schema: app,
+  limits: { find: 100, include: 20, page: 50, groupBy: 500, max: 1000 },
+});
+
+const rows = await db.notes.find();
+```
+
+A `limit` on the call, or `.all(reason)`, still wins. `max` does not change which arguments TypeScript requires.
+
 ## max
 
 `max` is a hard ceiling. A `limit` above it is OKM1101, and the fix is `.all(reason)`, which reads past `max` on purpose.

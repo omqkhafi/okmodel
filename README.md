@@ -103,7 +103,11 @@ import { connect } from "okmodel/pg/postgresjs";
 
 import schema from "./schema.ts";
 
-export const db = connect(process.env.DATABASE_URL!, { schema });
+export const db = connect(process.env.DATABASE_URL!, {
+  schema,
+  // Opt-in defaults. The library leaves them off until this object is set.
+  limits: { find: 100, include: 20, page: 50, groupBy: 500, max: 1000 },
+});
 ```
 
 ## Basic usage
@@ -120,7 +124,7 @@ export async function createNote(title: string) {
   return db.notes.insert({ title });
 }
 
-// find returns a list and needs a limit. [0] is undefined when nothing matched.
+// find returns a list and needs a limit, unless connect set limits.find. [0] is undefined when nothing matched.
 export async function readNote(id: string) {
   const found = await db.notes.find({ where: { id }, limit: 1 });
   return found[0];

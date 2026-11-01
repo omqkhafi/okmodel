@@ -39,10 +39,12 @@ import {
 import { patchPackageJson, type PackageEdit, type PackageVersions } from "./package-json.js";
 import { resolveInside } from "./paths.js";
 import {
+  clientHasLimits,
   clientText,
   configText,
   gitignoreEntries,
   initGitAttributes,
+  limitsHint,
   nextSteps,
   schemaText,
 } from "./text.js";
@@ -329,7 +331,7 @@ export function buildPlan(choices: InitChoices): InitPlan {
     !choices.install;
   const status = quiet ? "unchanged" : "planned";
   const steps = nextSteps(choices.pm);
-  const note = notesOf(scan);
+  const note = joinNotes(notesOf(scan), limitsMissingNote(choices, record, pending));
   const data: InitData = {
     status,
     detection: {
@@ -462,10 +464,19 @@ type Planned = {
   readonly hash: string;
 };
 
-type InitRecord = {
+/** Choices stored in `.okm/init.json`. */
+export type InitRecordChoices = {
+  readonly driver: InitDriver;
+  readonly dir: string;
+};
+
+/** `.okm/init.json` when the version and the file map parse. */
+export type InitRecord = {
   readonly files: Readonly<Record<string, string>>;
   /** The `agents` section, kept as read. `okm agents` owns it. */
   readonly agents?: unknown;
+  /** Driver and directory, when both parse. */
+  readonly choices?: InitRecordChoices;
 };
 
 function kindOf(path: string): "own" | "append" | "attributes" {
@@ -756,6 +767,31 @@ function notesOf(scan: ProjectScan): string | undefined {
   return "drizzle-orm is installed. okm import drizzle <path> reads that schema.";
 }
 
+function joinNotes(left: string | undefined, right: string | undefined): string | undefined {
+  if (left === undefined) return right;
+  if (right === undefined) return left;
+  return `${left}\n${right}`;
+}
+
+/**
+ * Hint when init already ran and the client it wrote has no `limits`.
+ *
+ * Absent when this plan is about to write that client, so a new project
+ * and `okm init --yes` on an unmodified client stay quiet.
+ */
+function limitsMissingNote(
+  choices: InitChoices,
+  record: InitRecord | undefined,
+  pending: readonly { readonly path: string }[],
+): string | undefined {
+  if (record === undefined) return undefined;
+  const path = `${choices.dir}/client.ts`;
+  if (pending.some((file) => file.path === path)) return undefined;
+  const current = readIfFile(choices.root, path);
+  if (current === undefined || clientHasLimits(current)) return undefined;
+  return limitsHint(path);
+}
+
 function warningsOf(scan: ProjectScan): readonly { readonly summary: string }[] {
   if (scan.typescript !== "warn") return [];
   return [
@@ -919,11 +955,26 @@ function readIfFile(root: string, rel: string): string | undefined {
 }
 
 function readRecord(text: string | undefined): InitRecord | undefined {
+  return readInitRecord(text);
+}
+
+/**
+ * Parses `.okm/init.json`. A damaged file is `undefined`, the same as none.
+ *
+ * @param text - File text
+ * @returns The file map, and the driver and directory when both are present
+ */
+export function readInitRecord(text: string | undefined): InitRecord | undefined {
   if (text === undefined) return undefined;
   try {
     const parsed: unknown = JSON.parse(text);
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
-    const record = parsed as { readonly version?: unknown; readonly files?: unknown };
+    const record = parsed as {
+      readonly version?: unknown;
+      readonly files?: unknown;
+      readonly agents?: unknown;
+      readonly choices?: unknown;
+    };
     if (record.version !== 1 || typeof record.files !== "object" || record.files === null) {
       return undefined;
     }
@@ -931,11 +982,23 @@ function readRecord(text: string | undefined): InitRecord | undefined {
     for (const [key, value] of Object.entries(record.files)) {
       if (typeof value === "string") files[key] = value;
     }
-    const agents = (parsed as { readonly agents?: unknown }).agents;
-    return { files, ...(agents === undefined ? {} : { agents }) };
+    const choices = choicesOf(record.choices);
+    return {
+      files,
+      ...(record.agents === undefined ? {} : { agents: record.agents }),
+      ...(choices === undefined ? {} : { choices }),
+    };
   } catch {
     return undefined;
   }
+}
+
+function choicesOf(value: unknown): InitRecordChoices | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const choices = value as { readonly driver?: unknown; readonly dir?: unknown };
+  if (typeof choices.driver !== "string" || !isInitDriver(choices.driver)) return undefined;
+  if (typeof choices.dir !== "string" || choices.dir.length === 0) return undefined;
+  return { driver: choices.driver, dir: choices.dir };
 }
 
 function allowOrder(path: string, dir: string): number {

@@ -662,6 +662,7 @@
     "dist/tooling/init/detect.d.ts",
     "dist/tooling/init/engine.d.ts",
     "dist/tooling/init/guards.d.ts",
+    "dist/tooling/init/limits.d.ts",
     "dist/tooling/init/monorepo.d.ts",
     "dist/tooling/init/package-json.d.ts",
     "dist/tooling/init/paths.d.ts",
