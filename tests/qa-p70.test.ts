@@ -193,10 +193,10 @@ test("QA-L1: Temporal values keep microseconds, with no runtime warning", () => 
 });
 
 test("QA-L10: view keys are camelCased and refresh() runs REFRESH MATERIALIZED VIEW", () => {
-  const limits = readFileSync(`${root}/docs/known-limits.md`, "utf8");
-  expect(limits).toContain("db.views.activeProjects");
-  expect(limits).toContain("REFRESH MATERIALIZED VIEW");
-  expect(limits).toContain("`db.views.name.refresh()`");
+  const views = readFileSync(`${root}/site/content/docs/schema/views.mdx`, "utf8");
+  expect(views).toMatch(/activeProjects|camelCase/i);
+  expect(views.toLowerCase()).toContain("refresh materialized view");
+  expect(views).toContain(".refresh()");
 });
 
 test("QA-L13: lists_touch is the timestamps trigger, and only with enforce", () => {
@@ -217,9 +217,9 @@ test("QA-L13: lists_touch is the timestamps trigger, and only with enforce", () 
   });
   const trigger = enforced.catalog.objects.find((object) => object.kind === "trigger");
   expect(trigger?.identity.name).toBe("lists_touch");
-  const limits = readFileSync(`${root}/docs/known-limits.md`, "utf8");
-  expect(limits).toContain("lists_touch");
-  expect(limits).toContain('enforce: "trigger"');
+  const traits = readFileSync(`${root}/site/content/docs/schema/traits.mdx`, "utf8");
+  expect(traits).toContain("<table>_touch");
+  expect(traits).toContain('enforce: "trigger"');
 });
 
 test("QA-S1: a hidden column in where and orderBy is OKM1120", () => {

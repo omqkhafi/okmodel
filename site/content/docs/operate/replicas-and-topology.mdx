@@ -192,7 +192,7 @@ A bare number is `routing.maxLag must be a duration ("5s", "500ms", "2m") or a s
 
 ### Automatic read
 
-A read with no `route` is automatic. The replica's circuit is closed. Session adds the watermark once one is stored. `maxLag` adds the lag ceiling. A replica with a `max`, no idle connection, size at least that max, and a waiter is skipped. With no `max`, the replica counts as having room.
+A read with no `route` is automatic. The replica's circuit is closed. Session adds the watermark once one is stored. `maxLag` adds the lag ceiling. A replica with a `max`, no idle connection, size at least that max, and a waiter is skipped. With no `max`, the replica counts as having room. Statement class for a built query is the statement text: a leading `select` is a read. That includes a `select` whose body calls `nextval`, and a view defined that way. `find` sends it to a replica, and a hot standby rejects it as read-only.
 
 ```ts title="read.ts"
 import { db } from "./topology.ts";

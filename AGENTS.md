@@ -61,7 +61,7 @@ A layer may import layers below it. It must not import a layer above it. Adapter
 
 Documents in `docs/` are normative. The spec is draft 26. The repository implements it through the 0.10.0 release. Decisions run D1–D300. GitHub organization is [docs/github.md](docs/github.md) (D206).
 
-Do not read `docs/okmodel-decisions.md`, `docs/okmodel-api-design.md`, `docs/size-audit.md`, `docs/guide.md`, or `docs/known-limits.md` in full. Grep by decision number or heading.
+Do not read `docs/okmodel-decisions.md`, `docs/okmodel-api-design.md`, `docs/size-audit.md`, `docs/guide.md` in full. Grep by decision number or heading.
 
 ## Engineering standards
 

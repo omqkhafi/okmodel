@@ -150,7 +150,7 @@ migrations/*.sql text eol=lf
 
 The first line is the literal pattern `migrations/*.sql`.
 
-A migration file is read as LF. `\r\n` and a lone `\r` become `\n`, including inside a SQL string. A leading UTF-8 BOM is stripped.
+A migration file is read as LF. `\r\n` and a lone `\r` become `\n`, including inside a SQL string. A literal that must contain a carriage return does not survive that read. A leading UTF-8 BOM is stripped.
 
 <Callout type="error" title="UTF-16">
 A null byte is refused. The message is the file path followed by `is UTF-16. Save the file as UTF-8.`

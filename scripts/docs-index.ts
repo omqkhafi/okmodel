@@ -73,12 +73,6 @@ export const INDEX_ENTRIES: readonly IndexEntry[] = [
     group: "start",
   },
   {
-    path: "docs/known-limits.md",
-    purpose: "Behavior this version does not have.",
-    when: "Read this before assuming a feature exists.",
-    group: "start",
-  },
-  {
     path: "docs/capabilities.md",
     purpose: "Postgres feature support taken from the registry.",
     when: "Read this before claiming a feature is native.",

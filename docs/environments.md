@@ -46,6 +46,6 @@ To try pending migrations against realistic data, clone or branch the production
 okm migrate apply --target rehearsal
 ```
 
-A clone already has history, so this replays the pending migration files. The report is the command's stdout: which migrations ran, and the error if a step stops. Per-step duration, locks, and retries as a separate rehearsal command are not in this version. The recipe is still `apply` on a clone, not a new command.
+A clone already has history, so this replays the pending migration files. The report is the command's stdout: which migrations ran, and the error if a step stops. The recipe is `apply` on a clone.
 
 A preview built from the head snapshot and a rehearsal built by replaying history are required to match. `okm migrate check --provision` is that comparison. See [provisioning](provisioning.md).

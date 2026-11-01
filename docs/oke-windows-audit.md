@@ -30,7 +30,7 @@ Readers normalize text in memory. Writers join lines with `\n` ([`src/tooling/mi
 | `okm generate` writes migration SQL with `\n` | **works** | [`tests/crlf-safety-pg.test.ts`](../tests/crlf-safety-pg.test.ts) expects the generated file to contain no `\r`, then rewrites it to CRLF and applies it. That test has not run on Windows. |
 | `t.jsonb<T>()` recovered from a CRLF schema file for `.okm/types.d.ts` | **probably works** | [`jsonColumnTypes`](../src/dialects/pg/emit.ts) treats `\r` as whitespace (`\s`) and strips a `//` comment through the next `\n`. A direct call on CRLF and lone-CR source returned the same map as LF (`tasks.meta` → `{ published?: boolean }`). No test in `tests/` does this. |
 
-A carriage return inside a SQL literal does not survive the migration read. That is the same normalizer, on every OS ([`docs/known-limits.md`](known-limits.md)).
+A carriage return inside a SQL literal does not survive the migration read. That is the same normalizer, on every OS ([Config](https://okm.omqkhafi.dev/docs/reference/config)).
 
 ## Paths
 
@@ -52,7 +52,7 @@ A carriage return inside a SQL literal does not survive the migration read. That
 | Item | Label | Evidence |
 | --- | --- | --- |
 | `okm check` and a table file whose stem differs in case from the schema text | **works** | [`unlistedTableFiles`](../src/tooling/migrate/project.ts) compares the stem without case. [`tests/migrate.test.ts`](../tests/migrate.test.ts) (`a table file stem matches the schema text without case sensitivity`) expects `["Tasks.ts"]` with `import { tasks } from "./tasks"` to be an empty list. On the Windows job, `bun --bun okm check` printed `ok` for `tables/Tasks.ts`. Node did not resolve the extensionless `./tasks` import, and the error was not OKM1024. |
-| Two module paths that differ only by case (`Schema.ts` and `schema.ts`) | **unknown** | [`docs/known-limits.md`](known-limits.md) says the catalog treats those strings as different modules. Provenance `source` is `file.ts:line` from the stack, and it is inside the hash. Proof: the hash comparison in the stack row above, plus a second import of the same file under the other spelling. |
+| Two module paths that differ only by case (`Schema.ts` and `schema.ts`) | **unknown** | The catalog treats those strings as different modules. Provenance `source` is `file.ts:line` from the stack, and it is inside the hash. Proof: the hash comparison in the stack row above, plus a second import of the same file under the other spelling. |
 | Migration discovery requires the suffix `.sql` and the sibling `.catalog.json` | **works** | [`loadMigrations`](../src/tooling/migrate/files.ts) uses `endsWith(".sql")`. After `okm generate init` on the Windows job, `migrations/` contained `0001_init.sql` and `0001_init.catalog.json`. |
 
 ## Shell scripts

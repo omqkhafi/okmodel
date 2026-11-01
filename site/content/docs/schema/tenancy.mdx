@@ -366,7 +366,7 @@ export async function add(
 
 ### row level
 
-`rlsTenancy({ key, type: "uuid" })` is one key. The column predicate stays. Policies are the backstop: `notes_tenant` and `notes_unscoped_select` on a table named `notes`. A view that exposes the key is `security_invoker`. `via()` and a key list are refused. `unscoped()` can read and cannot write.
+`rlsTenancy({ key, type: "uuid" })` is one key. The column predicate stays. Policies are the backstop: `notes_tenant` and `notes_unscoped_select` on a table named `notes`. A view that exposes the key is `security_invoker`. `via()` and a key list are refused. `unscoped()` can read and cannot write. Row-level security does not stop the application role from running arbitrary SQL that sets `app.tenant` itself. The reporting role can set `app.unscoped` itself and read every tenant through the select policy; it still cannot write.
 
 ```ts title="rls.ts"
 import { rlsTenancy } from "okmodel/tenancy";

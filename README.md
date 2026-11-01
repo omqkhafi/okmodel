@@ -170,7 +170,6 @@ export async function removeNote(id: string) {
 | Every feature in one file   | [Guide](https://github.com/omqkhafi/okmodel/blob/main/docs/guide.md)                               |
 | Run it in production        | [Production checklist](https://github.com/omqkhafi/okmodel/blob/main/docs/production.md)           |
 | Install it safely           | [Using OKModel safely](https://github.com/omqkhafi/okmodel/blob/main/docs/using-okmodel-safely.md) |
-| What is not built yet       | [Known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md)                 |
 
 ## Documentation
 

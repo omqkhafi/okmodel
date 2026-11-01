@@ -22,7 +22,7 @@ The use cases are plain functions in `src/use-cases.ts`: create a workspace, add
 
 **Preview.** Each job creates an empty database, runs `okm migrate apply --target preview` (the head snapshot), then `okm check`. Two jobs run at once and share no rows. They can both create the managed role for the first time. See [environments](environments.md).
 
-**Rehearsal.** The database standing in for production is cloned with `CREATE DATABASE clone TEMPLATE original`. `okm migrate check` and `okm migrate apply` run on the clone: the expand, its backfill, then the contract. The original does not change. As a protected target, the original is refused by `okm migrate check` before any write. `okm migrate apply` on a protected target runs the expand steps and stops at the backfill with OKM1850. See [known limits](known-limits.md).
+**Rehearsal.** The database standing in for production is cloned with `CREATE DATABASE clone TEMPLATE original`. `okm migrate check` and `okm migrate apply` run on the clone: the expand, its backfill, then the contract. The original does not change. As a protected target, the original is refused by `okm migrate check` before any write. `okm migrate apply` on a protected target runs the expand steps and stops at the backfill with OKM1850.
 
 **Topology.** On one primary and two hot standbys, board reads go to a replica. A board read right after a move sees the move from the primary while both replicas are paused (`fallback:behind`). The report stays on a replica. See [topology](topology.md).
 
@@ -34,4 +34,4 @@ bun run db:up
 bun test packages/reference-app
 ```
 
-The infrastructure sets the application role's password and grants it `SELECT` on `okm_meta`; OKModel stores neither (see [known limits](known-limits.md)). `packages/reference-app/README.md` lists what each CI job proves.
+The infrastructure sets the application role's password and grants it `SELECT` on `okm_meta`; OKModel stores neither. `packages/reference-app/README.md` lists what each CI job proves.
