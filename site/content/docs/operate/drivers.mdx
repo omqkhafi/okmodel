@@ -38,7 +38,7 @@ export const db = connect(process.env.DATABASE_URL!, { schema: app });
 
 ### node-postgres
 
-There is no `pool.describe`. It cannot describe a statement without running it. `capabilities.cancel` is true. The peer package is `pg`. The pool sets `allowExitOnIdle` and `idleTimeoutMillis: 0`, so a plain pool exits after the last query and an idle connection stays open while the process is alive.
+There is no `pool.describe`. It cannot describe a statement without running it. `capabilities.cancel` is true. The peer package is `pg`. The pool sets `allowExitOnIdle` and `idleTimeoutMillis` from `idleTimeoutMs` (default 30 seconds; `0` keeps idle connections).
 
 ```ts title="pg.ts"
 import { connect } from "okmodel/pg/pg"; // [!code focus]

@@ -5,9 +5,9 @@
  * only place that imports `bun`. It runs on Bun; another runtime cannot load
  * that import.
  *
- * `idleTimeout` stays 0, which is Bun's default: no idle timer, and a
- * finished script exits without `close()`. `Query.cancel()` does not abort
- * the backend, so `cancel` is false. Server notices are not surfaced.
+ * `idleTimeout` follows `idleTimeoutMs` (default 30 s; `0` disables). A
+ * finished script that sets `0` exits without `close()`. `Query.cancel()` does
+ * not abort the backend, so `cancel` is false. Server notices are not surfaced.
  */
 
 import { SQL as BunSQL } from "bun";
@@ -26,6 +26,7 @@ import { DriverError } from "../error.js";
 import { driverErrors, mapFailure, rejectClosed } from "../failure.js";
 import { closedSocketError } from "./bun-closed.js";
 import { runCall, type Watch } from "./call.js";
+import { idleMs } from "./idle-ms.js";
 import { noTimeout } from "./no-inflight-timeout.js";
 import { noticeBuffer, WireSession, type WireQuery } from "./session.js";
 
@@ -51,6 +52,13 @@ export type BunSqlTls =
 export type BunSqlConfig = DriverPoolConfig & {
   /** Connection URL for this endpoint. */
   readonly url: string;
+  /**
+   * How long a pool connection may sit idle before Bun.sql closes it.
+   *
+   * Milliseconds. Omitted means 30 seconds. `0` keeps idle connections until
+   * the pool closes.
+   */
+  readonly idleTimeoutMs?: number;
   /**
    * Named prepared statements, or the unnamed protocol.
    *
@@ -152,7 +160,7 @@ export function open(config: BunSqlConfig): DriverPool {
   const make = (): SQL =>
     new BunSQL(config.url, {
       max,
-      idleTimeout: 0,
+      idleTimeout: idleMs(config.idleTimeoutMs) / 1_000,
       maxLifetime: 0,
       prepare: named,
       bigint: false,

@@ -35,6 +35,7 @@ import { NEON_HTTP_CAPABILITIES, NEON_WEBSOCKET_CAPABILITIES } from "../capabili
 import { outcomeUnknown } from "../error.js";
 import { driverErrors, mapFailure, rejectClosed } from "../failure.js";
 import { runCall } from "./call.js";
+import { idleMs } from "./idle-ms.js";
 import { noTimeout } from "./no-inflight-timeout.js";
 import { noticeBuffer, WireSession, type WireQuery } from "./session.js";
 import { EMPTY_NOTICES, resultFrom } from "./result.js";
@@ -60,6 +61,13 @@ export type NeonConfig = DriverPoolConfig & {
    * Omitted means `websocket`.
    */
   readonly mode?: NeonMode;
+  /**
+   * How long a WebSocket pool connection may sit idle before it closes.
+   *
+   * Milliseconds. Omitted means 30 seconds. `0` keeps idle connections until
+   * the pool closes. HTTP mode refuses an explicit value with OKM1120.
+   */
+  readonly idleTimeoutMs?: number;
   /**
    * Named prepared statements, or the unnamed protocol.
    *
@@ -124,7 +132,12 @@ const names = new Map<string, string>();
  * @returns The pool
  */
 export async function open(config: NeonConfig): Promise<DriverPool> {
-  if (config.mode === "http") return openHttp(config);
+  if (config.mode === "http") {
+    if (config.idleTimeoutMs != null) {
+      return import("../lazy-errors.js").then((mod) => mod.refused());
+    }
+    return openHttp(config);
+  }
   return openWebSocket(config);
 }
 
@@ -215,7 +228,7 @@ async function openWebSocket(config: NeonConfig): Promise<DriverPool> {
   const pool = new Pool({
     connectionString: config.url,
     max,
-    idleTimeoutMillis: 0,
+    idleTimeoutMillis: idleMs(config.idleTimeoutMs),
     allowExitOnIdle: true,
     connectionTimeoutMillis: CONNECT_MS,
     application_name: "okmodel",

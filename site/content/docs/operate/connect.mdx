@@ -63,7 +63,7 @@ A script calls `close()` when it is done. A server keeps the client for the life
 
 `await using` is that call at the end of the block. It calls the same `close()`. The client has `[Symbol.asyncDispose]` when the runtime defines that symbol. A runtime without the symbol leaves the client unchanged.
 
-On Bun the adapter keeps `idleTimeout` at 0, which is Bun's default, so a finished script exits without `close()`.
+A finished script should call `close()` or use `await using`. Set `idleTimeoutMs: 0` only when a short script must exit without that call on a driver whose idle timer would otherwise keep the process alive.
 
 ```ts title="script.ts"
 import { connect } from "okmodel/pg/postgresjs";

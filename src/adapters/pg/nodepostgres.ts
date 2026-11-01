@@ -2,10 +2,9 @@
  * node-postgres adapter (`okmodel/pg/pg`).
  *
  * One pool per `open` call. `pg` is an optional peer of this entry.
- * Idle clients are unref'd (`allowExitOnIdle`) and are not closed on a timer
- * (`idleTimeoutMillis: 0`), so a finished script exits and a live process
- * keeps its connection. Cancel sends a Postgres CancelRequest on a side
- * socket. That socket is unref'd.
+ * Idle clients are unref'd (`allowExitOnIdle`). The pool closes an idle
+ * client after `idleTimeoutMs` (default 30 s; `0` keeps it). Cancel sends a
+ * Postgres CancelRequest on a side socket. That socket is unref'd.
  */
 
 import net from "node:net";
@@ -27,6 +26,7 @@ import {
   rejectTimedOut,
 } from "../failure.js";
 import { runCall } from "./call.js";
+import { idleMs } from "./idle-ms.js";
 import { noticeBuffer, WireSession, type WireQuery } from "./session.js";
 
 export {
@@ -40,6 +40,13 @@ export { DriverError } from "../error.js";
 export type NodePostgresConfig = DriverPoolConfig & {
   /** Connection URL for this endpoint. */
   readonly url: string;
+  /**
+   * How long a pool connection may sit idle before node-postgres closes it.
+   *
+   * Milliseconds. Omitted means 30 seconds. `0` keeps idle connections until
+   * the pool closes.
+   */
+  readonly idleTimeoutMs?: number;
   /**
    * Named prepared statements, or the unnamed protocol.
    *
@@ -152,7 +159,7 @@ export function open(config: NodePostgresConfig): DriverPool {
   const pool = new pg.Pool({
     connectionString: config.url,
     max,
-    idleTimeoutMillis: 0,
+    idleTimeoutMillis: idleMs(config.idleTimeoutMs),
     allowExitOnIdle: true,
     connectionTimeoutMillis: 5_000,
     application_name: "okmodel",

@@ -21,6 +21,7 @@ import { POSTGRESJS_CAPABILITIES } from "../capabilities.js";
 import { mapFailure, rejectClosed } from "../failure.js";
 import type { BatchSession } from "./batch.js";
 import { nextTransactionDepth, runCall, type Watch } from "./call.js";
+import { idleMs } from "./idle-ms.js";
 import { EMPTY_NOTICES, resultFrom } from "./result.js";
 
 export {
@@ -34,6 +35,13 @@ export { DriverError } from "../error.js";
 export type PostgresJsConfig = DriverPoolConfig & {
   /** Connection URL for this endpoint. */
   readonly url: string;
+  /**
+   * How long a pool connection may sit idle before postgres.js closes it.
+   *
+   * Milliseconds. Omitted means 30 seconds. `0` keeps idle connections until
+   * the pool closes.
+   */
+  readonly idleTimeoutMs?: number;
   /**
    * Named prepared statements, or the unnamed protocol.
    *
@@ -152,6 +160,7 @@ function driverOptions(
     readonly max: number;
     readonly named: boolean;
     readonly plain: boolean;
+    readonly idleSeconds: number;
     readonly notices: { push(notice: postgres.Notice): void };
     readonly sockets: PoolSockets;
   },
@@ -159,7 +168,7 @@ function driverOptions(
   return {
     max: state.max,
     prepare: state.named,
-    idle_timeout: state.plain ? 0 : 30,
+    idle_timeout: state.idleSeconds,
     ...(state.plain ? { max_lifetime: null } : {}),
     connect_timeout: 5,
     backoff: () => 0.05 + Math.random() * 0.2,
@@ -228,12 +237,14 @@ export function open(config: PostgresJsConfig): DriverPool {
 
   const named = config.prepared === "named";
   // postgres.js keeps a referenced idle timer and a lifetime timer. Neither
-  // object is reachable, so they cannot be unref'd. A plain pool therefore
-  // starts neither, and unrefs its sockets while idle. `ssl` still uses the
-  // driver's socket, so that pool keeps the 30s idle timer and can exit.
+  // object is reachable, so they cannot be unref'd. A plain pool opens its own
+  // sockets and unrefs them while idle; `idleTimeoutMs: 0` also skips the idle
+  // timer so a finished script can exit without `close()`. The default is 30 s.
+  // `ssl` still uses the driver's socket.
   const plain = config.ssl === undefined;
+  const idleSeconds = idleMs(config.idleTimeoutMs) / 1_000;
   const sockets = new PoolSockets();
-  const opts = { max, named, plain, notices, sockets };
+  const opts = { max, named, plain, idleSeconds, notices, sockets };
   const make = (): Sql => postgres(config.url, driverOptions(config, opts));
   const root = new PgSession(
     make(),

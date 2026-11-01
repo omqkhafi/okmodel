@@ -9,10 +9,11 @@ Set these when this client opens the pool. A pool passed as the target keeps the
 | Field | You set it for |
 | --- | --- |
 | `max` | How many connections. |
+| `idleTimeoutMs` | How long an idle pool connection stays open. |
 | `prepared` | Named statements, or unnamed. |
 | `ssl` | TLS, forwarded to the driver. |
 | `searchPath` | The session search path on every connection. |
-| `timeouts` | Acquire, statement, transaction, and idle. |
+| `timeouts` | Acquire, statement, transaction, and idle-in-transaction. |
 | `timeout`, `signal` | One call, or the first connection check. |
 
 ### max
@@ -46,6 +47,37 @@ export const db = connect(url, {
 ```
 
 A pool passed as the target keeps the size from `open`. A replica `pool.max` overrides the connect `max` for that endpoint. That field is on [Topology](/docs/operate/replicas-and-topology).
+
+### idleTimeoutMs
+
+`idleTimeoutMs` is how long a pool connection may sit unused before the driver closes it. The unit is milliseconds.
+
+| Value | Result |
+| --- | --- |
+| omitted | 30 seconds. |
+| `0` | Idle connections stay open until the pool closes. |
+| a positive number | That many milliseconds. |
+
+postgres.js, node-postgres, Bun.sql, and Neon WebSocket honour it. PGlite has no pool idle timer and no `idleTimeoutMs` field. Neon HTTP refuses an explicit value with [OKM1120](/docs/reference/errors#okm1120); the message is `timeout`, the same refusal a positive statement timeout gets on that driver.
+
+Leave it out for the default. Set `0` only when a process must keep idle backends (or when a short script must exit without `close()` on a driver whose idle timer would otherwise keep the event loop alive).
+
+```ts title="db.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({ tables: [notes] });
+
+export const db = connect(process.env.DATABASE_URL!, {
+  schema: app,
+  idleTimeoutMs: 0, // [!code focus]
+});
+```
 
 ### prepared
 

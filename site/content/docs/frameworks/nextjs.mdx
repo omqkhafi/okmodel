@@ -237,7 +237,7 @@ A new version started against a database that has not been migrated fails its fi
 - Edge is not supported. Do not import `src/db.ts` from a route or middleware that runs on Edge.
 - `next build` fails with `DATABASE_URL is required` when the variable is unset. Set it in the build environment.
 - `next dev` is not exercised by CI. The CI test builds the app and runs `next start`.
-- Under `next dev`, Fast Refresh can remount `src/db.ts` and open another pool each time. The old pools do not close on their own with the local (non-TLS) postgres.js path OKModel uses. Production `next start` does not remount the module. This page keeps `export const db = connect(...)` with no process cache; a library-level fix would be an API decision.
+- Under `next dev`, Fast Refresh can remount `src/db.ts` and open another pool each time; idle connections on the old pools close on their own after the default idle timeout.
 - `find` needs a `limit`. The example passes `limit: 50` with `orderBy: { id: "asc" }`, so a table with more than 50 rows returns only the first 50. To read past 50, page through the rest. [Read rows](/docs/queries/read-rows).
 - Deno is unsupported, and there is no D1 adapter.
 
@@ -257,4 +257,4 @@ A new version started against a database that has not been migrated fails its fi
 
 - **CI** — `examples/nextjs/nextjs.test.ts` creates an isolated database on the local primary/replica Postgres that `bun run db:up` starts for this repository, applies `NOTES_DDL`, runs `next build`, starts `next start`, waits for `GET /api/health`, then calls `POST /api/notes` (201) and `GET /api/notes`, then `POST /api/notes` with no `title` and with a body that is not JSON (both 400). It runs in the `examples / frameworks` job on pull requests that touch `examples/`, the runtime, the dialects, or the Frameworks pages, and after each merge.
 - **Manual** — checked by hand: with this example's `src/schema.ts` and the `okmodel.config.ts` above, `bunx okm push` on an empty database applies `push-1`, and `okm generate init` followed by `okm migrate apply` applies `0001_init`. `next build` fails with `DATABASE_URL is required` when the variable is unset, and builds when it is set to a database that is not reachable. With the table created, `next dev` and `next start` both answered `POST /api/notes` with 201 and `GET /api/notes` with the stored rows, and the `curl` calls under Dev and test returned the statuses and bodies in that table, including `GET /api/health` and both 400s. A Vercel project deploy of this example has not been checked.
-- **Not covered** — the Edge runtime, and whether Fast Refresh connection growth stays bounded without a library change.
+- **Not covered** — the Edge runtime.
