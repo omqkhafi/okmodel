@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 
 import { hygieneProblems } from "./docs-hygiene.js";
+import { generatePackedDocs, generatedDocsProblems } from "./docs-pack.js";
 import { exitOnProblems } from "./report.js";
 import { repoRoot } from "./root.js";
 import { pageExample } from "../src/tooling/errors/examples.js";
@@ -210,6 +211,12 @@ if (import.meta.main) {
   if (typeof version !== "string") {
     exitOnProblems(["docs:check: package.json version is not a string"]);
   } else {
-    exitOnProblems([...checkDocs(join(root, "docs")), ...hygieneProblems(root, version)]);
+    const generated = generatePackedDocs(root);
+    if (generated.length > 0) exitOnProblems(generated);
+    exitOnProblems([
+      ...generatedDocsProblems(root),
+      ...checkDocs(join(root, "docs")),
+      ...hygieneProblems(root, version),
+    ]);
   }
 }

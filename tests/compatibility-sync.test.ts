@@ -30,7 +30,11 @@ test("compatibility table file is in sync", () => {
   const header = rows[0];
   if (header === undefined) throw new Error("compatibility table has no header");
   expect(header[0]).toBe("Case");
-  const body = rows.slice(2).filter((row) => (row[0] ?? "") !== "---" && (row[0] ?? "").length > 0);
+  const body = rows
+    .slice(2)
+    .filter((row) => (row[0] ?? "") !== "---" && (row[0] ?? "").length > 0)
+    // The Case table only: ignore a trailing handbook "Next" nav table if present.
+    .filter((row) => row.length >= 5);
   const committedNames = body.map((row) => row[0] ?? "");
   expect(committedNames).toEqual([...names]);
   for (const row of body) {

@@ -91,12 +91,6 @@ export const INDEX_ENTRIES: readonly IndexEntry[] = [
     group: "start",
   },
   {
-    path: "docs/linter.md",
-    purpose: "Lint findings on a migration plan.",
-    when: "Read this when generate, plan, or check reports a finding.",
-    group: "define",
-  },
-  {
     path: "docs/extension-compatibility.md",
     purpose: "Default versions of the bundled extensions.",
     when: "Read this when declaring an extension.",
@@ -146,20 +140,14 @@ export const INDEX_ENTRIES: readonly IndexEntry[] = [
   },
   {
     path: "docs/migrate-check.md",
-    purpose: "Replay of migration history in a scratch schema.",
-    when: "Read this before apply in CI.",
+    purpose: "Lint findings, provision of an empty target, and replay in a scratch schema.",
+    when: "Read this before apply in CI, or when generate reports a finding.",
     group: "migrate",
   },
   {
     path: "docs/migration-failure.md",
     purpose: "What a failed apply leaves in okm_history and okm_steps.",
     when: "Read this when apply stops mid-step.",
-    group: "migrate",
-  },
-  {
-    path: "docs/provisioning.md",
-    purpose: "An empty target installs the head snapshot.",
-    when: "Read this when apply meets an empty database.",
     group: "migrate",
   },
   {
@@ -187,21 +175,9 @@ export const INDEX_ENTRIES: readonly IndexEntry[] = [
     group: "operate",
   },
   {
-    path: "docs/example-app.md",
-    purpose: "What the reference app proves end to end.",
-    when: "Read this for a full project shape.",
-    group: "operate",
-  },
-  {
     path: "docs/observer-events.md",
     purpose: "Event shape for connect onWrite.",
     when: "Read this when attaching a write observer.",
-    group: "operate",
-  },
-  {
-    path: "docs/untrusted.md",
-    purpose: "How text from the database or an error is bounded.",
-    when: "Read this when handling an error or plan JSON.",
     group: "operate",
   },
   {
@@ -212,7 +188,7 @@ export const INDEX_ENTRIES: readonly IndexEntry[] = [
   },
   {
     path: "docs/threat-model.md",
-    purpose: "What agent use is defended against, and what is not.",
+    purpose: "What agent use is defended against, including untrusted text, and what is not.",
     when: "Read this before trusting an agent with apply.",
     group: "agents",
   },

@@ -89,7 +89,10 @@ test("a checked identifier stays a string", () => {
 });
 
 test("the doc states the ceiling and does not claim the text was cleaned", () => {
-  const page = readFileSync(join(repoRoot(), "docs/untrusted.md"), "utf8");
+  const page = readFileSync(
+    join(repoRoot(), "site/content/docs/concepts/the-safety-model.mdx"),
+    "utf8",
+  );
   expect(page).toContain(
     "bounded and marked untrusted; this reduces risk and does not eliminate it",
   );
