@@ -1,5 +1,5 @@
 /**
- * Windows checklist from `docs/oke-windows-audit.md`.
+ * Windows checklist for the Windows workflow.
  *
  * The workflow packs a tarball, installs it into a directory whose path
  * contains a space, and runs one subcommand per checklist step. A step that

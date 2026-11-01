@@ -103,12 +103,6 @@ export const INDEX_ENTRIES: readonly IndexEntry[] = [
     group: "define",
   },
   {
-    path: "docs/readme-examples.md",
-    purpose: "Short samples of the public API.",
-    when: "Read this to match a README snippet.",
-    group: "define",
-  },
-  {
     path: "docs/testing.md",
     purpose: "Factories and a cross-tenant isolation check on a real database.",
     when: "Read this when writing a test.",

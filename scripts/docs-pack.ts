@@ -75,7 +75,7 @@ export const SITE_DOC_SOURCES = {
  * Public pages that stay hand-kept because no single site page expresses the
  * executable fixture faithfully (stop line). Relative to `docs/`.
  */
-export const HAND_KEPT_DOCS = ["guide.md", "quickstart.md", "readme-examples.md"] as const;
+export const HAND_KEPT_DOCS = ["guide.md", "quickstart.md"] as const;
 
 /**
  * Public pages produced by a code generator rather than from MDX.
@@ -117,24 +117,14 @@ export const PUBLIC_DOCS = [
  */
 export const INTERNAL_DOCS = [
   ".npmignore",
-  "ci-and-test-cycle-plan.md",
-  "ci-baseline.md",
-  "describe-spike.md",
-  "editor-check.md",
   "github.md",
   "m0-findings.md",
-  "offline-first-constraints.md",
-  "oke-windows-audit.md",
   "okmodel-api-design.md",
   "okmodel-decisions.md",
   "okmodel-execution-plan.md",
-  "okmodel-gap-research.md",
-  "p100-offline-audit.md",
-  "p108-inline-relations-study.md",
   "postgresjs-kill-storm.md",
   "postgresjs-kill-storm.mjs",
   "release.md",
-  "size-audit.md",
   "size.md",
 ] as const;
 

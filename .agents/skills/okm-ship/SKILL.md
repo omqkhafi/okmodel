@@ -40,4 +40,4 @@ Hand-written bullets already under `## Unreleased` are kept. The generator fills
 
 - Append a changelog bullet on a feature pull request.
 - Run `bun run bump next` to mark a pull request as shipped.
-- Update `tests/fixtures/pack-contract.snap.json` or `docs/size-audit.md` as pull-request bookkeeping. The pack snapshot and the full size report run after merge.
+- Update `tests/fixtures/pack-contract.snap.json` as pull-request bookkeeping. The pack snapshot and the full size report run after merge.
