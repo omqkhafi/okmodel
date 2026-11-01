@@ -87,7 +87,7 @@ export function exportNames(source: string): readonly string[] {
  * Classifies one export.
  *
  * `okmodel/internal` is entirely internal. A public subpath is stable.
- * `domain` is experimental until 0.3.
+ * `domain` is experimental.
  *
  * @param subpath - Package subpath
  * @param name - Export name

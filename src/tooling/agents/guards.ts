@@ -20,12 +20,7 @@ export type AgentState = "current" | "stale" | "missing" | "modified";
  * @param outcome - Exit outcome
  * @returns Never
  */
-export function agentError(
-  code: string,
-  message: string,
-  fix: string,
-  outcome: CliOutcomeName,
-): never {
+function agentError(code: string, message: string, fix: string, outcome: CliOutcomeName): never {
   throw tagOutcome(
     new OkmError(code, message, {
       kind: "invalid",

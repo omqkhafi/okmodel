@@ -9,7 +9,7 @@
 import { refuseMarkers } from "./guards.js";
 
 /** The last line of a block. */
-export const BLOCK_END = "<!-- END OKMODEL -->";
+const BLOCK_END = "<!-- END OKMODEL -->";
 
 const BEGIN_LINE = /^<!-- BEGIN OKMODEL v([0-9A-Za-z][0-9A-Za-z.+-]*) -->$/;
 const MARKER_LIKE = /^<!--\s*(BEGIN|END)\s+OKMODEL/i;
@@ -73,7 +73,7 @@ export function findBlock(text: string, path: string): BlockRegion | undefined {
  * @param text - File text
  * @returns `\r\n` or `\n`
  */
-export function eolOf(text: string): "\n" | "\r\n" {
+function eolOf(text: string): "\n" | "\r\n" {
   return text.includes("\r\n") ? "\r\n" : "\n";
 }
 

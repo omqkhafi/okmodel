@@ -127,7 +127,7 @@ export function readConfigPath(error: object): string | undefined {
  * @param error - Caught value
  * @returns The tag, or `undefined`
  */
-export function readOutcome(error: object): CliOutcomeName | undefined {
+function readOutcome(error: object): CliOutcomeName | undefined {
   const value: unknown = Reflect.get(error, OUTCOME);
   if (
     value === "done" ||
@@ -228,7 +228,7 @@ export function readPartial(error: unknown): CliPartial | undefined {
  * @param error - Caught value
  * @returns The outcome
  */
-export function outcomeOf(error: unknown): CliOutcomeName {
+function outcomeOf(error: unknown): CliOutcomeName {
   const mapped = sessionFailure(error) ?? OkmError.from(error);
   const tagged = readOutcome(mapped) ?? readOutcomeSafe(error);
   if (tagged !== undefined && tagged !== "done") return tagged;
@@ -264,7 +264,7 @@ function outcomeForCode(code: string, kind: ErrorKind): CliOutcomeName {
  * @param outcome - Why the run stopped
  * @returns 0 done, 1 failed, 2 usage, 3 decision, 4 guard, 5 unreachable
  */
-export function exitCodeForOutcome(outcome: CliOutcomeName): ExitCode {
+function exitCodeForOutcome(outcome: CliOutcomeName): ExitCode {
   switch (outcome) {
     case "done":
       return 0;

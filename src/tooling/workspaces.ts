@@ -204,7 +204,7 @@ export function catalogHasOkmodel(repo: string): boolean {
  * @param text - `pnpm-workspace.yaml` contents
  * @returns `true` when a catalog key is `okmodel`
  */
-export function catalogTextHasOkmodel(text: string): boolean {
+function catalogTextHasOkmodel(text: string): boolean {
   const lines = text.replaceAll("\r\n", "\n").split("\n");
   let catalogIndent: number | undefined;
   for (const line of lines) {

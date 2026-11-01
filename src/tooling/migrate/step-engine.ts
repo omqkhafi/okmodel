@@ -479,7 +479,8 @@ function causeOf(error: unknown): string {
   return "The step failed.";
 }
 
-function isLockTimeout(error: unknown): boolean {
+/** True when a failure is a lock timeout (SQLSTATE 55P03 or message text). */
+export function isLockTimeout(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
   if ("sqlstate" in error && error.sqlstate === "55P03") return true;
   const message = error instanceof Error ? error.message : "";

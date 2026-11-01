@@ -18,6 +18,7 @@
 
 import type { DriverConnection, ExecuteResult } from "../../contracts/driver.js";
 import { quoteIdent } from "../../dialects/pg/ddl.js";
+import { escapeRegExp } from "./escape-regexp.js";
 import { PartialCleanupError, type ProbeResult, type StepEngine } from "./step-engine.js";
 
 /** Whether this kind and statement have a Postgres probe. */
@@ -733,7 +734,7 @@ function indexRepair(label: string): string {
  * @returns A POSIX regular expression
  */
 function bareIndexBuild(name: string): string {
-  return `${indexBuildLead()}${regexToken(name)}([^[:alnum:]_$]|$)`;
+  return `${indexBuildLead()}${escapeRegExp(name)}([^[:alnum:]_$]|$)`;
 }
 
 /**
@@ -743,15 +744,11 @@ function bareIndexBuild(name: string): string {
  * @returns A POSIX regular expression
  */
 function quotedIndexBuild(name: string): string {
-  return `${indexBuildLead()}${regexToken(quoteIdent(name))}([^[:alnum:]_$]|$)`;
+  return `${indexBuildLead()}${escapeRegExp(quoteIdent(name))}([^[:alnum:]_$]|$)`;
 }
 
 function indexBuildLead(): string {
   return "create[[:space:]]+(unique[[:space:]]+)?index[[:space:]]+concurrently[[:space:]]+(if[[:space:]]+not[[:space:]]+exists[[:space:]]+)?";
-}
-
-function regexToken(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function keyword(text: string, index: number, word: string): number | undefined {

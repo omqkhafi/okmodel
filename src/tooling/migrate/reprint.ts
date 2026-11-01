@@ -7,6 +7,7 @@
 
 import { isDomain } from "../../contracts/catalog/enum.js";
 import type { Catalog, FunctionObject } from "../../contracts/catalog/types.js";
+import { escapeRegExp } from "./escape-regexp.js";
 import type { LintSeverity } from "./lint-rules.js";
 import { normalizedSql, statementMayReprint } from "./lint-rules.js";
 import type { PlanStep } from "./plan.js";
@@ -167,8 +168,4 @@ function mentions(text: string, kind: Difference["kind"], name: string): boolean
   const quoted = `"${name}"`;
   if (text.includes(quoted)) return true;
   return new RegExp(`\\b${escapeRegExp(name.toLowerCase())}\\b`).test(text);
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

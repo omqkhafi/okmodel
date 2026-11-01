@@ -183,7 +183,7 @@ export function sealLowered(steps: readonly DdlStep[]): readonly LoweredStep[] {
  * @param sql - Statement text
  * @returns `true` when the statement is that kind
  */
-export function statementMatchesKind(kind: StepKind, sql: string): boolean {
+function statementMatchesKind(kind: StepKind, sql: string): boolean {
   if (!Object.hasOwn(STEP_CLASS, kind)) return false;
   return KIND_SQL[kind].test(normalizedStatement(sql));
 }

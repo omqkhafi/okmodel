@@ -33,6 +33,7 @@ import {
 } from "./policy.js";
 import { postgresStepJournal } from "./step-journal.js";
 import {
+  isLockTimeout,
   resumeCommittedStep,
   stepSqlHash,
   unitMode,
@@ -828,13 +829,6 @@ export function stepFailureFix(
 function isExtensionOwner(error: unknown): boolean {
   const message = error instanceof Error ? error.message : "";
   return /must be owner of (extension|type)\b/i.test(message);
-}
-
-function isLockTimeout(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  if ("sqlstate" in error && error.sqlstate === "55P03") return true;
-  const message = error instanceof Error ? error.message : "";
-  return message.includes("lock timeout");
 }
 
 function roleFlag(value: unknown): boolean {
