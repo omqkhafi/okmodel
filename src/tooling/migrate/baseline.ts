@@ -22,7 +22,7 @@ import { quoteIdent } from "../../dialects/pg/ddl.js";
 import { introspectSchema } from "../../dialects/pg/introspect.js";
 import { sealViews } from "../../dialects/pg/view/scratch.js";
 import type { RolesInput } from "../../dialects/pg/role/index.js";
-import { ensureMigrationTables } from "./apply.js";
+import { ensureMigrationTables, enterCatalogSchema } from "./apply.js";
 import { driverUrl } from "./driver-url.js";
 import {
   catalogQuery,
@@ -436,12 +436,6 @@ async function readExisting(
   }
   // Empty bootstrap tables: treat as no history so baseline can write.
   return undefined;
-}
-
-async function enterCatalogSchema(connection: DriverConnection, schema: string): Promise<void> {
-  if (schema === "public") return;
-  await connection.execute(`create schema if not exists ${quoteIdent(schema)}`);
-  await connection.execute(`set search_path to ${quoteIdent(schema)}`);
 }
 
 async function lockTarget(connection: DriverConnection, target: string): Promise<void> {

@@ -1228,7 +1228,10 @@ function catalogSchema(namespace: string | undefined): { readonly schema: string
  * `okm_meta` is unqualified, so the search path is what gives each catalog
  * its own history during apply. `connect()` reads the namespace `okm build` stored.
  */
-async function enterCatalogSchema(connection: DriverConnection, schema: string): Promise<void> {
+export async function enterCatalogSchema(
+  connection: DriverConnection,
+  schema: string,
+): Promise<void> {
   if (schema === "public") return;
   await connection.execute(`create schema if not exists ${quoteIdent(schema)}`);
   await connection.execute(`set search_path to ${quoteIdent(schema)}`);

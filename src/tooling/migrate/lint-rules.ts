@@ -11,9 +11,10 @@ import type {
   ConstraintObject,
   TypeObject,
 } from "../../contracts/catalog/types.js";
+import { checkRejectsNull, defaultViolatesCheck } from "./check-value.js";
+import { escapeRegExp } from "./escape-regexp.js";
 import { postgresProbeParses } from "./pg-probe.js";
 import type { PlanStep, StepKind } from "./plan.js";
-import { checkRejectsNull, defaultViolatesCheck } from "./check-value.js";
 import { volatileDefault } from "./safe.js";
 import { statementOutsideTransaction } from "./runner.js";
 import { sqlStatements, transactionControl } from "./sql-lex.js";
@@ -933,7 +934,7 @@ function notNullFloorFollows(
 ): boolean {
   const quoted = `"${column.replaceAll('"', '""')}"`;
   const sets = new RegExp(
-    `alter column (?:${escapeToken(quoted)}|${escapeToken(column)}) set not null\\b`,
+    `alter column (?:${escapeRegExp(quoted)}|${escapeRegExp(column)}) set not null\\b`,
   );
   let setNotNull = false;
   let dropped = false;
@@ -944,10 +945,6 @@ function notNullFloorFollows(
     if (sql.includes(`drop constraint ${constraint}`)) dropped = true;
   }
   return setNotNull && dropped;
-}
-
-function escapeToken(token: string): string {
-  return token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function columnAdded(earlier: readonly PlanStep[], tableSql: string, column: string): boolean {
