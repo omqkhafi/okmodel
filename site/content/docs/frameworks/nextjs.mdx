@@ -1,88 +1,260 @@
 ---
 title: "Next.js"
-description: "OKModel on the Next.js Node.js runtime with a process-scoped client."
+description: "A typed Postgres client for Next.js App Router route handlers on the Node.js runtime, with the example's files, a migrate step, and what CI proves."
 ---
-Use OKModel from App Router route handlers on the **Node.js** runtime.
+You get one `db` module that App Router route handlers import, a route that reads and writes a table, and the steps to create that table on an empty database. Everything here runs on the Node.js runtime. The Edge runtime is not supported.
 
 ## Runtime and driver
 
 | | |
 | --- | --- |
-| Runtime | Node.js 22.18+ (Bun for install and scripts) |
+| Runtime | The Node.js runtime of Next.js (Node.js 22.18 or newer). Bun installs packages and runs scripts. |
+| Not supported | The Edge runtime. |
 | Driver | `okmodel/pg/postgresjs` + `postgres` |
 | Example | `examples/nextjs` |
+
+A module-level `connect(...)` is correct on the Node.js runtime, where one long-lived process serves many requests and keeps one pool. It is wrong on the Edge runtime, which has no TCP socket for postgres.js. Every route that imports `src/db.ts` sets `export const runtime = "nodejs"`.
 
 ## Install
 
 ```sh
-bun add okmodel postgres
+bun add okmodel postgres next react react-dom
 bun add -D @types/node
+```
+
+Keep the driver and the package out of the Next.js bundle. The example does it in `next.config.ts`:
+
+```ts title="next.config.ts" no-check="imports the NextConfig type from next, which is installed in examples/nextjs"
+import type { NextConfig } from "next";
+
+const config: NextConfig = {
+  // Keep the example on the Node.js runtime (Fluid compute / Vercel Node).
+  serverExternalPackages: ["postgres", "okmodel"],
+  outputFileTracingRoot: import.meta.dirname,
+};
+
+export default config;
 ```
 
 ## `db` module and lifecycle
 
-One client per Node process. In `next dev`, pin it on `globalThis` so Fast Refresh does not open a new pool on every remount.
+There is one client per Node.js process. `src/db.ts` is `connect(...)` at module level, so every route handler in that process shares one pool. It throws at import when `DATABASE_URL` is missing, because `connect` does not read the environment.
 
-```ts title="src/db.ts"
+```ts title="src/db.ts" no-check="imports ./schema without an extension, which the example's bundler resolves and the docs check does not"
+/**
+ * Process-scoped client for the Next.js example.
+ *
+ * Use the Node.js runtime only (`export const runtime = "nodejs"` on routes).
+ * The Edge runtime is not supported here: postgres.js needs TCP.
+ */
+
 import { connect } from "okmodel/pg/postgresjs";
+
+import { app } from "./schema";
+
+const url = process.env.DATABASE_URL;
+if (url === undefined || url.length === 0) {
+  throw new Error("DATABASE_URL is required");
+}
+
+/** Shared client for this Node process. */
+export const db = connect(url, { schema: app });
+
+/** Closes the process client. */
+export async function closeDb(): Promise<void> {
+  await db.close();
+}
+```
+
+`src/schema.ts` is the table the client is typed by. `db.example_notes` exists because the table is named `example_notes`.
+
+```ts title="src/schema.ts"
 import { schema, table, t } from "okmodel/pg";
 
-const notes = table("example_notes", {
+export const notes = table("example_notes", {
   id: t.identity(),
   title: t.text(),
 });
-const app = schema({ tables: [notes] });
 
-const globalDb = globalThis as { __okmDb?: ReturnType<typeof connect> };
-
-export const db =
-  globalDb.__okmDb ??
-  connect(process.env.DATABASE_URL!, { schema: app });
-
-if (process.env.NODE_ENV !== "production") globalDb.__okmDb = db;
+export const app = schema({ tables: [notes] });
 ```
 
-## Routes
+No route in the example calls `closeDb()`. The process ends with the server. Call `closeDb()` from your own shutdown code or from a script that imports `src/db.ts`.
 
-```ts title="app/api/notes/route.ts" no-check="next is installed in examples/nextjs"
+## Connection config
+
+| Setting | Where | Notes |
+| --- | --- | --- |
+| `DATABASE_URL` | Environment of `next dev`, `next build`, and `next start` | A direct TCP URL such as `postgres://user:pass@host:5432/app`. `next build` needs the variable set because it imports the route module to collect page data. The database does not have to be reachable at build time. |
+| `max` | `connect` option | Omitted, the pool opens up to 10 connections per process. [Pool](/docs/operate/session-and-pool#max). |
+| `ssl` | `connect` option | Forwarded to postgres.js for hosted databases. [Pool](/docs/operate/session-and-pool#tls). |
+| `prepared` | `connect` option | Leave it unset behind a pooler in transaction mode. [Pool](/docs/operate/session-and-pool#prepared). |
+
+`okm` reads its own target from `okmodel.config.ts`, not from `connect`. [Config](/docs/reference/config).
+
+## One route that reads and writes
+
+`GET` returns up to 50 notes ordered by `id` ascending, so the oldest 50 come back. `POST` takes `{ "title": "..." }` and returns the new row with status 201. A body that is not JSON is a 400 with `body must be JSON`. A missing, non-string, or empty `title` is a 400 with `title is required`. `id` is a string in the JSON, because the default codec for `t.identity()` is a string.
+
+The example also has `app/api/health/route.ts`. `GET /api/health` returns `{ "ok": true }` on the Node.js runtime without importing `db`. It is the readiness check the test waits on, and the one to point a load balancer at.
+
+```ts title="app/api/notes/route.ts" no-check="imports next/server, which is installed in examples/nextjs"
 import { NextResponse } from "next/server";
-import { db } from "../../../src/db.js";
+
+import { db } from "../../../src/db";
 
 export const runtime = "nodejs";
 
 export async function GET() {
-  return NextResponse.json(await db.example_notes.find({ limit: 50 }));
+  const rows = await db.example_notes.find({
+    orderBy: { id: "asc" },
+    limit: 50,
+  });
+  return NextResponse.json(rows);
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as { title?: string };
-  const row = await db.example_notes.insert({
-    title: body.title ?? "untitled",
-  });
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "body must be JSON" }, { status: 400 });
+  }
+  const title =
+    body !== null && typeof body === "object" && "title" in body
+      ? (body as { title: unknown }).title
+      : undefined;
+  if (typeof title !== "string" || title.length === 0) {
+    return NextResponse.json({ error: "title is required" }, { status: 400 });
+  }
+  const row = await db.example_notes.insert({ title });
   return NextResponse.json(row, { status: 201 });
 }
 ```
 
 ## Dev and test
 
+Start Postgres, point `DATABASE_URL` at it, create the table, then run Next.js. In this repository, `bun run db:up` starts the local primary/replica Postgres, and the primary URL is `postgres://okm:okm@127.0.0.1:55432/okm`.
+
 ```sh
-bun run build          # repository root, once
 bun run db:up
-bun install --cwd examples/nextjs
-bunx --cwd examples/nextjs next dev --port 3104
-bun test examples/nextjs/nextjs.test.ts
+export DATABASE_URL=postgres://okm:okm@127.0.0.1:55432/okm
 ```
 
-## Deploy and migrate
+The example has no `okmodel.config.ts`. In your app, add one next to `package.json`:
 
-Deploy on the Node.js runtime (Vercel Fluid compute uses that same example; see [Vercel](/docs/frameworks/vercel)). Run `bunx okm migrate apply` against the target database in your release job before or as the deploy starts. Do not open a client at module evaluation in an edge bundle.
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
 
-## Gotchas
+export default defineConfig({
+  schema: "./src/schema.ts",
+  database: process.env.DATABASE_URL!,
+});
+```
 
-- Set `export const runtime = "nodejs"`. The Edge runtime has no TCP driver here.
-- Hot reload can remount `db.ts`; keep the `globalThis` guard in development.
-- Deno is unsupported (D297). D1 has no adapter.
+Then create the table on a fresh database with one of two commands:
+
+```sh
+bunx okm push
+```
+
+`okm push` plans the schema against the database and applies it. It writes no SQL file, so use it for a database you can drop. For a database you will deploy, write the first migration and apply it:
+
+```sh
+bunx okm generate init
+bunx okm migrate apply
+```
+
+`okm generate init` writes `migrations/0001_init.sql` and its catalog file. Commit both. [Migrate commands](/docs/reference/cli/migrate).
+
+```sh
+bunx next dev --port 3104
+```
+
+```sh
+curl -i http://localhost:3104/api/health
+curl -i -X POST http://localhost:3104/api/notes -H 'content-type: application/json' -d '{"title":"hello"}'
+curl -i http://localhost:3104/api/notes
+```
+
+These responses were captured by hand (Manual, not a CI assertion) against `next dev` on an empty `example_notes` table. The `POST` answers `201 Created` and the `GET` answers `200 OK`, both with `content-type: application/json`. `id` is a string:
+
+```json
+{ "id": "1", "title": "hello" }
+```
+
+```json
+[{ "id": "1", "title": "hello" }]
+```
+
+| Request | Status | Body |
+| --- | --- | --- |
+| `GET /api/health` | 200 | `{"ok":true}` |
+| `POST /api/notes` with `{"title":"hello"}` | 201 | `{"id":"1","title":"hello"}` |
+| `GET /api/notes` | 200 | an array of rows, oldest first |
+| `POST /api/notes` with `{}` | 400 | `{"error":"title is required"}` |
+| `POST /api/notes` with `nope` as the body | 400 | `{"error":"body must be JSON"}` |
+
+After you change `src/schema.ts`, run `bunx okm push` again to bring a dev database along. For a database you will deploy, run `bunx okm generate <name>` then `bunx okm migrate apply`, and commit the new files in `migrations/`.
+
+The example's own test does not run `okm`. It creates an isolated database and applies `NOTES_DDL` through the shared helper in `examples/shared/support.ts`, which is faster than starting the CLI. To run it from a clone:
+
+```sh
+bun run build
+bun run db:up
+bun install --cwd examples/nextjs
+cd examples/nextjs && REQUIRE_DOCKER=1 bun test ./nextjs.test.ts
+```
+
+`bun run build` runs once at the repository root, because the example links `okmodel` to that build. Run it from the example directory: the root test config skips `examples/`.
+
+## Deploy and migrate-on-deploy
+
+Build with `bunx next build` and start with `bunx next start` on a Node.js host. Set `DATABASE_URL` for the build and for the running server.
+
+### On Vercel (Node.js runtime)
+
+There is no separate Vercel example. Point a Vercel project at `examples/nextjs`, or copy its `app/`, `src/`, and `next.config.ts` into your app. Keep every route that imports `src/db.ts` on `export const runtime = "nodejs"`. Use `bun install` and `bunx next build` if the project does not pick them up from the lockfile. Set `DATABASE_URL` for every environment that builds or runs the app. A preview deployment that shares the production `DATABASE_URL` reads and writes production data.
+
+Apply migrations before the new deployment takes traffic. Prefer a release job with TCP to the database, run before the deploy step, so a failed migration stops the release:
+
+```sh
+bunx okm migrate apply
+```
+
+Alternatively, put migrate in the Vercel build command for that environment:
+
+```sh
+bunx okm migrate apply && bunx next build
+```
+
+With that command, keep Preview and Production on separate databases, or a preview build migrates production. Commit `okmodel.config.ts` and `migrations/`. A protected target refuses contract and unclassified steps with [OKM1850](/docs/reference/errors#okm1850) until you pass `--allow-protected`. [Protected targets](/docs/operate/protected-targets-and-roles).
+
+A new version started against a database that has not been migrated fails its first check with [OKM1520](/docs/reference/errors#okm1520). A migration that only adds things lets the old version keep running while the release rolls out. [Migrations in CI](/docs/guides/migrations-in-ci), [Environments](/docs/migrations/environments).
+
+## Limits and gotchas
+
+- Edge is not supported. Do not import `src/db.ts` from a route or middleware that runs on Edge.
+- `next build` fails with `DATABASE_URL is required` when the variable is unset. Set it in the build environment.
+- `next dev` is not exercised by CI. The CI test builds the app and runs `next start`.
+- Under `next dev`, Fast Refresh can remount `src/db.ts` and open another pool each time. The old pools do not close on their own with the local (non-TLS) postgres.js path OKModel uses. Production `next start` does not remount the module. This page keeps `export const db = connect(...)` with no process cache; a library-level fix would be an API decision.
+- `find` needs a `limit`. The example passes `limit: 50` with `orderBy: { id: "asc" }`, so a table with more than 50 rows returns only the first 50. To read past 50, page through the rest. [Read rows](/docs/queries/read-rows).
+- Deno is unsupported, and there is no D1 adapter.
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| `Error: DATABASE_URL is required` during `next build` or on the first request | `src/db.ts` ran with no `DATABASE_URL` | Set the variable where the build and the server run. |
+| [OKM1520](/docs/reference/errors#okm1520) `The database is behind the app` | The app was deployed before `okm migrate apply` | Apply the migrations, then start the app. |
+| [OKM1101](/docs/reference/errors#okm1101) `find() needs a limit.` | A read with no `limit` | Pass `limit`, as the example route does. |
+| 400 `body must be JSON` / `title is required` | Bad or incomplete `POST` body | Send `{ "title": "..." }` with `content-type: application/json`. |
+| 500 and `OkmError: relation "example_notes" does not exist` (SQLSTATE `42P01`) | The table was never created on this database | Run `bunx okm push`, or `okm generate init` then `okm migrate apply`. |
+| `Refusing pooler host <host>. Apply needs a direct connection.` | `okm` pointed at a pooler URL | Point `okm` at the direct host. |
+| [OKM1850](/docs/reference/errors#okm1850) on migrate | Protected target and a contract step | Review the plan, then pass `--allow-protected`. |
 
 ## Verification
 
-**CI** — `examples/nextjs/nextjs.test.ts` builds the app, starts it, and calls `GET`/`POST /api/notes` against the repository Postgres topology.
+**Evidence level: CI** for the app. **Manual, unchecked** for a hosted Vercel deploy.
+
+- **CI** — `examples/nextjs/nextjs.test.ts` creates an isolated database on the local primary/replica Postgres that `bun run db:up` starts for this repository, applies `NOTES_DDL`, runs `next build`, starts `next start`, waits for `GET /api/health`, then calls `POST /api/notes` (201) and `GET /api/notes`, then `POST /api/notes` with no `title` and with a body that is not JSON (both 400). It runs in the `examples / frameworks` job on pull requests that touch `examples/`, the runtime, the dialects, or the Frameworks pages, and after each merge.
+- **Manual** — checked by hand: with this example's `src/schema.ts` and the `okmodel.config.ts` above, `bunx okm push` on an empty database applies `push-1`, and `okm generate init` followed by `okm migrate apply` applies `0001_init`. `next build` fails with `DATABASE_URL is required` when the variable is unset, and builds when it is set to a database that is not reachable. With the table created, `next dev` and `next start` both answered `POST /api/notes` with 201 and `GET /api/notes` with the stored rows, and the `curl` calls under Dev and test returned the statuses and bodies in that table, including `GET /api/health` and both 400s. A Vercel project deploy of this example has not been checked.
+- **Not covered** — the Edge runtime, and whether Fast Refresh connection growth stays bounded without a library change.

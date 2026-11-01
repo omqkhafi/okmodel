@@ -3,78 +3,201 @@ title: "Run migrations in CI"
 description: "Plan on a pull request, check on throwaway Postgres, apply on deploy, and read a drift failure."
 ---
 
-Goal: wire reviewed migrations into CI and deploy without pointing check at production.
+You get two GitHub Actions workflow files you can commit as written. One runs `okm migrate check` and `okm migrate plan` on every pull request, against a throwaway Postgres that the job creates. The other applies migrations to production when a change reaches `main`, and then checks for drift. Along the way you read the exact output of each failure CI can hit: a protected target given to `check`, a contract migration without approval, and a database that no longer matches the schema.
 
 Detail lives on [Lint](/docs/migrations/checks-and-lint), [GitHub Action](/docs/reference/github-action), [Environments](/docs/migrations/environments), and [Protected targets](/docs/operate/protected-targets-and-roles).
 
+## Setup
+
+The project has a `notes` table, a committed `migrations/` directory, and two named targets. A target is a named database in `okmodel.config.ts`. `ci` is the throwaway database that `check` may write to. `production` is the real one, marked `protected: true`.
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+const ci = process.env.CI_DATABASE_URL;
+const production = process.env.DATABASE_URL;
+
+export default defineConfig({
+  schema: "./schema.ts",
+  targets: {
+    ...(ci === undefined ? {} : { ci }),
+    ...(production === undefined ? {} : { production: { url: production, protected: true } }),
+  },
+});
+```
+
+The config reads every target when it loads. A target whose URL is `undefined` fails the load with [OKM1845](/docs/reference/errors#okm1845) for every command, even one that names a different target. Each target is listed only where its variable exists: the pull-request job has `CI_DATABASE_URL`, and the deploy job has `DATABASE_URL`. A command that names the other target then fails with `Target production is not configured.` instead of reaching a database.
+
+The test that runs this page builds the same state with two empty databases, one per target. It writes this schema, runs `okm generate init` once, and applies the result to both targets. You do the same, locally, once:
+
+```ts
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity().primaryKey(),
+  title: t.text(),
+  body: t.text().nullable(),
+});
+
+export default schema({ tables: [notes] });
+```
+
+```sh
+bunx okm generate init
+bunx okm migrate apply --target ci
+bunx okm migrate apply --target production
+```
+
+```text
+<project>/migrations/0001_init.sql
+target ci
+applied provisioned@0001_init
+target production
+applied provisioned@0001_init
+```
+
+`<project>` stands for your project directory. An empty protected target is provisioned without `--allow-protected`. Commit `migrations/`: CI reads it.
+
 ## 1. Commands
 
-| When | Command |
-| --- | --- |
-| Pull request | `okm migrate check --target ci` then `okm migrate plan <name> --json --target ci` |
-| Deploy | `okm migrate apply --target production` (add `--allow-protected` for a contract) |
-| After deploy | `okm check --target production` for drift |
+| When | Command | Exit on failure |
+| --- | --- | --- |
+| Pull request | `okm migrate check --target ci` then `okm migrate plan <name> --json --target ci` | 1 |
+| Deploy | `okm migrate apply --target production` (add `--allow-protected` for a contract) | 1, or 4 on a protected target |
+| After deploy | `okm check --target production` for drift | 1 |
 
-`okm migrate check` needs a throwaway Postgres. A protected target is refused:
+`okm migrate check` replays every migration in order into a scratch schema inside one transaction, then rolls it back. `okm migrate plan <name>` compares `schema.ts` to the head snapshot in `migrations/`, not to a database, and prints the steps that a new migration would hold. Run from a clean checkout where the schema matches its last migration, they print:
+
+```text
+ok 1 migrations
+This check replays empty tables. A step that only fails on real data is not caught: NOT NULL on a populated column, a unique index over duplicates, a check over existing rows, a foreign key validation, or a cast.
+-- class: expand
+-- name: review
+
+-- no steps
+```
+
+The first two lines are `check`, and the rest is `plan`: nothing is pending. If a pull request edits `schema.ts` and forgets `okm generate`, `check` fails and exits 1:
+
+```text
+error OKM1549: The last migration's catalog does not match the schema.
+Run okm generate.
+```
+
+That is the most common CI failure, and the fix is the command in the message. After `bunx okm generate add-tag`, `check` prints `ok 2 migrations`.
+
+## 2. A pull request workflow
+
+This file runs both commands. The `services` block starts a throwaway Postgres 17 for this job. `check` writes a scratch schema there, so it must not point at production. The database is created by the job and thrown away with it.
+
+`check` should run as a role that is not a superuser, because a superuser replay can reach `COPY ... PROGRAM`. The image's default user is a superuser, so the second step creates an owner role and the job uses it.
+
+```yaml title="plan.yml"
+name: Migrations
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: okm
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d okm"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CI_DATABASE_URL: postgres://okm_ci:okm_ci@localhost:5432/okm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - name: Create a non-superuser owner
+        run: |
+          psql "postgres://postgres:postgres@localhost:5432/okm" \
+            -v ON_ERROR_STOP=1 \
+            -c "create role okm_ci login nosuperuser password 'okm_ci'" \
+            -c "alter database okm owner to okm_ci" \
+            -c "alter schema public owner to okm_ci"
+      - run: bunx okm migrate check --target ci
+      - run: bunx okm migrate plan review --target ci
+```
+
+Both `uses:` lines pin a full commit SHA, the 40-character hash, instead of a tag, because a tag can move. `bun install` is needed because `schema.ts` and `okmodel.config.ts` import `okmodel`. Commit a `.bun-version` file with your Bun version.
+
+### Post the plan as a comment
+
+The composite action in `.github/actions/migrate` runs the same `check` and `plan --json` and posts one sticky comment on the pull request. It needs `pull-requests: write`, and it takes the target by name. It never creates or drops a database. Add it after the install step, in place of the two `okm` steps, and pin it to a full commit SHA the same way. The inputs, the permissions, and a complete snippet are on [GitHub Action](/docs/reference/github-action).
+
+`okm migrate plan <name> --json` prints one `okm.cli/1` document. The plan is in `data`: `class`, `steps` (each with `class`, `lock`, and `sql`), `findings`, and `destructiveOperations`. The target's name and protection are in `target`.
+
+## 3. A protected target refuses `check`
+
+`check` writes. A protected target refuses it, and `--allow-protected` does not lift that refusal. The exit code is 4:
 
 ```text title="check-protected.err"
 error OKM1850: okm migrate check writes a scratch schema and refuses protected target production (project config). Point it at a throwaway Postgres.
 Point okm migrate check at a throwaway Postgres.
 ```
 
-## 2. Plan JSON and the GitHub Action
+Pass `--target` in every pipeline job. Two targets that point at one database and disagree about `protected` are [OKM1852](/docs/reference/errors#okm1852).
 
-`okm migrate plan <name> --json` prints an `okm.cli/1` envelope. The plan fields sit in `data`. The composite action `.github/actions/migrate` runs check and plan, then posts one sticky pull-request comment. Internally it reads that JSON with `parsePlanJson` (not a public package export). Pin the action to a full commit SHA:
+## 4. A deploy workflow
 
-```yaml title="plan.yml"
-name: Plan
+Expand migrations apply on a protected target as they are. This file applies on every push to `main`, then checks for drift. `environment: production` scopes the secret to that GitHub environment and lets you require an approval. `concurrency` keeps two deploys from applying at once. `DATABASE_URL` must be a direct connection, not a pooler.
+
+```yaml title="deploy.yml"
+name: Migrate production
 on:
-  pull_request:
+  push:
+    branches:
+      - main
 permissions:
   contents: read
-  pull-requests: write
+concurrency:
+  group: migrate-production
+  cancel-in-progress: false
 jobs:
-  plan:
+  migrate:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: omqkhafi/okmodel/.github/actions/migrate@<commit>
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          target: ci
-        env:
-          DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: bunx okm migrate apply --target production
+      - run: bunx okm check --target production
 ```
 
-`preview: true` applies on the named target. The action never creates or drops a database. See [GitHub Action](/docs/reference/github-action).
-
-## 3. Named targets
-
-```ts title="okmodel.config.ts"
-import { defineConfig } from "okmodel/migrate";
-
-export default defineConfig({
-  schema: "./schema.ts",
-  targets: {
-    ci: process.env.CI_DATABASE_URL!,
-    production: { url: process.env.DATABASE_URL!, protected: true },
-  },
-});
-```
-
-Pass `--target` in every pipeline job. Two targets that share one database and disagree about `protected` are [OKM1852](/docs/reference/errors#okm1852).
-
-## 4. Protected apply
-
-Expand migrations can apply on a protected target. A contract apply without `--allow-protected` is refused:
+A contract migration, one that tightens or removes something a running version may still use, is not applied here. Without `--allow-protected` it is refused with exit 4, and the job fails before any statement runs:
 
 ```text title="contract-protected.err"
 error OKM1850: contract is blocked on protected target production (project config).
 Use a read-only command or an expand migration.
 ```
 
+Run a contract migration deliberately: add `--allow-protected` in a separate job that needs a reviewer's approval, after the code that stops using the old shape has shipped.
+
 ## 5. Drift
 
-`okm check` compares the database to the schema. An extra column fails as [OKM1520](/docs/reference/errors#okm1520):
+`okm check` compares the database to the schema and exits 1 when they differ. A column someone added by hand is [OKM1520](/docs/reference/errors#okm1520), and the message prints the statement that would remove it:
 
 ```text title="drift.err"
 error OKM1520: The database differs from the schema.
@@ -82,12 +205,17 @@ alter table "public"."notes" drop column "drift"
 Change the schema or the database so okm check reports no difference.
 ```
 
+A passing run prints `ok`. Fix drift in the schema, by adding the column and generating a migration, or in the database, by dropping the column. Do not let the pipeline fix it by itself.
+
 ## What can go wrong
 
-- [OKM1850](/docs/reference/errors#okm1850): check or contract on a protected target.
-- [OKM1852](/docs/reference/errors#okm1852): two targets, one database, disagreeing protection.
-- [OKM1520](/docs/reference/errors#okm1520): drift past what an expand can repair.
-- [OKM1549](/docs/reference/errors#okm1549): head catalog does not match the schema; run `okm generate`.
+| Code | Exit | When | Fix |
+| --- | --- | --- | --- |
+| [OKM1845](/docs/reference/errors#okm1845) | 2 | A target has no URL, or the named target is not configured. | Set the variable, or run the command in the job that has it. |
+| [OKM1549](/docs/reference/errors#okm1549) | 1 | `schema.ts` differs from the last migration. | Run `okm generate <name>` and commit the file. |
+| [OKM1850](/docs/reference/errors#okm1850) | 4 | `check`, or a contract apply, on a protected target. | Use a throwaway database for `check`. Pass `--allow-protected` only after review. |
+| [OKM1852](/docs/reference/errors#okm1852) | 4 | Two targets, one database, different protection. | Give them one setting or separate databases. |
+| [OKM1520](/docs/reference/errors#okm1520) | 1 | The database has drifted past what an expand can repair. | Change the schema or the database. |
 
 | Next | You use it for |
 | --- | --- |

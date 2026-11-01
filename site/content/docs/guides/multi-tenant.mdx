@@ -3,13 +3,44 @@ title: "Multi-tenant app"
 description: "Scope every read and write with for(), and keep orderBy stable under the tenant key."
 ---
 
-Goal: isolate two tenants with schema tenancy, prove a scoped read cannot see the other tenant, and fix OKM2005.
+You get a `notes` table shared by two tenants, a client scoped to one tenant at a time, and proof that a scoped read cannot see the other tenant's rows. The program below shows the tenant key in the SQL, the unstable-order warning (OKM2005) and its fix, and the runtime error for a mistyped key. A compile error and a `testing()` isolation check follow it.
 
 Detail lives on [Tenancy](/docs/schema/tenancy), [Tenant isolation](/docs/concepts/tenant-isolation), and [Testing](/docs/operate/testing#isolation).
 
-## 1. Declare the key
+## Setup
 
-`columnTenancy` adds a guarded uuid to every tenant table. Uniques and the primary key include that key. Insert stamps it from `for()`; input cannot set it.
+You need a Postgres database, the `notes` table with its tenant column, and a client.
+
+The table comes from the schema in the program (`app`). The test that runs this page renders the catalog (`app.catalog`) to DDL, the SQL that creates tables, and executes each statement against an empty database. In your own project, create it with `bunx okm push` on a database you can recreate, or `okm generate init` then `okm migrate apply` for reviewed migrations ([First migration](/docs/start/first-migration)). For this schema the DDL is:
+
+```sql
+create table "public"."notes" (
+  "createdAt" text not null,
+  "id" uuid not null,
+  "tenantId" uuid not null,
+  "title" text not null,
+  constraint "notes_pkey" primary key ("id", "tenantId")
+);
+alter table "public"."notes" add constraint "notes_id_tenantId_key" unique ("id", "tenantId");
+alter table "public"."notes" add constraint "notes_tenantId_title_key" unique ("tenantId", "title");
+```
+
+`columnTenancy` added `tenantId` to the table and put it in the primary key and in every unique. That makes `title` unique per tenant, not across tenants.
+
+The client, called `db` throughout, comes from `connect(url, { schema })`. An app keeps one in a module:
+
+```ts
+import { connect } from "okmodel/pg/postgresjs";
+import { app } from "./tenancy.ts";
+
+export const db = connect(process.env.DATABASE_URL!, { schema: app });
+```
+
+`db` has no `notes` property of its own, because every table here is a tenant table. A tenant table is reachable only through `db.for({ tenantId })`. A scoped client, such as `a` and `b` below, filters every read and write on that key.
+
+## Run it
+
+Both tenant ids and every note id come from `crypto.randomUUID()`, so the function can run again on the same database without a collision. The printout replaces each id with a label.
 
 ```ts title="tenancy.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -28,10 +59,7 @@ export const app = schema({
   tables: [notes],
 });
 
-const TENANT_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-const TENANT_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
-const NOTE_A = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c41";
-const NOTE_B = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c42";
+const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
 
 export async function isolate(url: string): Promise<void> {
   await using db = connect(url, {
@@ -44,57 +72,148 @@ export async function isolate(url: string): Promise<void> {
       },
     }),
   });
-  const a = db.for({ tenantId: TENANT_A });
-  const b = db.for({ tenantId: TENANT_B });
-  await a.notes.insert({ id: NOTE_A, title: "A", createdAt: "1" });
-  await b.notes.insert({ id: NOTE_B, title: "B", createdAt: "1" });
-  console.log(
-    JSON.stringify((await a.notes.find({ orderBy: { title: "asc" }, limit: 10 })).map((row) => row.title)),
-  );
-  console.log(
-    JSON.stringify((await b.notes.find({ orderBy: { title: "asc" }, limit: 10 })).map((row) => row.title)),
-  );
+  const tenantA = crypto.randomUUID();
+  const tenantB = crypto.randomUUID();
+  const noteA = crypto.randomUUID();
+  const noteB = crypto.randomUUID();
+  const names = new Map<string, string>([
+    [tenantA, "<tenant a>"],
+    [tenantB, "<tenant b>"],
+    [noteA, "<note a>"],
+    [noteB, "<note b>"],
+  ]);
+  const say = (label: string, value: unknown): void => {
+    const text = typeof value === "string" ? value : JSON.stringify(value);
+    console.log(`${label}: ${text}`.replace(UUID, (found) => names.get(found) ?? found));
+  };
+  const a = db.for({ tenantId: tenantA });
+  const b = db.for({ tenantId: tenantB });
+
+  const plan = await a.notes.insert({ id: noteA, title: "A", createdAt: "1" }).sql();
+  say("insert sql", plan.statements[0]?.text ?? "");
+  say("insert params", plan.statements[0]?.params);
+  await a.notes.insert({ id: noteA, title: "A", createdAt: "1" });
+  await b.notes.insert({ id: noteB, title: "B", createdAt: "1" });
+
+  const list = { orderBy: { title: "asc" }, limit: 10 } as const;
+  const read = await a.notes.find(list).sql();
+  say("find sql", read.text);
+  say("find params", read.params);
+  say("tenant a sees", (await a.notes.find(list)).map((row) => row.title));
+  say("tenant b sees", (await b.notes.find(list)).map((row) => row.title));
+
+  say("a counts b's note", await a.notes.count({ where: { id: noteB } }));
+  const steal = { where: { id: noteB }, set: { title: "taken" } } as const;
+  say("update sql", (await a.notes.update(steal).sql()).statements[0]?.text ?? "");
+  say("a updates b's note", await a.notes.update(steal));
+  say("b still sees", (await b.notes.find(list)).map((row) => row.title));
+
   await a.notes.find({ limit: 2, orderBy: { createdAt: "asc" } });
   await a.notes.find({ limit: 2, orderBy: { createdAt: "asc", id: "asc" } });
+
+  const typo = { id: crypto.randomUUID(), title: "x", createdAt: "1", tenatId: tenantA };
   try {
-    await a.notes.insert({
-      id: "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c43",
-      title: "x",
-      tenatId: TENANT_A,
-    } as never);
+    await a.notes.insert(typo);
   } catch (error) {
-    if (error instanceof OkmError) console.log(`${error.code}: ${error.message}`);
+    if (error instanceof OkmError) say(error.code, error.message);
+  }
+  const forged = { id: crypto.randomUUID(), title: "y", createdAt: "1", tenantId: tenantB };
+  try {
+    await a.notes.insert(forged);
+  } catch (error) {
+    if (error instanceof OkmError) say(error.code, error.message);
   }
 }
 ```
 
 ```text title="tenancy.out"
-["A"]
-["B"]
+insert sql: insert into "notes" ("id", "title", "createdAt", "tenantId") values ($1::uuid, $2::text, $3::text, $4::uuid) returning "id", "title", "createdAt", "tenantId"
+insert params: ["<note a>","A","1","<tenant a>"]
+find sql: select t."id", t."title", t."createdAt", t."tenantId" from "notes" t where t."tenantId" = $1 order by t."title" asc nulls last limit $2
+find params: ["<tenant a>","10"]
+tenant a sees: ["A"]
+tenant b sees: ["B"]
+a counts b's note: 0
+update sql: update "notes" as t set "title" = $1::text where t."tenantId" = $2 and t."id" = $3
+a updates b's note: {"count":0}
+b still sees: ["B"]
 OKM2005: A limit whose order does not end in a unique key can return a different row set each time. Under for(), the tenant key is ignored, so the rest of that unique counts.
 Fix: End orderBy with the primary key or a unique column.
 OKM1120: Field tenatId is not on notes. Accepted names: createdAt, id, title. Did you mean `tenantId`?
+OKM1190: Field notes.tenantId is the tenant key. The scope sets it. Input cannot.
 ```
 
-## 2. OKM2005 under `for()`
+## What each step ran
 
-Under `for()`, the tenant key is already pinned, so it does not count toward a unique tail. `orderBy: { createdAt: "asc" }` warns. End with `id` (or another unique column): `orderBy: { createdAt: "asc", id: "asc" }`.
+### 1. Insert stamps the key
 
-`title` is unique per tenant, so `orderBy: { title: "asc" }` is enough inside a scope.
+The insert SQL lists `"tenantId"` as a column and `$4::uuid` as its value, although the call passed only `id`, `title`, and `createdAt`. `for()` supplied the key. The last value in `insert params` is the tenant id.
 
-## 3. OKM1120 on a write
+### 2. Read filters on the key
 
-A mistyped write key is [OKM1120](/docs/reference/errors#okm1120). The accepted-names list omits the tenant key. A hint may still name `tenantId` when the typo is close.
+The read adds `t."tenantId" = $1` and you wrote no `where`. Tenant A gets its own row and tenant B gets its own. A count of tenant B's note id from tenant A's client is `0`. The update SQL carries the same filter next to the `id` condition, so an update of that note changes `{ count: 0 }` rows. The filter is part of the same statement as the write, so there is no gap between a check and the write.
 
-## 4. Test isolation
+### 3. OKM2005 under `for()`
 
-`testing(...).isolation()` inserts as tenant B and reads and writes as tenant A. A leak fails with the table and the query. Use a non-superuser on real Postgres for `rlsTenancy`. See [Testing](/docs/operate/testing#isolation).
+An `orderBy` under a `limit` has to end in a unique key. Otherwise two pages of the same query can disagree about which rows they hold. Under `for()` the tenant key is already pinned, so it does not count toward that unique tail. `orderBy: { createdAt: "asc" }` warns, and the warning prints the fix. `orderBy: { createdAt: "asc", id: "asc" }` is quiet.
+
+`title` is unique per tenant, so `orderBy: { title: "asc" }` is enough inside a scope. It did not warn above.
+
+### 4. OKM1120 and the tenant key at runtime
+
+A key that is not a column is [OKM1120](/docs/reference/errors#okm1120). The accepted names omit the tenant key, and the hint can still name `tenantId` when the typo is close. A value that names the tenant key is refused too: the scope sets it, and input cannot. The code is `OKM1190`.
+
+The program builds both objects in a variable first. TypeScript rejects an unknown key only in an object literal written at the call. An object held in a variable passes as long as it has the required fields, and a payload parsed from JSON reaches `insert` that way. The runtime check is the one that catches it.
+
+## The same typos at compile time
+
+Written inline, as an object literal, the typo never compiles:
+
+```ts no-check="shows the compile error"
+await a.notes.insert({ id: crypto.randomUUID(), title: "x", createdAt: "1", tenatId: tenantA });
+```
+
+```text
+error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Object literal may only specify known properties, and 'id' does not exist in type 'readonly (RequiredInsert<InsertFrom<{ readonly id: ColumnBuilder<string, IdSuppliedFlags>; readonly title: ColumnBuilder<string, PlainFlags>; readonly createdAt: ColumnBuilder<...>; }> & InsertFrom<...>> & OptionalInsert<...>)[]'.
+```
+
+`tsc` prints this, without the file and line prefix. It reports against the last overload of `insert`, so the message names `id` rather than `tenatId`. The cause is the extra key: remove it and the call compiles. Passing `tenantId` in the literal is the same kind of error, and `db.notes` on the unscoped client is `Property 'notes' does not exist`.
+
+## Test isolation
+
+`testing(app, ...).isolation()` seeds a row as tenant B, then reads and writes it as tenant A, and fails with the table and the query if any call sees it. It picks new tenant ids every call, so it is safe to run repeatedly. `migrate: false` tells `testing` the table already exists. The report names what it checked.
+
+```ts title="isolation.ts"
+import { open } from "okmodel/pg/postgresjs";
+import { testing } from "okmodel/testing";
+import { app } from "./tenancy.ts";
+
+export async function prove(url: string): Promise<void> {
+  const harness = await testing(app, { driver: open({ url }), migrate: false });
+  harness.factories({ notes: (x) => ({ title: x.words(2), createdAt: "1" }) });
+  console.log(JSON.stringify(await harness.isolation()));
+  await harness.close();
+}
+```
+
+```text title="isolation.out"
+{"checked":["notes"],"skipped":[],"views":[]}
+```
+
+
+In a test, assert on `report.checked`. A tenant table with no factory fails with `Factory notes is missing.` A leak fails with the table, the query, and the row. For `rlsTenancy`, use a non-superuser role on real Postgres; see [Testing](/docs/operate/testing#isolation).
 
 ## What can go wrong
 
-- [OKM1701](/docs/reference/errors#okm1701): a tenant table used without `for()`.
-- [OKM1190](/docs/reference/errors#okm1190) / [OKM1704](/docs/reference/errors#okm1704): input that sets the tenant key.
-- [OKM2005](/docs/reference/errors#okm2005): unstable `orderBy` under a limit.
+| Code | When | Fix |
+| --- | --- | --- |
+| [OKM1701](/docs/reference/errors#okm1701) | A tenant table is used on a client with no tenant context. | Go through `db.for({ tenantId })`. |
+| [OKM1190](/docs/reference/errors#okm1190) | Input sets the tenant key. | Remove it; `for()` sets it. |
+| [OKM1704](/docs/reference/errors#okm1704) | An update tries to change the tenant key. | Remove the key from `set`. A row stays in its tenant. |
+| [OKM1120](/docs/reference/errors#okm1120) | A key is not a field on the table. | Use an accepted name. |
+| [OKM2005](/docs/reference/errors#okm2005) | `orderBy` under a limit does not end in a unique key. | End it with `id` or another unique column. |
 
 | Next | You use it for |
 | --- | --- |

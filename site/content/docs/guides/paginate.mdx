@@ -3,21 +3,49 @@ title: "Paginate a list"
 description: "Use page() for cursors, or a stable find limit, and know when the last page ends."
 ---
 
-Goal: page a list with a stable order, see the last page, and avoid an unstable limit.
+You get a `notes` list you can walk page by page with `page()`: each call returns a slice and a cursor for the next one, and the last page says so with `next: null`. The program below prints the keyset SQL behind a page, walks all three pages of five rows, and shows the two traps, an unstable order and a deep offset.
 
 Detail lives on [Read rows](/docs/queries/read-rows#page), [Query limits](/docs/operate/query-limits), and [Warnings](/docs/reference/warnings).
 
-## 1. Prefer `page()` for a UI list
+## Setup
 
-`page` returns `{ items, next }`. `next` is `null` on the last page. Pass it back as `after` with the same `orderBy`. `limit` is required unless `connect({ limits: { page } })` sets a default.
+You need a Postgres database, a `notes` table, and a client.
+
+The table comes from the schema in the program (`app`). The test that runs this page renders the catalog (`app.catalog`) to DDL, the SQL that creates tables, and executes each statement against an empty database. In your own project, create it with `bunx okm push` on a database you can recreate, or `okm generate init` then `okm migrate apply` for reviewed migrations ([First migration](/docs/start/first-migration)). For this schema the DDL is:
+
+```sql
+create table "public"."notes" (
+  "id" uuid not null,
+  "title" text not null,
+  constraint "notes_pkey" primary key ("id")
+);
+```
+
+The client, called `db` throughout, comes from `connect(url, { schema })`. An app keeps one in a module:
+
+```ts
+import { connect } from "okmodel/pg/postgresjs";
+import { app } from "./page.ts";
+
+export const db = connect(process.env.DATABASE_URL!, { schema: app });
+```
+
+## Run it
+
+`page` returns `{ items, next }`. `next` is a cursor, an opaque string that encodes where the page stopped. Pass it back as `after` with the same `orderBy`. It is `null` on the last page. `limit` is required unless `connect({ limits: { page } })` sets a default.
+
+The function deletes its own five rows before it inserts them, and gives each a fresh `crypto.randomUUID()` id, so it can run again on the same database. `.sql()` builds the statement a call would send and runs none of it.
 
 ```ts title="page.ts"
 import { connect } from "okmodel/pg/postgresjs";
-import { id, schema, table, text } from "okmodel/pg";
+import { id, inList, schema, table, text } from "okmodel/pg";
 import { warnings } from "okmodel/warnings";
+import { OkmError } from "okmodel";
 
 const notes = table("notes", { id: id({ default: "none" }), title: text() });
 export const app = schema({ tables: [notes] });
+
+const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
 
 export async function list(url: string): Promise<void> {
   await using db = connect(url, {
@@ -30,52 +58,104 @@ export async function list(url: string): Promise<void> {
       },
     }),
   });
-  await db.notes.insert([
-    { id: "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c01", title: "a" },
-    { id: "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c02", title: "b" },
-    { id: "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c03", title: "c" },
-  ]);
-  const first = await db.notes.page({ orderBy: { title: "asc", id: "asc" }, limit: 2 });
+  const titles = ["a", "b", "c", "d", "e"];
+  await db.notes.delete({ where: { title: inList(titles) } });
+  await db.notes.insert(titles.map((title) => ({ id: crypto.randomUUID(), title })));
+
+  const options = { orderBy: { title: "asc", id: "asc" }, limit: 2 } as const;
+  const firstPlan = await db.notes.page(options).sql();
+  console.log(`first sql: ${firstPlan.text}`);
+  console.log(`first params: ${JSON.stringify(firstPlan.params)}`);
+  const first = await db.notes.page(options);
   console.log(JSON.stringify({ items: first.items.map((row) => row.title), next: first.next != null }));
-  const second = await db.notes.page({
-    orderBy: { title: "asc", id: "asc" },
-    limit: 2,
-    after: first.next,
-  });
-  console.log(JSON.stringify({ items: second.items.map((row) => row.title), next: second.next }));
+
+  const secondPlan = await db.notes.page({ ...options, after: first.next }).sql();
+  console.log(`second sql: ${secondPlan.text}`);
+  console.log(`second params: ${JSON.stringify(secondPlan.params).replace(UUID, "<id>")}`);
+  const second = await db.notes.page({ ...options, after: first.next });
+  console.log(JSON.stringify({ items: second.items.map((row) => row.title), next: second.next != null }));
+
+  const last = await db.notes.page({ ...options, after: second.next });
+  console.log(JSON.stringify({ items: last.items.map((row) => row.title), next: last.next }));
+
+  try {
+    await db.notes.page({ ...options, after: "not-a-cursor" });
+  } catch (error) {
+    if (error instanceof OkmError) console.log(`${error.code}: ${error.message}`);
+  }
+
   await db.notes.find({ limit: 2 });
-  const rows = await db.notes.find({ orderBy: { title: "asc", id: "asc" }, limit: 2 });
-  console.log(JSON.stringify(rows.map((row) => row.title)));
+  const stable = { orderBy: { title: "asc", id: "asc" }, limit: 2 } as const;
+  console.log(`find sql: ${(await db.notes.find(stable).sql()).text}`);
+  console.log(JSON.stringify((await db.notes.find(stable)).map((row) => row.title)));
+
+  await db.notes.find({ ...stable, offset: 1001 });
 }
 ```
 
 ```text title="page.out"
+first sql: select t."id", t."title" from "notes" t order by t."title" asc nulls last, t."id" asc nulls last limit $1
+first params: ["3"]
 {"items":["a","b"],"next":true}
-{"items":["c"],"next":null}
+second sql: select t."id", t."title" from "notes" t where (((t."title" > $1 or t."title" is null)) or (t."title" = $2 and (t."id" > $3 or t."id" is null))) order by t."title" asc nulls last, t."id" asc nulls last limit $4
+second params: ["b","b","<id>","3"]
+{"items":["c","d"],"next":true}
+{"items":["e"],"next":null}
+OKM1130: after is not a cursor that page() returned.
 OKM2005: A limit whose order does not end in a unique key can return a different row set each time. Under for(), the tenant key is ignored, so the rest of that unique counts.
 Fix: End orderBy with the primary key or a unique column.
+find sql: select t."id", t."title" from "notes" t order by t."title" asc nulls last, t."id" asc nulls last limit $1
 ["a","b"]
+OKM2004: An offset past 1,000 rows makes the database scan every skipped row.
+Fix: Use page() with a cursor.
 ```
 
-## 2. `page` versus a keyset `find`
+## What each step ran
+
+### 1. The first page
+
+The SQL orders by `title` then `id` and asks for `limit $1`, where the parameter is `3`, one more than the `limit: 2` you passed. The extra row only tells `page` whether there is a next page. It is not returned. `items` has two rows and `next` is a cursor.
+
+### 2. The next page is keyset, not offset
+
+The second query has no `offset`. It filters on the last row you saw: rows after that `title`, or with the same `title` and a later `id`. Postgres starts at that key in the index instead of counting and discarding rows, so page 500 costs what page 1 does. The cursor holds the last row's sort values, and `page` checks them against the `orderBy` it was made for.
+
+That is also why `orderBy` has to end in a unique key. Here `id` breaks ties between equal titles. With a duplicated tail, the filter could skip or repeat a row between pages.
+
+### 3. The last page
+
+The third call asks for `limit 2` and finds one row, so `items` has `e` and `next` is `null`. A UI stops on `null`. It does not have to guess from a short page, because a page that is exactly full still reports a `next` only when a further row exists.
+
+### 4. A cursor you did not get from `page()`
+
+A string that `page()` never returned is [OKM1130](/docs/reference/errors#okm1130). So is a real cursor used with a different `orderBy`: the cursor encodes the order it was made for, and the error names both orders. A cursor that stores only a row key, which `page` uses when `orderBy` names a hidden or sensitive column, is the same code once that row is deleted. Start again from the first page.
+
+### 5. An unstable `find`
+
+`find({ limit: 2 })` has no `orderBy`, so Postgres may return any two rows, and a second call may return different ones. That is [OKM2005](/docs/reference/errors#okm2005). The fix is the order the program uses next: end `orderBy` with the primary key or another unique column. The same query then returns the same rows every time.
+
+### 6. A deep offset
+
+`offset: 1001` on `find` runs, and warns as [OKM2004](/docs/reference/errors#okm2004). Postgres reads and drops every skipped row. Use `page()` for a list that grows.
+
+## `page` versus `find`
 
 | API | Use when |
 | --- | --- |
-| `page({ orderBy, limit, after })` | A UI that walks forward with a cursor. Last page is `next: null`. |
+| `page({ orderBy, limit, after })` | A UI that walks forward with a cursor. The last page is `next: null`. |
 | `find({ orderBy, limit })` | One bounded slice. End `orderBy` with a unique key. |
-| `.stream()` | Walk the set in keyset batches without holding a server cursor. |
-
-Deep `offset` on `find` is the wrong tool for large lists. Above 1,000 it warns as [OKM2004](/docs/reference/errors#okm2004).
-
-## 3. Limits
+| `.stream()` | Walk the whole set in keyset batches without holding a server cursor. |
 
 With no `limit`, `find` and `page` are refused ([OKM1101](/docs/reference/errors#okm1101)) unless `connect({ limits })` supplies a default. A written `limit` above `limits.max` is the same code. `.all(reason)` is the deliberate unbounded read. See [Query limits](/docs/operate/query-limits).
 
 ## What can go wrong
 
-- [OKM1101](/docs/reference/errors#okm1101): missing `limit` on `page` or `find`.
-- [OKM1130](/docs/reference/errors#okm1130): `after` is not a cursor this call returned, or the key row is gone.
-- [OKM2005](/docs/reference/errors#okm2005): `orderBy` under a `limit` does not end in a unique key.
+| Code | When | Fix |
+| --- | --- | --- |
+| [OKM1101](/docs/reference/errors#okm1101) | `page` or `find` has no `limit`, or one above `limits.max`. | Pass a `limit`, or set `connect({ limits })`. |
+| [OKM1130](/docs/reference/errors#okm1130) | `after` is not a cursor this call returned, or its key row is gone. | Restart from the first page. |
+| [OKM2004](/docs/reference/errors#okm2004) | `offset` above 1,000 on `find`. | Use `page()` or `.stream()`. |
+| [OKM2005](/docs/reference/errors#okm2005) | `orderBy` under a `limit` does not end in a unique key. | End it with the primary key. |
 
 | Next | You use it for |
 | --- | --- |

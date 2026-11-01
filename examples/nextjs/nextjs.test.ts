@@ -63,6 +63,20 @@ postgresTest(gate, "nextjs reads and writes notes", async () => {
     expect(listed.status).toBe(200);
     const rows = (await listed.json()) as Array<{ title: string }>;
     expect(rows.some((item) => item.title === "next-note")).toBe(true);
+    const missing = await fetch(`http://127.0.0.1:${port}/api/notes`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(missing.status).toBe(400);
+    expect(await missing.json()).toEqual({ error: "title is required" });
+    const malformed = await fetch(`http://127.0.0.1:${port}/api/notes`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "not json",
+    });
+    expect(malformed.status).toBe(400);
+    expect(await malformed.json()).toEqual({ error: "body must be JSON" });
     await stopChild(child);
     child = undefined;
   });

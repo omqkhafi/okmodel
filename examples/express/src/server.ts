@@ -12,7 +12,10 @@ app.use(express.json());
 
 app.get("/notes", async (_req, res, next) => {
   try {
-    const rows = await db.example_notes.find({ limit: 50 });
+    const rows = await db.example_notes.find({
+      orderBy: { id: "asc" },
+      limit: 50,
+    });
     res.json(rows);
   } catch (error) {
     next(error);
@@ -21,7 +24,11 @@ app.get("/notes", async (_req, res, next) => {
 
 app.post("/notes", async (req, res, next) => {
   try {
-    const title = typeof req.body?.title === "string" ? req.body.title : "untitled";
+    const title = typeof req.body?.title === "string" ? req.body.title : undefined;
+    if (title === undefined || title.length === 0) {
+      res.status(400).json({ error: "title is required" });
+      return;
+    }
     const row = await db.example_notes.insert({ title });
     res.status(201).json(row);
   } catch (error) {

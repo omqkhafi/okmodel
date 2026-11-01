@@ -3,18 +3,48 @@ title: "Soft delete"
 description: "Archive a row, hide it from ordinary reads, then restore it."
 ---
 
-Goal: soft-delete a row with the archive trait, see what a default read returns, then restore it.
+You get a `notes` table where `archive` hides a row instead of deleting it, ordinary reads skip it, and `restore` brings it back. The program below runs that cycle and prints the SQL behind every step. Read it first, then the output, then the notes on each step.
 
 Detail lives on [Traits](/docs/schema/traits#archive) and [Write rows](/docs/queries/write-rows).
 
-## 1. Mark the table
+## Setup
 
-`archivable()` adds guarded `archivedAt` and `archiveId`. Uniques on that table become partial.
+Three things must exist before the program runs: a Postgres database, the `notes` table, and a client.
+
+The table comes from the schema in the program (`app`). The test that runs this page applies it by rendering the catalog (`app.catalog`) to DDL, the SQL that creates tables, and executing each statement against an empty database. In your own project, create the table with `bunx okm push` on a database you can recreate, or with `okm generate init` then `okm migrate apply` for reviewed migrations ([First migration](/docs/start/first-migration)). For this schema the DDL is:
+
+```sql
+create table "public"."notes" (
+  "archiveId" uuid,
+  "archivedAt" timestamptz,
+  "id" uuid not null,
+  "title" text not null,
+  constraint "notes_pkey" primary key ("id")
+);
+```
+
+The client, called `db` throughout, comes from `connect(url, { schema })`. An app keeps one in a module and imports it where it needs it:
+
+```ts
+import { connect } from "okmodel/pg/postgresjs";
+import { app } from "./archive.ts";
+
+export const db = connect(process.env.DATABASE_URL!, { schema: app });
+```
+
+The program opens its own client with `await using`, which closes the pool when the function returns.
+
+## Run it
+
+`archivable()` adds two guarded columns, `archivedAt` and `archiveId`. A guarded column is one your input cannot set. Uniques on that table become partial, so an archived row does not block a new row that reuses a unique value.
+
+Every id is generated with `crypto.randomUUID()`, so the function can run again on the same database without a collision. The ids differ on every run, so the printout replaces the note id with `<note>` and any other uuid with `<archive>`. `.sql()` builds the statements a call would send and runs none of them.
 
 ```ts title="archive.ts"
 import { connect } from "okmodel/pg/postgresjs";
 import { id, schema, table, text } from "okmodel/pg";
 import { archivable } from "okmodel/traits";
+import { OkmError } from "okmodel";
 
 const notes = table(
   "notes",
@@ -23,69 +53,113 @@ const notes = table(
 );
 export const app = schema({ tables: [notes] });
 
-const NOTE = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c41";
+const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
 
 export async function retire(url: string): Promise<void> {
   await using db = connect(url, { schema: app });
-  await db.notes.insert({ id: NOTE, title: "Keep" });
-  const saved = await db.notes.archive({ where: { id: NOTE } });
-  console.log(JSON.stringify({ count: saved.count }));
-  console.log(JSON.stringify(await db.notes.find({ where: { id: NOTE }, limit: 1 })));
-  const withArchived = await db.notes.withArchived().find({ where: { id: NOTE }, limit: 1 });
-  console.log(
-    JSON.stringify(
-      withArchived.map((row) => ({
-        id: row.id,
-        title: row.title,
-        archived: row.archivedAt != null,
-      })),
-    ),
+  const note = crypto.randomUUID();
+  const say = (label: string, value: unknown): void => {
+    const text = typeof value === "string" ? value : JSON.stringify(value);
+    console.log(`${label}: ${text}`.replaceAll(note, "<note>").replace(UUID, "<archive>"));
+  };
+
+  await db.notes.insert({ id: note, title: "Keep" });
+
+  const archivePlan = await db.notes.archive({ where: { id: note } }).sql();
+  say("archive sql", archivePlan.statements[0]?.text ?? "");
+  say("archive params", archivePlan.statements[0]?.params);
+  const saved = await db.notes.archive({ where: { id: note } });
+  say("archive", saved);
+
+  const find = { where: { id: note }, limit: 1 } as const;
+  say("find sql", (await db.notes.find(find).sql()).text);
+  say("find", await db.notes.find(find));
+
+  say("withArchived sql", (await db.notes.withArchived().find(find).sql()).text);
+  const withArchived = await db.notes.withArchived().find(find);
+  say(
+    "withArchived",
+    withArchived.map((row) => ({ id: row.id, title: row.title, archived: row.archivedAt != null })),
   );
-  console.log(
-    JSON.stringify(
-      (await db.notes.onlyArchived().find({ where: { id: NOTE }, limit: 1 })).map((row) => ({
-        id: row.id,
-        title: row.title,
-      })),
-    ),
+
+  say("onlyArchived sql", (await db.notes.onlyArchived().find(find).sql()).text);
+  const onlyArchived = await db.notes.onlyArchived().find(find);
+  say(
+    "onlyArchived",
+    onlyArchived.map((row) => ({ id: row.id, title: row.title })),
   );
-  console.log(JSON.stringify(await db.notes.restore({ archiveId: saved.archiveId })));
-  console.log(
-    JSON.stringify(
-      (await db.notes.find({ where: { id: NOTE }, limit: 1 })).map((row) => ({
-        id: row.id,
-        title: row.title,
-      })),
-    ),
+
+  const restorePlan = await db.notes.restore({ archiveId: saved.archiveId }).sql();
+  say("restore sql", restorePlan.statements[0]?.text ?? "");
+  say("restore params", restorePlan.statements[0]?.params);
+  say("restore", await db.notes.restore({ archiveId: saved.archiveId }));
+  say(
+    "find after restore",
+    (await db.notes.find(find)).map((row) => ({ id: row.id, title: row.title })),
   );
+
+  await db.notes.archive({ where: { id: note } });
+  say("archive again", await db.notes.archive({ where: { id: note } }));
+  try {
+    await db.notes.archive({ where: { id: note } }).expect(1);
+  } catch (error) {
+    if (error instanceof OkmError) say(error.code, error.message);
+  }
 }
 ```
 
 ```text title="archive.out"
-{"count":1}
-[]
-[{"id":"01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c41","title":"Keep","archived":true}]
-[{"id":"01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c41","title":"Keep"}]
-{"count":1}
-[{"id":"01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c41","title":"Keep"}]
+archive sql: update "notes" as t set "archivedAt" = now(), "archiveId" = $1::uuid where t."archivedAt" is null and t."id" = $2
+archive params: ["<archive>","<note>"]
+archive: {"count":1,"archiveId":"<archive>"}
+find sql: select t."id", t."title", to_char(t."archivedAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'), t."archiveId" from "notes" t where t."archivedAt" is null and t."id" = $1 limit $2
+find: []
+withArchived sql: select t."id", t."title", to_char(t."archivedAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'), t."archiveId" from "notes" t where t."id" = $1 limit $2
+withArchived: [{"id":"<note>","title":"Keep","archived":true}]
+onlyArchived sql: select t."id", t."title", to_char(t."archivedAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'), t."archiveId" from "notes" t where t."archivedAt" is not null and t."id" = $1 limit $2
+onlyArchived: [{"id":"<note>","title":"Keep"}]
+restore sql: update "notes" as t set "archivedAt" = null, "archiveId" = null where t."archivedAt" is not null and t."archiveId" = $1
+restore params: ["<archive>"]
+restore: {"count":1}
+find after restore: [{"id":"<note>","title":"Keep"}]
+archive again: {"count":0,"archiveId":"<archive>"}
+not_found: archive on notes changed 0 rows. expect was 1.
 ```
 
-## 2. What each read returns
+## What each step ran
 
-| Call | Set |
-| --- | --- |
-| `find` / `one` / `page` | Active rows only (`archivedAt` is null). |
-| `withArchived()` | Active and archived. |
-| `onlyArchived()` | Archived only. |
-| `restore({ archiveId })` | The whole archive operation, including cascaded children. |
+### 1. Archive
 
-`archive({ where })` returns `{ count, archiveId }`. Pass that `archiveId` to `restore`.
+`archive({ where })` is one `update`, not a `delete`. The `where` that you passed becomes `t."id" = $2`, and the call adds `t."archivedAt" is null`, so only a live row can be archived. The new `archiveId` is `$1`. It is a fresh uuid for each operation.
+
+`archive` returns `{ count, archiveId }`. Keep the `archiveId`: it names this one operation, including any child rows cascaded with it (`archivable({ cascade })`). `.sql()` makes its own `archiveId`, so the id in `archive params` is not the one the real call stored. That is why both print as `<archive>`.
+
+### 2. Read the row back
+
+| Call | Set | Filter in the SQL |
+| --- | --- | --- |
+| `find` / `one` / `page` | Active rows only | `t."archivedAt" is null` |
+| `withArchived()` | Active and archived | none |
+| `onlyArchived()` | Archived only | `t."archivedAt" is not null` |
+
+The default read adds its filter itself. You write no `archivedAt` condition. `withArchived()` and `onlyArchived()` are the two deliberate ways around that.
+
+### 3. Restore
+
+`restore({ archiveId })` clears `archivedAt` and `archiveId` on every row that carries that id, so a cascaded child comes back with its parent. `restore({ where })` restores those rows and the children that carry their `archiveId`. The result is `{ count }`.
+
+### 4. Archive twice
+
+Archiving a row that is already archived matches nothing, so it returns `{ count: 0 }` and a new, unused `archiveId`. `.expect(1)` turns that into an `OkmError` with code `not_found` that names the table and the count it saw.
 
 ## What can go wrong
 
-- [OKM1052](/docs/reference/errors#okm1052): `archive` or `restore` on a table that is not archivable.
-- [OKM1061](/docs/reference/errors#okm1061): `strategy: "table"` is not available yet.
-- Archiving an already archived row again returns `{ count: 0 }` for that call; `.expect(1)` fails as not found.
+| Code | When | Fix |
+| --- | --- | --- |
+| [OKM1052](/docs/reference/errors#okm1052) | `archive` or `restore` on a table that is not archivable. | Add `archivable()` to that table's `traits`. |
+| [OKM1061](/docs/reference/errors#okm1061) | `strategy: "table"`. | Use `strategy: "column"`, the default. |
+| [OKM1101](/docs/reference/errors#okm1101) | `find` with no `limit`. | Pass `limit`, or set `connect({ limits })`. |
+| `.expect(1)` fails | The row is missing or already archived. | Read with `withArchived()` to tell the two apart. |
 
 | Next | You use it for |
 | --- | --- |

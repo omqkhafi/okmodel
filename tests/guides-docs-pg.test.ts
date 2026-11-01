@@ -27,6 +27,7 @@ const imports: readonly (readonly [string, string])[] = [
   ["okmodel/traits", join(root, "src/runtime/traits/index.ts")],
   ["okmodel/tenancy", join(root, "src/runtime/tenancy/index.ts")],
   ["okmodel/warnings", join(root, "src/runtime/warnings/index.ts")],
+  ["okmodel/testing", join(root, "src/tooling/testing/index.ts")],
   ["okmodel/migrate", join(root, "src/tooling/migrate/index.ts")],
   ["okmodel", join(root, "src/contracts/index.ts")],
 ];
@@ -43,6 +44,10 @@ type SoftDelete = {
 type Tenancy = {
   readonly app?: { readonly catalog: Catalog };
   isolate?(url: string): Promise<void>;
+};
+
+type Isolation = {
+  prove?(url: string): Promise<void>;
 };
 
 type Page = {
@@ -70,11 +75,31 @@ postgresTest(
   "the multi-tenant guide isolates tenants and prints OKM2005 and OKM1120",
   async () => {
     const text = readFileSync(join(guides, "multi-tenant.mdx"), "utf8");
-    expect(titles(text)).toEqual(["ts:tenancy.ts", "text:tenancy.out"]);
+    expect(titles(text)).toEqual([
+      "ts:tenancy.ts",
+      "text:tenancy.out",
+      "ts:isolation.ts",
+      "text:isolation.out",
+    ]);
     const example = await load<Tenancy>(text, "tenancy.ts");
     await apply(example, async (url) => {
       if (example.isolate === undefined) throw new Error("tenancy.ts exports no isolate");
       expect(await capture(() => example.isolate!(url))).toBe(body(text, "text", "tenancy.out"));
+    });
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
+  "the multi-tenant guide isolation() check prints the report",
+  async () => {
+    const text = readFileSync(join(guides, "multi-tenant.mdx"), "utf8");
+    const example = await load<Tenancy>(text, "tenancy.ts");
+    const isolation = await loadWithSibling<Isolation>(text, "isolation.ts", "tenancy.ts");
+    await apply(example, async (url) => {
+      if (isolation.prove === undefined) throw new Error("isolation.ts exports no prove");
+      expect(await capture(() => isolation.prove!(url))).toBe(body(text, "text", "isolation.out"));
     });
   },
   60_000,
@@ -302,6 +327,19 @@ function rewrite(source: string): string {
 
 async function load<T>(page: string, title: string): Promise<T> {
   const cwd = mkdtempSync(join(tmpdir(), "okm-guides-load-"));
+  const file = join(cwd, title);
+  writeFileSync(file, rewrite(body(page, "ts", title)));
+  try {
+    return (await import(`${pathToFileURL(file).href}?t=${String(Date.now())}`)) as T;
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
+/** Loads `title` with a sibling fence on disk so relative imports resolve. */
+async function loadWithSibling<T>(page: string, title: string, sibling: string): Promise<T> {
+  const cwd = mkdtempSync(join(tmpdir(), "okm-guides-load-"));
+  writeFileSync(join(cwd, sibling), rewrite(body(page, "ts", sibling)));
   const file = join(cwd, title);
   writeFileSync(file, rewrite(body(page, "ts", title)));
   try {

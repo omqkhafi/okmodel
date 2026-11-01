@@ -3,13 +3,72 @@ title: "Add a required column safely"
 description: "Add the column nullable, backfill, then tighten to NOT NULL with the plan okm accepts."
 ---
 
-Goal: add a required column without a one-step `NOT NULL` add that lint refuses.
+You get a `notes.body` column that ends up `NOT NULL`, added in three reviewed steps that never take a long table lock: add it nullable, fill it, then tighten it. First you see `okm` refuse the one-step version, with the exact lint output. Then you run each of the three steps and read the SQL and the lock line `okm` prints for it.
 
 Detail lives on [First migration](/docs/start/first-migration), [Backfill](/docs/migrations/backfill), and [Lint](/docs/migrations/checks-and-lint).
 
+## Setup
+
+You need a Postgres database, a `notes` table that already exists with a recorded history, and the project files `okm` reads. The `okm` commands on this page connect to the database named by `DATABASE_URL`.
+
+The test that runs this page builds that state with `okm`, not by rendering a catalog. It writes the config and the starting schema below, runs `okm generate init` and `okm migrate apply`, and then replays every command on this page against that database. You can do the same in an empty database.
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+});
+```
+
+```ts title="schema-initial.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity().primaryKey(),
+  title: t.text(),
+});
+
+export default schema({ tables: [notes] });
+```
+
+Save the second file as `schema.ts`. The later schema files on this page each replace its contents. Then create the first migration and apply it. `generate init` writes `migrations/0001_init.sql`, the head snapshot of your schema, and prints its absolute path (`<project>` below stands for your project directory). On an empty database, `apply` installs that snapshot and records `provisioned@0001_init` as the history:
+
+```sh
+bunx okm generate init
+bunx okm migrate apply
+```
+
+```text
+<project>/migrations/0001_init.sql
+target default
+applied provisioned@0001_init
+```
+
+The client your app uses is the one from [First schema](/docs/start/first-schema). This page changes the schema, not the client. From here, each step changes one field in `schema.ts`.
+
 ## 1. Plan refuses a required add
 
-`body: t.text()` on a live table plans `add column ... not null` with no default. Lint is [OKM1525](/docs/reference/errors#okm1525); the plan exits 1 as [OKM1510](/docs/reference/errors#okm1510).
+Add `body: t.text()` to the table. On a live table that plans `add column ... not null` with no default, which fails on any table that already has rows. Lint catches it before anything runs: the finding is [OKM1525](/docs/reference/errors#okm1525), and the plan exits 1 as [OKM1510](/docs/reference/errors#okm1510).
+
+```ts title="schema-required.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity().primaryKey(),
+  title: t.text(),
+  body: t.text(),
+});
+
+export default schema({ tables: [notes] });
+```
+
+```sh
+bunx okm migrate plan add-body
+```
+
+The plan prints on stdout, and the lint refusal prints on stderr. Both are shown here as they come out of the command (stderr also starts with a `config:` line that names the config file, left out here):
 
 ```text title="plan-required.out"
 -- class: contract
@@ -28,9 +87,17 @@ error OKM1510: error OKM1525 step 1: adds NOT NULL without a default -- fix: Add
 Change the statement so the finding is gone. An override must name a code that a statement in the step triggered, and the reason must not be empty.
 ```
 
-`okm migrate plan` refuses that step (lint finding OKM1525, wrapped as OKM1510). An empty `-- okm-allow` does not clear it. There is no separate `okm migrate lint` command.
+How to read the plan:
+
+- `class: contract` means the step is not safe for a version of the app that is still running. A column the old code does not write, and that cannot be null, breaks its inserts.
+- `-- lock:` is the Postgres lock the statement takes. `ACCESS EXCLUSIVE` blocks every read and write on `notes` until the statement ends. `rows unknown (table not analyzed)` means Postgres has no row estimate for the table yet. With statistics, the line gives the estimate.
+- The last line is the lint finding and its fix.
+
+An empty `-- okm-allow` does not clear the finding. There is no separate `okm migrate lint` command.
 
 ## 2. Add it nullable
+
+Put the nullable column in the schema:
 
 ```ts title="schema-nullable.ts"
 import { schema, table, t } from "okmodel/pg";
@@ -44,6 +111,10 @@ const notes = table("notes", {
 export default schema({ tables: [notes] });
 ```
 
+```sh
+bunx okm migrate plan add-body
+```
+
 ```text title="plan-nullable.out"
 -- class: expand
 -- name: add-body
@@ -55,7 +126,20 @@ export default schema({ tables: [notes] });
 alter table "public"."notes" add column "body" text;
 ```
 
-Generate and apply that expand migration.
+`class: expand` means a running version of the app keeps working: it can ignore a nullable column. The lock is still `ACCESS EXCLUSIVE`, but adding a nullable column with no default only changes the catalog, so it is held for an instant and does not rewrite the table.
+
+Write the migration file and apply it:
+
+```sh
+bunx okm generate add-body
+bunx okm migrate apply
+```
+
+```text
+<project>/migrations/0002_add-body.sql
+target default
+applied 0002_add-body
+```
 
 ## 3. Backfill
 
@@ -65,11 +149,27 @@ Fill every row before you tighten nullability. A one-shot update is fine on a sm
 update "public"."notes" set "body" = '' where "body" is null;
 ```
 
-For a large table, put a `-- backfill` step in a migration and let apply resume by key. See [Backfill](/docs/migrations/backfill).
+Deploy the app version that writes `body` first, so no new row arrives with a null while the backfill runs. For a large table, put a `-- backfill` step in a migration and let apply resume by key, in batches that do not hold one long transaction. See [Backfill](/docs/migrations/backfill).
 
 ## 4. Make it required
 
-Change the field to `body: t.text()` and plan again. The planner writes a validated check, then `SET NOT NULL`, then drops the check:
+Change the field to `body: t.text()` and plan again. The planner does not write one `SET NOT NULL`, which would scan the whole table under an exclusive lock. It writes a check constraint that is added without validating existing rows, validates it, then sets `NOT NULL`, then drops the check:
+
+```ts title="schema-final.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity().primaryKey(),
+  title: t.text(),
+  body: t.text(),
+});
+
+export default schema({ tables: [notes] });
+```
+
+```sh
+bunx okm migrate plan require-body
+```
 
 ```text title="plan-require.out"
 -- class: contract
@@ -100,13 +200,44 @@ alter table "public"."notes" alter column "body" set not null;
 alter table "public"."notes" drop constraint "notes_body_notnull";
 ```
 
-Generate and apply. On a protected target, a contract apply needs `--allow-protected`.
+`safe rewrite applied` marks the four steps the planner substituted for one `SET NOT NULL`. In order:
+
+1. Add the check with `not valid`. It only affects new writes, so the lock is brief.
+2. Validate it. This is the slow scan, and its lock, `SHARE UPDATE EXCLUSIVE`, lets reads and writes continue.
+3. `SET NOT NULL`. Postgres sees the validated check and skips its own scan, so the exclusive lock is brief.
+4. Drop the check, which the column now makes redundant.
+
+Write the migration file and apply it:
+
+```sh
+bunx okm generate require-body
+bunx okm migrate apply
+```
+
+```text
+<project>/migrations/0003_require-body.sql
+target default
+applied 0003_require-body
+```
+
+On a protected target, a contract apply needs `--allow-protected`. Run `bunx okm check` afterwards: it prints `ok` when the database matches the schema.
 
 ## What can go wrong
 
-- [OKM1525](/docs/reference/errors#okm1525) / [OKM1510](/docs/reference/errors#okm1510): required add without a default.
-- A `SET NOT NULL` on rows that still hold null fails at apply time; `okm migrate check` does not catch that on empty replay.
-- [OKM1850](/docs/reference/errors#okm1850): contract on a protected target without `--allow-protected`.
+Skipping the backfill passes `plan` and `generate`, and fails at `apply`, on the validate step, because a row still holds null. The finished step stays, and the failing one is not repeated blindly:
+
+```text
+error invalid: Migration 0003_require-body failed at step 2: check constraint "notes_body_notnull" of relation "notes" is violated by some row
+Fix the step and run apply again. Finished steps are not repeated.
+```
+
+Run the backfill, then `bunx okm migrate apply` again. It resumes at step 2. `okm migrate check` does not catch this, because it replays empty tables.
+
+| Code | When | Fix |
+| --- | --- | --- |
+| [OKM1525](/docs/reference/errors#okm1525) / [OKM1510](/docs/reference/errors#okm1510) | A required add with no default. | Add it nullable, backfill, then tighten. |
+| `error invalid: ... violated by some row` | The validate step finds a null. | Backfill, then apply again. |
+| [OKM1850](/docs/reference/errors#okm1850) | A contract apply on a protected target without `--allow-protected`. | Review the plan, then pass the flag. |
 
 | Next | You use it for |
 | --- | --- |

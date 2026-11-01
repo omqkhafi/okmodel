@@ -5,8 +5,6 @@
     "tanstack-start",
     "hono",
     "express",
-    "workers",
-    "vercel",
-    "other"
+    "workers"
   ]
 }
