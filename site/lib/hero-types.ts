@@ -25,7 +25,12 @@ export type HeroScenarioId =
   | "search"
   | "scoped"
   | "archived"
-  | "hiddenRead";
+  | "hiddenRead"
+  | "defaultLimits"
+  | "noLimit"
+  | "writeFilter"
+  | "tree"
+  | "generated";
 
 /** The part of okmodel a scenario shows. */
 export type HeroGroupId = "migrate" | "model" | "query";

@@ -411,13 +411,33 @@ function MigrateResult({ scenario }: { readonly scenario: HeroMigrateView }): Re
 /** Right column for a call: the SQL, what came back, and the rules behind it. */
 function QueryResult({ scenario }: { readonly scenario: HeroQueryView }): ReactNode {
   const { count } = scenario.result;
+  const refused = scenario.error !== null && scenario.sql.lines.length === 0;
+  const findings =
+    scenario.error === null
+      ? []
+      : [
+          {
+            severity: "error" as const,
+            code: scenario.error.code,
+            step: 1,
+            message: scenario.error.message,
+            fix: scenario.error.fix,
+          },
+        ];
+  const ruleCount = findings.length + scenario.rules.length;
   return (
     <>
-      <Section label="sql" trailing="1 statement">
-        <Sql lines={scenario.sql.lines} />
-        <p className="mt-1.5 font-mono text-[10.5px] break-all text-fd-muted-foreground/70">
-          {scenario.sql.params.map((value, index) => `$${index + 1} = ${value}`).join("  ·  ")}
-        </p>
+      <Section label="sql" trailing={refused ? "refused" : "1 statement"}>
+        {refused ? (
+          <p className="font-mono text-[11px] text-fd-muted-foreground">no statement</p>
+        ) : (
+          <>
+            <Sql lines={scenario.sql.lines} />
+            <p className="mt-1.5 font-mono text-[10.5px] break-all text-fd-muted-foreground/70">
+              {scenario.sql.params.map((value, index) => `$${index + 1} = ${value}`).join("  ·  ")}
+            </p>
+          </>
+        )}
       </Section>
       <Section
         label="result"
@@ -427,8 +447,23 @@ function QueryResult({ scenario }: { readonly scenario: HeroQueryView }): ReactN
           <Sql lines={scenario.result.lines} />
         </div>
       </Section>
-      <Section label="rules" trailing={`${scenario.rules.length} on this statement`}>
-        <Rules rules={scenario.rules} />
+      <Section
+        label="rules"
+        trailing={
+          findings.length > 0 ? (
+            <Chip tone="error">
+              {findings.length} {findings.length === 1 ? "finding" : "findings"}
+            </Chip>
+          ) : (
+            `${ruleCount} on this statement`
+          )
+        }
+      >
+        {findings.length > 0 ? <Lint findings={findings} /> : null}
+        {scenario.rules.length > 0 ? <Rules rules={scenario.rules} /> : null}
+        {findings.length === 0 && scenario.rules.length === 0 ? (
+          <p className="font-mono text-[11px] text-fd-muted-foreground">no rules</p>
+        ) : null}
       </Section>
     </>
   );

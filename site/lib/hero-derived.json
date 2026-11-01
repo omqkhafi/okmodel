@@ -1274,6 +1274,72 @@
       }
     },
     {
+      "kind": "migrate",
+      "id": "generated",
+      "diff": [
+        {
+          "n": null,
+          "mark": "fold",
+          "text": "8 unchanged lines"
+        },
+        {
+          "n": 9,
+          "mark": "ctx",
+          "text": "  id: t.identity(),"
+        },
+        {
+          "n": 10,
+          "mark": "ctx",
+          "text": "  title: t.text().nullable(),"
+        },
+        {
+          "n": 11,
+          "mark": "add",
+          "text": "  search: t.tsvector().generated(\"to_tsvector('simple', title)\"),"
+        },
+        {
+          "n": 12,
+          "mark": "ctx",
+          "text": "  authorId: t.bigint(),"
+        },
+        {
+          "n": 13,
+          "mark": "ctx",
+          "text": "});"
+        },
+        {
+          "n": null,
+          "mark": "fold",
+          "text": "2 unchanged lines"
+        }
+      ],
+      "plan": {
+        "file": "migrations/0002_add_search.sql",
+        "class": "expand",
+        "steps": [
+          {
+            "class": "expand",
+            "kind": "add-column",
+            "lock": "ACCESS EXCLUSIVE",
+            "transactional": true,
+            "sql": "alter table \"public\".\"notes\" add column \"search\" tsvector generated always as (to_tsvector('simple', title)) stored not null;"
+          }
+        ]
+      },
+      "lint": [],
+      "types": {
+        "label": "Notes",
+        "rows": [
+          {
+            "n": 22,
+            "mark": "add",
+            "text": "  readonly search: string;"
+          }
+        ],
+        "more": 0
+      }
+    },
+    {
       "kind": "query",
       "id": "include",
       "code": [
@@ -1395,7 +1461,8 @@
           "contribution": "limit",
           "provenance": "caller"
         }
-      ]
+      ],
+      "error": null
     },
     {
       "kind": "query",
@@ -1488,7 +1555,8 @@
           "contribution": "limit",
           "provenance": "caller"
         }
-      ]
+      ],
+      "error": null
     },
     {
       "kind": "query",
@@ -1576,7 +1644,8 @@
           "contribution": "catalog",
           "provenance": "catalog"
         }
-      ]
+      ],
+      "error": null
     },
     {
       "kind": "query",
@@ -1656,7 +1725,8 @@
           "contribution": "limit",
           "provenance": "caller"
         }
-      ]
+      ],
+      "error": null
     },
     {
       "kind": "query",
@@ -1730,7 +1800,8 @@
           "contribution": "scoped",
           "provenance": "planner"
         }
-      ]
+      ],
+      "error": null
     },
     {
       "kind": "query",
@@ -1788,7 +1859,8 @@
           "contribution": "active set",
           "provenance": "planner"
         }
-      ]
+      ],
+      "error": null
     },
     {
       "kind": "query",
@@ -1866,7 +1938,340 @@
           "contribution": "hidden users.passwordHash excluded",
           "provenance": "catalog"
         }
-      ]
+      ],
+      "error": null
+    },
+    {
+      "kind": "query",
+      "id": "defaultLimits",
+      "code": [
+        {
+          "n": 1,
+          "mark": "ctx",
+          "text": "connect(url, {"
+        },
+        {
+          "n": 2,
+          "mark": "ctx",
+          "text": "  schema: app,"
+        },
+        {
+          "n": 3,
+          "mark": "ctx",
+          "text": "  limits: { find: 100 },"
+        },
+        {
+          "n": 4,
+          "mark": "ctx",
+          "text": "});"
+        },
+        {
+          "n": 5,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": 6,
+          "mark": "hot",
+          "text": "const rows = await db.notes.find();"
+        }
+      ],
+      "sql": {
+        "text": "select t.\"id\", t.\"title\", t.\"authorId\"\nfrom \"notes\" t\nlimit $1",
+        "params": [
+          "100"
+        ]
+      },
+      "result": {
+        "text": "[\n  { id: \"1\", title: \"hello\", authorId: \"1\" },\n  { id: \"2\", title: \"sql tips\", authorId: \"1\" },\n  { id: \"3\", title: \"lunch\", authorId: \"2\" },\n]",
+        "count": 3
+      },
+      "rules": [
+        {
+          "rule": "parameterised",
+          "contribution": "planner",
+          "provenance": "planner"
+        },
+        {
+          "rule": "allowlisted",
+          "contribution": "catalog",
+          "provenance": "catalog"
+        },
+        {
+          "rule": "identifier",
+          "contribution": "catalog",
+          "provenance": "catalog"
+        },
+        {
+          "rule": "bounded",
+          "contribution": "limits.find",
+          "provenance": "connect"
+        }
+      ],
+      "error": null
+    },
+    {
+      "kind": "query",
+      "id": "noLimit",
+      "code": [
+        {
+          "n": 1,
+          "mark": "ctx",
+          "text": "const notes = table("
+        },
+        {
+          "n": 2,
+          "mark": "ctx",
+          "text": "  \"notes\","
+        },
+        {
+          "n": 3,
+          "mark": "ctx",
+          "text": "  {"
+        },
+        {
+          "n": 4,
+          "mark": "ctx",
+          "text": "    id: t.identity(),"
+        },
+        {
+          "n": 5,
+          "mark": "ctx",
+          "text": "    title: t.text(),"
+        },
+        {
+          "n": 6,
+          "mark": "ctx",
+          "text": "    authorId: t.bigint().references(\"authors\"),"
+        },
+        {
+          "n": 7,
+          "mark": "ctx",
+          "text": "  },"
+        },
+        {
+          "n": 8,
+          "mark": "ctx",
+          "text": "  { relations: { author: one(\"authors\", \"authorId\") } },"
+        },
+        {
+          "n": 9,
+          "mark": "ctx",
+          "text": ");"
+        },
+        {
+          "n": 10,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": 11,
+          "mark": "hot",
+          "text": "await db.notes.find({ where: { title: \"hello\" } });"
+        }
+      ],
+      "sql": {
+        "text": "",
+        "params": []
+      },
+      "result": {
+        "text": "OkmError OKM1101: find() needs a limit.\nfix: Pass a limit.",
+        "count": null
+      },
+      "rules": [],
+      "error": {
+        "code": "OKM1101",
+        "message": "find() needs a limit.",
+        "fix": "Pass a limit."
+      }
+    },
+    {
+      "kind": "query",
+      "id": "writeFilter",
+      "code": [
+        {
+          "n": 1,
+          "mark": "ctx",
+          "text": "const notes = table("
+        },
+        {
+          "n": 2,
+          "mark": "ctx",
+          "text": "  \"notes\","
+        },
+        {
+          "n": 3,
+          "mark": "ctx",
+          "text": "  {"
+        },
+        {
+          "n": 4,
+          "mark": "ctx",
+          "text": "    id: t.identity(),"
+        },
+        {
+          "n": 5,
+          "mark": "ctx",
+          "text": "    title: t.text(),"
+        },
+        {
+          "n": 6,
+          "mark": "ctx",
+          "text": "    authorId: t.bigint().references(\"authors\"),"
+        },
+        {
+          "n": 7,
+          "mark": "ctx",
+          "text": "  },"
+        },
+        {
+          "n": 8,
+          "mark": "ctx",
+          "text": "  { relations: { author: one(\"authors\", \"authorId\") } },"
+        },
+        {
+          "n": 9,
+          "mark": "ctx",
+          "text": ");"
+        },
+        {
+          "n": 10,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": 11,
+          "mark": "hot",
+          "text": "await db.notes.update({ set: { title: \"edited\" } });"
+        },
+        {
+          "n": 12,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": 13,
+          "mark": "hot",
+          "text": "await db.notes.update({ set: { title: \"edited\" }, where: { id: note.id } });"
+        }
+      ],
+      "sql": {
+        "text": "update \"notes\" as t set \"title\" = $1::text\nwhere t.\"id\" = $2",
+        "params": [
+          "edited",
+          "1"
+        ]
+      },
+      "result": {
+        "text": "{\n  count: 1,\n}",
+        "count": null
+      },
+      "rules": [],
+      "error": {
+        "code": "OKM1102",
+        "message": "update on notes needs a where. Pass a filter.",
+        "fix": "Pass a predicate. An undefined-only where is the same as an empty filter."
+      }
+    },
+    {
+      "kind": "query",
+      "id": "tree",
+      "code": [
+        {
+          "n": 1,
+          "mark": "ctx",
+          "text": "const nodes = table("
+        },
+        {
+          "n": 2,
+          "mark": "ctx",
+          "text": "  \"nodes\","
+        },
+        {
+          "n": 3,
+          "mark": "ctx",
+          "text": "  {"
+        },
+        {
+          "n": 4,
+          "mark": "ctx",
+          "text": "    id: t.identity(),"
+        },
+        {
+          "n": 5,
+          "mark": "ctx",
+          "text": "    parentId: t.bigint().nullable().references(\"nodes\"),"
+        },
+        {
+          "n": 6,
+          "mark": "ctx",
+          "text": "    name: t.text(),"
+        },
+        {
+          "n": 7,
+          "mark": "ctx",
+          "text": "  },"
+        },
+        {
+          "n": 8,
+          "mark": "ctx",
+          "text": "  { relations: { children: many(\"nodes\", \"parentId\") } },"
+        },
+        {
+          "n": 9,
+          "mark": "ctx",
+          "text": ");"
+        },
+        {
+          "n": 10,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": 11,
+          "mark": "hot",
+          "text": "const rows = await db.nodes.descendants(root.id, { relation: \"children\", limit: 10 });"
+        }
+      ],
+      "sql": {
+        "text": "with recursive walk as (select s.\"id\" as k0, s.\"parentId\" as f0, 0 as depth, array[s.\"id\"] as seen from \"nodes\" s where s.\"id\" = $1 union all select c.\"id\", c.\"parentId\", w.depth + 1, w.seen || c.\"id\" from \"nodes\" c join walk w on c.\"parentId\" = w.k0 where c.\"id\" <> all(w.seen)) select t.\"id\", t.\"parentId\", t.\"name\"\nfrom \"nodes\" t\njoin walk w on t.\"id\" = w.k0\nwhere w.depth > 0\norder by w.depth asc, t.\"id\" asc\nlimit $2",
+        "params": [
+          "1",
+          "10"
+        ]
+      },
+      "result": {
+        "text": "[\n  { id: \"2\", parentId: \"1\", name: \"mid\" },\n  { id: \"4\", parentId: \"1\", name: \"other\" },\n  { id: \"3\", parentId: \"2\", name: \"leaf\" },\n]",
+        "count": 3
+      },
+      "rules": [
+        {
+          "rule": "parameterised",
+          "contribution": "planner",
+          "provenance": "planner"
+        },
+        {
+          "rule": "allowlisted",
+          "contribution": "catalog",
+          "provenance": "catalog"
+        },
+        {
+          "rule": "identifier",
+          "contribution": "catalog",
+          "provenance": "catalog"
+        },
+        {
+          "rule": "bounded",
+          "contribution": "limit",
+          "provenance": "caller"
+        },
+        {
+          "rule": "bounded",
+          "contribution": "limit",
+          "provenance": "caller"
+        }
+      ],
+      "error": null
     }
   ]
 }

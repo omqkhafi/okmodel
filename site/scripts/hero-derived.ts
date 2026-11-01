@@ -30,6 +30,7 @@ import {
   type HeroDiffRow,
   type HeroFinding,
   type HeroMigrateSpec,
+  type HeroQueryError,
   type HeroRule,
   type HeroStep,
 } from "../lib/hero";
@@ -333,15 +334,61 @@ function rowCount(value: unknown): number | null {
   return null;
 }
 
-/** The query scenario's code as shown: the model lines, then the call. */
+/** The query scenario's code as shown: the model lines, then the call(s). */
 function queryCode(spec: HeroQuerySpec): HeroDiffRow[] {
-  if (!spec.schema.includes(spec.model)) throw new Error(`${spec.id}: model is not a part of the schema`);
+  if (spec.limits === undefined && !spec.schema.includes(spec.model)) {
+    throw new Error(`${spec.id}: model is not a part of the schema`);
+  }
+  if (spec.limits !== undefined && !spec.model.includes("limits:")) {
+    throw new Error(`${spec.id}: a limits scenario must show limits in the model`);
+  }
   const rows: HeroDiffRow[] = [];
   let n = 1;
   for (const text of spec.model.split("\n")) rows.push({ n: n++, mark: "ctx", text });
   rows.push({ n: n++, mark: "ctx", text: "" });
-  for (const text of `const rows = await ${spec.expr};`.split("\n")) rows.push({ n: n++, mark: "hot", text });
+  if (spec.refuse !== undefined) {
+    for (const text of `await ${spec.refuse};`.split("\n")) rows.push({ n: n++, mark: "hot", text });
+    rows.push({ n: n++, mark: "ctx", text: "" });
+  }
+  const binding = spec.expectError === true || spec.refuse !== undefined ? "await" : "const rows = await";
+  for (const text of `${binding} ${spec.expr};`.split("\n")) rows.push({ n: n++, mark: "hot", text });
   return rows;
+}
+
+/** Turn a thrown OkmError into the shape the stage shows. */
+function asError(value: unknown): HeroQueryError {
+  if (typeof value !== "object" || value === null) throw new Error("expected an OkmError");
+  const record = value as { code?: unknown; message?: unknown; fix?: { summary?: unknown } };
+  if (typeof record.code !== "string" || typeof record.message !== "string") {
+    throw new Error("expected an OkmError with code and message");
+  }
+  const fix = record.fix?.summary;
+  if (typeof fix !== "string") throw new Error(`OkmError ${record.code} has no fix`);
+  return { code: record.code, message: record.message, fix };
+}
+
+/**
+ * Reads and writes both expose `.sql()`, but a write returns `{ statements }`.
+ * The hero shows one statement.
+ */
+function normalizeSql(sql: unknown): { text: string; params: unknown[] } {
+  if (typeof sql !== "object" || sql === null) {
+    throw new Error(`sql() returned ${String(sql)}`);
+  }
+  if ("text" in sql && typeof (sql as { text: unknown }).text === "string") {
+    const params = (sql as { params?: unknown }).params;
+    return { text: (sql as { text: string }).text, params: Array.isArray(params) ? params : [] };
+  }
+  const statements = (sql as { statements?: unknown }).statements;
+  if (!Array.isArray(statements) || statements.length === 0) {
+    throw new Error("sql() returned no statement");
+  }
+  return normalizeSql(statements[0]);
+}
+
+/** Result text for a refused call: the code, message, and fix from the run. */
+function errorBlock(error: HeroQueryError): string {
+  return `OkmError ${error.code}: ${error.message}\nfix: ${error.fix}`;
 }
 
 function query(root: string, spec: HeroQuerySpec): HeroDerivedQuery {
@@ -349,21 +396,65 @@ function query(root: string, spec: HeroQuerySpec): HeroDerivedQuery {
   try {
     const driver = specifierMap(root).find(([specifier]) => specifier === "okmodel/pg/pglite")?.[1];
     const testing = specifierMap(root).find(([specifier]) => specifier === "okmodel/testing")?.[1];
+    // createClient is not a package export; the hero runner loads it from source.
+    const createClientPath = join(root, "src/runtime/client.ts");
+    const errorPath = join(root, "src/contracts/error.ts");
     if (driver === undefined || testing === undefined) throw new Error("package exports lost pglite or testing");
+    const limitsLiteral =
+      spec.limits === undefined ? "undefined" : JSON.stringify(spec.limits, null, 2);
+    const refuseBlock =
+      spec.refuse === undefined
+        ? "let refused = null;\n"
+        : `let refused = null;
+try {
+  await ${spec.refuse};
+  throw new Error(${JSON.stringify(`${spec.id}: refuse call was expected to throw`)});
+} catch (caught) {
+  if (!(caught instanceof OkmError)) throw caught;
+  refused = { code: caught.code, message: caught.message, fix: caught.fix };
+}
+`;
+    const callBlock =
+      spec.expectError === true
+        ? `let sql = { text: "", params: [] };
+let rules = [];
+let result = null;
+let thrown = null;
+try {
+  const call = ${spec.expr};
+  await call;
+  throw new Error(${JSON.stringify(`${spec.id}: call was expected to throw`)});
+} catch (caught) {
+  if (!(caught instanceof OkmError)) throw caught;
+  thrown = { code: caught.code, message: caught.message, fix: caught.fix };
+  result = thrown;
+}
+`
+        : `const call = ${spec.expr};
+const sql = await call.sql();
+const info = await call.inspect();
+const rules = info.rules;
+const result = await call;
+const thrown = null;
+`;
     writeFileSync(
       join(dir, "run.ts"),
       `${fromSource(spec.schema, root)}
 import { open } from "${driver}";
 import { testing } from "${testing}";
+import { createClient } from "${createClientPath}";
+import { OkmError } from "${errorPath}";
 
-const harness = await testing(app, { driver: open() });
-const db = harness.db;
-${fromSource(spec.seed, root)}
-const call = ${spec.expr};
-const sql = await call.sql();
-const info = await call.inspect();
-const result = await call;
-console.log("@@" + JSON.stringify({ sql, rules: info.rules, result }, (_key, value) => (typeof value === "bigint" ? value.toString() : value)));
+const pool = await open();
+const harness = await testing(app, { driver: pool });
+const db = ${
+        spec.limits === undefined
+          ? "harness.db"
+          : `createClient(app, pool, { ownsPool: false, limits: ${limitsLiteral} })`
+      };
+${spec.limits === undefined ? "" : "await db.connected;\n"}${fromSource(spec.seed, root)}
+${refuseBlock}${callBlock}
+console.log("@@" + JSON.stringify({ sql, rules, result, refused, thrown }, (_key, value) => (typeof value === "bigint" ? value.toString() : value)));
 await harness.close();
 `,
     );
@@ -371,17 +462,45 @@ await harness.close();
     const line = run.stdout.toString().split("\n").find((item) => item.startsWith("@@"));
     if (line === undefined) throw new Error(`${spec.id}: the query did not run\n${run.stderr.toString()}`);
     const out = JSON.parse(line.slice(2)) as {
-      sql: { text: string; params: unknown[] };
-      rules: HeroRule[];
+      sql: unknown;
+      rules: HeroRule[] | undefined;
       result: unknown;
+      refused: { code: string; message: string; fix: { summary: string } } | null;
+      thrown: { code: string; message: string; fix: { summary: string } } | null;
     };
+    const error =
+      out.thrown !== null
+        ? asError(out.thrown)
+        : out.refused !== null
+          ? asError(out.refused)
+          : null;
+    if (spec.expectError === true && error === null) {
+      throw new Error(`${spec.id}: expected an OkmError`);
+    }
+    if (spec.refuse !== undefined && out.refused === null) {
+      throw new Error(`${spec.id}: refuse call did not throw`);
+    }
+    if (error !== null && spec.expectError === true) {
+      return {
+        kind: "query",
+        id: spec.id,
+        code: queryCode(spec),
+        sql: { text: "", params: [] },
+        result: { text: errorBlock(error), count: null },
+        rules: [],
+        error,
+      };
+    }
+    const sql = normalizeSql(out.sql);
+    const rules = out.rules ?? [];
     return {
       kind: "query",
       id: spec.id,
       code: queryCode(spec),
-      sql: { text: formatSql(out.sql.text), params: out.sql.params.map((param) => String(param)) },
+      sql: { text: formatSql(sql.text), params: sql.params.map((param) => String(param)) },
       result: { text: block(out.result, ""), count: rowCount(out.result) },
-      rules: out.rules.map(({ rule, contribution, provenance }) => ({ rule, contribution, provenance })),
+      rules: rules.map(({ rule, contribution, provenance }) => ({ rule, contribution, provenance })),
+      error,
     };
   } finally {
     rmSync(dir, { recursive: true, force: true });

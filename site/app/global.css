@@ -208,6 +208,11 @@ html {
   --okm-tone-search: oklch(0.52 0.12 150);
   --okm-tone-archived: oklch(0.52 0.1 55);
   --okm-tone-hiddenRead: oklch(0.5 0.1 340);
+  --okm-tone-defaultLimits: oklch(0.5 0.11 210);
+  --okm-tone-noLimit: oklch(0.52 0.12 25);
+  --okm-tone-writeFilter: oklch(0.5 0.11 145);
+  --okm-tone-tree: oklch(0.5 0.1 165);
+  --okm-tone-generated: oklch(0.52 0.11 305);
 }
 
 .dark {
@@ -232,6 +237,11 @@ html {
   --okm-tone-search: oklch(0.77 0.1 150);
   --okm-tone-archived: oklch(0.77 0.08 55);
   --okm-tone-hiddenRead: oklch(0.75 0.08 340);
+  --okm-tone-defaultLimits: oklch(0.75 0.09 210);
+  --okm-tone-noLimit: oklch(0.76 0.1 25);
+  --okm-tone-writeFilter: oklch(0.75 0.09 145);
+  --okm-tone-tree: oklch(0.75 0.08 165);
+  --okm-tone-generated: oklch(0.76 0.09 305);
 }
 
 /* Settle-in for the hero copy, and the quick swap for captions that change. */

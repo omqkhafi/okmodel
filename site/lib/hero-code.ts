@@ -10,6 +10,7 @@ import {
   type HeroDiffMark,
   type HeroFinding,
   type HeroGroupId,
+  type HeroQueryError,
   type HeroRule,
   type HeroScenarioId,
   type HeroStep,
@@ -76,6 +77,7 @@ export interface HeroQueryView extends HeroViewBase {
     readonly count: number | null;
   };
   readonly rules: ReadonlyArray<HeroRule>;
+  readonly error: HeroQueryError | null;
 }
 
 /** Everything the stage needs for one scenario. */
@@ -138,6 +140,7 @@ export async function loadHeroScenarios(): Promise<ReadonlyArray<HeroScenarioVie
           sql: { lines: sql, params: scenario.sql.params },
           result: { lines: result, count: scenario.result.count },
           rules: scenario.rules,
+          error: scenario.error,
         };
       }
       const [diff, steps, types] = await Promise.all([
