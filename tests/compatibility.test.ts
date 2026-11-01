@@ -11,11 +11,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { collectCompatibility, renderCompatibility } from "../scripts/compatibility.js";
+import { ensurePackedDocs } from "../scripts/docs-pack.js";
 import { repoRoot } from "../scripts/root.js";
 
 test("compatibility table matches the conformance run", async () => {
+  const root = repoRoot();
+  ensurePackedDocs(root);
   const cells = await collectCompatibility();
-  const committed = readFileSync(join(repoRoot(), "docs/compatibility.md"), "utf8");
+  const committed = readFileSync(join(root, "docs/compatibility.md"), "utf8");
   const fresh = renderCompatibility(cells);
   expect(column(committed, "PGlite")).toEqual(column(fresh, "PGlite"));
   if (cells.some((cell) => cell.driver === "postgres.js")) {

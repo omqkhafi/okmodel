@@ -2,6 +2,9 @@
 title: "Testing"
 description: Factories, query counts, and a cross-tenant check on a real database.
 ---
+Postgres: native. Proof passes (`proof:tooling.testing`).
+
+
 
 `okmodel/testing` opens a real database and returns factories, a query counter, and a cross-tenant isolation check. The pool comes from `open()`. There is no mock database.
 
@@ -59,6 +62,10 @@ A gated case runs its body when the registry says `native` or `emulated` and the
 `packages/harness/src/closed-profile.ts` is a test fixture. `src/` does not import it. Every Postgres registry key is `refused`, with [OKM1860](/docs/reference/errors#okm1860) and an alternative, and the adapter flags are all off (`transactions: "none"`, `stream`, `listen`, and `cancel` false). `prepared` and `describe` are not flags. Against that profile, each registry key is refused through `assertSupported`, and a schema that uses a catalog feature is refused when a new statement is planned. Replaying that schema through `planMigration` does not raise OKM1860. `tx()` with no timeout is [OKM1111](/docs/reference/errors#okm1111) and names `batch()` as the alternative. A positive `timeout` is [OKM1120](/docs/reference/errors#okm1120) because cancel is off. That error does not carry a registry alternative. `stream`, `listen`, and `describe` have no refusal: `.stream()` does not read the flag, and `listen` and `describe` are absent unless the pool defines them.
 
 The portable minimum still passes on that profile: `connect`, a parameterised read and write through the in-memory driver, and mapping a unique violation. A new dialect ships a registry and passes that minimum before it marks a feature `native` or `emulated`. A feature it refuses needs `refusal:<key>` as a literal test title, a code, and an alternative. A feature it claims needs the `proof` title already on the entry, and the gated cases for that key then run.
+
+## Reference app
+
+`packages/reference-app` is a private project tracker that uses OKModel only through its public entry points. CI runs it as the end-to-end proof. It covers tenant workflows, expand/backfill/contract migrations, preview apply from the head snapshot, a rehearsal clone of a protected target, and replica reads. Run it with `bun test packages/reference-app` after `bun run build` and `bun run db:up`. Preview and rehearsal targets are [Environments](/docs/migrations/environments). Replica routing is [Topology](/docs/operate/replicas-and-topology).
 
 The package copy is [`docs/testing.md`](https://github.com/omqkhafi/okmodel/blob/main/docs/testing.md) on main.
 

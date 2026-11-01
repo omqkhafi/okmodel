@@ -179,6 +179,7 @@
     "docs:index": "bun ./scripts/docs-index.ts",
     "docs:capabilities": "bun ./scripts/docs-capabilities.ts",
     "docs:hygiene": "bun ./scripts/docs-hygiene.ts",
+    "docs:pack": "bun ./scripts/docs-pack.ts generate",
     "docs:check": "bun ./scripts/docs-check.ts",
     "readme:check": "bun ./scripts/readme-check.ts",
     "compiler-api": "bun ./scripts/compiler-api.ts",

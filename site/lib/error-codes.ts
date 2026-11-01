@@ -5,7 +5,6 @@
  */
 
 import { ERROR_DOCS } from "../../src/tooling/errors/registry.js";
-import { githubBlobUrl } from "./shared";
 
 /** One row in the generated code index. */
 export type ErrorCodeRow = {
@@ -13,7 +12,8 @@ export type ErrorCodeRow = {
   readonly kind: string;
   readonly summary: string;
   readonly anchor: string;
-  readonly docsUrl: string;
+  /** Pack-relative path agents open offline (`docs/errors/OKM####.md`). */
+  readonly docsPath: string;
 };
 
 /** Anchor id for a registry code (`OKM1860` → `okm1860`). */
@@ -52,7 +52,7 @@ export function errorCodeRows(): readonly ErrorCodeRow[] {
     kind: registryKind(doc.code),
     summary: doc.summary,
     anchor: errorCodeAnchor(doc.code),
-    docsUrl: githubBlobUrl(`docs/errors/${doc.code}.md`),
+    docsPath: `docs/errors/${doc.code}.md`,
   }));
 }
 
@@ -76,7 +76,7 @@ export function renderErrorCodeIndexMarkdown(
     const codeCell = `<a id="${row.anchor}" />[\`${row.code}\`](#${row.anchor})`;
     const summary = escapeMdxProse(row.summary);
     lines.push(
-      `| ${codeCell} | \`${row.kind}\` | ${summary} | [${row.code}.md](${row.docsUrl}) |`,
+      `| ${codeCell} | \`${row.kind}\` | ${summary} | \`${row.docsPath}\` |`,
     );
   }
   return `${lines.join("\n")}\n`;

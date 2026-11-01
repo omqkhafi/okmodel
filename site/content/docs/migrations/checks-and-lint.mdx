@@ -2,6 +2,9 @@
 title: "Lint"
 description: Replay a migration history on a throwaway database before it runs on a real one.
 ---
+Postgres: native. Proof passes (`proof:tooling.scratchReplay`).
+
+
 
 `okm migrate check` proves a migration history is sound. It is a CI command. It takes no prompt, and the result does not depend on colour. Exit zero prints `ok N migrations`, then one line that this command replays empty tables and does not catch a step that fails only on real data. A reprinted domain check or `LANGUAGE sql` body adds warning [OKM1552](/docs/reference/errors#okm1552) on the following lines. The warning does not fail the command. Any failure exits non-zero. One failure prints its code, the message, and the fix. Several failures print one greppable line per failure.
 
@@ -11,7 +14,7 @@ Run the check as a non-superuser. A superuser replay executes each step as writt
 
 ## The four checks
 
-1. **History.** Every migration is replayed, in order, into a scratch schema created inside one transaction. The schema name starts with `okm_check_`. The transaction always ends with `ROLLBACK`, and the schema is dropped at the end, including after a failure. The replay does not edit a system catalog or a real ACL. After each migration the scratch schema is introspected and planned back to that file's catalog. A remaining step is [OKM1547](/docs/reference/errors#okm1547) and names the migration and the steps. On PostgreSQL 18 a `NOT NULL … NOT VALID` constraint that the file never validates is such a step: `VALIDATE CONSTRAINT`. Before that plan, a domain check or a `LANGUAGE sql` function body that reprints differently is warning OKM1552. `-- okm-allow OKM1552: reason` silences it. An empty reason, or an allow when the stored text matches, is [OKM1510](/docs/reference/errors#okm1510). A reprinted domain check, table check (including a picklist), or btree index expression is sealed before that plan, so it is not OKM1547. A `using` index tail is not that seal. Two migrations generated from the same parent fail here. `COMMIT`, `END`, `ABORT`, `ROLLBACK`, `BEGIN`, `START TRANSACTION`, `PREPARE TRANSACTION`, and `COMMIT PREPARED` in a step are [OKM1551](/docs/reference/errors#okm1551) before any replay, even when `-- okm-allow OKM1551` silenced the lint. A `BEGIN ATOMIC` body of `CREATE FUNCTION` or `CREATE PROCEDURE` is one statement and is supported. Its closing `END` is not OKM1551. `BEGIN ATOMIC` outside those statements is still refused. Apply honors that allow. The check still throws OKM1551. A passing run also lists every `-- okm-allow` line in the directory. A weak reason is warning [OKM2300](/docs/reference/errors#okm2300). The lint codes are the [Errors](/docs/reference/errors) index. `VACUUM`, `CREATE DATABASE`, `DROP DATABASE`, and `ALTER SYSTEM` are not executed. The success line names them. A concurrent index, reindex, or refresh runs without `CONCURRENTLY`. `ALTER TYPE … ADD VALUE` runs inside the transaction and rolls back with it. Extension replay and a `uuidv7()` default are on [migrate check](/docs/reference/cli/migrate#migrate-check).
+1. **History.** Every migration is replayed, in order, into a scratch schema created inside one transaction. The schema name starts with `okm_check_`. The transaction always ends with `ROLLBACK`, and the schema is dropped at the end, including after a failure. The replay does not edit a system catalog or a real ACL. After each migration the scratch schema is introspected and planned back to that file's catalog. A remaining step is [OKM1547](/docs/reference/errors#okm1547) and names the migration and the steps. On PostgreSQL 18 a `NOT NULL … NOT VALID` constraint that the file never validates is such a step: `VALIDATE CONSTRAINT`. Before that plan, a domain check or a `LANGUAGE sql` function body that reprints differently is warning OKM1552. `-- okm-allow OKM1552: reason` silences it. An empty reason, or an allow when the stored text matches, is [OKM1510](/docs/reference/errors#okm1510). A reprinted domain check, table check (including a picklist), or btree index expression is sealed before that plan, so it is not OKM1547. A `using` index tail is not that seal. Two migrations generated from the same parent fail here. `COMMIT`, `END`, `ABORT`, `ROLLBACK`, `BEGIN`, `START TRANSACTION`, `PREPARE TRANSACTION`, and `COMMIT PREPARED` in a step are [OKM1551](/docs/reference/errors#okm1551) before any replay, even when `-- okm-allow OKM1551` silenced the lint. A `BEGIN ATOMIC` body of `CREATE FUNCTION` or `CREATE PROCEDURE` is one statement and is supported. Its closing `END` is not OKM1551. `BEGIN ATOMIC` outside those statements is still refused. Apply honors that allow. The check still throws OKM1551. A passing run also lists every `-- okm-allow` line in the directory. A weak reason is warning [OKM2300](/docs/reference/errors#okm2300). The lint codes are [Lint codes](#lint-codes). `VACUUM`, `CREATE DATABASE`, `DROP DATABASE`, and `ALTER SYSTEM` are not executed. The success line names them. A concurrent index, reindex, or refresh runs without `CONCURRENTLY`. `ALTER TYPE … ADD VALUE` runs inside the transaction and rolls back with it. Extension replay and a `uuidv7()` default are on [migrate check](/docs/reference/cli/migrate#migrate-check).
 2. **Previous catalog.** For migration N, catalog N−1 is the previous release. Every table, column, constraint, and type in N−1 must still exist in N with the same type, and nullability must not be tightened without a default. A gap is allowed only when the recomputed class is `contract`. The class comes from the SQL steps' kinds, or from planning N−1 to N again when a step has no kind. A hand-edited `-- class:` line is not trusted. A gap in an expand migration is [OKM1548](/docs/reference/errors#okm1548). This is schema-level. It does not prove application behaviour.
 3. **Head.** The last migration's catalog must equal the current schema. Otherwise the command fails with [OKM1549](/docs/reference/errors#okm1549) and the fix is to run `okm generate`.
 4. **Lint.** The whole history is linted. An error fails. An override with a reason is respected. Apply is unchanged: it still lints only migrations that are pending on the target. [`lintFrom`](/docs/reference/config#lint-from) is the first migration id `okm migrate check` lints. Files before that id are not linted. The id itself is linted. Apply does not read `lintFrom`.
@@ -30,9 +33,97 @@ This check replays empty tables. A step that only fails on real data is not caug
 
 The first line stays `ok N migrations`. Skipped statements and OKM1552 warnings follow the limit. The command checks the selected target's history in one scratch schema.
 
-## Provision
+## Empty-target apply
 
-`okm migrate check --provision` installs the head snapshot into one scratch schema and replays the history into another. Each side is its own transaction and ends with `ROLLBACK`. Both schemas start with `okm_check_` and are dropped at the end, including after a failure. Type names are normalised before the comparison. A difference is [OKM1521](/docs/reference/errors#okm1521) and names the object. The default command does not do this. A protected target is still refused, and `--allow-protected` does not apply.
+An empty target installs the head snapshot. It does not replay migration files.
+
+A target is empty when it has no `okm_meta`, `okm_history`, `okm_backfill`, or `okm_steps`, and its namespace has no other table, view, sequence, enum, domain, or extension. `okm migrate apply` on that target plans the last catalog from an empty catalog, inserts [reference rows](/docs/schema/required-rows), and writes one history row, `provisioned@⟨migration id⟩`. The catalog hash is the head hash. No expand, backfill, or contract step runs.
+
+A target that already has history is tracked. Apply continues with files that are still pending. It does not install the snapshot again.
+
+A target that is not empty and has no history is [OKM1851](/docs/reference/errors#okm1851). The fix is to provision an empty schema or an empty database, or to [`okm migrate baseline`](/docs/migrations/adopt-existing-database) after `okm pull` and `okm generate`.
+
+If the install stops after it has created objects and before it writes the history row, those objects stay. The next apply does not replay over them and does not delete them. It is OKM1851, names the object, and says to drop the schema or database and run again. Managed tables with no history row and no other objects are still empty, and apply provisions them.
+
+Provision on an empty protected target is allowed without `--allow-protected`. A protected target that is not empty is still OKM1851.
+
+Each migration has a sibling catalog file. That file is the catalog after the migration. The latest catalog is the head snapshot. Installing it plans that catalog from empty, so grants and roles are included, and a table created in that plan keeps the plain statements.
+
+`provision(target)` from `okmodel/migrate` provisions one configured target. `default` is the `database` target. It uses the same emptiness rule and the same policy call as `okm migrate apply`.
+
+## Provision comparison
+
+`okm migrate check --provision` installs the head snapshot into one scratch schema and replays the history into another. Each side is its own transaction and ends with `ROLLBACK`. Both schemas start with `okm_check_` and are dropped at the end, including after a failure. Type names are normalised before the comparison. A difference is [OKM1521](/docs/reference/errors#okm1521) and names the object. The default command does not do this. A protected target is still refused, and `--allow-protected` does not apply. `okm migrate check` without `--provision` still replays the history. It does not provision.
+
+## Override
+
+Put the line on the step, directly above its statements. The reason is the text after the colon.
+
+```sql
+-- okm-allow OKM1511: the table is empty and nothing reads it
+drop table "public"."notes";
+```
+
+An override silences only the code it names, on every statement of that step. A missing or empty reason, or a code no statement triggered, is [OKM1510](/docs/reference/errors#okm1510) and does not silence the finding. `okm check` and `okm migrate check` list every override. A weak reason is warning [OKM2300](/docs/reference/errors#okm2300).
+
+## Where lint runs
+
+| Command | What it does with findings |
+| --- | --- |
+| `okm generate` | Writes the migration file and prints findings. An error finding exits 1 after the write. A warning does not change the exit code. |
+| `okm migrate plan` | Prints the plan, then the findings. An error finding exits non-zero. |
+| `okm check` | Prints findings. An error finding is OKM1510. Type preferences run here. |
+| `okm migrate apply` | Lints migrations that still have a step missing from `okm_history` on the selected target. An unresolved error is OKM1510 before any DDL or data statement. |
+| `okm migrate check` | Lints the whole history. An error is OKM1510. `defineConfig({ lintFrom })` skips files before that migration id. Apply does not read `lintFrom`. |
+
+The linter does not connect to the database for the rule table below. A finding names the step, the code, why it fired, and the fix. `error` fails the command. `warning` prints and the command still succeeds.
+
+Destructive, backward-incompatible, and data-dependent rules are errors. OKM1534–OKM1537 are errors when the statement is not the safe form. [OKM1538](/docs/reference/errors#okm1538) stays a warning when the type change rewrites the heap. There is no safe form for that rewrite in this version; the recipe is [Type change](/docs/reference/type-change). Type preferences are warnings and run on the schema in `okm check`, not on a migration file.
+
+On a table that already exists, the planner writes the safe form these locking rules accept: `CREATE INDEX CONCURRENTLY` / `DROP INDEX CONCURRENTLY`; `ADD CONSTRAINT … NOT VALID` then `VALIDATE CONSTRAINT` in its own step; `SET NOT NULL` after a validated `CHECK (column IS NOT NULL)`; a unique or primary key via `CREATE UNIQUE INDEX CONCURRENTLY` then `ADD CONSTRAINT … USING INDEX`. A new table keeps the plain statements. The linter recognises the form from the SQL, so a hand-edited file is judged the same way.
+
+## Lint codes
+
+| Code | Category | Severity | What it flags |
+| --- | --- | --- | --- | --- |
+| [OKM1510](/docs/reference/errors#okm1510) | refusal | error | Unresolved lint error, or an override with an empty reason or a code no statement in the step triggered |
+| [OKM1511](/docs/reference/errors#okm1511) | destructive | error | Drop table |
+| [OKM1512](/docs/reference/errors#okm1512) | destructive | error | Drop column |
+| [OKM1513](/docs/reference/errors#okm1513) | destructive | error | Drop enum |
+| [OKM1514](/docs/reference/errors#okm1514) | destructive | error | Drop domain |
+| [OKM1515](/docs/reference/errors#okm1515) | destructive | error | Drop function |
+| [OKM1516](/docs/reference/errors#okm1516) | destructive | error | Drop view |
+| [OKM1517](/docs/reference/errors#okm1517) | destructive | error | Drop extension. A dependent still in the catalog is OKM1814 before this finding |
+| [OKM1518](/docs/reference/errors#okm1518) | destructive | error | Drop materialized view |
+| [OKM1519](/docs/reference/errors#okm1519) | backward-incompatible | error | Rename column |
+| [OKM1523](/docs/reference/errors#okm1523) | backward-incompatible | error | Rename table |
+| [OKM1524](/docs/reference/errors#okm1524) | backward-incompatible | error | Column type change, including `ALTER COLUMN … TYPE` and `SET DATA TYPE` |
+| [OKM1525](/docs/reference/errors#okm1525) | backward-incompatible | error | New NOT NULL column with no default on an existing table |
+| [OKM1526](/docs/reference/errors#okm1526) | backward-incompatible | error | Remove a default |
+| [OKM1527](/docs/reference/errors#okm1527) | backward-incompatible | error | Shrink a character length |
+| [OKM1528](/docs/reference/errors#okm1528) | data-dependent | error | New unique or primary-key constraint on an existing table |
+| [OKM1529](/docs/reference/errors#okm1529) | data-dependent | error | New unique index on an existing table |
+| [OKM1531](/docs/reference/errors#okm1531) | data-dependent | error | New check that validates existing rows |
+| [OKM1532](/docs/reference/errors#okm1532) | data-dependent | error | New foreign key that validates existing rows |
+| [OKM1533](/docs/reference/errors#okm1533) | data-dependent | error | Narrowing type change |
+| [OKM1534](/docs/reference/errors#okm1534) | locking | error | Non-concurrent index create on an existing table |
+| [OKM1535](/docs/reference/errors#okm1535) | locking | error | Add check without `NOT VALID` |
+| [OKM1536](/docs/reference/errors#okm1536) | locking | error | Add foreign key without `NOT VALID` |
+| [OKM1537](/docs/reference/errors#okm1537) | locking | error | `SET NOT NULL` that is not preceded by a validated `CHECK (col IS NOT NULL)` |
+| [OKM1538](/docs/reference/errors#okm1538) | locking | warning | Type change that rewrites the heap. No safe form in this version. See [Type change](/docs/reference/type-change) |
+| [OKM1539](/docs/reference/errors#okm1539) | type-preference | warning | `timestamp` without time zone |
+| [OKM1540](/docs/reference/errors#okm1540) | type-preference | warning | `varchar(n)` where `text` would do |
+| [OKM1542](/docs/reference/errors#okm1542) | data-dependent | error | `insert`, `update`, `delete`, `merge`, `truncate`, or a `with` that writes, outside a backfill step. `DO` and `CALL` too: the body is not analysed |
+| [OKM1543](/docs/reference/errors#okm1543) | type-preference | warning | `serial` or a `nextval` default |
+| [OKM1544](/docs/reference/errors#okm1544) | type-preference | warning | `json` where `jsonb` is available |
+| [OKM1545](/docs/reference/errors#okm1545) | type-preference | warning | Identity that is not generated always |
+| [OKM1550](/docs/reference/errors#okm1550) | destructive | error | `DISABLE ROW LEVEL SECURITY`, `NO FORCE ROW LEVEL SECURITY`, `DROP POLICY`, `CREATE` or `ALTER POLICY` on a tenant table that is not the emitted predicate, `BYPASSRLS` on a role, or `OWNER TO` on a tenant table |
+| [OKM1551](/docs/reference/errors#okm1551) | destructive | error | Transaction control inside a step (`COMMIT`, `END`, `ABORT`, `ROLLBACK`, `BEGIN`, `START TRANSACTION`, `PREPARE TRANSACTION`, or `COMMIT PREPARED`), including a `DO` body. A function or procedure body, including `BEGIN ATOMIC`, is not this. `ROLLBACK TO` is not this. Apply may honor `-- okm-allow`; `okm migrate check` still refuses it |
+| [OKM1552](/docs/reference/errors#okm1552) | reprint | warning | Domain check or `LANGUAGE sql` function body whose stored text differs. `okm migrate check` reports it |
+| [OKM1557](/docs/reference/errors#okm1557) | locking | error | A committed step (not a backfill) with no built-in probe and no `-- probe:` |
+| [OKM1558](/docs/reference/errors#okm1558) | locking | error | `-- probe:` is empty, is not one read-only `SELECT`, has more than one statement, or sits on a transactional or backfill step |
+
+Reference rows are not migration steps, so OKM1542 does not see them. See [Required rows](/docs/schema/required-rows).
 
 ## In a workflow
 

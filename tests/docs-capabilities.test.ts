@@ -17,11 +17,13 @@ import {
   supportMarkerProblems,
   supportRegion,
 } from "../scripts/docs-capabilities.js";
+import { ensurePackedDocs } from "../scripts/docs-pack.js";
 import { repoRoot } from "../scripts/root.js";
 import { STEP_KINDS } from "../src/tooling/migrate/classify.js";
 import type { FeatureEntry } from "../src/tooling/capabilities/types.js";
 
 const root = repoRoot();
+ensurePackedDocs(root);
 
 test("a missing proof is unverified and is not called native", () => {
   const entry: FeatureEntry = { support: "native", proof: "proof:missing", since: "18" };
@@ -116,7 +118,7 @@ test("step rows follow the planner kinds and the probe function", () => {
   expect(byKind.get("set-not-null")?.transactional).toBe("yes");
 });
 
-test("the committed capabilities page, markers, and step table match the registry", () => {
+test("the generated capabilities page, markers, and step table match the registry", () => {
   expect(capabilityDocProblems(root)).toEqual([]);
   const pages = [
     ["docs/compatibility.md", "type.uuidv7"],

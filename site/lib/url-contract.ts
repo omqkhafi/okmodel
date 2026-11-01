@@ -92,11 +92,14 @@ function handbookFile(path: string): string | undefined {
  * @param title - Heading text
  */
 function slugify(title: string): string {
+  // Keep runs of `-` from titles like `doctor --production` so `#doctor---production` resolves.
   return title
     .toLowerCase()
     .replace(/[`*_]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
+    .replace(/[^\p{L}\p{N}\s-]/gu, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 /**

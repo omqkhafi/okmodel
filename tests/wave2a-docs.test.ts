@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { listCompatibilityCaseNames, supportSentence } from "../scripts/compatibility.js";
+import { ensurePackedDocs } from "../scripts/docs-pack.js";
 import { repoRoot } from "../scripts/root.js";
 import { compilerRangeNote } from "../scripts/ts-range.js";
 import {
@@ -18,6 +19,7 @@ import {
 import type { MigrateConfig } from "../src/tooling/migrate/config.js";
 
 const root = repoRoot();
+ensurePackedDocs(root);
 
 function page(path: string): string {
   return readFileSync(join(root, path), "utf8");

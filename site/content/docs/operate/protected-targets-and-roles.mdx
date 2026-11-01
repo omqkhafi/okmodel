@@ -56,8 +56,6 @@ A role that lacks `CREATE` still cannot apply DDL when someone passes `--allow-p
 
 [`okm doctor --production`](/docs/reference/cli/check#doctor---production) reports what the role in the target URL can do. A superuser or `BYPASSRLS` login fails (OKM1707), and a login that owns the tables warns, because that is right for the migrator and wrong for the app role. With `roles` set in the config it also runs the role health check. Run it once per login: the migrator's URL warns about ownership by design, and the app's URL must not. The checklist is [Production checklist](/docs/operate/production-checklist).
 
-The package copy is [`docs/protection.md`](https://github.com/omqkhafi/okmodel/blob/main/docs/protection.md) and [`docs/roles.md`](https://github.com/omqkhafi/okmodel/blob/main/docs/roles.md) on main.
-
 | Next | You use it for |
 | --- | --- |
 | [Production checklist](/docs/operate/production-checklist) | `requireMeta`, the pooler probe, and the doctor sample. |

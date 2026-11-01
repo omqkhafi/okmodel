@@ -9,6 +9,7 @@ import { join } from "node:path";
 
 import { POSTGRES_VERSIONS } from "../packages/harness/src/version.js";
 import { renderCompatibility, supportSentence } from "../scripts/compatibility.js";
+import { ensurePackedDocs } from "../scripts/docs-pack.js";
 import { verifyVersions } from "../scripts/verify.js";
 import {
   changelogReleaseNotes,
@@ -77,6 +78,7 @@ test("the postgres suite runs every test file except the named omissions", () =>
 });
 
 test("compatibility names the supported majors", () => {
+  ensurePackedDocs(root);
   const sentence = supportSentence();
   expect(sentence).toContain("Supported majors are Postgres 15, 16, 17, and 18.");
   expect(sentence).toContain(

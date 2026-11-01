@@ -11,6 +11,7 @@ import {
 import { checkCompilerApi } from "../scripts/compiler-api.js";
 import { checkCorePurity } from "../scripts/core-purity.js";
 import { checkDocs } from "../scripts/docs-check.js";
+import { ensurePackedDocs } from "../scripts/docs-pack.js";
 import { checkReadme } from "../scripts/readme-check.js";
 import {
   DEPLOY_FETCH_BUDGET_MS,
@@ -47,6 +48,7 @@ import {
 } from "../scripts/size.js";
 
 const root = repoRoot();
+ensurePackedDocs(root);
 const fixtures = join(root, "tests", "fixtures");
 
 test("layers-check fails when an import goes upward, including import type", () => {

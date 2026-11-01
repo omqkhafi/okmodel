@@ -11,6 +11,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { createIsolatedDatabase } from "../packages/harness/src/postgres.js";
+import { ensurePackedDocs } from "../scripts/docs-pack.js";
 import { repoRoot } from "../scripts/root.js";
 import {
   command,
@@ -81,6 +82,7 @@ const NOT_COMMANDS = [
 
 test("recipe commands that can run in CI do, and the rest say why", async () => {
   const root = repoRoot();
+  ensurePackedDocs(root);
   if (!existsSync(join(root, "dist", "okm.js"))) {
     throw new Error("dist/okm.js is missing. bun run build writes it.");
   }
