@@ -629,6 +629,11 @@ export const COMMANDS: readonly CommandSpec[] = [
         type: "boolean",
         hint: "Record that this project has no agent files. init does not ask again.",
       },
+      {
+        name: "limits",
+        type: "boolean",
+        hint: "Add limits to an unmodified generated client.ts. Otherwise print the snippet.",
+      },
     ],
   }),
   spec({
