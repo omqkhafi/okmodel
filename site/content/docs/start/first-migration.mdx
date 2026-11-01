@@ -145,6 +145,7 @@ import { db } from "./db.ts";
 
 const note = await db.notes.insert({ title: "Hello" });
 console.log(note);
+await db.close();
 ```
 
 ```text title="insert.out"
