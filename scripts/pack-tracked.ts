@@ -1,9 +1,10 @@
 /**
  * Fails when a packed file is not tracked by git.
  *
- * `dist/` is build output and is not committed. Every other path in the
- * tarball must be in `git ls-files`. `--release` also fails when the worktree
- * is dirty, including untracked files.
+ * `dist/` is build output and is not committed. Generated public docs under
+ * `docs/` (from `docs:pack`) are packed by `prepack` and are gitignored on
+ * purpose. Every other path in the tarball must be in `git ls-files`.
+ * `--release` also fails when the worktree is dirty, including untracked files.
  *
  *   bun ./scripts/pack-tracked.ts
  *   bun ./scripts/pack-tracked.ts --release
@@ -13,6 +14,7 @@
 import { readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
+import { isGeneratedPublicDoc } from "./docs-pack.js";
 import { repoRoot } from "./root.js";
 
 const release = process.argv.includes("--release");
@@ -81,6 +83,7 @@ const stray: string[] = [];
 for (const entry of entries) {
   const path = packedPath(entry);
   if (path === undefined || path.startsWith("dist/")) continue;
+  if (path.startsWith("docs/") && isGeneratedPublicDoc(path.slice("docs/".length))) continue;
   if (!tracked.has(path)) stray.push(path);
 }
 
