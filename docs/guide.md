@@ -1520,6 +1520,10 @@ Status is on the [board](https://github.com/users/omqkhafi/projects/1). Each rel
 - [x] [0.5](https://github.com/omqkhafi/okmodel/milestone/5) — A primary with replicas, read routing, and a reference app.
 - [x] [0.5.1](https://github.com/omqkhafi/okmodel/milestone/7) — QA fixes for 0.5.0.
 - [x] [0.6](https://github.com/omqkhafi/okmodel/milestone/8) — Composite, path, and row-level tenancy, column grants, a reporting role, and SQL constraint names.
+- [x] [0.7](https://github.com/omqkhafi/okmodel/milestone/9) — Query depth: tools, versioned and sortable, morph, and stream.
+- [x] [0.8](https://github.com/omqkhafi/okmodel/milestone/10) — SQL lane: builder, typed raw SQL, explain, otel, driver test, and Neon.
+- [x] [0.9](https://github.com/omqkhafi/okmodel/milestone/11) — Tooling train through the M2 gate.
+- [x] [0.10](https://github.com/omqkhafi/okmodel/milestone/13) — Doctor, init, agents, session settings, SQL options, and misuse limits.
 
 `okmodel/internal` has no stability promise. Names on that subpath can change or disappear in any release.
 
