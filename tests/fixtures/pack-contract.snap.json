@@ -688,6 +688,7 @@
     "dist/tooling/migrate/drizzle-casing.d.ts",
     "dist/tooling/migrate/engine.d.ts",
     "dist/tooling/migrate/equal.d.ts",
+    "dist/tooling/migrate/escape-regexp.d.ts",
     "dist/tooling/migrate/estimate.d.ts",
     "dist/tooling/migrate/export.d.ts",
     "dist/tooling/migrate/ext-surface.d.ts",
