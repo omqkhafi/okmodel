@@ -32,7 +32,6 @@ const imports: readonly (readonly [string, string])[] = [
   ["okmodel", join(root, "src/contracts/index.ts")],
 ];
 
-
 const gate = await loadPostgresGate();
 
 type Fence = { readonly lang: string; readonly title: string; readonly body: string };
