@@ -582,6 +582,14 @@ type Defaults<S, Key extends keyof Limits> = S extends {
   ? true
   : false;
 
+/**
+ * No argument when `connect({ limits })` set `Key`.
+ *
+ * Without that key the call still needs its options, so a client that set
+ * nothing keeps today's error.
+ */
+type BareArgs<S, Key extends keyof Limits> = Defaults<S, Key> extends true ? [] : [never];
+
 /** `limit` of a to-many include: required, or optional when `limits.include` is set. */
 type IncludeLimit<S> =
   Defaults<S, "include"> extends true ? { readonly limit?: number } : { readonly limit: number };
@@ -1723,6 +1731,19 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   find<const O extends RelationFind<S, K, false, L>>(
     options: O & RelationSeal<S, K, O, false> & Top<O, FindKey>,
   ): Unbounded<S, "find", Read<readonly ResultRow<S, K, O>[]>>;
+  /**
+   * No argument when `limits.find` is set. The read uses that default.
+   *
+   * Not first: a call that passes options, including `as never`, matches an
+   * earlier overload. Not last: `Parameters` and excess-property errors stay
+   * on the options object. Without `limits.find` this signature takes one
+   * argument and the bare call stays an error.
+   */
+  find(
+    ...args: BareArgs<S, "find">
+  ): Defaults<S, "find"> extends true
+    ? Read<readonly ResultRow<S, K, Record<string, never>>[]>
+    : never;
   find<const O extends RelationFind<S, K, true, L>>(
     options: O & RelationSeal<S, K, O, true> & Top<O, FindKey>,
   ): Unbounded<S, "find", Read<readonly ResultRow<S, K, O>[]>>;
@@ -1768,6 +1789,15 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   page<const O extends RelationDefaultPage<S, K, false>>(
     options: O & NoRank<O> & PageTop<O> & RelationSeal<S, K, O, false>,
   ): Query<Page<ResultRow<S, K, O>>>;
+  /**
+   * No argument when `limits.page` is set.
+   *
+   * Same placement as the bare `find`. Without `limits.page` the bare call
+   * stays an error.
+   */
+  page(
+    ...args: BareArgs<S, "page">
+  ): Defaults<S, "page"> extends true ? Query<Page<ResultRow<S, K, Record<string, never>>>> : never;
   page<const O extends RelationDefaultPage<S, K, true>>(
     options: O & NoRank<O> & PageTop<O> & RelationSeal<S, K, O, true>,
   ): Query<Page<ResultRow<S, K, O>>>;

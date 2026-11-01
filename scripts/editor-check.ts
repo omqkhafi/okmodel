@@ -300,9 +300,15 @@ function assertSurface(report: Report): readonly string[] {
   if (!set.includes("title") || !set.includes("position")) {
     problems.push("editor-check: update set completions are missing a column name");
   }
+  if (!hover("bare").includes("email") || hover("bare").includes("ColumnBuilder")) {
+    problems.push("editor-check: hover on a bare find does not show the email field");
+  }
   const joined = report.diagnostics.join("\n");
   if (!joined.includes("missing")) {
     problems.push("editor-check: diagnostics do not name the missing column or table");
+  }
+  if (!joined.includes("Expected 1 arguments")) {
+    problems.push("editor-check: a bare find without limits.find is not an error");
   }
   return problems;
 }
