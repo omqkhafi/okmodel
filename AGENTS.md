@@ -82,7 +82,7 @@ Boot starts Docker, then `bun run db:up` with `OKM_PRIMARY_PORT=55432`, `OKM_REP
 
 ## Hygiene
 
-D115: after the M0 gate, P09A removes spike leftovers, dedupes helpers, stabilises flaky tests, and syncs docs. Every later gate (P17, P30, P44, P55, P66) ends with a lighter hygiene step — dead code, duplicated helpers, flaky tests, doc sync, a dependency audit, and the budgets re-checked — before `bun run bump release`.
+D115: after the M0 gate, P09A removes spike leftovers, dedupes helpers, stabilises flaky tests, and syncs docs. Every later gate (P17, P30, P44, P55, P66, P86, P99, P110, P119) ends with a lighter hygiene step — dead code, duplicated helpers, flaky tests, doc sync, a dependency audit, and the budgets re-checked — before `bun run bump release`. Post-0.10 patch trains do the same before their release.
 
 ## Changelog
 
