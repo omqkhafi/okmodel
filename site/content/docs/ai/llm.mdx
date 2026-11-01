@@ -19,3 +19,5 @@ Pick one source. Prefer the installed package when the project pins a version. P
 The packaged index is one line per public doc page in that release. Open one page from it. A failing `OKM` code has its own file at `node_modules/okmodel/docs/errors/⟨code⟩.md`. Do not fetch the website when the package already has the page for that version.
 
 The skill file the site publishes is [`/.well-known/agent-skills/okmodel/SKILL.md`](/.well-known/agent-skills/okmodel/SKILL.md). The index pins it with a SHA-256 digest. In a project, `bunx okm init --agents` copies that skill into `.claude/skills/okmodel/` and `.agents/skills/okmodel/` when those tool directories exist. See [Set up your agent](/docs/ai/skills).
+
+Packed package docs are scanned for NUL, zero-width characters, bidi overrides and isolates, tag characters, and variation selectors outside an emoji sequence. Arabic, Persian, Hebrew, and Indic letters are allowed. The same bidi override and tag characters are stripped from untrusted database and error text ([Safety](/docs/concepts/the-safety-model#untrusted-text)).

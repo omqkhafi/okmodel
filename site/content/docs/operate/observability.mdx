@@ -6,15 +6,126 @@ Observers are read-only. They cannot change a query, a commit, or a rollback. Ev
 
 ## onWrite
 
-`onWrite` observes committed writes. Pass `writeObserver({ keys: ["tasks"] })` from `okmodel/observe` when a table's primary key should appear on the event. A table with no primary key is refused at connect. Row counts use the driver command tag: `changed`, `returned` when `RETURNING` ran, or `unknown` when the driver reported none. An upsert counts inserted and updated rows as `changed`. The handler cannot change the write. `await onWrite.flush()` waits for handlers. A unit is one transaction, batch, or autocommit statement, and two units that run at once on one client keep separate events. A unit that rolls back ends as `rolled_back`. A connection lost after COMMIT was sent ends as `unknown`: the commit may or may not have landed, so the handler must be idempotent. A process that dies delivers no event.
+`onWrite` observes committed writes. Pass `writeObserver({ keys: ["notes"] })` from `okmodel/observe` when a table's primary key should appear on the event. A table with no primary key is refused at connect. Row counts use the driver command tag: `changed`, `returned` when `RETURNING` ran, or `unknown` when the driver reported none. An upsert counts inserted and updated rows as `changed`. The handler cannot change the write. `await onWrite.flush()` waits for handlers. A unit is one transaction, batch, or autocommit statement, and two units that run at once on one client keep separate events. A unit that rolls back ends as `rolled_back`. A connection lost after COMMIT was sent ends as `unknown`: the commit may or may not have landed, so the handler must be idempotent. A process that dies delivers no event.
+
+```ts title="on-write.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { writeObserver } from "okmodel/observe";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+const app = schema({ tables: [notes] });
+
+const seen: unknown[] = [];
+const onWrite = writeObserver({
+  keys: ["notes"],
+  committed(unit) {
+    seen.push({
+      outcome: "committed",
+      writes: unit.writes.map((write) => ({
+        op: write.op,
+        table: write.table,
+        rowCount: write.rowCount,
+        rowCountMode: write.rowCountMode,
+        keys: write.keys,
+      })),
+    });
+  },
+});
+
+export async function demo(url: string) {
+  await using db = connect(url, {
+    schema: app,
+    onWrite,
+  });
+  await db.notes.insert({ title: "Hello" });
+  await onWrite.flush();
+  console.log(seen);
+}
+```
+
+```text title="on-write.out"
+[
+  {
+    outcome: "committed",
+    writes: [
+      {
+        op: "insert",
+        table: "notes",
+        rowCount: 1,
+        rowCountMode: "returned",
+        keys: [{ id: "1" }],
+      },
+    ],
+  },
+]
+```
 
 ## onQuery
 
-`onQuery` observes each call after it settles, reads and writes. One `QueryEvent` per call. The `set_config` prelude, `BEGIN`, `COMMIT`, and `RESET ALL` are part of the call and are not a separate event. Pass `queryObserver()` from `okmodel/observe`. `params: true` includes bound parameters, with sensitive, hidden, and tenant values as `[redacted]`. `stack: true` includes a stack. `toOtel(event)` maps one event onto the same `db.*` names as `okmodel/otel`, and adds the SQLSTATE on failure. `route` names the replica that served a read, or the primary. The handler cannot change the result. `await onQuery.flush()` waits for handlers.
+`onQuery` observes each call after it settles, reads and writes. One `QueryEvent` per call. The `set_config` prelude, `BEGIN`, `COMMIT`, and `RESET ALL` are part of the call and are not a separate event. Pass `queryObserver({ query })` from `okmodel/observe`. `params: true` includes bound parameters, with sensitive, hidden, and tenant values as `[redacted]`. `stack: true` includes a stack. `toOtel(event)` maps one event onto the same `db.*` names as `okmodel/otel`, and adds the SQLSTATE on failure. `route` names the replica that served a read, or the primary. The handler cannot change the result. `await onQuery.flush()` waits for handlers.
+
+```ts title="on-query.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+import { queryObserver } from "okmodel/observe";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+const app = schema({ tables: [notes] });
+
+const seen: unknown[] = [];
+const onQuery = queryObserver({
+  query(event) {
+    seen.push({
+      op: event.op,
+      table: event.table,
+      summary: event.summary,
+      rowCount: event.rowCount,
+      rowCountMode: event.rowCountMode,
+    });
+  },
+});
+
+export async function demo(url: string) {
+  await using db = connect(url, {
+    schema: app,
+    onQuery,
+  });
+  const row = await db.notes.insert({ title: "Hello" });
+  await db.notes.find({ where: { id: row.id }, limit: 1 });
+  await onQuery.flush();
+  console.log(seen);
+}
+```
+
+```text title="on-query.out"
+[
+  {
+    op: "insert",
+    table: "notes",
+    summary: "INSERT notes",
+    rowCount: 1,
+    rowCountMode: "returned",
+  },
+  {
+    op: "find",
+    table: "notes",
+    summary: "SELECT notes",
+    rowCount: 1,
+    rowCountMode: "returned",
+  },
+]
+```
 
 ## hookm
 
-`hookm` is a list of read-only observers. Omitted, no observer runs. Pass an array: `hookm: [observer]`. A single observer object is not a list — wrap it. There is no `hooks` connect option; that key is ignored. Each method is optional. They run in list order. They are events only. An error a hook throws is dropped and never reaches the call. The next observer still runs.
+`hookm` is a list of read-only observers. Omitted, no observer runs. Pass an array: `hookm: [observer]`. A single observer object is not a list — wrap it. There is no `hooks` connect option. A typo such as `hooks: […]` is ignored at runtime: TypeScript rejects it on an object literal, and a value passed through a wider type never runs. Each method is optional. They run in list order. They are events only. An error a hook throws is dropped and never reaches the call. The next observer still runs.
 
 | Method | When |
 | --- | --- |
@@ -32,15 +143,13 @@ A statement's notices are passed to every `onNotice`.
 | `message` | A string. |
 | `code` | Optional. A string. |
 
-<Callout type="info" title="Bun.sql">
-Bun.sql does not surface `RAISE NOTICE`; see [Drivers](/docs/operate/drivers).
-</Callout>
+Bun.sql does not surface `RAISE NOTICE`; see [Drivers](/docs/operate/drivers). Use postgres.js, node-postgres, or PGlite when you need notices.
 
 ### onTransaction
 
 `onTransaction` hears that a transaction or savepoint changed phase. `phase` is `start`, `commit`, or `rollback`. `depth` is 0 for the transaction and 1 and up for savepoints.
 
-```ts title="db.ts"
+```ts title="on-transaction.ts"
 import { connect } from "okmodel/pg/postgresjs";
 import { schema, table, t } from "okmodel/pg";
 
@@ -53,16 +162,26 @@ const app = schema({ tables: [notes] });
 
 const seen: string[] = [];
 
-export const db = connect(process.env.DATABASE_URL!, {
-  schema: app,
-  hookm: [
-    {
-      onTransaction: (event) => {
-        seen.push(`${event.phase}:${event.depth}`); // [!code focus]
+export async function demo(url: string) {
+  await using db = connect(url, {
+    schema: app,
+    hookm: [
+      {
+        onTransaction: (event) => {
+          seen.push(`${event.phase}:${event.depth}`);
+        },
       },
-    },
-  ],
-});
+    ],
+  });
+  await db.tx(async (tx) => {
+    await tx.notes.insert({ title: "Hello" });
+  });
+  console.log(seen);
+}
+```
+
+```text title="on-transaction.out"
+["start:0", "commit:0"]
 ```
 
 ### onError
@@ -85,7 +204,7 @@ A string or a pool never calls `onRoute`. Routing spans need `{ primary, replica
 
 ### Attributes
 
-Every span sets `db.system.name` to `postgresql`. The span kind is client.
+Every span sets `db.system.name` to `postgresql`. The span kind is client. Attributes are passed when the span starts.
 
 | Span | Name | Attributes |
 | --- | --- | --- |
@@ -100,6 +219,8 @@ Statement text is off. `statement: true` sets `db.query.text` from that inspecti
 
 `onError` is an error the caller does not receive, such as one thrown from `afterCommit`. A query that throws to the caller is not that event. The exception is the error name and the OKM code when the error has one, with no message and no stack.
 
+A minimal in-memory tracer prints what `okmodel/otel` records:
+
 ```ts title="otel.ts"
 import { connect } from "okmodel/pg/postgresjs";
 import { schema, table, t } from "okmodel/pg";
@@ -112,11 +233,27 @@ const notes = table("notes", {
 
 const app = schema({ tables: [notes] });
 
+const spans: Array<{
+  name: string;
+  attributes: Record<string, string | number | boolean>;
+  status?: number;
+}> = [];
+
 const tracer: OtelTracer = {
-  startSpan() {
+  startSpan(name, options) {
+    const seen = {
+      name,
+      attributes: { ...(options?.attributes ?? {}) },
+      status: undefined as number | undefined,
+    };
+    spans.push(seen);
     const span: OtelSpan = {
-      setAttribute() {},
-      setStatus() {},
+      setAttribute(key, value) {
+        seen.attributes[key] = value;
+      },
+      setStatus(status) {
+        seen.status = status.code;
+      },
       recordException() {},
       addEvent() {},
       end() {},
@@ -127,21 +264,41 @@ const tracer: OtelTracer = {
 
 const tracing = otel({ tracer });
 
-export const db = await connect(
-  {
-    primary: process.env.DATABASE_URL!,
-    replicas: [process.env.REPLICA_URL!],
-  },
-  {
+export async function demo(url: string) {
+  await using db = connect(url, {
     schema: app,
     hookm: [tracing.hookm],
-    onRoute: tracing.onRoute,
+  });
+  const pending = db.notes.find({ limit: 1 });
+  tracing.query(await pending.inspect());
+  await pending;
+  await db.tx(async (tx) => {
+    await tx.notes.find({ limit: 1 });
+  });
+  console.log(spans);
+}
+```
+```text title="otel.out"
+[
+  {
+    name: "find notes",
+    attributes: {
+      "db.system.name": "postgresql",
+      "db.namespace": "public",
+      "db.operation.name": "find",
+      "db.collection.name": "notes",
+      "db.query.summary": "Q_…",
+    },
   },
-);
-
-const pending = db.notes.find({ limit: 50 });
-tracing.query(await pending.inspect());
-await pending;
+  {
+    name: "transaction",
+    attributes: {
+      "db.system.name": "postgresql",
+      "db.operation.name": "transaction",
+    },
+    status: 1,
+  },
+]
 ```
 
-Pass `statement: true` to `otel` when the span should carry `db.query.text`. The parameters still stay off.
+`db.query.summary` is the plan fingerprint from `inspect()` (a value such as `Q_a76ebc70adc3e9f3`). Status `1` is OpenTelemetry OK. Pass `statement: true` to `otel` when the span should carry `db.query.text`. The parameters still stay off.
