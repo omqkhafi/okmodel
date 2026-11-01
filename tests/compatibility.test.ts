@@ -1,9 +1,10 @@
 /**
- * The compatibility page matches a fresh conformance run.
+ * The compatibility table matches a fresh conformance run.
  *
- * Separate CI group (`drivers-conformance`). The cheap case-list sync is
- * `compatibility-sync.test.ts`. PGlite always runs. postgres.js runs when
- * the topology is up, which the postgres CI job provides.
+ * Prose comes from `site/content/docs/reference/compatibility.mdx` via
+ * `docs:pack`. This test compares the Case table only. The cheap case-list
+ * sync is `compatibility-sync.test.ts`. PGlite always runs. postgres.js runs
+ * when the topology is up, which the postgres CI job provides.
  */
 
 import { expect, test } from "bun:test";
@@ -20,9 +21,12 @@ test("compatibility table matches the conformance run", async () => {
   const cells = await collectCompatibility();
   const committed = readFileSync(join(root, "docs/compatibility.md"), "utf8");
   const fresh = renderCompatibility(cells);
+  const drivers = ["postgres.js", "node-postgres", "Bun.sql", "PGlite"] as const;
   expect(column(committed, "PGlite")).toEqual(column(fresh, "PGlite"));
   if (cells.some((cell) => cell.driver === "postgres.js")) {
-    expect(committed).toBe(fresh);
+    for (const driver of drivers) {
+      expect(column(committed, driver)).toEqual(column(fresh, driver));
+    }
   }
 }, 120_000);
 
