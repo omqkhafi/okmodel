@@ -1,7 +1,40 @@
 ---
 title: "Tables"
-description: "table() stores the columns. The key comes first, then each data type, then the options."
+description: "Declare a table with columns, a key, and options. Push it, and Postgres gets the SQL below."
 ---
+A `table()` call is one relation: columns, a [key](/docs/schema/keys-and-identity#keys) (the primary key), and optional indexes and other options. Here is a complete `notes` table, then the SQL `okm generate init` writes for it.
+
+```ts title="notes.ts"
+import { index, table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+    published: t.boolean().default(false),
+  },
+  { indexes: (columns) => [index(columns.title)] },
+);
+```
+
+`t` is the column [builder](/docs/schema/columns): one helper per Postgres type. Import a single builder when a file uses only that type. Wrap the table in [`schema()`](/docs/schema/the-schema) and run `bunx okm generate init`. The migration opens with:
+
+```sql title="0001_init.sql"
+create table "public"."notes" (
+  "id" bigint generated always as identity not null,
+  "published" boolean not null default false,
+  "title" text not null,
+  constraint "notes_pkey" primary key ("id")
+);
+
+create index "notes_title_idx" on "public"."notes" ("title");
+```
+
+## Anatomy
+
+The call has three slots: the SQL name, the columns object, and the options object.
+
 <Anatomy call="table" shape="args" exported="notes">
   <AnatomyPart slot="name" label="Name" code='"notes",' mark="name">
     An empty name is refused.
@@ -12,34 +45,18 @@ description: "table() stores the columns. The key comes first, then each data ty
     <AnatomyLine code="title: t.text()," mark="type" indent={2} />
     <AnatomyLine code="published: t.boolean().default(false)," mark="after the type" indent={2} />
     <AnatomyLine code="}," />
-    The [key](/docs/schema/keys-and-identity#keys) comes first. Each other field is a [data type](/docs/schema/columns). Defaults, names, and checks come after the type.
+    The key comes first. Each other field is a [data type](/docs/schema/columns). Defaults, names, and checks come after the type.
   </AnatomyPart>
   <AnatomyPart slot="options" label="Options" code="{ … }," mark="options">
-    Keys, indexes, checks, and the pages below. [`schema()`](/docs/schema/the-schema) builds the catalog.
+    Keys, indexes, checks, and the pages below. [`schema()`](/docs/schema/the-schema) builds the catalog — the compiled description of every object in the schema.
   </AnatomyPart>
 </Anatomy>
 
-<Callout type="info" title="One builder">
-`t` is every builder. Import one builder when a file uses only that type.
-</Callout>
+## What to reach for next
 
-## The declaration
+The table below is the order most readers need the parts. Row 1 is the first page after this one; row 17 is the last.
 
-The list is how often you reach for each part while building. Columns, keys, and the calls come first.
-
-```ts title="notes.ts"
-import { index, table, t } from "okmodel/pg";
-
-export const notes = table(
-  "notes",
-  {
-    id: t.identity(), // [!code focus]
-    title: t.text(),
-    published: t.boolean().default(false),
-  },
-  { indexes: (columns) => [index(columns.title)] }, // [!code focus]
-);
-```
+A [trait](/docs/schema/traits#on-one-table) is a reusable bundle of columns (timestamps, archive). A [picklist](/docs/schema/enums-arrays-picklists) is a closed set of string values on a column. [Required rows](/docs/schema/required-rows) are rows the application expects, inserted when their key is missing.
 
 | Order | Page | You use it for |
 | --- | --- | --- |

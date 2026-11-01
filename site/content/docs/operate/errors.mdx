@@ -9,7 +9,7 @@ A failure from the client is an `OkmError`. Import it from `okmodel`. The field 
 | Field | What it is for |
 | --- | --- |
 | `code` | An `OKM1xxx` guard, or the kind name when that kind has no number. Stable to branch on. |
-| `kind` | Spec §14 kind (`unique`, `serialization`, `outcome_unknown`, …). Selects the category. |
+| `kind` | Kind name (`unique`, `serialization`, `outcome_unknown`, …). Selects the category. |
 | `category` | One of `input`, `conflict`, `not_found`, `forbidden`, `transient`, `internal`. Drives `toHttp` status. |
 | `retryable` | Whether a *declared* retry may run this error again. See [Retry](#retry). |
 | `fix` | `{ summary, suggestion? }`. What to change. `suggestion` is a nearer accepted name when the input was a typo. |
@@ -23,12 +23,12 @@ import { OkmError } from "okmodel";
 export function describe(error: unknown) {
   const err = OkmError.from(error);
   return {
-    code: err.code, // [!code focus]
-    kind: err.kind, // [!code focus]
-    category: err.category, // [!code focus]
-    retryable: err.retryable, // [!code focus]
-    fix: err.fix.summary, // [!code focus]
-    issues: err.issues, // [!code focus]
+    code: err.code,
+    kind: err.kind,
+    category: err.category,
+    retryable: err.retryable,
+    fix: err.fix.summary,
+    issues: err.issues,
   };
 }
 ```
@@ -43,15 +43,41 @@ Branch on `code` or `kind`, not on `message`. Message text can name values the d
 import { OkmError } from "okmodel";
 
 export function taken(error: unknown): boolean {
-  return error instanceof OkmError && error.kind === "unique"; // [!code focus]
+  return OkmError.is(error, "unique");
 }
 
 export function badLimit(error: unknown): boolean {
-  return error instanceof OkmError && error.code === "OKM1101"; // [!code focus]
+  return error instanceof OkmError && error.code === "OKM1101";
+}
+
+export function label(error: unknown): string {
+  return OkmError.from(error).match({
+    conflict: (err) => `conflict:${err.code}`,
+    _: (err) => `other:${err.code}`,
+  });
+}
+
+export function reasons(error: unknown) {
+  return OkmError.from(error).fields();
 }
 ```
 
-`OkmError.is(error, kind)` and `OkmError.is(error, kind, table)` narrow the same way. `error.match({ input, conflict, _, … })` dispatches by category.
+A duplicate unique on `notes.title` prints:
+
+```text title="unique.out"
+{
+  code: "unique",
+  kind: "unique",
+  category: "conflict",
+  retryable: false,
+  isUnique: true,
+  fields: { title: "title" },
+  matched: "conflict:unique",
+  fix: "Change the conflicting value, or update the existing row."
+}
+```
+
+`OkmError.is(error, kind)` and `OkmError.is(error, kind, table)` narrow the same way. `error.match({ input, conflict, _, … })` dispatches by category. `fields()` returns the column map once; later calls reuse it.
 
 ## toHttp()
 
@@ -66,15 +92,15 @@ export function badLimit(error: unknown): boolean {
 | `transient` | 503 |
 | `internal` | 500 |
 
-`connect({ errors: { http } })` stores overrides on the error. `toHttp()` uses them when you pass no argument. `toHttp(statuses)` replaces the map for that call. A category absent from the map in use keeps the default above.
-
 ```ts title="http.ts"
 import { OkmError } from "okmodel";
 
 export function respond(error: unknown) {
-  return OkmError.from(error).toHttp(); // [!code focus]
+  return OkmError.from(error).toHttp();
 }
 ```
+
+The unique error above maps to status `409` and body `{ code: "unique", reason: "Unique violation on notes.title (title)", fields: { title: "title" } }`.
 
 ## Retry
 
@@ -83,39 +109,113 @@ export function respond(error: unknown) {
 | Rule | Behaviour |
 | --- | --- |
 | `tx({ retry })` | Retries only when the error kind is `serialization` or `deadlock`. Every other kind is thrown as it is. |
-| [OKM1401](/docs/reference/errors#okm1401) | Commit was sent and the result never arrived (`outcome_unknown`). Never retried. Check whether the write landed before you run it again. |
+| [OKM1401](/docs/reference/errors#okm1401) | Commit was sent and the result never arrived (`outcome_unknown`). Never retried. |
 | `cancelled` | Never retryable. The caller aborted the call. |
 | Other `transient` kinds | `retryable` is true by default (`timeout`, `lock_timeout`, `unavailable`, …). Your own loop may use that flag. `tx({ retry })` still ignores them. |
 
-Full transaction retry options are [Transactions](/docs/queries/transactions#retry).
+### `tx({ retry })`
+
+Two serializable transactions that collide retry until one wins. Full options are [Transactions](/docs/queries/transactions#retry).
+
+```ts title="retry-tx.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const accounts = table("accounts", {
+  id: t.text().primaryKey(),
+  balance: t.integer(),
+});
+export const app = schema({ tables: [accounts] });
+
+export async function retry(url: string): Promise<void> {
+  await using db = connect(url, { schema: app });
+  await db.accounts.insert([
+    { id: "a", balance: 100 },
+    { id: "b", balance: 100 },
+  ]);
+  const attempts = { a: 0, b: 0 };
+  let waiting = 0;
+  let open = (): void => undefined;
+  const both = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  let releaseB = (): void => undefined;
+  const aCommitted = new Promise<void>((resolve) => {
+    releaseB = resolve;
+  });
+  const run = (me: "a" | "b") =>
+    db.tx({ isolation: "serializable", retry: 3 }, async (tx) => {
+      attempts[me] += 1;
+      const rows = await tx.accounts.find({ limit: 10 });
+      const total = rows.reduce((sum, row) => sum + row.balance, 0);
+      if (attempts[me] === 1) {
+        waiting += 1;
+        if (waiting === 2) open();
+        await both;
+      }
+      if (me === "b" && attempts.b === 1) await aCommitted;
+      await tx.accounts.update({ where: { id: me }, set: { balance: total } });
+    });
+  const a = run("a").finally(() => {
+    releaseB();
+  });
+  await Promise.all([a, run("b")]);
+  console.log(String(attempts.a + attempts.b));
+  const rows = await db.accounts.find({ orderBy: { id: "asc" }, limit: 2 });
+  console.log(JSON.stringify(rows.map((row) => ({ id: row.id, balance: row.balance }))));
+}
+```
+
+```text title="retry-tx.out"
+3
+[{"id":"a","balance":200},{"id":"b","balance":300}]
+```
+
+### Custom loop on retryable
+
+For kinds `tx({ retry })` ignores, read `retryable` yourself:
+
+```ts title="retry-loop.ts"
+import { OkmError } from "okmodel";
+
+export async function withRetry<T>(run: () => Promise<T>, times = 3): Promise<T> {
+  let last: unknown;
+  for (let attempt = 1; attempt <= times; attempt += 1) {
+    try {
+      return await run();
+    } catch (error) {
+      last = error;
+      const err = OkmError.from(error);
+      console.log(`attempt ${String(attempt)}: retryable=${String(err.retryable)} kind=${err.kind}`);
+      if (!err.retryable || attempt === times) throw error;
+    }
+  }
+  throw last;
+}
+```
+
+```text title="retry-loop.out"
+attempt 1: retryable=true kind=serialization
+attempt 2: retryable=true kind=serialization
+```
+
+### outcome_unknown
+
+[OKM1401](/docs/reference/errors#okm1401) means the commit was sent and the result never arrived. Do not run the write again blindly. Give the write an idempotency key (a unique column you control), then `one` or `find` for that key. If the row is there, the write landed; if it is not, run the write once more.
 
 ## Write errors (OKM1120)
 
 [OKM1120](/docs/reference/errors#okm1120) refuses an unknown field or option on a write. The message lists accepted names. On a tenant-scoped write those names omit the tenant key: the scope sets it, so it is not a field you pass. A close typo can still suggest the tenant key (`Did you mean \`tenantId\`?`), and the accepted-names list still leaves it out. Reads keep the tenant key in their accepted names. `toHttp().body.fields` is empty for this guard.
 
-## On connect
+## Connect options
 
-`errors.http` sets the statuses `OkmError.toHttp` uses. `toHttp()` uses these when the caller does not pass statuses. `toHttp(statuses)` replaces them for that call. A category absent from the map in use keeps the default.
+Set statuses, whether row values are kept, and the error logger once on `connect`.
 
 | Field | Result |
 | --- | --- |
-| `errors.http` | Statuses for `OkmError.toHttp`. |
-| `errors.includeValues` | `true` stores row values and keeps bound parameters on the cause. Off unless set. A sensitive column stays redacted either way. Values are never logged. |
-| `logger.error` | Receives `{ code, summary }`. |
-
-### Row values
-
-`includeValues: true` stores row values on the error and keeps bound parameters on the cause. `values()` returns the row values, or `undefined` when none were kept. Omitted, or `false`, stores neither. A `.sensitive()` column stays redacted either way.
-
-<Callout type="info" title="Never logged">
-The log record has no row values. `logger.error` receives `{ code, summary }`. The `toHttp` body is `{ code, reason, fields }`.
-</Callout>
-
-### Logger
-
-`logger` is the option next to `errors`. `error` is optional. The argument is `{ code: string; summary: string }`.
-
-### Client
+| `errors.http` | Statuses for `OkmError.toHttp`. `toHttp()` uses them when the caller passes no argument. `toHttp(statuses)` replaces them for that call. A category absent from the map keeps the default. |
+| `errors.includeValues` | `true` stores row values for `values()` and keeps bound parameters on the cause. Off unless set. A `.sensitive()` column stays redacted either way. Values are never logged. |
+| `logger.error` | Receives `{ code, summary }` only. |
 
 ```ts title="db.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -131,14 +231,18 @@ const app = schema({ tables: [notes] });
 export const db = connect(process.env.DATABASE_URL!, {
   schema: app,
   errors: {
-    http: { conflict: 409 }, // [!code focus]
-    includeValues: true, // [!code focus]
+    http: { conflict: 409 },
+    includeValues: true,
   },
   logger: {
     error(entry) {
-      void entry.code; // [!code focus]
-      void entry.summary; // [!code focus]
+      void entry.code;
+      void entry.summary;
     },
   },
 });
 ```
+
+<Callout type="info" title="Never logged">
+The log record has no row values. `logger.error` receives `{ code, summary }`. The `toHttp` body is `{ code, reason, fields }`.
+</Callout>

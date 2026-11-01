@@ -7,7 +7,7 @@ OKModel refuses a call that would read an unbounded set, write an unbounded set,
 
 ## The problem
 
-A default that runs the wide query, or drops the table, fails open. The mistake is one missing argument. The repair is a production incident.
+A default that runs the wide query, or drops the table, fails open — it proceeds when it should have stopped. The mistake is one missing argument. The repair is a production incident.
 
 ## How OKModel handles it
 
@@ -21,7 +21,49 @@ These are the refusals that hold when you have not opted in. The linked page is 
 | A guarded field set from input | [Visibility](/docs/schema/visibility) |
 | A destructive migration step, until the file carries `-- okm-allow` | [Lint](/docs/migrations/checks-and-lint) |
 
-`find` without a limit is OKM1101. A to-many `include` without a limit is OKM1105. `.all(reason)` is the hatch for a read or a write you mean to leave unbounded. `limits` on `connect` can supply a default for the read calls. Leave `limits` out and those calls still refuse a missing limit. They do not gain a silent default.
+`find` without a limit is OKM1101. A to-many `include` without a limit is OKM1105. `.all(reason)` is the hatch for a read or a write you mean to leave unbounded.
+
+Leave `limits` out and those calls still refuse a missing limit:
+
+```ts title="limits-before.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", { id: t.identity(), title: t.text() });
+const app = schema({ tables: [notes] });
+
+export async function read(url: string) {
+  await using db = connect(url, { schema: app });
+  return db.notes.find({ where: { id: "1" } });
+  // OkmError OKM1101: find() needs a limit.
+}
+```
+
+```text title="limits-before.out"
+find() needs a limit.
+```
+
+The fix on the error is `Pass a limit.`
+
+Pass `limits` on `connect` and the same call uses that default:
+
+```ts title="limits-after.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", { id: t.identity(), title: t.text() });
+const app = schema({ tables: [notes] });
+
+export async function read(url: string) {
+  await using db = connect(url, {
+    schema: app,
+    limits: { find: 50 },
+  });
+  return db.notes.find({ where: { id: "1" } }); // limit 50
+}
+```
+
+They do not gain a silent default when `limits` is omitted. Detail: [Query limits](/docs/operate/query-limits).
 
 `update` and `delete` without a filter are OKM1102. `.all(reason)` is the hatch, and a blank reason is refused. `archive` and `restore` use the same check.
 
@@ -33,9 +75,7 @@ A protected target is a flag on the target, or a fingerprint in the user store. 
 
 ## Prompt injection through error text and database values
 
-Text from a database error, a catalog, or a user query is an object with `untrusted: true`, an origin, and a bounded `text`. The human line is `untrusted <origin>: "<text>"`. It is not an instruction. The cap is 200 code points for one string and 2,000 for one field. A caller may lower a cap and may not raise one. Bidi overrides and tag characters are removed from that text.
-
-See [Untrusted text](#untrusted-text).
+Text from a database error, a catalog, or a user query is an object with `untrusted: true`, an origin, and a bounded `text`. The human line is `untrusted <origin>: "<text>"`. It is not an instruction. The cap is 200 code points for one string and 2,000 for one field. A caller may lower a cap and may not raise one. Bidi overrides and tag characters are removed from that text. Detail: [Untrusted text](#untrusted-text).
 
 ## Destructive migrations
 
@@ -57,10 +97,6 @@ The protection store holds hashes, not URLs. Command output does not print the U
 
 [`okm doctor --production`](/docs/reference/cli/check#doctor---production) reads one target in a `READ ONLY` transaction and makes no network call beyond that database. It names the target by its configured name. It never prints the URL, host, user, or password, and a failed connection is reported without the driver's text, which can name the host or the user.
 
-## Hidden Unicode in docs
-
-The packed text files are scanned for NUL, zero-width characters, bidi overrides and isolates, tag characters, and variation selectors outside an emoji sequence. Arabic, Persian, Hebrew, and Indic letters are allowed. ZWNJ and ZWJ are allowed only inside a word in a file named by the docs hygiene allowlist (that list is empty). The same classes of bidi override and tag character are stripped from untrusted database and error text.
-
 ## Untrusted text
 
 Text read from a database catalog, a database error, or a user query is bounded and marked untrusted; this reduces risk and does not eliminate it.
@@ -69,7 +105,7 @@ Each value is an object. The keys are `untrusted`, `origin`, `text`, `truncated`
 
 The human line is `untrusted <origin>: "<text>"`. That line stands on its own. It is not an instruction.
 
-`okm migrate plan --json` adds `operationClass` on the plan and on each step, `fromCatalogHash`, `toCatalogHash`, `planHash`, `requiresAck`, and `destructiveOperations`. `planHash` is the SHA-256 of canonical JSON for format 1, the dialect, the two catalog hashes, and each step's SQL as executed with its operation class. The hash omits the target, timestamps, and the OKModel version. `requiresAck` is true when the plan's operation class is `destructive`. The plan command does not ask, and apply is unchanged.
+`okm migrate plan --json` adds `operationClass` on the plan and on each step, `fromCatalogHash`, `toCatalogHash`, `planHash`, `requiresAck`, and `destructiveOperations`. `planHash` is the SHA-256 of canonical JSON — a fixed key order and encoding so the same plan always hashes the same — for format 1, the dialect, the two catalog hashes, and each step's SQL as executed with its operation class. The hash omits the target, timestamps, and the OKModel version. `requiresAck` is true when the plan's operation class is `destructive`. The plan command does not ask, and apply is unchanged.
 
 `okm init --json` stores `data.detection.packageName` as an untrusted object with origin `package.json`. The plan hash omits that name. A finding `reason` is an untrusted object with origin `user.query`. `fix` stays a string written by OKModel. A database error's text is `errors[].detail`, and the summary stays the registry sentence. `okm migrate status` JSON stores `steps[].id`, `kind`, and `state` as untrusted objects. The text table is unchanged. `okm migrate baseline --json` stores each unmanaged `name` as an untrusted object.
 
@@ -80,7 +116,6 @@ The human line is `untrusted <origin>: "<text>"`. That line stands on its own. I
 - Marking text untrusted reduces the chance an agent obeys it. It does not eliminate that chance.
 - [OKM1538](/docs/reference/errors#okm1538), a type change that rewrites the heap, is a warning. Apply does not refuse it. The recipe is [a type change](/docs/reference/type-change). There is no separate command for it.
 - A login that is a superuser, or that holds `CREATEROLE` and ownership, can do more than the reader role in [roles](/docs/operate/protected-targets-and-roles).
-- The doc scan does not read rows in the database. Values that pass through untrusted text are the ones that are bounded and stripped.
 
 ## Limits and trade-offs
 
