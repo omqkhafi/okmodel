@@ -36,7 +36,7 @@ const app = schema({ tables: [notes] });
 
 export async function add(url: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.insert({ tags: ["ship"] });
+  return await db.notes.insert({ tags: ["ship"] });
 }
 ```
 
@@ -56,7 +56,7 @@ const app = schema({ tables: [notes] });
 
 export async function add(url: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.insert({ grid: [[1, 2]] });
+  return await db.notes.insert({ grid: [[1, 2]] });
 }
 ```
 
@@ -93,7 +93,7 @@ const app = schema({ tables: [notes] });
 
 export async function close(url: string, id: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.update({ where: { id }, set: { status: "done" } });
+  return await db.notes.update({ where: { id }, set: { status: "done" } });
 }
 ```
 
@@ -136,7 +136,7 @@ const app = schema({ tables: [notes] });
 
 export async function open(url: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.insert({ status: "open" });
+  return await db.notes.insert({ status: "open" });
 }
 ```
 

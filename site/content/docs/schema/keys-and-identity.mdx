@@ -367,7 +367,7 @@ export async function add(url: string, title: string) {
       uuidv7: () => "00000000-0000-7000-8000-000000000000", // [!code focus]
     },
   });
-  return db.notes.insert({ title });
+  return await db.notes.insert({ title });
 }
 ```
 

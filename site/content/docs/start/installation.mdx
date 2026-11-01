@@ -139,7 +139,7 @@ export default schema({ tables: [notes] });
 <Step>
 ### Connect
 
-For a server driver, `connect` takes the URL and the schema. Keep `db` for the process. An empty `DATABASE_URL` is refused before `connect`. The options are on [Connect](/docs/operate/connect). `limits` is the opt-in default for reads. The library does not turn it on unless you pass it. [Query limits](/docs/operate/query-limits).
+For a server driver, `connect` takes the URL and the schema. Keep `db` for the process. `connect` does not read the environment, so `db.ts` checks `DATABASE_URL` itself and throws `DATABASE_URL is not set` when it is missing or empty. The options are on [Connect](/docs/operate/connect). `limits` sets the default `limit` for reads that omit one; without it, such a read is refused. [Query limits](/docs/operate/query-limits).
 
 ```ts title="db.ts"
 import { connect } from "okmodel/pg/postgresjs";

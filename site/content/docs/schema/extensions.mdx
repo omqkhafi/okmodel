@@ -52,7 +52,7 @@ const app = schema({
 
 export async function search(url: string, title: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.find({
+  return await db.notes.find({
     where: { title: trgm.similar(title) }, // [!code focus]
     limit: 1,
   });
@@ -107,7 +107,7 @@ const app = schema({
 
 export async function folded(url: string) {
   await using db = connect(url, { schema: app });
-  return db.words.find({
+  return await db.words.find({
     where: { title: fold.unaccent("Café") }, // [!code focus]
     limit: 1,
   });
@@ -142,7 +142,7 @@ const app = schema({
 
 export async function withKey(url: string) {
   await using db = connect(url, { schema: app });
-  return db.docs.find({
+  return await db.docs.find({
     where: { attrs: store.hasKey("a") }, // [!code focus]
     limit: 1,
   });
@@ -172,7 +172,7 @@ const app = schema({
 
 export async function parents(url: string) {
   await using db = connect(url, { schema: app });
-  return db.places.find({
+  return await db.places.find({
     where: { path: tree.ancestorOf("Top.Science.Physics") }, // [!code focus]
     limit: 1,
   });
@@ -230,7 +230,7 @@ const app = schema({
 
 export async function close(url: string) {
   await using db = connect(url, { schema: app });
-  return db.words.find({
+  return await db.words.find({
     where: { title: fuzzy.levenshtein("sitting", 3) }, // [!code focus]
     limit: 1,
   });
@@ -260,7 +260,7 @@ const app = schema({
 
 export async function hashed(url: string) {
   await using db = connect(url, { schema: app });
-  return db.words.find({
+  return await db.words.find({
     where: {
       title: crypto.digest(
         "sha256",

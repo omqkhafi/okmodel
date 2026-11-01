@@ -62,7 +62,7 @@ const app = schema({
 export async function reload(url: string) {
   await using db = connect(url, { schema: app });
   await db.views.noteCounts.refresh(); // [!code focus]
-  return db.views.noteCounts.find({ limit: 1 });
+  return await db.views.noteCounts.find({ limit: 1 });
 }
 ```
 
@@ -225,6 +225,6 @@ const app = schema({
 export async function reload(url: string, tenantId: string) {
   await using db = connect(url, { schema: app });
   await db.views.noteCounts.refresh();
-  return db.for({ tenantId }).views.openNotes.find({ limit: 1 }); // [!code focus]
+  return await db.for({ tenantId }).views.openNotes.find({ limit: 1 }); // [!code focus]
 }
 ```

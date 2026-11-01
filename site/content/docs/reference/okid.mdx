@@ -114,7 +114,7 @@ export async function add(url: string, title: string) {
       okid: () => "nt_fixed", // [!code focus]
     },
   });
-  return db.notes.insert({ title });
+  return await db.notes.insert({ title });
 }
 ```
 

@@ -35,7 +35,7 @@ const app = schema({ tables: [pages] });
 
 export async function found(url: string) {
   await using db = connect(url, { schema: app });
-  return db.pages.find({ search: "deploy rollback", limit: 20 }); // [!code focus]
+  return await db.pages.find({ search: "deploy rollback", limit: 20 }); // [!code focus]
 }
 ```
 
@@ -56,7 +56,7 @@ const app = schema({ tables: [pages] });
 
 export async function ranked(url: string) {
   await using db = connect(url, { schema: app });
-  return db.pages.find({
+  return await db.pages.find({
     search: { for: "deploy rollback", match: "phrase", language: "english" }, // [!code focus]
     where: { body: matches("deploy rollback", { match: "phrase", language: "english" }) },
     orderBy: {
@@ -169,7 +169,7 @@ const open = fragment`${ident("status")} = ${"open"}`;
 
 export async function openNotes(url: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.find({
+  return await db.notes.find({
     where: { title: fragment`length(${fragment.column}) > ${3} and ${open}` }, // [!code focus]
     select: ["id", fragment`length(${ident("title")})`.as("len")], // [!code focus]
     limit: 20,

@@ -21,20 +21,23 @@ function neonMode(value: string | undefined): "websocket" | "http" {
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const mode = neonMode(env.NEON_MODE);
+    const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname === "/health") {
+      return Response.json({ ok: true, mode });
+    }
+    if (url.pathname !== "/notes") return new Response("not found", { status: 404 });
+
     const db = await openRequestDb(env.DATABASE_URL, mode);
     try {
-      const url = new URL(request.url);
-      if (request.method === "GET" && url.pathname === "/health") {
-        return Response.json({ ok: true, mode });
-      }
-      if (request.method === "GET" && url.pathname === "/notes") {
+      if (request.method === "GET") {
         const rows = await db.example_notes.find({
           orderBy: { id: "asc" },
           limit: 50,
         });
         return Response.json(rows);
       }
-      if (request.method === "POST" && url.pathname === "/notes") {
+      if (request.method === "POST") {
+        // No authentication and no body size limit: add both before real traffic.
         let body: unknown;
         try {
           body = await request.json();
@@ -58,7 +61,7 @@ export default {
       }
       return new Response("not found", { status: 404 });
     } finally {
-      ctx.waitUntil(Promise.resolve(db.close()));
+      ctx.waitUntil(db.close());
     }
   },
 };
