@@ -185,7 +185,7 @@ error TS2769: No overload matches this call.
 
 `testing(app, ...).isolation()` seeds a row as tenant B, then reads and writes it as tenant A, and fails with the table and the query if any call sees it. It picks new tenant ids every call, so it is safe to run repeatedly. `migrate: false` tells `testing` the table already exists. The report names what it checked.
 
-```ts
+```ts title="isolation.ts"
 import { open } from "okmodel/pg/postgresjs";
 import { testing } from "okmodel/testing";
 import { app } from "./tenancy.ts";
@@ -198,9 +198,10 @@ export async function prove(url: string): Promise<void> {
 }
 ```
 
-```text
+```text title="isolation.out"
 {"checked":["notes"],"skipped":[],"views":[]}
 ```
+
 
 In a test, assert on `report.checked`. A tenant table with no factory fails with `Factory notes is missing.` A leak fails with the table, the query, and the row. For `rlsTenancy`, use a non-superuser role on real Postgres; see [Testing](/docs/operate/testing#isolation).
 
