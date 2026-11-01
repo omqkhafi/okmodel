@@ -72,6 +72,7 @@ export function connect<
     ? open({
         url: target as string,
         max: options.max,
+        idleTimeoutMs: options.idleTimeoutMs,
         timeouts: options.timeouts,
         prepared: options.prepared,
         searchPath: options.searchPath,

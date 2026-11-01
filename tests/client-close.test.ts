@@ -1,6 +1,6 @@
 /**
  * `close` is idempotent, `await using` ends the pool, and a finished
- * postgres.js script does not wait out an idle timer.
+ * script with `idleTimeoutMs: 0` does not wait out an idle timer.
  */
 
 import { expect, test } from "bun:test";
@@ -299,7 +299,7 @@ const notes = table("notes", { title: t.text() });
 const app = schema({ tables: [notes] });
 const url = process.env.DATABASE_URL;
 if (url === undefined || url.length === 0) throw new Error("DATABASE_URL is not set");
-const db = connect(url, { schema: app });
+const db = connect(url, { schema: app, idleTimeoutMs: 0 });
 await db.connected;
 `;
 }
@@ -317,7 +317,7 @@ const notes = table("notes", { title: t.text() });
 const app = schema({ tables: [notes] });
 const url = process.env.DATABASE_URL;
 if (url === undefined || url.length === 0) throw new Error("DATABASE_URL is not set");
-const db = connect(url, { schema: app });
+const db = connect(url, { schema: app, idleTimeoutMs: 0 });
 await db.connected;
 `;
 }
@@ -337,7 +337,7 @@ const notes = table("notes", { title: t.text() });
 const app = schema({ tables: [notes] });
 const url = process.env.DATABASE_URL;
 if (url === undefined || url.length === 0) throw new Error("DATABASE_URL is not set");
-const db = connect(url, { schema: app });
+const db = connect(url, { schema: app, idleTimeoutMs: 0 });
 await db.connected;
 `;
 }

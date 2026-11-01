@@ -77,12 +77,13 @@ export function connect<
       mod.default(target, options, ((config: NeonConfig) =>
         open({
           url: config.url,
-          ...(options.mode !== undefined ? { mode: options.mode } : {}),
-          ...(config.max !== undefined ? { max: config.max } : {}),
-          ...(config.timeouts !== undefined ? { timeouts: config.timeouts } : {}),
-          ...(config.prepared !== undefined ? { prepared: config.prepared } : {}),
-          ...(config.searchPath !== undefined ? { searchPath: config.searchPath } : {}),
-        })) as never),
+          mode: options.mode,
+          max: config.max,
+          idleTimeoutMs: config.idleTimeoutMs,
+          timeouts: config.timeouts,
+          prepared: config.prepared,
+          searchPath: config.searchPath,
+        } as NeonConfig)) as never),
     );
   }
   const owned = !isPool(target);
@@ -90,12 +91,13 @@ export function connect<
     ? Promise.resolve(target)
     : open({
         url: target,
-        ...(options.mode !== undefined ? { mode: options.mode } : {}),
-        ...(options.max !== undefined ? { max: options.max } : {}),
-        ...(options.timeouts !== undefined ? { timeouts: options.timeouts } : {}),
-        ...(options.prepared !== undefined ? { prepared: options.prepared } : {}),
-        ...(options.searchPath !== undefined ? { searchPath: options.searchPath } : {}),
-      });
+        mode: options.mode,
+        max: options.max,
+        idleTimeoutMs: options.idleTimeoutMs,
+        timeouts: options.timeouts,
+        prepared: options.prepared,
+        searchPath: options.searchPath,
+      } as NeonConfig);
   return opened.then((pool) => createClient(options.schema, pool, options, owned));
 }
 

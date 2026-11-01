@@ -94,6 +94,7 @@ import { db } from "./db.ts";
 
 const note = await db.notes.insert({ title: "Hello" });
 console.log(note);
+await db.close();
 ```
 
 ```text title="insert.out"
@@ -117,6 +118,7 @@ const found = await db.notes.find({ where: { id: "1" }, limit: 1 });
 console.log(found);
 const missing = await db.notes.find({ where: { id: "999" }, limit: 1 });
 console.log(missing[0]);
+await db.close();
 ```
 
 ```text title="find.out"
@@ -142,7 +144,11 @@ if (url === undefined || url.length === 0) {
 }
 
 const db = connect(url, { schema });
-await db.notes.find({ where: { id: "1" } });
+try {
+  await db.notes.find({ where: { id: "1" } });
+} finally {
+  await db.close();
+}
 ```
 
 `.all(reason)` is how you ask for the full set. The reason is required. [Queries](/docs/queries).
@@ -161,6 +167,7 @@ const row = await db.notes.one({ where: { id: "1" } });
 console.log(row);
 const missing = await db.notes.one({ where: { id: "999" } });
 console.log(missing);
+await db.close();
 ```
 
 ```text title="one.out"
@@ -183,6 +190,7 @@ import { db } from "./db.ts";
 
 const total = await db.notes.count();
 console.log(total);
+await db.close();
 ```
 
 ```text title="count.out"
@@ -203,6 +211,7 @@ const yes = await db.notes.exists({ where: { id: "1" } });
 console.log(yes);
 const no = await db.notes.exists({ where: { id: "999" } });
 console.log(no);
+await db.close();
 ```
 
 ```text title="exists.out"
@@ -227,6 +236,7 @@ const updated = await db.notes.update({
 console.log(updated);
 const row = await db.notes.one({ where: { id: "1" } });
 console.log(row);
+await db.close();
 ```
 
 ```text title="update.out"
@@ -244,7 +254,11 @@ A write with no `where` throws [OKM1102](/docs/reference/errors#okm1102). The me
 ```ts title="update-without-where.ts"
 import { db } from "./db.ts";
 
-await db.notes.update({ set: { title: "Nope" } });
+try {
+  await db.notes.update({ set: { title: "Nope" } });
+} finally {
+  await db.close();
+}
 ```
 
 </Step>
@@ -259,6 +273,7 @@ import { db } from "./db.ts";
 
 const deleted = await db.notes.delete({ where: { id: "1" } });
 console.log(deleted);
+await db.close();
 ```
 
 ```text title="delete.out"

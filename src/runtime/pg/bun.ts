@@ -78,12 +78,13 @@ export function connect<
     ? target
     : open({
         url: target,
-        ...(options.max !== undefined ? { max: options.max } : {}),
-        ...(options.timeouts !== undefined ? { timeouts: options.timeouts } : {}),
-        ...(options.prepared !== undefined ? { prepared: options.prepared } : {}),
-        ...(options.searchPath !== undefined ? { searchPath: options.searchPath } : {}),
-        ...(options.ssl !== undefined ? { ssl: options.ssl } : {}),
-      });
+        max: options.max,
+        idleTimeoutMs: options.idleTimeoutMs,
+        timeouts: options.timeouts,
+        prepared: options.prepared,
+        searchPath: options.searchPath,
+        ssl: options.ssl,
+      } as BunSqlConfig);
   if (!isPool(target)) markClientPool(pool);
   return createClient(options.schema, pool, options, owned);
 }

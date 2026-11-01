@@ -175,6 +175,7 @@ import { db } from "./db.ts";
 
 await db.connected;
 console.log("connected");
+await db.close();
 ```
 
 ```text title="connected.out"

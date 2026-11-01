@@ -879,6 +879,7 @@ function assertNames(endpoints: readonly Endpoint[]): void {
 
 type DriverFields = {
   readonly max: number | undefined;
+  readonly idleTimeoutMs: number | undefined;
   readonly timeouts: DriverTimeouts | undefined;
   readonly prepared: "named" | "unnamed" | undefined;
   readonly searchPath: string | undefined;
@@ -890,6 +891,7 @@ function driverFields(options: object): DriverFields {
   const prepared = value.prepared;
   return {
     max: typeof value.max === "number" ? value.max : undefined,
+    idleTimeoutMs: typeof value.idleTimeoutMs === "number" ? value.idleTimeoutMs : undefined,
     timeouts:
       typeof value.timeouts === "object" && value.timeouts !== null
         ? (value.timeouts as DriverTimeouts)
@@ -914,6 +916,7 @@ async function openEndpoint(
     url,
     dataDir: url,
     ...(max !== undefined ? { max } : {}),
+    ...(defaults.idleTimeoutMs !== undefined ? { idleTimeoutMs: defaults.idleTimeoutMs } : {}),
     ...(defaults.timeouts !== undefined ? { timeouts: defaults.timeouts } : {}),
     ...(defaults.prepared !== undefined ? { prepared: defaults.prepared } : {}),
     ...(defaults.searchPath !== undefined ? { searchPath: defaults.searchPath } : {}),
