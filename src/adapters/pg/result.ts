@@ -15,7 +15,7 @@ export const EMPTY_NOTICES: readonly Notice[] = [];
  * @param value - A driver cell
  * @returns Wire text, or `null` for SQL NULL
  */
-export function cell(value: unknown): WireValue {
+function cell(value: unknown): WireValue {
   if (value === null || value === undefined) return null;
   if (typeof value === "string") return value;
   if (typeof value === "bigint") return value.toString();

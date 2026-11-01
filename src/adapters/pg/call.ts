@@ -28,7 +28,7 @@ export type Watch = {
  * @param options - Per-call options
  * @returns True when a {@link Watch} is required
  */
-export function needsWatch(options: ExecuteOptions | undefined): boolean {
+function needsWatch(options: ExecuteOptions | undefined): boolean {
   return options?.signal !== undefined || options?.timeout !== undefined;
 }
 
