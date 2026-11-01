@@ -4,7 +4,13 @@ description: "Define the table, push it, then insert, find, one, count, exists, 
 ---
 Define a table, push it, and read a row back.
 
-You need [Installation](/docs/start/installation). `DATABASE_URL` points at a Postgres database you can drop. The outputs below are from an empty database. The first identity value is the string `"1"`.
+You need [Installation](/docs/start/installation). That page wrote `schema.ts` and `db.ts`. `DATABASE_URL` points at a Postgres database you can drop. The outputs below are from an empty database. The first identity value is the string `"1"`. Run each script with `bun run <file>`. Re-running insert changes ids: the next identity value is `"2"`, then `"3"`, and so on.
+
+| Call | Returns |
+| --- | --- |
+| `find` | An array of rows |
+| `one` | One row, or `null` |
+| `update` / `delete` | `{ count }` |
 
 <Steps>
 
@@ -12,6 +18,17 @@ You need [Installation](/docs/start/installation). `DATABASE_URL` points at a Po
 ### Define the table
 
 [Installation](/docs/start/installation) saved `schema.ts`. `table()` stores the columns of `notes`. `id` is `t.identity().primaryKey()`. That makes `id` the primary key. `t.identity()` is a `bigint`, generated always. Insert omits `id`. The default codec is a string. A key of more than one column is the `primaryKey` option. [Keys](/docs/schema/keys-and-identity#keys).
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity().primaryKey(),
+  title: t.text(),
+});
+
+export default schema({ tables: [notes] });
+```
 
 </Step>
 
@@ -56,7 +73,7 @@ target default
 applied push-1
 ```
 
-stderr prints `config:` and the path of `okmodel.config.ts`. A protected target refuses push ([OKM1850](/docs/reference/errors#okm1850)). Run the command again when the schema is already there:
+stderr prints `config:` and the path of `okmodel.config.ts`. A protected target — a database the config marks so destructive or contract steps need an explicit allow — refuses push ([OKM1850](/docs/reference/errors#okm1850)). Run the command again when the schema is already there:
 
 ```text title="push-again.out"
 target default

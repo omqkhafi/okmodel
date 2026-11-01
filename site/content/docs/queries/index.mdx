@@ -1,21 +1,35 @@
 ---
 title: "Queries"
-description: "The basic calls live on First schema. These pages are the rest."
+description: "The calls on a table: read, write, shape, search, and raw SQL."
 ---
-<Callout type="info" title="Where this fits">
-The table is declared. The basic calls live on [First schema](/docs/start/first-schema). Each family below is the rest.
-</Callout>
+The table is declared. [First schema](/docs/start/first-schema) covers insert, find, one, count, exists, update, and delete. These pages are the rest of the surface.
 
-`one` returns the row or `null`. More than one match is `not_unique`: `one() on notes matched more than one row. Pass orderBy to take the first, or narrow where.` [First schema](/docs/start/first-schema) is insert, find, one, count, exists, update, and delete. A caller-supplied filter goes through [filters](/docs/queries/request-filters).
+`one` returns the row or `null`. More than one match is `not_unique`: `one() on notes matched more than one row. Pass orderBy to take the first, or narrow where.` A caller-supplied filter goes through [filters](/docs/queries/request-filters).
+
+## I want to …
+
+| I want to … | Use | Documented on |
+| --- | --- | --- |
+| Read several rows | `find` | [Read rows](/docs/queries/read-rows#find) |
+| Read one row or `null` | `one` | [Read rows](/docs/queries/read-rows#one) |
+| Count matching rows | `count` | [Read rows](/docs/queries/read-rows#count) |
+| Test whether a row matches | `exists` | [Read rows](/docs/queries/read-rows#exists) |
+| Page with a cursor | `page` | [Read rows](/docs/queries/read-rows#page) |
+| Walk rows in batches | `.stream()` | [Read rows](/docs/queries/read-rows#stream) |
+| Insert a row | `insert` | [Write rows](/docs/queries/write-rows) |
+| Update rows | `update` | [Write rows](/docs/queries/write-rows) |
+| Delete rows | `delete` | [Write rows](/docs/queries/write-rows) |
+
+## Families
 
 | Family | You use it for |
 | --- | --- |
-| [Read rows](/docs/queries/read-rows) | Page, distinct, stream, and explain. |
-| [Write rows](/docs/queries/write-rows) | Insert, update, claim, and sync. |
-| [Shape results](/docs/queries/shape-results) | Aggregate, include, windows, and period. |
-| [Search and trees](/docs/queries/search-and-trees) | Search, a tree, and a fragment. |
-| [Where operators](/docs/queries/where-operators) | Equality, comparison, patterns, and the rest of a where. |
-| [Transactions](/docs/queries/transactions) | A transaction and a batch. |
-| [Typed raw SQL](/docs/queries/typed-raw-sql) | A typed raw call. |
-| [Presets](/docs/queries/presets) | A named where. |
-| [Request filters](/docs/queries/request-filters) | What a caller may send. |
+| [Read rows](/docs/queries/read-rows) | find, one, count, exists, page, distinct, stream, and explain |
+| [Write rows](/docs/queries/write-rows) | Insert, update, claim, and sync |
+| [Shape results](/docs/queries/shape-results) | Aggregate, include, windows, and period |
+| [Search and trees](/docs/queries/search-and-trees) | Search, a tree, and a fragment |
+| [Where operators](/docs/queries/where-operators) | Equality, comparison, patterns, and the rest of a where |
+| [Transactions](/docs/queries/transactions) | A transaction and a batch |
+| [Typed raw SQL](/docs/queries/typed-raw-sql) | A typed raw call |
+| [Presets](/docs/queries/presets) | A named where |
+| [Request filters](/docs/queries/request-filters) | What a caller may send |

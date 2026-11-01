@@ -232,7 +232,7 @@ export const notes = table(
 ```
 
 <Callout type="error" title="OKM1061">
-`strategy: "table"` is not available yet.
+`archivable({ strategy: "table" }) is not available yet. It arrives once archived snapshots can follow migrations.`
 </Callout>
 
 `archive({ where })` sets `archivedAt` and one new `archiveId`, shared with the cascaded children. It returns `{ count, archiveId }`. A later `find` does not see that row. `withArchived()` includes it. `onlyArchived()` is the archived set only. `restore({ archiveId })` restores that whole operation. `restore({ where })` restores those rows and the children that carry their `archiveId`.

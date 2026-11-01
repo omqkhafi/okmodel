@@ -1,17 +1,59 @@
 ---
 title: "Why OKModel"
-description: "What this version gives you, and what it does not."
+description: "What one schema gives you, what it will not do, and the plain facts that back it."
 ---
-As of 0.10.0.
+One `schema()` is the source for types, queries, and migrations. A read with no `limit` and a write with no `where` are refused. Tenancy is on the schema. The package has no runtime dependencies.
 
-The schema is the single source for types, queries, and migrations ([Introduction](/docs/start)). [`schema()`](/docs/schema/the-schema) compiles the tables. Queries are the calls on [Queries](/docs/queries). Migrations are generated from that schema ([generate](/docs/reference/cli/migrate#generate)).
+## What you get
 
-The majors are PostgreSQL 15, 16, 17, and 18 ([Minimum Postgres](/docs/schema/the-schema#minimum-postgres)). The test suite runs on 15, 16, 17, and 18 ([Drivers](/docs/operate/drivers)).
+| You get | Where it is shown |
+| --- | --- |
+| One schema for types, queries, and migrations | [How it works](/docs/concepts/how-okmodel-works), [First schema](/docs/start/first-schema) |
+| Typed calls on each table (`find`, `one`, `insert`, …) | [Queries](/docs/queries) |
+| Reviewed migration SQL generated from the schema | [First migration](/docs/start/first-migration), [Drift](/docs/concepts/migrations-and-drift) |
+| A refused bare `find()` unless you pass `limit`, `.all(reason)`, or set `limits` in `connect` | [Query limits](/docs/operate/query-limits) |
+| A refused write with no `where` | [First schema](/docs/start/first-schema) |
+| Tenant isolation declared on the schema | [Tenant isolation](/docs/concepts/tenant-isolation) |
+| No runtime dependencies; each driver is an optional peer | [Installation](/docs/start/installation) |
 
-`okmodel` has no runtime dependencies. Each driver is an optional peer ([Installation](/docs/start/installation)).
+```ts title="find-needs-limit.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
 
-postgres.js, node-postgres, Bun.sql, and PGlite are the columns in the conformance table. Neon is not a column in that table ([Compatibility](/docs/reference/compatibility), [Drivers](/docs/operate/drivers)). `okm driver test <driver>` runs the conformance suites ([driver test](/docs/reference/cli/check#driver-test), [compatibility.test.ts](https://github.com/omqkhafi/okmodel/blob/main/tests/compatibility.test.ts), [driver-conformance.test.ts](https://github.com/omqkhafi/okmodel/blob/main/tests/driver-conformance.test.ts)).
+const notes = table("notes", {
+  id: t.identity().primaryKey(),
+  title: t.text(),
+});
+const app = schema({ tables: [notes] });
 
-Node.js 22.18 or newer loads the config ([CLI](/docs/reference/cli)). Bun 1.4 or newer is the floor for `okmodel/pg/bun` ([Drivers](/docs/operate/drivers), [driver test](/docs/reference/cli/check#driver-test)).
+export async function read(url: string) {
+  await using db = connect(url, { schema: app });
+  // Without limits on connect, this throws OKM1101.
+  await db.notes.find({ where: { id: "1" } });
+}
+```
 
-Deno is not supported ([D297](https://github.com/omqkhafi/okmodel/blob/main/docs/okmodel-decisions.md), [Installation](/docs/start/installation)).
+```text title="find-needs-limit.err"
+OkmError: find() needs a limit.
+```
+
+## What it will not do
+
+| It will not | You do this instead |
+| --- | --- |
+| Invent a SQL dialect for another database | PostgreSQL only ([Compatibility](/docs/reference/compatibility)) |
+| Run on Deno | Use Node 22.18+ or Bun 1.4+ ([Installation](/docs/start/installation)) |
+| Turn on default read limits by itself | Pass `limits` to `connect` ([Query limits](/docs/operate/query-limits)) |
+| Ship a driver inside the package | Install the peer your runtime already uses ([Drivers](/docs/operate/drivers)) |
+
+## Plain facts
+
+| Fact | Detail |
+| --- | --- |
+| PostgreSQL | Majors 15, 16, 17, and 18 ([Minimum Postgres](/docs/schema/the-schema#minimum-postgres)) |
+| Runtimes | Node.js 22.18 or newer; Bun 1.4 or newer ([CLI](/docs/reference/cli), [Drivers](/docs/operate/drivers)) |
+| Drivers in the conformance table | postgres.js, node-postgres, Bun.sql, and PGlite ([Compatibility](/docs/reference/compatibility)) |
+| Neon | Supported as `okmodel/pg/neon`; not a column in that table ([Drivers](/docs/operate/drivers)) |
+| Deno | Unsupported ([Installation](/docs/start/installation)) |
+
+`okm driver test <driver>` runs the conformance suites ([driver test](/docs/reference/cli/check#driver-test)).

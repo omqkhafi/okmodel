@@ -2,18 +2,32 @@
 title: "First migration"
 description: "Add a migrations directory, generate the first file, and apply one change."
 ---
-Push applies the schema directly. It writes no SQL file. It is for a database you can recreate. Migrations are reviewed SQL files in git. They plan, lint, and apply per target.
+Push applies the schema directly. It writes no SQL file. It is for a database you can recreate. Migrations are reviewed SQL files in git. They plan, lint, and apply per target. The default target is the one named `default` — a single `database` field in `defineConfig`, or the `default` entry under `targets`.
 
-You have the files from [Installation](/docs/start/installation) and [First schema](/docs/start/first-schema). That page ran [`okm push`](/docs/reference/cli/migrate#push). The history version is `push-1`, and `notes` is already there. Apply then runs the new SQL file. Postgres reports that the relation already exists.
+You have the files from [Installation](/docs/start/installation) and [First schema](/docs/start/first-schema). That page ran [`okm push`](/docs/reference/cli/migrate#push). Start from an empty database before you begin this page.
+
+<Steps>
+
+<Step>
+### Recreate an empty database
+
+Drop the database `okm push` used, then create it again. With the container from [Installation](/docs/start/installation):
+
+```sh
+docker exec okm-pg psql -U okm -d postgres -c 'DROP DATABASE IF EXISTS okm WITH (FORCE);'
+docker exec okm-pg psql -U okm -d postgres -c 'CREATE DATABASE okm OWNER okm;'
+```
+
+Or point `DATABASE_URL` at a fresh empty database. This page uses that empty database and the same project files.
+
+If you skip this step and apply after push, Postgres reports that the relation already exists, because push already created `notes` and apply then runs the new SQL file:
 
 ```text title="apply-after-push.err"
 error invalid: Migration 0001_init failed at step 1: relation "notes" already exists
 Fix the step and run apply again. Finished steps are not repeated.
 ```
 
-Recreate an empty database before you start this page. Drop the one `okm push` used, or point `DATABASE_URL` at a fresh empty database. This page uses that empty database and the same project files.
-
-<Steps>
+</Step>
 
 <Step>
 ### Add `migrations`

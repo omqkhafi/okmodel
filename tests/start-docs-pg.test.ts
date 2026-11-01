@@ -58,12 +58,13 @@ test("okm init writes the project-structure file list", () => {
   }
 });
 
-test("Why OKModel is dated with the package version", () => {
-  const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
-    version: string;
-  };
+test("Why OKModel names what you get without a version stamp", () => {
   const page = readFileSync(join(root, "site/content/docs/start/why-okmodel.mdx"), "utf8");
-  expect(page).toContain(`As of ${version.version}.`);
+  expect(page).toContain("## What you get");
+  expect(page).toContain("## What it will not do");
+  expect(page).toContain("## Plain facts");
+  expect(page).not.toMatch(/As of \d+\.\d+/);
+  expect(page).not.toMatch(/\bD\d+\b/);
 });
 
 postgresTest(
