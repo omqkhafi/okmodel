@@ -9,10 +9,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { listCompatibilityCaseNames, supportSentence } from "../scripts/compatibility.js";
+import { ensurePackedDocs } from "../scripts/docs-pack.js";
 import { repoRoot } from "../scripts/root.js";
 
 test("compatibility table file is in sync", () => {
-  const committed = readFileSync(join(repoRoot(), "docs/compatibility.md"), "utf8");
+  const root = repoRoot();
+  ensurePackedDocs(root);
+  const committed = readFileSync(join(root, "docs/compatibility.md"), "utf8");
   expect(committed).toContain(supportSentence());
   expect(committed).toContain("| Case |");
   expect(committed).toContain("| PGlite |");

@@ -439,6 +439,21 @@ const PACK_SUPPORT_MARKERS: Readonly<Record<string, readonly string[]>> = {
 };
 
 /**
+ * Generate packed docs and throw when the write fails.
+ *
+ * Tests that read a generated public page call this first so a clean
+ * checkout (no gitignored `docs/*.md`) still works.
+ *
+ * @param root - Repository root
+ */
+export function ensurePackedDocs(root: string): void {
+  const problems = generatePackedDocs(root);
+  if (problems.length > 0) {
+    throw new Error(problems.join("\n"));
+  }
+}
+
+/**
  * Generate every public package page that is not hand-kept.
  *
  * Writes into `docs/` (gitignored for generated paths). Safe to call before

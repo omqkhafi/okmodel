@@ -10,11 +10,14 @@ import type { Sql } from "postgres";
 
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { withPostgres } from "../packages/harness/src/postgres.js";
+import { ensurePackedDocs } from "../scripts/docs-pack.js";
 import { repoRoot } from "../scripts/root.js";
 import { sqlQuoteOpen, sqlStatements } from "../src/tooling/migrate/sql-lex.js";
 
 const gate = await loadPostgresGate();
-const page = readFileSync(join(repoRoot(), "docs/roles.md"), "utf8");
+const root = repoRoot();
+ensurePackedDocs(root);
+const page = readFileSync(join(root, "docs/roles.md"), "utf8");
 
 /**
  * SQL fences on the role page, in order.

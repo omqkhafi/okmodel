@@ -306,9 +306,7 @@ export function capabilityDocProblems(root: string): readonly string[] {
   }
   const expected = renderCapabilitiesPage({ version, registry: POSTGRES_FEATURES, titles });
   if (actual !== expected) {
-    problems.push(
-      "docs-capabilities: docs/capabilities.md is stale. Run bun ./scripts/docs-capabilities.ts",
-    );
+    problems.push("docs-capabilities: docs/capabilities.md is stale. Run bun run docs:pack");
   }
   problems.push(...stepTableProblems(root));
   for (const file of markdownFiles(join(root, "docs"))) {
@@ -393,7 +391,7 @@ function stepTableProblems(root: string): readonly string[] {
   const expected = `\n${renderStepBody(root)}`;
   if (body !== expected) {
     return [
-      "docs-capabilities: docs/migration-failure.md step table is stale. Run bun ./scripts/docs-capabilities.ts",
+      "docs-capabilities: docs/migration-failure.md step table is stale. Run bun run docs:pack",
     ];
   }
   return [];

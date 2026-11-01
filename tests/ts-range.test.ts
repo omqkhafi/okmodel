@@ -9,6 +9,7 @@ import { join } from "node:path";
 
 import { expect, test } from "bun:test";
 
+import { ensurePackedDocs } from "../scripts/docs-pack.js";
 import { repoRoot } from "../scripts/root.js";
 import {
   compilerRangeNote,
@@ -36,6 +37,7 @@ test("the compatibility page names TypeScript 7 and TypeScript 6.0.x", () => {
   expect(note).toContain("bun run ts6:check");
   expect(note).toContain("not part of `bun run check`");
   expect(note).toContain("until 7.1");
+  ensurePackedDocs(root);
   expect(readFileSync(join(root, "docs/compatibility.md"), "utf8")).toContain(note);
 });
 

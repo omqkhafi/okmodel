@@ -13,6 +13,7 @@ import {
   classificationProblems,
   committedDocVersion,
   docClass,
+  ensurePackedDocs,
   restorePackedDocs,
   stampDocText,
   stampPackedDocs,
@@ -30,6 +31,7 @@ import { PACK_SIZE_LIMIT, packSizeProblems } from "../scripts/pack-size.js";
 import { repoRoot } from "../scripts/root.js";
 
 const root = repoRoot();
+ensurePackedDocs(root);
 
 test("every docs file is public or internal, and the repository is clean", () => {
   expect(docClass("guide.md")).toBe("public");
