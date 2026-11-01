@@ -357,8 +357,8 @@ function Types({ types }: { readonly types: HeroMigrateView["types"] }): ReactNo
 function Rules({ rules }: { readonly rules: ReadonlyArray<HeroRule> }): ReactNode {
   return (
     <ul className="flex flex-col gap-1.5 font-mono text-[11px] leading-[1.5]">
-      {rules.map((rule) => (
-        <li key={rule.rule} className="flex items-baseline gap-2">
+      {rules.map((rule, index) => (
+        <li key={`${index}:${rule.rule}`} className="flex items-baseline gap-2">
           <span className="w-[5.5rem] shrink-0 text-fd-foreground">{rule.rule}</span>
           <span className="min-w-0 flex-1 text-fd-muted-foreground">{rule.contribution}</span>
           <Chip tone="quiet">{rule.provenance}</Chip>
