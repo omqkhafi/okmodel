@@ -2,39 +2,119 @@
 title: "Observer events"
 description: "QueryEvent, WriteEvent, SavepointEvent, and OutcomeEvent shapes for okmodel/observe."
 ---
-Types are exported from `okmodel/observe`. How to attach observers is [Observability](/docs/operate/observability). The contract is additive inside `okm.observe/1`.
+Types are exported from `okmodel/observe`. How to attach observers is [Observability](/docs/operate/observability). The contract is additive inside `okm.observe/1`. Postgres only in this train.
+
+A process crash yields no event: outcomes are only those this process observed. Anything that must survive a crash is an outbox table plus a relay.
+
+## Vocabulary
+
+| Term | Meaning |
+| --- | --- |
+| `unit` | Opaque string id from the library (not the database). One `tx()`, one `batch()`, or one autocommit statement. |
+| `seq` | 0-based per unit, in the order statements were sent. A rolled-back savepoint leaves a gap: the surviving writes keep the `seq` they had. |
+| `dialect` | `"postgres"`. |
+| `op` | `insert` \| `update` \| `delete` \| `upsert` \| `archive` \| `restore` \| `raw`. |
+| `rowCountMode` | `changed` \| `matched` \| `returned` \| `unknown`. |
+| `rowCount` | `null` exactly when the mode is `unknown`. |
+| `keys` | Primary-key records for a table named in `writeObserver({ keys })`. Omitted otherwise. |
+| `source` | `client` or `raw`. |
+| `tenant` | `null`, or the scope keys and values. |
+| `settings` | Setting names from `with()`, in stored order. Never values. `[]` when the client has no `with()`. |
+
+No event carries row values or bound parameters. `keys` carries only the primary-key columns of a table that opted in.
+
+## Registry
+
+Postgres: native. Cost: transaction | batch. Proof passes (`proof:writeObserver.unit`).
+
+
+Postgres: native. Cost: returning. Proof passes (`proof:writeObserver.keys`).
+
+
+Postgres: native. Cost: mixed. Proof passes (`proof:writeObserver.rowCount`).
+
 
 ## QueryEvent
 
-One event per call after it settles, reads and writes. The connection prelude (`set_config`), `BEGIN`, `COMMIT`, and `RESET ALL` are library statements. They are part of the call and are not reported as their own events.
+One event per call after it settles, reads and writes. The connection prelude (`set_config`), `BEGIN`, `COMMIT`, and `RESET ALL` are library statements. They are part of the call and are not reported as their own events. With no observer the client does not build an event and does not read the clock.
+
+```ts
+type QueryEvent = {
+  id: string;
+  unit?: string; // inside a transaction, a batch, or an autocommit write
+  seq?: number;
+  dialect: "postgres";
+  table: string | null;
+  op: string;
+  summary: string; // library-built, low cardinality, e.g. "SELECT tasks"
+  fingerprint: string; // plan.fingerprint, the value inspect() already reports
+  text: string; // parameterised; unsanitisable text becomes summary
+  durationMs: number;
+  queueMs: number | null; // null: Postgres does not report pool-queue wait
+  queryMs: number;
+  decodeMs: number | null; // null for a write whose SQL has no RETURNING
+  rowCount: number | null;
+  rowCountMode: "changed" | "matched" | "returned" | "unknown";
+  route: { endpoint: string; role: "primary" | "replica" };
+  error?: { kind: string; category: string; code: string; sqlstate?: string };
+  tag?: string;
+  limit?: { value: number; source: string };
+  params?: readonly unknown[]; // only when queryObserver({ params: true })
+  stack?: string; // only when queryObserver({ stack: true })
+};
+```
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | `id` | `string` | Opaque id for this event. |
-| `unit` | `string?` | Set inside a transaction, a batch, or an autocommit write unit. |
-| `seq` | `number?` | 0-based inside that unit. |
+| `unit` | `string?` | Set inside a transaction, a batch, or an autocommit write unit. An autocommit read omits it. |
+| `seq` | `number?` | 0-based inside that unit. Query `seq` does not change `WriteEvent.seq`. |
 | `dialect` | `"postgres"` | Only dialect in this train. |
 | `table` | `string \| null` | Schema table name, or `null` for typed raw. |
 | `op` | `string` | Call name (`find`, `insert`, `raw`, …). |
-| `summary` | `string` | Low-cardinality label (`SELECT tasks`). |
-| `fingerprint` | `string` | Stable fingerprint; `toOtel` puts it on `db.query.summary`. |
-| `text` | `string` | Statement text. |
+| `summary` | `string` | Low-cardinality label (`SELECT tasks`). `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `UPSERT`, or `SQL`, plus the table when the statement has one. |
+| `fingerprint` | `string` | Stable fingerprint; `toOtel` puts it on `db.query.summary`. A write uses the fingerprint of the parameterised text. A read uses `plan.fingerprint`. |
+| `text` | `string` | Parameterised statement text. Literals become `?`. A comment, a dollar quote, or an unbalanced quote is replaced by `summary`. |
 | `durationMs` | `number` | Wall time for the call. |
-| `queueMs` | `number \| null` | Time waiting for a connection. |
+| `queueMs` | `number \| null` | Always `null` on Postgres: the driver does not report pool-queue wait. |
 | `queryMs` | `number` | Time in the driver. |
-| `decodeMs` | `number \| null` | Decode time when measured. |
-| `rowCount` | `number \| null` | `null` when the mode is `unknown`. |
+| `decodeMs` | `number \| null` | Decode time when measured. `null` when a write's SQL has no `RETURNING`. |
+| `rowCount` | `number \| null` | `null` when the mode is `unknown`. A read is `returned` when the driver reported a count. |
 | `rowCountMode` | `changed \| matched \| returned \| unknown` | From the driver command tag. |
-| `route` | `{ endpoint, role }` | Replica that served a read, or the primary. |
+| `route` | `{ endpoint, role }` | `role` is `replica` when the router sent a read to a replica. A read on the primary, inside a transaction, or on a client with no replicas is `primary`. |
 | `error` | `{ kind, category, code, sqlstate? }?` | No message and no row values. |
 | `tag` | `string?` | From `queryObserver({ tag })`. |
-| `limit` | `{ value, source }?` | Limit used and where it came from (`caller`, `limits.find`, `limits.page`, or `limits.groupBy`). `descendants` and `ancestors` use `limits.find`. |
+| `limit` | `{ value, source }?` | Limit used and where it came from (`caller`, `limits.find`, `limits.page`, or `limits.groupBy`). `descendants` and `ancestors` use `limits.find`. A to-many include default is not on the event (`.inspect()` lists `limits.include`). `one()` does not report the internal `limit 2`. |
 | `params` | `readonly unknown[]?` | Only when `params: true`. Sensitive, hidden, and tenant values are `[redacted]`. |
 | `stack` | `string?` | Only when `stack: true`. |
+
+`params` and `stack` are omitted unless the observer opts in. No event carries row values. Tenant ids are not a separate field on `QueryEvent`.
+
+Postgres: native. Cost: query|decode. Proof passes (`proof:queryObserver.timing`).
+
 
 ## WriteEvent
 
 Delivered to `onWrite` for each surviving write in a unit. Values never appear: `settings` is names only.
+
+```ts
+type WriteEvent = {
+  type: "write";
+  unit: string;
+  seq: number;
+  dialect: "postgres";
+  table: string | null;
+  op: "insert" | "update" | "delete" | "upsert" | "archive" | "restore" | "raw";
+  rowCount: number | null;
+  rowCountMode: "changed" | "matched" | "returned" | "unknown";
+  keys?: readonly Record<string, unknown>[]; // primary key, only when that table opted in
+  tenant: Readonly<Record<string, unknown>> | null;
+  settings: readonly string[]; // names only, never values
+  durationMs: number;
+  tag?: string;
+  source: "client" | "raw";
+};
+```
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -46,16 +126,32 @@ Delivered to `onWrite` for each surviving write in a unit. Values never appear: 
 | `op` | `insert \| update \| delete \| upsert \| archive \| restore \| raw` | |
 | `rowCount` | `number \| null` | `null` when the mode is `unknown`. |
 | `rowCountMode` | `changed \| matched \| returned \| unknown` | |
-| `keys` | `readonly Record<string, unknown>[]?` | Primary-key records when that table was named in `writeObserver({ keys })`. |
-| `tenant` | `Record<string, unknown> \| null` | Scope keys and values, or `null`. |
+| `keys` | `readonly Record&lt;string, unknown&gt;[]?` | Primary-key records when that table was named in `writeObserver({ keys })`. |
+| `tenant` | `Record&lt;string, unknown&gt; \| null` | Scope keys and values, or `null`. |
 | `settings` | `readonly string[]` | Setting **names** from `with()`, in stored order. Never values. `[]` without `with()`. |
-| `durationMs` | `number` | Statement time. |
-| `tag` | `string?` | From `writeObserver({ tag })`, or `trusted: <reason>` under `trusted()`. |
+| `durationMs` | `number` | Statement time (send to result). When the driver runs several statements as one `batch` with no per-statement signal, each write in that batch shares the wall time of the whole batch. |
+| `tag` | `string?` | From `writeObserver({ tag })`, or `trusted: &lt;reason&gt;` under `trusted()`. |
 | `source` | `"client" \| "raw"` | |
 
 `sql()`, `inspect()`, and `describe()` plan a write and do not emit an event. That plan path builds observe metadata with `settings: []` — it does not receive the client's `with()` pairs.
 
+A typed `raw(db, sql, params)` write emits `source: "raw"`, `op: "raw"`, and `table: null`. A typed raw read emits no write event. `onQuery` sees a typed raw read or write as `op: "raw"` and `table: null`.
+
+`keys` names schema tables. For each of those tables the write planner appends `RETURNING` of the primary key when the statement is a simple `INSERT`, `UPDATE`, or `DELETE`. The extra columns show in `sql()` and `inspect()`. `describe()` labels caller columns `"caller"` and appended primary-key columns `"observer"`. A successful statement that opted in and could return the key sets `keys` (an empty array when no row came back). A failure omits `keys`. A table with no primary key, or a name that is not in the schema, is [OKM1890](/docs/reference/errors#okm1890) at connect and again when the write is planned.
+
+Statements whose `RETURNING` is not terminal (a parent guard, a versioned close, an archive CTE) are not rewritten. They fill `keys` only when the caller already returns every primary-key column. A sortable lock statement is not a key statement. A first-or-create lookup does not attach keys.
+
 ## SavepointEvent
+
+```ts
+type SavepointEvent = {
+  type: "savepoint";
+  unit: string;
+  name: string;
+  state: "released" | "rolled_back";
+  depth: number;
+};
+```
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -67,6 +163,16 @@ Delivered to `onWrite` for each surviving write in a unit. Values never appear: 
 
 ## OutcomeEvent
 
+```ts
+type OutcomeEvent = {
+  type: "outcome";
+  unit: string;
+  outcome: "committed" | "rolled_back" | "unknown";
+  writes: number; // surviving savepoint rollbacks
+  dbTxId?: string;
+};
+```
+
 | Field | Type | Notes |
 | --- | --- | --- |
 | `type` | `"outcome"` | Discriminator. Last event of a unit. |
@@ -75,6 +181,50 @@ Delivered to `onWrite` for each surviving write in a unit. Values never appear: 
 | `writes` | `number` | Surviving writes after savepoint rollbacks. |
 | `dbTxId` | `string?` | When the driver reported one. |
 
+## Delivery
+
+1. A unit's events are delivered after its COMMIT or ROLLBACK returns, in `seq` order, then the `outcome` event last. No statement-time delivery.
+2. Writes inside a rolled-back savepoint are removed from the unit's surviving writes before `outcome`; a `savepoint` event with `rolled_back` is emitted so tooling can follow. Those writes are never delivered.
+3. Outcome is tri-state: `committed` (COMMIT acknowledged), `rolled_back` (explicit rollback, or a failed statement that ended the unit), `unknown` (COMMIT sent and the connection lost: `outcome_unknown`, [OKM1401](/docs/reference/errors#okm1401)). Consumers treat `unknown` as "maybe committed" and must be idempotent. The writes of an `unknown` unit keep the counts their statements reported before COMMIT. A connection lost before COMMIT is sent is `rolled_back`, never `unknown`.
+4. Autocommit: a single statement is a unit of one write; `outcome` follows its result.
+5. `batch()` on a driver with no per-statement signal: one unit, one outcome for the whole batch; `seq` still orders the statements.
+6. A process crash yields no event.
+7. No global order across units. Units are per transaction or batch, not per client: two units running at once on one client keep their own events, `seq`, and outcome.
+8. A handler that throws or rejects is caught and sent to `onObserverError(err, event)`; it never reaches the write path and never changes an outcome. Handlers are not awaited on the write path; returned promises are tracked; `await observer.flush()` (from `writeObserver()`) resolves when all tracked handler promises have settled and never throws on handler errors. The helper owns `flush`.
+9. Backpressure: the buffer is bounded per client (default 10,000 pending events). See [Buffer overflow](#buffer-overflow).
+
+`writeObserver({ ... })` buffers per unit and calls exactly one of `committed` | `rolledBack` | `unknown` once per unit. A unit with zero surviving writes calls nothing. An observer cannot veto or alter a write. `tag` is 1–64 characters from `[A-Za-z0-9_.:/-]`. Anything else is `invalid` at helper construction.
+
+## Row counts
+
+`rowCount` is the command-tag count the driver reported. A missing or null tag is `unknown` with `rowCount: null`. An upsert stays `changed` even when `RETURNING` ran. Every other op is `returned` when the statement's SQL contained `RETURNING`, otherwise `changed`.
+
+| Mode | When |
+| --- | --- |
+| `changed` | `insert`, `update`, or `delete` whose SQL has no `RETURNING`. An `upsert` (`ON CONFLICT`) is always `changed` when a tag exists. |
+| `returned` | Any other op whose SQL ran `RETURNING`, including primary-key `RETURNING` added for `keys`. |
+| `unknown` | The driver reported no command tag. `rowCount` is null. |
+| `matched` | Reserved. Not emitted. |
+
 ## Buffer overflow
 
-When the per-client pending-event buffer exceeds its ceiling, the oldest unit is dropped and `onObserverError` receives [OKM2200](/docs/reference/errors#okm2200). The write path never waits on that delivery.
+The per-client pending-event buffer defaults to 10,000. When it overflows, the oldest unit's events are dropped and `onObserverError` receives [OKM2200](/docs/reference/errors#okm2200). The write path never waits on that delivery. Raise `maxPending` on `writeObserver`, or drain handlers with `flush()` more often.
+
+For `onQuery`, the pending ceiling also defaults to 10,000 in-flight promises. Past that, the handler is not called and `onObserverError` receives the same OKM2200.
+
+## toOtel
+
+`toOtel(event)` returns `{ name, attributes }` and imports nothing from OpenTelemetry. `name` is `summary`. Attributes use the same names as `okmodel/otel`:
+
+| Attribute | Value |
+| --- | --- |
+| `db.system.name` | `postgresql` |
+| `db.namespace` | `public` |
+| `db.collection.name` | table name |
+| `db.operation.name` | `op` |
+| `db.query.summary` | fingerprint |
+| `error.type` | `error.kind`, on failure |
+| `db.response.status_code` | SQLSTATE, on failure when the server sent one |
+| `db.query.text` | sanitised text, only when `toOtel(event, { statement: true })` |
+
+Parameters, tenant ids, and stacks are never attributes.

@@ -31,6 +31,57 @@ Dropping a table or a column is an error finding (OKM1511, OKM1512). An error fi
 
 A protected target is a flag on the target, or a fingerprint in the user store. It is not implied by the name `production` or by `NODE_ENV`. `connect` does not read it. Which commands it blocks is [Protected targets](/docs/operate/protected-targets-and-roles).
 
+## Prompt injection through error text and database values
+
+Text from a database error, a catalog, or a user query is an object with `untrusted: true`, an origin, and a bounded `text`. The human line is `untrusted <origin>: "<text>"`. It is not an instruction. The cap is 200 code points for one string and 2,000 for one field. A caller may lower a cap and may not raise one. Bidi overrides and tag characters are removed from that text.
+
+See [Untrusted text](#untrusted-text).
+
+## Destructive migrations
+
+Dropping a table, renaming a column, or adding a unique constraint on a table that already exists is an error finding, [OKM1510](/docs/reference/errors#okm1510). `okm generate` still writes the file and exits 1. `okm migrate plan` and `okm check` exit non-zero. `okm migrate apply` refuses with OKM1510 before any statement. A plan whose operation class is `destructive` sets `requiresAck`. Apply does not ask, and it does not read that flag. The only way past a destructive step is a `-- okm-allow CODE: reason` line in the committed migration file. No command-line flag does it. `okm check` and `okm migrate check` list those lines, and a boilerplate reason is warning [OKM2300](/docs/reference/errors#okm2300). A person reviews the line in the pull request, and a protected target still needs a terminal.
+
+The lint codes are [Lint](/docs/migrations/checks-and-lint#lint-codes).
+
+## Wrong-target runs
+
+A target is protected when project config sets `protected: true` or when `okm protect add` has stored its fingerprint. The fingerprint is `hostDb`, the SHA-256 of lower-cased `host:port/database`. The user, the password, and the query string are not part of it. A state-changing command against a protected target exits 4. `okm migrate check` refuses a protected target, and `--allow-protected` does not lift that refusal. Omitting `--target` when several targets are configured is [OKM1853](/docs/reference/errors#okm1853) for commands that must pick one database.
+
+Detail: [Protected targets](/docs/operate/protected-targets-and-roles) and [Production checklist](/docs/operate/production-checklist).
+
+## Credential leakage
+
+The protection store holds hashes, not URLs. Command output does not print the URL. `okm protect list` prints fingerprints. JSON for that command has `identity` null and does not include the URL.
+
+[`okm doctor --bundle`](/docs/reference/cli/check#doctor---bundle) writes a diagnostics file for a person to send. It holds versions, codes, closed artifact names with hashes, and counts. It holds no connection string, host, user, URL, table or column name, SQL text, row value, absolute path, or environment variable value, and it opens no socket.
+
+[`okm doctor --production`](/docs/reference/cli/check#doctor---production) reads one target in a `READ ONLY` transaction and makes no network call beyond that database. It names the target by its configured name. It never prints the URL, host, user, or password, and a failed connection is reported without the driver's text, which can name the host or the user.
+
+## Hidden Unicode in docs
+
+The packed text files are scanned for NUL, zero-width characters, bidi overrides and isolates, tag characters, and variation selectors outside an emoji sequence. Arabic, Persian, Hebrew, and Indic letters are allowed. ZWNJ and ZWJ are allowed only inside a word in a file named by the docs hygiene allowlist (that list is empty). The same classes of bidi override and tag character are stripped from untrusted database and error text.
+
+## Untrusted text
+
+Text read from a database catalog, a database error, or a user query is bounded and marked untrusted; this reduces risk and does not eliminate it.
+
+Each value is an object. The keys are `untrusted`, `origin`, `text`, `truncated`, and `modified`. One string keeps at most 200 code points. One response field keeps at most 2,000. A caller may set a lower cap. A caller may not raise one.
+
+The human line is `untrusted <origin>: "<text>"`. That line stands on its own. It is not an instruction.
+
+`okm migrate plan --json` adds `operationClass` on the plan and on each step, `fromCatalogHash`, `toCatalogHash`, `planHash`, `requiresAck`, and `destructiveOperations`. `planHash` is the SHA-256 of canonical JSON for format 1, the dialect, the two catalog hashes, and each step's SQL as executed with its operation class. The hash omits the target, timestamps, and the OKModel version. `requiresAck` is true when the plan's operation class is `destructive`. The plan command does not ask, and apply is unchanged.
+
+`okm init --json` stores `data.detection.packageName` as an untrusted object with origin `package.json`. The plan hash omits that name. A finding `reason` is an untrusted object with origin `user.query`. `fix` stays a string written by OKModel. A database error's text is `errors[].detail`, and the summary stays the registry sentence. `okm migrate status` JSON stores `steps[].id`, `kind`, and `state` as untrusted objects. The text table is unchanged. `okm migrate baseline --json` stores each unmanaged `name` as an untrusted object.
+
+## What this does not defend against
+
+- A program running as the same operating-system user can edit the protection file, delete it, or set `protected: false`. The grant in [roles](/docs/operate/protected-targets-and-roles) is the boundary that still holds.
+- `default_transaction_read_only` is a session setting. A session can turn it off. Roles use `GRANT`, not that setting. See [config roles](/docs/reference/config-roles).
+- Marking text untrusted reduces the chance an agent obeys it. It does not eliminate that chance.
+- [OKM1538](/docs/reference/errors#okm1538), a type change that rewrites the heap, is a warning. Apply does not refuse it. The recipe is [a type change](/docs/reference/type-change). There is no separate command for it.
+- A login that is a superuser, or that holds `CREATEROLE` and ownership, can do more than the reader role in [roles](/docs/operate/protected-targets-and-roles).
+- The doc scan does not read rows in the database. Values that pass through untrusted text are the ones that are bounded and stripped.
+
 ## Limits and trade-offs
 
 Validation does not run on every write. Omitted, or `false`, leaves it off. A column, a table, or the schema can turn it on. The switch is [Validation](/docs/schema/validation).
@@ -47,3 +98,4 @@ What to turn on before a real target — `protected`, `requireMeta`, `--target`,
 | [Protected targets](/docs/operate/protected-targets-and-roles) | The flag, the store, and the grants. |
 | [Safe use](/docs/operate/using-okmodel-safely) | The lockfile, the wait, and provenance. |
 | [Production checklist](/docs/operate/production-checklist) | What a production target should have on. |
+| [Lint](/docs/migrations/checks-and-lint) | Destructive findings and `-- okm-allow`. |

@@ -3,9 +3,9 @@ title: "Warnings"
 description: "Development advice for a query. The level is configuration. The code number is the subject."
 ---
 
-`okmodel/warnings` exports `warnings`. Pass it to `connect`. Production reports nothing until a level is set. Development reports a hint for low severity and a warn for medium or high. `error` throws and is meant for a test.
+OKModel refusals are `OKM1xxx`. Advice is a separate channel. `OKM2xxx` is a warning and `OKM3xxx` is a hint. The number records the subject only. The level is configuration: `off`, `hint`, `warn`, or `error`. A code is never reused or renumbered.
 
-An ignore needs a reason. `okm check` does not run the query rules. It lists project ignores and runs the schema rules below.
+`okmodel/warnings` is experimental. It exports `warnings`. Pass the function to `connect`. A process that does not import it does not load the rules.
 
 ```ts title="warnings.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -24,23 +24,66 @@ export const db = connect(process.env.DATABASE_URL ?? "", {
 });
 ```
 
-`offset` above 1,000 is OKM2004. A `limit` whose order does not end in a unique key is OKM2005. Under `for()`, the tenant key is ignored. A value list above 500 elements is OKM2007. An include whose row product is above 10,000 is OKM2008. A `find` that took a default from [`connect({ limits })`](/docs/operate/query-limits) and returned exactly that many rows is OKM2011. `descendants` and `ancestors` take that default and do not emit OKM2011. `page()` is the cursor alternative to a deep offset.
+## Levels
+
+In development, low severity is a hint, and medium or high severity is a warn. The console line includes the call site. In production, every rule is off until `levels` sets one. `error` is opt-in and throws `OkmError` on every evaluation. It is there for a test.
+
+`env: "development"` or `env: "production"` overrides `NODE_ENV`. Any other `NODE_ENV`, including an unset one, is development.
+
+`onWarning` replaces the console. The notice has the error-object fields plus `level`, `severity`, and `rule`. The same rule and call site are reported once per process. `error` is not deduplicated.
+
+## Ignore
+
+An ignore is `{ rule, reason }`. `reason` is required at the call site and in the project config. The rule id is kebab-case. An unknown id is kept so a later rule can use it. It does not report a stale-ignore finding for that unknown id.
+
+```ts title="query.ts"
+import { db } from "./warnings.ts";
+
+await db.notes.find({
+  limit: 10,
+  ignore: { rule: "unordered-limit", reason: "one row" },
+});
+```
+
+`defineConfig({ warnings })` accepts `levels` and `ignore`. `okm check` lists each project ignore with its rule and reason. The reason is untrusted text (`user.query`). `okm check` does not run the query rules. It runs the schema rules below.
+
+A project ignore may carry a `target`: a table (`events`) or a column (`orders.user_id`), in SQL names. The target narrows the ignore to that table or column. Without a target the ignore covers every finding of its rule. A call-site ignore has no target. A project ignore with a target never silences a query rule.
+
+## Rules
+
+| Code | Rule | Fires when |
+| --- | --- | --- |
+| [OKM2004](/docs/reference/errors#okm2004) | `deep-offset` | `offset` is an integer above 1,000. `page()` has no offset. |
+| [OKM2005](/docs/reference/errors#okm2005) | `unordered-limit` | `find` has a numeric `limit` and `orderBy` is missing or does not end in a primary key or unique column. Under `for()`, the tenant key is ignored, so the rest of that unique counts. |
+| [OKM2007](/docs/reference/errors#okm2007) | `large-in-list` | `inList`, `notIn`, an array operator, or a plain array is longer than 500 elements. `and`, `or`, `not`, and `between` are not value lists. |
+| [OKM2008](/docs/reference/errors#okm2008) | `wide-fan-out` | One include path multiplies the parent limit by nested limits above 10,000. A to-one include with no limit counts as 1. Sibling includes are separate products. |
+| [OKM2011](/docs/reference/errors#okm2011) | `default-limit-reached` | A read took a default from [`connect({ limits })`](/docs/operate/query-limits) and returned exactly that many rows. A `find` with a default, a to-many include with a default (at any depth), or an aggregate with `groupBy` and a default. A tree walk (`descendants` / `ancestors`), a limit the call wrote, `.all(reason)`, `page()`, and `stream()` never fire it. |
+
+OKM2011 is a result rule (evidence `observed`): it needs the rows, so it runs after the read and never on `.inspect()` or `.sql()`. It exists only when `connect` has `limits` and `warnings`. The notice has a `limit` field that names the key and the value, for example `limits.find = 50`. Without `limits` nothing is applied and nothing fires, and TypeScript still requires `limit`.
+
+The fix for a deep offset is `page()` with a cursor. The fix for a large list is `= any(array)`, so the list is one parameter. The fix for a wide include is a lower parent limit or a lower include limit. The fix for a default limit that was reached is a limit that fits the call, `page()`, or `.all(reason)`. The fix for an unordered limit is an `orderBy` that ends with the primary key or a unique column.
 
 ## Schema rules in `okm check`
 
-`okm check` reads the schema, the catalog, and the project source. It needs no database. A finding is a warning and the exit code stays 0. A rule at level `error` exits non-zero.
+These three rules read the schema, the catalog, and the project source. They need no database and no running app. `okm check` evaluates them in phase `check` with static evidence. A level comes from `warnings.levels`, or the registry default (`warn`, severity medium). A project has no environment here, so a production build does not turn them off.
 
-- OKM2101 (`unindexed-foreign-key`): no index starts with the columns of a foreign key. A composite index that starts with them counts.
-- OKM2102 (`table-without-primary-key`): a managed table has no primary key.
-- OKM2103 (`unindexed-filter-column`): a column in a `filters()` allow or sort list, or used by a preset, has no index that starts with it. A primary key, a unique index, and the tenant prefix count.
+| Code | Rule | Fires when |
+| --- | --- | --- |
+| [OKM2101](/docs/reference/errors#okm2101) | `unindexed-foreign-key` | No index, primary key, or unique constraint starts with the columns of a foreign key. A composite index that starts with them counts, in any order of those columns. |
+| [OKM2102](/docs/reference/errors#okm2102) | `table-without-primary-key` | A managed table has no primary key. A unique index does not replace one. |
+| [OKM2103](/docs/reference/errors#okm2103) | `unindexed-filter-column` | A column is in a `filters()` allow list or sort list, or used by a preset, and no index starts with it. A primary key or unique index counts. On a tenant table the tenant column prefix counts. |
 
-A rule that cannot decide, such as one facing an expression index, stays silent. A project ignore names a `target` (`events` or `orders.user_id`) and a reason. `okm check` lists every ignore and marks one that matched nothing as stale.
+`okm check` prints one line per finding and one `warnings[]` entry with `place` set to the target (`orders.user_id`). It exits 0. A rule at level `error` makes it exit non-zero with that rule's code and every error finding in the message. `off` drops the rule.
 
-## Related codes outside the query and schema rules
+A rule stays silent when it cannot decide:
 
-[OKM2200](/docs/reference/errors#okm2200) is the write-observer buffer overflow. The observer drops the oldest pending unit and reports through `onObserverError`. See [Observer events](/docs/reference/observer-events).
+- An index with an expression makes the columns it names undecidable. The rule does not fire for them.
+- A partial index counts as an index.
+- A preset is run once with its builder and no arguments. A preset that throws without its arguments adds nothing. A name that is not a column of the table is skipped.
+- `filters()` is read from source, because the call keeps nothing at runtime. `okm check` reads the `raw.include` files (default `src/**`), the schema file, and the `tables` directory. A call counts when its receiver is an identifier bound to one `table("name", ...)`. Only literal `allow` keys and literal `sort` strings are read. A spread, a computed key, an unknown receiver, or a name bound to two tables adds nothing.
+- An external or ignored table is not checked.
 
-[OKM2300](/docs/reference/errors#okm2300) is an audit warning on a weak `-- okm-allow` reason (shorter than 12 characters, only stop-list words, or only the code repeated). [`okm migrate check`](/docs/reference/cli/migrate#migrate-check) and [`okm check`](/docs/reference/cli/check#check) list those overrides. Nothing is refused.
+A project ignore names a `target` (`events` or `orders.user_id`) and a reason. `okm check` lists every ignore and marks one that matched nothing as stale (`status: stale`). An ignore that matched a finding is `applied`. An ignore for another rule has no status.
 
 ```ts title="okmodel.config.ts"
 import { defineConfig } from "okmodel/migrate";
@@ -53,3 +96,9 @@ export default defineConfig({
   },
 });
 ```
+
+## Related codes outside the query and schema rules
+
+[OKM2200](/docs/reference/errors#okm2200) is the write-observer buffer overflow. The observer drops the oldest pending unit and reports through `onObserverError`. See [Observer events](/docs/reference/observer-events).
+
+[OKM2300](/docs/reference/errors#okm2300) is an audit warning on a weak `-- okm-allow` reason (shorter than 12 characters, only stop-list words, or only the code repeated). [`okm migrate check`](/docs/reference/cli/migrate#migrate-check) and [`okm check`](/docs/reference/cli/check#check) list those overrides. Nothing is refused.
