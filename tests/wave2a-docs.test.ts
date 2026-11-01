@@ -119,7 +119,7 @@ test("the four corrected statements are what the pages say", () => {
     "The statement timeout is `backfill.statementTimeoutMs`, then the apply statement timeout (`timeouts.statement` or `--statement-timeout`), then 30000.";
   expect(production).toContain(notice);
   expect(checklist).toContain(notice);
-  const doctor = page("site/content/docs/reference/cli.mdx");
+  const doctor = page("site/content/docs/reference/cli/check.mdx");
   const pooler = page("site/content/docs/reference/config.mdx");
   const decisions = page("docs/okmodel-decisions.md");
   expect(production).toContain(connection);

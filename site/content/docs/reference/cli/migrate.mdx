@@ -1,0 +1,166 @@
+---
+title: "Migrate commands"
+description: "okm generate, migrate plan/apply/status/resolve/baseline/check, push, and seed."
+---
+## generate
+
+`okm generate` plans the schema against the last `*.catalog.json` in name order and writes SQL. The name defaults to `migration`. Letters, digits, `_`, and `-` are accepted. Anything else is `Migration name <name> must be letters, digits, _ or -.`
+
+The file is `<number>_<name>.sql` in the [migrations](/docs/reference/config#migrations) directory, with `<number>_<name>.catalog.json` beside it. The number is one higher than the highest numeric prefix, at least four digits. An empty directory starts at `0001`. The name `init` also writes `.gitattributes` in the project when that file is missing.
+
+An empty plan writes no SQL file and prints `no changes`. The [out](/docs/reference/config#out) catalog is still written. A written file prints its path, then one line per lint finding. An error finding still writes the file, then exits 1; stderr says `okm migrate apply` will refuse until it is fixed. A warning does not change the exit code. `migrate plan` and `check` also exit 1 on an error finding.
+
+`--replace` records a removed picklist or enum value. The schema stores no replacement. A chain, a value replaced by another removed value, is OKM1541. `=null` on a column that is not nullable is OKM1541.
+
+```sh
+bunx okm generate init
+```
+
+```sh
+bunx okm generate rename-status --replace notes.status.draft=open
+```
+
+## migrate plan
+
+`okm migrate plan <name>` prints the plan and writes nothing. A missing name is `okm migrate plan needs a name.`
+
+With one target, or with `--target`, a database that answers adds `pg_class` row estimates to the lock lines. No target, several targets and no `--target`, or a target that cannot be reached, prints the plan without estimates. An unknown `--target` and a protection mismatch still throw. Those are the same refusals as [Database](/docs/reference/config-database). A pooler host is not refused.
+
+An error finding is OKM1510 and the command exits 1 after the plan text. `--json` prints one envelope and no SQL text. `data` is `name`, `class`, `operationClass`, `fromCatalogHash`, `toCatalogHash`, `planHash`, `requiresAck`, `destructiveOperations`, each step's `class`, `operationClass`, `lock`, and `sql`, and the findings (`severity`, `code`, `place`, `reason`, `fix`). `lock` is the human `-- lock:` line. `reason` is an untrusted object. `planHash` covers the dialect, the two catalog hashes, and each step's SQL as executed. `requiresAck` is true when `operationClass` is `destructive`. Apply does not read it. The command still exits 1 after that document when a finding is an error. `--replace` is the same flag as [generate](#generate).
+
+```sh
+bunx okm migrate plan init
+```
+
+## migrate apply
+
+`okm migrate apply` applies pending files in the [migrations](/docs/reference/config#migrations) directory. A file without its `.catalog.json` is refused. With no migration files, or no head snapshot, it prints `target <name>` and `nothing to apply` and does not connect.
+
+A pending file is linted after `okm_history` is read and before any DDL. `lintFrom` is not read. An error finding is OKM1510. Transaction control is the finding OKM1551. Apply accepts that step when it carries `-- okm-allow OKM1551: reason`. An empty reason, or a code the statement did not trigger, is OKM1510. [migrate check](#migrate-check) still refuses the step.
+
+Apply and push refuse OKM1899 before any step when `okm_meta`, `okm_history`, `okm_backfill`, or `okm_steps` already exists in the catalog schema and is not that ledger. The relation is not an ordinary table, or a column the ledger writes is missing. The message names the schema and the table and says another table owns the name.
+
+The summary is `target <name>`, then `set role <role>` when apply issued `SET ROLE`, then `restamped <id>` for a history repair, then `applied <id>` for each file. Nothing applied is `nothing to apply`. A backfill batch is printed as it commits:
+
+```text
+backfill <migration> step <index> batch <n> rows <n> key <last>
+```
+
+`key` is the committed boundary, or `-` when that batch has none.
+
+A protected target allows expand, reference rows, and provision of an empty database. Contract, unclassified SQL, a backfill, and a history repair that changes a row are OKM1850 until `--allow-protected`. An empty database, a database that already has objects and no history, and a provision that stopped part-way are on [Database](/docs/reference/config-database#an-empty-database). Reference rows are on [Reference rows](/docs/schema/required-rows). Timeouts are on [Timeouts](/docs/reference/config#timeouts). Batch size, pause, and the batch statement timeout are on [Backfill](/docs/reference/config#backfill). Roles are on [Roles](/docs/reference/config-roles).
+
+A schema module that does not export a `schema()` still lets apply run. It installs no reference rows. The message is on [Schema](/docs/reference/config#schema).
+
+```sh
+bunx okm migrate apply --target prod
+```
+
+## migrate status
+
+`okm migrate status` prints every configured target, in name order. `--target` keeps one name. Several targets do not need `--target`. No target is OKM1845.
+
+The columns are tab-separated: `target`, `version`, `catalog`, `state`, `protected`. `protected` is `true` or `false`. The state is `current`, `behind by expand`, `behind by contract`, `ahead by expand`, `ahead by contract`, or `failed at step <n> (resume with okm migrate apply)`.
+
+A committed step that is in flight or broken follows as its own section: a line `steps`, then the tab-separated header `id`, `kind`, `state`, `attempt`, `next`. `id` is `<migration>:<step>` with a 0-based step index.
+
+An unfinished backfill follows as its own section: a line `backfill`, then the tab-separated header `migration`, `step`, `rows`, `key`, `state`.
+
+A pooler host is not refused. The command is read-only, including on a protected target.
+
+```sh
+bunx okm migrate status
+```
+
+`--json` keeps that text in `data.text` and adds `data.steps` (`id`, `kind`, `state`, `attempt`, `nextAction`). `id`, `kind`, and `state` are untrusted objects read from `okm_steps`. The array is empty when no committed step is in flight.
+
+## migrate resolve
+
+`okm migrate resolve <migration>:<step>` records a committed step a person finished, or marks it so the next apply tries it. The operand is the 0-based id from `okm migrate status`. The command needs an `okm_steps` row for that step. Pass one of the two actions.
+
+Recording the step as applied writes the history row and deletes the `okm_steps` row. Where Postgres can probe the kind, or the step declares `-- probe:`, a probe that is not applied is OKM1554. Where no probe exists, the command is OKM1555 until `--accept-unverified` is passed. That flag has no short form. A declared probe is a probe, so that step does not need it.
+
+Marking the step to run again sets the row to `retry`. The next apply probes first where a probe exists, and otherwise runs the statement.
+
+There is no skip. A protected target is a history repair and needs `--allow-protected`. A pooler host is refused the same way apply refuses one.
+
+```sh
+bunx okm migrate resolve 0001_init:2 --retry
+bunx okm migrate resolve 0001_init:2 --applied
+```
+
+`--json` puts `target`, `step`, `action` (`applied` or `retry`), and `result` (`recorded` or `retry`) in `data`.
+
+## migrate baseline
+
+`okm migrate baseline` records the head snapshot as applied history on an existing database without running schema changes. Use it after [`okm pull`](/docs/reference/cli/introspect#pull) and `okm generate` when the live database already matches the model. The guide is [Existing database](/docs/migrations/adopt-existing-database).
+
+It introspects the target and plans managed objects against the head catalog. A difference is OKM1858 and prints that plan; nothing is marked applied. Objects the model does not name are listed as unmanaged and are left alone. A target that already has OKModel history is OKM1857. A repeat with the same `baselined@<migration id>` and catalog hash prints `already baselined` and changes nothing. The write creates `okm_meta` and `okm_history` when absent and inserts only those rows. The operation is history repair, so a protected target needs `--allow-protected`.
+
+```sh
+bunx okm migrate baseline
+bunx okm migrate baseline --dry-run --json
+bunx okm migrate baseline --allow-protected --target production
+```
+
+`--json` puts `target`, `migrationId`, `catalogHash`, `status` (`baselined`, `already-baselined`, or `dry-run`), and `unmanaged` (`kind`, `name`) in `data`. `name` is an untrusted object.
+
+`baseline(target)` from `okmodel/migrate` is the programmatic entry. `default` is the `database` target.
+
+## migrate check
+
+`okm migrate check` replays every migration into a scratch schema inside one transaction, then rolls that transaction back and drops the schema. The schema name starts with `okm_check_`. An extension is database-wide. `extension(name, { schema })` installs into that schema. The check creates the schema inside the replay transaction when it is missing, and the comparison keeps that schema instead of the scratch schema. A `CREATE EXTENSION` the connected role cannot run is OKM1811 before the replay. The message names the role and the extension: an untrusted default version needs a superuser, and a trusted one needs CREATE on the database. When the extension is already installed, the replay does not run `CREATE EXTENSION` again and never alters it: statements about it update a record kept in the check, the scratch schema reads its types through `search_path`, and a `DROP EXTENSION` fails when a scratch object still uses it. A column dropped earlier in that same step is not still using it. A step that ends the transaction therefore cannot change the installed extension. A btree index expression is reprinted on a temporary table before the catalog comparison, so a spelling Postgres does not store is not OKM1547. A `using` tail is not reprinted. A `uuidv7()` default on PostgreSQL 15, 16, or 17 is OKM1812 before any statement, with the fix `uuidv7() needs PostgreSQL 18 or higher. minPostgres: 18.` PostgreSQL 18 replays that default. A passing run prints `ok <n> migrations`, then one line: the replay uses empty tables, so a step that fails only on real data is not caught (`NOT NULL` on a populated column, a unique index over duplicates, a check over existing rows, a foreign key validation, or a cast). A statement left unrun follows on its own line, `<id> step <n>: <reason>`. The reasons are `VACUUM is not run inside the check transaction`, `CREATE or DROP DATABASE is not run inside the check transaction`, and `ALTER SYSTEM is not run inside the check transaction`.
+
+A protected target is OKM1850. The message is `okm migrate check writes a scratch schema and refuses protected target <name> (<reason>). Point it at a throwaway Postgres.` `--allow-protected` does not lift it.
+
+After a passing run the command lists every `-- okm-allow` line in the migrations directory, as `allow <migration> step <n> <code> <class>`, and marks destructive rules. `--json` data carries the list as `allows[]`. A reason shorter than 12 characters, a stop-list word such as `ok` or `todo`, or only the code repeated is warning OKM2300. It is an audit, so nothing is refused.
+
+The command also checks the previous catalog, the head, and the linter. The first linted id is [lintFrom](/docs/reference/config#lint-from). An error finding is OKM1510. Transaction control (`begin`, `commit`, `rollback`, `abort`, `end`, `start transaction`, `prepare transaction`), including inside a `DO` body, is that finding, OKM1551. A function or procedure body is not this. When the finding is allowed, the replay still throws OKM1551: `Migration <id> step <n> contains <word>.`
+
+`--provision` also installs the head snapshot and compares it with a full replay. A difference is OKM1521: `Provisioning from the snapshot does not match the replayed history.`
+
+[timeouts](/docs/reference/config#timeouts) apply when the config sets them. The flags do not. A lock timeout's fix says to run `okm migrate check` again when that lock is free. The step does not need a change. A pooler host is refused until [allowPooler](/docs/reference/config#pooler) or `--allow-pooler`.
+
+```sh
+bunx okm migrate check --provision
+```
+
+## push
+
+`okm push` plans the schema against the live catalog on the target and applies that plan as one migration named `push-<n>`, where `n` comes from `okm_history`. It writes no SQL file. An empty plan that already matches `okm_meta` prints `target <name>` and `no changes`. When the hash moved with no DDL, it re-stamps `okm_meta` and prints `restamped push-<n>` then `nothing to apply`. A plan with steps uses the apply summary.
+
+Push runs no migration lint, with one exception. A plan that would weaken row-level security (OKM1550: disable or stop forcing it, drop or widen a policy, grant `BYPASSRLS`, or change the owner of a tenant table) is refused before any statement. The refusal is an OKM1510 error that lists the OKM1550 findings. Run `okm generate`, review the migration, then `okm migrate apply` it with `-- okm-allow OKM1550: <reason>` on the step.
+
+A plan that drops columns and tables that hold rows is OKM1898. The check is `select 1 from <table> limit 1` inside the push transaction, before any statement. The refusal names every object and `--allow-data-loss`. That flag applies the plan and prints `dropped <object>` for each one. An empty table, a rename, an added object, and a dropped constraint are applied. Dropping an empty column or table without the flag applies and prints nothing extra. A drop that `.okm/pull.json` already lists stays OKM1897. A reserved column or index name that the record does not list is OKM1122, the same error `okm check` reports. A ledger name that already belongs to another table is OKM1899, before any step. The message names the schema and the table.
+
+A protected target is OKM1850 until `--allow-protected`. Lock and statement timeouts stay 5000 and 30000 milliseconds. The config and the flags are not applied. A pooler host is refused until [allowPooler](/docs/reference/config#pooler) or `--allow-pooler`.
+
+```sh
+bunx okm push
+```
+
+## seed
+
+`okm seed <file>` loads that module and calls its default export with the testing harness for the selected target. The path is resolved from the project directory. A missing file is `Seed file <file> was not found.` A default export that is not a function is `<file> must default-export a function.` A missing file argument is `okm seed needs a file.`
+
+The target is already migrated. The harness does not apply the catalog. A protected target is OKM1850 until `--allow-protected`. Several targets need `--target`. A pooler host is refused until [allowPooler](/docs/reference/config#pooler) or `--allow-pooler`.
+
+The command prints `target <name>` and one line `<table> <count>` for each table the factories inserted, in table name order. No insert is `created nothing`.
+
+Under `rlsTenancy` the command runs as the application role. The owner, a superuser, or a `BYPASSRLS` role is OKM1707.
+
+```ts title="seed.ts"
+import type { Testing } from "okmodel/testing";
+
+export default async function seed(t: Testing): Promise<void> {
+  const f = t.factories({
+    notes: (x) => ({ title: x.words(2) }),
+  });
+  await f.notes.create();
+}
+```
+
+```sh
+bunx okm seed seed.ts
+```
+

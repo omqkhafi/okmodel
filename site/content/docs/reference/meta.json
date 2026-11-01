@@ -1,17 +1,20 @@
 {
   "title": "Reference",
   "pages": [
+    "---Config---",
+    "config",
+    "config-database",
+    "config-roles",
     "cli",
-    "compatibility",
     "schema-api",
     "github-action",
     "errors",
-    "observer-events",
     "warnings",
+    "observer-events",
+    "compatibility",
+    "package-exports",
     "okid",
     "environment-variables",
-    "config",
-    "config-database",
-    "config-roles"
+    "type-change"
   ]
 }

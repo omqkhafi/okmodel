@@ -36,6 +36,12 @@ export const db = connect(process.env.DATABASE_URL ?? "", {
 
 A rule that cannot decide, such as one facing an expression index, stays silent. A project ignore names a `target` (`events` or `orders.user_id`) and a reason. `okm check` lists every ignore and marks one that matched nothing as stale.
 
+## Related codes outside the query and schema rules
+
+[OKM2200](/docs/reference/errors#okm2200) is the write-observer buffer overflow. The observer drops the oldest pending unit and reports through `onObserverError`. See [Observer events](/docs/reference/observer-events).
+
+[OKM2300](/docs/reference/errors#okm2300) is an audit warning on a weak `-- okm-allow` reason (shorter than 12 characters, only stop-list words, or only the code repeated). [`okm migrate check`](/docs/reference/cli/migrate#migrate-check) and [`okm check`](/docs/reference/cli/check#check) list those overrides. Nothing is refused.
+
 ```ts title="okmodel.config.ts"
 import { defineConfig } from "okmodel/migrate";
 

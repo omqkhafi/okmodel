@@ -136,7 +136,7 @@ Apply loads every `*.sql` file in name order, together with its `.catalog.json`.
 
 A step that cannot run inside a transaction is committed on its own. If that step fails, `okm migrate status` still prints `failed at step N (resume with okm migrate apply)`. The next apply probes the database before it runs the statement again. A hand-written step can declare that probe with one `-- probe:` line, a read-only `SELECT` that returns true when the change is already in place. When the probe cannot tell whether the step landed, apply stops and `okm migrate resolve` is how a person records it or marks it to run again. There is no skip.
 
-A type change that rewrites the table is not one `ALTER COLUMN … TYPE`. It is five migrations: add the new column, backfill it, dual-write, switch reads, then drop the old column. See [type change](/docs/migrations/type-change).
+A type change that rewrites the table is not one `ALTER COLUMN … TYPE`. It is five migrations: add the new column, backfill it, dual-write, switch reads, then drop the old column. See [type change](/docs/reference/type-change).
 
 ### Line endings
 
