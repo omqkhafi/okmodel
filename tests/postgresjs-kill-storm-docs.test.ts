@@ -1,7 +1,7 @@
 /**
  * Honesty gates for B-02: postgres.js kill-storm uncaught is upstream.
  *
- * Fails if the known-limits entry, Drivers page, or minimal repro disappear.
+ * Fails if the Drivers page or minimal repro disappear.
  */
 
 import { expect, test } from "bun:test";
@@ -12,21 +12,13 @@ import { repoRoot } from "../scripts/root.js";
 
 const root = repoRoot();
 
-test("known-limits documents postgres.js kill-storm as upstream (B-02)", () => {
-  const limits = readFileSync(join(root, "docs/known-limits.md"), "utf8");
-  expect(limits).toContain("postgres.js raises uncaught exceptions under a backend kill storm");
-  expect(limits).toContain("B-02, upstream");
-  expect(limits).toContain("postgres.js 3.4.9 alone");
-  expect(limits).toContain("Prefer `okmodel/pg/pg` or `okmodel/pg/bun`");
-  expect(limits).toContain("postgresjs-kill-storm.md");
-  expect(limits).toContain("is not a fix");
-});
-
 test("Drivers page warns about postgres.js kill storms (B-02)", () => {
   const drivers = readFileSync(join(root, "site/content/docs/operate/drivers.mdx"), "utf8");
   expect(drivers).toContain("postgres.js kill storms (B-02)");
   expect(drivers).toContain("Prefer `okmodel/pg/pg` or `okmodel/pg/bun`");
   expect(drivers).toContain("docs/postgresjs-kill-storm.md");
+  expect(drivers).toContain("That happens with postgres.js alone");
+  expect(drivers).toContain("OKModel cannot stop the driver's own scheduled write");
 });
 
 test("minimal postgres.js kill-storm repro exists and pins 3.4.9", () => {

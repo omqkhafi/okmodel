@@ -58,7 +58,7 @@ An error in a function is reported to `hookm.onError` and the next function stil
 
 `tx()` needs `transactions: "interactive"`. Neon over HTTP is `transactions: "batch"`, so `tx()` with no `timeout` is [OKM1111](/docs/reference/errors#okm1111): `tx() needs a driver with transactions: "interactive". This driver has "batch".` The fix names `batch()`. WebSocket mode is interactive, so `tx()` runs. The suite is [Compatibility](/docs/reference/compatibility). Driver setup is [Drivers](/docs/operate/drivers).
 
-A positive `timeout` is OKM1120, and the message is `timeout`, when the driver cannot cancel. That check runs before the capability check. It covers Bun.sql, PGlite, and Neon, on a call, on `tx()`, and on `batch()`. postgres.js and node-postgres accept a positive `timeout`.
+A positive `timeout` is OKM1120, and the message is `timeout`, when the driver cannot cancel. That check runs before the capability check. It covers Bun.sql, PGlite, and Neon, on a call, on `tx()`, and on `batch()`. postgres.js and node-postgres accept a positive `timeout`. On PGlite, a call made on the outer client from inside a `tx()` callback queues behind the transaction; use the client the callback received.
 
 ## Timeouts
 

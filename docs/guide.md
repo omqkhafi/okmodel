@@ -446,7 +446,7 @@ Each section below is one feature you can add to the schema above.
 
 ### Columns
 
-A column can allow only a fixed list of strings. `.picklist()` adds that check to a string column. `t.enum()` creates a Postgres enum, and every column that uses the same name shares the list. A value outside the list is OKM1210. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+A column can allow only a fixed list of strings. `.picklist()` adds that check to a string column. `t.enum()` creates a Postgres enum, and every column that uses the same name shares the list. A value outside the list is OKM1210.
 
 `columns.ts`:
 
@@ -544,7 +544,7 @@ export const app = schema({ tables: [authors, notes] });
 
 ### Operators
 
-`where: { title: "hello" }` matches that exact title. A helper matches something else. `ilike` is a case-insensitive pattern, `contains` looks inside JSON, and `overlaps` looks for a shared array value. On update, `inc` adds to a number, `json.set` writes one JSON field, and `arr.append` adds one array value. The helper is a query parameter, so a JSON body cannot pretend to be one. `iStartsWith`, `iContains`, and `iEndsWith` are not in this version. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+`where: { title: "hello" }` matches that exact title. A helper matches something else. `ilike` is a case-insensitive pattern, `contains` looks inside JSON, and `overlaps` looks for a shared array value. On update, `inc` adds to a number, `json.set` writes one JSON field, and `arr.append` adds one array value. The helper is a query parameter, so a JSON body cannot pretend to be one.
 
 `operators.ts`:
 
@@ -682,7 +682,7 @@ export const app = schema({ tables: [tasks] });
 
 ### Validation
 
-A title can be checked before it is written. `.validate()` stores the rules on the column. They run on insert and update when the schema sets `validation: true` and the file imports `okmodel/validate`. A failed check is OKM1200. The same rules run when those writes sit in `batch()`: validation finishes before the plan executes, and a failing rule rolls the whole batch back with OKM1200, `issues`, and `batchIndex`. `{ validate: false }`, delete, and archive stay unchanged. `onRead` is stored and is not applied. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+A title can be checked before it is written. `.validate()` stores the rules on the column. They run on insert and update when the schema sets `validation: true` and the file imports `okmodel/validate`. A failed check is OKM1200. The same rules run when those writes sit in `batch()`: validation finishes before the plan executes, and a failing rule rolls the whole batch back with OKM1200, `issues`, and `batchIndex`. `{ validate: false }`, delete, and archive stay unchanged. `onRead` is stored and is not applied.
 
 `validation.ts`:
 
@@ -722,7 +722,7 @@ export async function save(url: string, title: string): Promise<void> {
 
 ### Batch and locks
 
-`batch` sends several writes as one unit. It will not run `restore`, a write that uses `expect`, or, on `db.batch`, an update that checks `version` (OKM1121). Use `tx()` for them; `tx.batch` takes a versioned update. Validated inserts and updates belong in the same unit: their rules run while the batch plans, before any statement, and a failure is OKM1200 with `batchIndex`. Inside `tx()`, `lock: "update"` makes other transactions wait to change that row, and `advisoryLock` holds a named lock until the transaction ends. A row lock outside `tx()` is OKM1830. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+`batch` sends several writes as one unit. It will not run `restore`, a write that uses `expect`, or, on `db.batch`, an update that checks `version` (OKM1121). Use `tx()` for them; `tx.batch` takes a versioned update. Validated inserts and updates belong in the same unit: their rules run while the batch plans, before any statement, and a failure is OKM1200 with `batchIndex`. Inside `tx()`, `lock: "update"` makes other transactions wait to change that row, and `advisoryLock` holds a named lock until the transaction ends. A row lock outside `tx()` is OKM1830.
 
 `batch.ts`:
 
@@ -765,7 +765,7 @@ export const app = schema({ tables: [notes] });
 
 ### Archive
 
-`archivable()` keeps the row and hides it from ordinary reads. `archive()` marks the matching rows and returns an `archiveId`. `restore({ archiveId })` brings that set back. `withArchived()` includes hidden rows. `onlyArchived()` reads only those rows. Put `cascade` on the parent and name the child tables that should archive with it. One level of children. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+`archivable()` keeps the row and hides it from ordinary reads. `archive()` marks the matching rows and returns an `archiveId`. `restore({ archiveId })` brings that set back. `withArchived()` includes hidden rows. `onlyArchived()` reads only those rows. Put `cascade` on the parent and name the child tables that should archive with it. One level of children.
 
 `archive.ts`:
 
@@ -797,7 +797,7 @@ export async function hide(url: string, id: string): Promise<void> {
 
 ### Tenancy
 
-Pick one strategy from `okmodel/tenancy`. Row-level security is the Postgres mechanism. In okmodel it is the fourth strategy: the column predicate stays on every statement, and the policies are the backstop when a statement drops that predicate. Schema-per-tenant and database-per-tenant are not built yet. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+Pick one strategy from `okmodel/tenancy`. Row-level security is the Postgres mechanism. In okmodel it is the fourth strategy: the column predicate stays on every statement, and the policies are the backstop when a statement drops that predicate.
 
 | Strategy                               | Isolation                                                      | When to use                                               |
 | -------------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------- |
@@ -805,7 +805,6 @@ Pick one strategy from `okmodel/tenancy`. Row-level security is the Postgres mec
 | composite                              | every key together, in that order                              | a row belongs to an organization and a workspace          |
 | path                                   | `EXISTS` along `via()`, at most three relations, on that table | the row has no tenant column; it belongs through a parent |
 | rls                                    | the column predicate, plus forced row-level security           | the database must refuse a query that omits the predicate |
-| schema-per-tenant, database-per-tenant | a schema or a database per tenant                              | not built yet                                             |
 
 `rlsTenancy({ key, type: "uuid" })` takes one key. Combining it with `compositeTenancy()` or `via()` is refused when the schema is built. Policies are enabled and forced (`FORCE ROW LEVEL SECURITY`). The application role must not own the tables, be a superuser, or have `BYPASSRLS`. The first scoped call refuses otherwise (OKM1707). A scoped read is about 0.3 ms. The same read with column tenancy is about 0.06 ms. That sample is not a gate. `unscoped()` under row-level security is read-only. A write is OKM1701.
 
@@ -988,7 +987,7 @@ export const app = schema({ extensions: [citextExtension(), trigram], tables: [p
 
 ### Domains
 
-A domain is a Postgres type with its own check. Here `pos` is an integer that must be greater than zero. TypeScript still sees a number. Changing the base type later is OKM1020. Write the check the way Postgres prints it, including the parentheses. A different spelling is a different check. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+A domain is a Postgres type with its own check. Here `pos` is an integer that must be greater than zero. TypeScript still sees a number. Changing the base type later is OKM1020. Write the check the way Postgres prints it, including the parentheses. A different spelling is a different check.
 
 `domains.ts`:
 
@@ -1003,7 +1002,7 @@ export const app = schema({
 
 ### Functions
 
-`fn()` is a function that lives in the database. This one takes a title and returns text. A plpgsql function names the tables it reads in `dependsOn`, or the declaration is OKM1824. `security: "definer"` also needs a `searchPath`, or it is OKM1823. The value `fn()` returns is callable: `slug(ident("title"))` in `where`, and `slug(ident("title")).as("slug")` in `select`. `orderBy` does not accept the call. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+`fn()` is a function that lives in the database. This one takes a title and returns text. A plpgsql function names the tables it reads in `dependsOn`, or the declaration is OKM1824. `security: "definer"` also needs a `searchPath`, or it is OKM1823. The value `fn()` returns is callable: `slug(ident("title"))` in `where`, and `slug(ident("title")).as("slug")` in `select`. `orderBy` does not accept the call.
 
 `functions.ts`:
 
@@ -1029,7 +1028,7 @@ export const app = schema({
 
 ### Triggers
 
-A trigger runs a function when a row changes. This one runs `touch` before each update of `tasks` and returns the new row. The function has to be listed on the schema. `timestamps({ enforce: "trigger" })` is the built-in form of this for `updatedAt`. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+A trigger runs a function when a row changes. This one runs `touch` before each update of `tasks` and returns the new row. The function has to be listed on the schema. `timestamps({ enforce: "trigger" })` is the built-in form of this for `updatedAt`.
 
 `triggers.ts`:
 
@@ -1063,7 +1062,7 @@ export const app = schema({
 
 ### Views
 
-A view is a saved query. You give it the SQL and the columns that query returns. `db.views.active.find({ limit: 20 })` reads `active`. That handle has no insert or update. View handles are camelCased: a view named `active_projects` reads as `db.views.activeProjects`. There is no query-builder form yet. `okm check` reprints the query on the connected server before it compares, so a difference that is only how that server prints the query is not drift. A materialized view refreshes with `db.views.name.refresh()`, which runs `REFRESH MATERIALIZED VIEW` and returns void. The plan populates it with a plain refresh first (Postgres rejects `CONCURRENTLY` on an empty view), then refreshes concurrently when the declaration sets `refresh: "concurrently"`. A materialized view that refreshes while people are reading it needs a unique index, or the declaration is OKM1822. A view over a tenant table must expose the tenant key, or be `global("reason")`, or schema build fails with OKM1820. `isolation()` reads a tenant view and a materialized view after seeding the underlying tables. It does not insert into the view. A global view is skipped and listed with its reason. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+A view is a saved query. You give it the SQL and the columns that query returns. `db.views.active.find({ limit: 20 })` reads `active`. That handle has no insert or update. View handles are camelCased: a view named `active_projects` reads as `db.views.activeProjects`. `okm check` reprints the query on the connected server before it compares, so a difference that is only how that server prints the query is not drift. A materialized view refreshes with `db.views.name.refresh()`, which runs `REFRESH MATERIALIZED VIEW` and returns void. The plan populates it with a plain refresh first (Postgres rejects `CONCURRENTLY` on an empty view), then refreshes concurrently when the declaration sets `refresh: "concurrently"`. A materialized view that refreshes while people are reading it needs a unique index, or the declaration is OKM1822. A view over a tenant table must expose the tenant key, or be `global("reason")`, or schema build fails with OKM1820. `isolation()` reads a tenant view and a materialized view after seeding the underlying tables. It does not insert into the view. A global view is skipped and listed with its reason.
 
 `views.ts`:
 
@@ -1143,7 +1142,7 @@ The connecting role must be a superuser, or have `CREATEROLE`, own the target sc
 
 `roles.columns` grants select or update on named columns: `{ role, on, select, update }`. `on` is the table or view. A listed column grant on a view replaces select on the whole view for the reporting role.
 
-`withOwner(table(...), "ignored")` keeps a table out of diffs, plans, and `okm check`. `"external"` is known and never created, altered, or dropped. A managed table that becomes either stays in the database. Drop it while it is still managed if it should go away. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+`withOwner(table(...), "ignored")` keeps a table out of diffs, plans, and `okm check`. `"external"` is known and never created, altered, or dropped. A managed table that becomes either stays in the database. Drop it while it is still managed if it should go away.
 
 `roles.ts`:
 
@@ -1180,7 +1179,7 @@ export const app = schema({ tables: [legacy, scratch] });
 
 ### okm ext and okm doctor
 
-`okm ext list` prints the extensions this server can install, and the version that is already installed. `okm ext check` compares that list with the schema. `okm ext scaffold <name>` prints a starting `extension()` definition from the server catalog. `okm ext test <file>` checks that definition and exits non-zero when a signature does not match. All four are read-only, including on a protected target. `okm doctor` lists the triggers on each table. `okm doctor OKM1811` prints what that error code means. See [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
+`okm ext list` prints the extensions this server can install, and the version that is already installed. `okm ext check` compares that list with the schema. `okm ext scaffold <name>` prints a starting `extension()` definition from the server catalog. `okm ext test <file>` checks that definition and exits non-zero when a signature does not match. All four are read-only, including on a protected target. `okm doctor` lists the triggers on each table. `okm doctor OKM1811` prints what that error code means.
 
 ```text
 okm ext list
@@ -1335,7 +1334,7 @@ bunx okm seed seed.ts
 
 `connect({ primary, replicas }, options)` opens one pool per endpoint. An automatic read chooses a replica that has replayed at least as far as this client's last committed write. `routing.consistency` is `"session"` by default. `"eventual"` does not keep that watermark. `routing.maxLag` is a duration (`"5s"`, `"500ms"`, `"2m"`) or a size (`"16MB"`, `"512KB"`, `"1GB"`, `"4096B"`). A bare number is rejected. `find({ route: "primary" })` reads the primary. `find({ route: "replica" })` requires a replica that satisfies the same watermark and lag, and it does not fall back to the primary. `db.using("primary")` or `db.using("replica")` returns a client that forces that route. That client has no `close` and no `using`. `onRoute` receives `{ op, endpoint, reason }`. A throw from it is ignored. A string or an existing pool is one endpoint and serves either `route` from it, and it has no `using`.
 
-The watermark is one value for the whole `connect()`. The root, `for()`, `unscoped()`, `using()`, and `reserve()` share it. A write through any of them moves it for the others. A watermark per `for()` client is not in this version.
+The watermark is one value for the whole `connect()`. The root, `for()`, `unscoped()`, `using()`, and `reserve()` share it. A write through any of them moves it for the others.
 
 When replicas are configured and consistency is `"session"`, a committed write reads `pg_current_wal_insert_lsn()` before its promise resolves. That is one extra round trip: on the primary pool after an autocommit `execute` or `batch`, and on the reserved connection after a successful `COMMIT`. A rollback does not read it. `"eventual"`, and a connect with no replicas, do not read it either.
 
@@ -1524,7 +1523,6 @@ Status is on the [board](https://github.com/users/omqkhafi/projects/1). Each rel
 
 `okmodel/internal` has no stability promise. Names on that subpath can change or disappear in any release.
 
-Each limit, with the version that lifts it, is in [known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md).
 
 ## Size
 
@@ -1551,5 +1549,4 @@ The rest of the measurements are in the repository size notes, which are not par
 - [Testing](https://github.com/omqkhafi/okmodel/blob/main/docs/testing.md)
 - [Topology](https://github.com/omqkhafi/okmodel/blob/main/docs/topology.md)
 - [Check migrations](https://github.com/omqkhafi/okmodel/blob/main/docs/migrate-check.md)
-- [Known limits](https://github.com/omqkhafi/okmodel/blob/main/docs/known-limits.md)
 - [Changelog](https://github.com/omqkhafi/okmodel/blob/main/changelog.md)

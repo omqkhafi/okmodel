@@ -69,7 +69,7 @@ export async function ranked(url: string) {
 ```
 
 <Callout type="error" title="OKM1120">
-`page()`, `one`, and `exists` do not take `search`. A `language` that is not text is refused. A highlighted snippet and a search of a plain text column are not in this version.
+`page()`, `one`, and `exists` do not take `search`. A `language` that is not text is refused. `find({ search })` and `count({ search })` match a column built for search.
 </Callout>
 
 <Callout type="error" title="OKM1122">

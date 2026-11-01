@@ -80,5 +80,5 @@ kills), use:
 - `okmodel/pg/pg` (node-postgres), or
 - `okmodel/pg/bun` (Bun.sql on Bun)
 
-See [known limits](known-limits.md). The docs site Drivers page
+The docs site Drivers page
 (`site/content/docs/operate/drivers.mdx`) repeats the recommendation.

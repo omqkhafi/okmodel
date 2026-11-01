@@ -9,7 +9,7 @@ description: "A typed raw call."
 
 `raw` and `explain` are functions. Pass the table handle, including one from `for()`. The class names the row: each field needs an initializer, and that order is the select list. `"read"` is one select. `"write"` runs on the primary. A scoped tenant read keeps the tenant predicate outside the fragment, so the select list names the primary key with `ident`.
 
-There is no untyped `sql.raw(text, reason)` in this version. A key that is a field of the handle's table uses that field's decode. Any other key (a joined column, an expression) uses the initializer: a number, a boolean, or driver text. Joined columns are not projected through another table's codecs.
+There is no untyped `sql.raw(text, reason)`. A key that is a field of the handle's table uses that field's decode. Any other key (a joined column, an expression) uses the initializer: a number, a boolean, or driver text. Joined columns are not projected through another table's codecs.
 
 ```ts title="raw-notes.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -40,6 +40,10 @@ Pass `"read"` or `"write"`, a `fragment` template, and a class with an initializ
 
 <Callout type="error" title="OKM1702">
 A raw write on a scoped tenant table sends nothing. A raw read must select the primary key with `ident` and must not alias it. `unscoped("reason")` is the hatch for a reviewed statement. A typed `raw(db, sql, params)` call on a client of a schema with tenancy is OKM1702. `trusted(client, "reason")` sends that SQL without a tenant predicate.
+</Callout>
+
+<Callout type="error" title="OKM1125">
+A fragment template refuses a backslash. Postgres treats `\` as an escape in `E'...'` and when `standard_conforming_strings` is off. Pass the value as an interpolation. Dollar quotes, `;`, `--`, and `/*` stay refused outside quotes; inside quotes they are plain text.
 </Callout>
 
 | Next | You use it for |

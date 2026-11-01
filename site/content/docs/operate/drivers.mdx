@@ -20,7 +20,7 @@ When the schema names no floor, a server below 15 is OKM1803. [minPostgres](/doc
 
 ### postgres.js
 
-`pool.describe` is present. `capabilities.cancel` is true. The peer package is `postgres`.
+`pool.describe` is present. `capabilities.cancel` is true. The peer package is `postgres`. A pool opened with `ssl` still uses the driver's socket and its 30 s idle timer. A plain pool (no `ssl`) exits on its own after the last query. `close()` or `await using` releases a TLS pool without waiting.
 
 ```ts title="postgresjs.ts"
 import { connect } from "okmodel/pg/postgresjs"; // [!code focus]
@@ -38,7 +38,7 @@ export const db = connect(process.env.DATABASE_URL!, { schema: app });
 
 ### node-postgres
 
-There is no `pool.describe`. It cannot describe a statement without running it. `capabilities.cancel` is true. The peer package is `pg`.
+There is no `pool.describe`. It cannot describe a statement without running it. `capabilities.cancel` is true. The peer package is `pg`. The pool sets `allowExitOnIdle` and `idleTimeoutMillis: 0`, so a plain pool exits after the last query and an idle connection stays open while the process is alive.
 
 ```ts title="pg.ts"
 import { connect } from "okmodel/pg/pg"; // [!code focus]
@@ -56,7 +56,7 @@ export const db = connect(process.env.DATABASE_URL!, { schema: app });
 
 ### Bun.sql
 
-Another runtime cannot load the `bun` import. There is no package to install. There is no `pool.describe`. `RAISE NOTICE` is not surfaced. `capabilities.cancel` is false.
+Another runtime cannot load the `bun` import. There is no package to install. Minimum Bun is 1.4. There is no `pool.describe`. `RAISE NOTICE` is not surfaced. `capabilities.cancel` is false. On Bun 1.4, `Query.cancel()` does not abort an in-flight backend statement.
 
 ```ts title="bun.ts"
 import { connect } from "okmodel/pg/bun"; // [!code focus]
@@ -74,7 +74,7 @@ export const db = connect(process.env.DATABASE_URL!, { schema: app });
 
 ### PGlite
 
-PGlite runs in this process. The pool size is one. A statement issued while a `tx()` is open waits until that transaction ends, unless `timeouts.acquire` is set. `pool.describe` is present. `capabilities.cancel` is false. The peer package is `@electric-sql/pglite`. A string is a data directory. A pool and omitted memory are promises too. Omitted opens `memory://`.
+PGlite runs in this process. The pool size is one. A statement issued on the outer client while a `tx()` is open waits until that transaction ends, unless `timeouts.acquire` is set. Use the client the callback received. `pool.describe` is present. `capabilities.cancel` is false. The peer package is `@electric-sql/pglite`. A string is a data directory. A pool and omitted memory are promises too. Omitted opens `memory://`.
 
 ```ts title="pglite.ts"
 import { connect } from "okmodel/pg/pglite"; // [!code focus]

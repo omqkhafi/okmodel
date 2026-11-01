@@ -1,7 +1,7 @@
 /**
  * Live proof that postgres.js alone still raises uncaught under a kill storm
  * (B-02). No OKModel imports. Fails if the upstream bug disappears without
- * updating docs/known-limits.md.
+ * updating the Drivers page.
  */
 
 import { expect } from "bun:test";

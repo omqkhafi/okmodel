@@ -1030,7 +1030,6 @@
     "docs/github-action.md",
     "docs/guide.md",
     "docs/index.md",
-    "docs/known-limits.md",
     "docs/linter.md",
     "docs/migrate-check.md",
     "docs/migration-failure.md",

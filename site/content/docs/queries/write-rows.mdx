@@ -55,7 +55,7 @@ A supplied id without `allow`, a database-default id named in `allow`, and an up
 
 ### return
 
-`{ on, return: true }` inserts the row. When that unique is taken, it reads the existing row and does not change it. The lookup runs only when the insert returned nothing.
+`{ on, return: true }` inserts the row. When that unique is taken, it reads the existing row and does not change it. The lookup runs only when the insert returned nothing. That lookup is a second statement and does not set isolation, so under read committed it sees a concurrent insert. Repeatable read and serializable can still miss the row another transaction committed while the insert waited.
 
 ```ts title="create.ts"
 import { connect } from "okmodel/pg/postgresjs";

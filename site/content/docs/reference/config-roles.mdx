@@ -41,7 +41,7 @@ The plan revokes `INSERT`, `UPDATE`, and `DELETE` on a materialized view granted
 | materialized view | `SELECT` |
 | schema | `USAGE` |
 
-`reporting` also receives a default `SELECT` on later tables, for the migration role.
+`reporting` also receives a default `SELECT` on later tables, for the migration role. It is select only and is not tenant-safe against its own SQL: under `rlsTenancy` it can `set_config('app.unscoped', …)` itself and then read every tenant. It still cannot write. Two applies that alter the same role at once can fail with Postgres `tuple concurrently updated`; run apply again.
 
 ```ts title="okmodel.config.ts"
 import { defineConfig } from "okmodel/migrate";

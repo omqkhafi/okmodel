@@ -55,7 +55,6 @@ export const PUBLIC_DOCS = [
   "github-action.md",
   "guide.md",
   "index.md",
-  "known-limits.md",
   "linter.md",
   "migrate-check.md",
   "migration-failure.md",

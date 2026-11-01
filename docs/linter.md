@@ -141,4 +141,4 @@ OKM1706 and OKM1823 are not rules in this table. With `indexes: false` or `tenan
 | OKM1545 | type-preference | warning | Identity that is not generated always |
 | OKM1552 | reprint | warning | Domain check or `LANGUAGE sql` function body whose stored text differs (D276). `okm migrate check` reports it. `-- okm-allow OKM1552: reason` silences it. An empty reason, or an allow when the text matches, is OKM1510. A reprinted domain check is sealed before the OKM1547 plan (B-37) |
 
-OKM1520, OKM1521, OKM1522, OKM1530, OKM1541, OKM1546, OKM1547, OKM1548, and OKM1549 are other guards in this range. They are listed in §21. What this linter does not do yet is in [known limits](known-limits.md#migrations). Reference rows are not migration steps, so OKM1542 does not see them. See [provisioning](provisioning.md).
+OKM1520, OKM1521, OKM1522, OKM1530, OKM1541, OKM1546, OKM1547, OKM1548, and OKM1549 are other guards in this range. They are listed in §21. Reference rows are not migration steps, so OKM1542 does not see them. See [provisioning](provisioning.md).

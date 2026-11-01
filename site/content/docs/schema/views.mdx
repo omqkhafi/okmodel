@@ -72,7 +72,7 @@ A driver that cannot reserve a connection is `Refresh needs a driver that can re
 
 ### concurrently
 
-`refresh: "concurrently"` plans `refresh materialized view concurrently` once the view has been populated. The first populate is not concurrent. Postgres rejects `concurrently` until a unique index exists, so the declaration needs one. Any other refresh value is refused.
+`refresh: "concurrently"` plans `refresh materialized view concurrently` once the view has been populated. The first populate is not concurrent. Postgres rejects `concurrently` until a unique index exists, so the declaration needs one. Any other refresh value is refused. Postgres does not store the refresh mode: introspection leaves it unset, and plan equality ignores it, so a later plan does not recreate the view only because the mode was declared. A populated materialized view is not row-level-security protected; it is guarded by the column predicate and by OKM1820 when the query hides the tenant key.
 
 ```ts title="concurrently.ts"
 import { schema, sql, table, t } from "okmodel/pg";

@@ -83,7 +83,7 @@ export const notes = table("notes", {
 ```
 
 <Callout type="error" title="OKM1210">
-An offset other than `±HH:MM` is refused when the value is encoded.
+An offset other than `±HH:MM` is refused when the value is encoded. A `timetz` with a seconds offset such as `+05:30:15` is OKM1210 on read.
 </Callout>
 
 ### Interval
@@ -103,9 +103,13 @@ export const notes = table("notes", {
 Any other `fields` value is refused.
 </Callout>
 
+<Callout type="error" title="OKM1210">
+An interval that mixes signs, such as `1 day -01:00:00`, cannot be one `Temporal.Duration`. The decoders take the default `IntervalStyle` (`postgres`) and ISO-8601; `sql_standard` and `postgres_verbose` output is not read.
+</Callout>
+
 ### Fractional seconds
 
-`precision` is fractional seconds, an integer from 0 to 6. Omit it for full precision. It applies to `t.timestamptz()`, `t.timestamp()`, `t.time()`, and `t.timetz()`.
+`precision` is fractional seconds, an integer from 0 to 6. Omit it for full precision. It applies to `t.timestamptz()`, `t.timestamp()`, `t.time()`, and `t.timetz()`. Digits past the sixth are rounded by Postgres on write: `2020-01-02T03:04:05.123456789Z` reads back as `.123457`. An explicit `precision` truncates client-side instead. Either way a read-back differs from the written value past microseconds, with no warning.
 
 ```ts title="fractional-seconds.ts"
 import { table, t } from "okmodel/pg";

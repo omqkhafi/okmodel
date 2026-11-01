@@ -41,13 +41,13 @@ A passing run prints that limit on the line after `ok N migrations`:
 This check replays empty tables. A step that only fails on real data is not caught: NOT NULL on a populated column, a unique index over duplicates, a check over existing rows, a foreign key validation, or a cast.
 ```
 
-The first line stays `ok N migrations`. Skipped statements and OKM1552 warnings follow the limit. A data-aware `--with-data` mode is not this command. See [known limits](known-limits.md#migrations).
+The first line stays `ok N migrations`. Skipped statements and OKM1552 warnings follow the limit.
 
 ## `--provision`
 
 `okm migrate check --provision` installs the head snapshot into one scratch schema and replays the history into another. Each side is its own transaction and ends with `ROLLBACK`. Both schemas start with `okm_check_` and are dropped at the end, including after a failure. Type names are normalised before the comparison. A difference is OKM1521 and names the object. The default command does not do this. A protected target is still refused, and `--allow-protected` does not apply. See [provisioning](provisioning.md).
 
-Tenant targets and schema-per-tenant checking are M5. See [known limits](known-limits.md#migrations).
+The command checks the selected target's history in one scratch schema.
 
 ## GitHub Actions
 

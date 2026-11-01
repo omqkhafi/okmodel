@@ -64,10 +64,6 @@ A protected target refuses a backfill unless `--allow-protected`. That check run
 
 The row estimate on `okm migrate plan` (`about N rows, about M batches`) is display only (D194). It is not stored, and resume does not read it.
 
-## What is not built
+## Scope
 
-Iterating tenants is schema-per-tenant and database-per-tenant (M5). A backfill on a table with column tenancy is one pass over the whole table. See [known limits](known-limits.md).
-
-The control database in §19.5 arrives with the multi-target runner in M5. This version stores the checkpoint on the target.
-
-Bounded concurrency, canary, and class flags are M5. `okm migrate apply` runs `TargetRunner` with a list of one target.
+A backfill on a table with column tenancy is one pass over the whole table. The checkpoint is stored on the target. `okm migrate apply` runs one target.

@@ -53,8 +53,8 @@ test("a docs path negotiates to its markdown twin", () => {
 });
 
 test("an unknown docs path keeps its own twin", () => {
-  expect(markdownTwinPath("/docs/known-limits")).toBe("/llms.mdx/docs/known-limits.md");
   expect(markdownTwinPath("/docs/reference/linter")).toBe("/llms.mdx/docs/reference/linter.md");
+  expect(markdownTwinPath("/docs/operate/drivers")).toBe("/llms.mdx/docs/operate/drivers.md");
 });
 
 test("html and machine routes are not rewritten", () => {
