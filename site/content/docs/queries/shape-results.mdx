@@ -35,7 +35,7 @@ const app = schema({ tables: [tasks] });
 
 export async function totals(url: string) {
   await using db = connect(url, { schema: app });
-  return db.tasks.aggregate({ count: true }); // [!code focus]
+  return await db.tasks.aggregate({ count: true }); // [!code focus]
 }
 ```
 
@@ -56,7 +56,7 @@ const app = schema({ tables: [tasks] });
 
 export async function byStatus(url: string) {
   await using db = connect(url, { schema: app });
-  return db.tasks.aggregate({
+  return await db.tasks.aggregate({
     groupBy: ["status"],
     count: true,
     sum: ["amount"], // [!code focus]
@@ -118,7 +118,7 @@ const app = schema({ tables: [tasks] });
 
 export async function busyStatuses(url: string) {
   await using db = connect(url, { schema: app });
-  return db.tasks.aggregate({
+  return await db.tasks.aggregate({
     groupBy: ["status"],
     select: { revenue: { sum: "amount" } },
     having: or([{ count: gte(10) }, { revenue: gt(1000) }]), // [!code focus]
@@ -148,7 +148,7 @@ const app = schema({ tables: [tasks] });
 
 export async function biggestFirst(url: string) {
   await using db = connect(url, { schema: app });
-  return db.tasks.aggregate({
+  return await db.tasks.aggregate({
     groupBy: ["status"],
     select: { revenue: { sum: "amount" } },
     orderBy: { revenue: { dir: "desc", nulls: "last" } }, // [!code focus]
@@ -194,7 +194,7 @@ const app = schema({ tables: [posts, comments] });
 
 export async function thread(url: string) {
   await using db = connect(url, { schema: app });
-  return db.posts.find({
+  return await db.posts.find({
     limit: 20,
     include: { comments: { limit: 3 } }, // [!code focus]
   });
@@ -224,7 +224,7 @@ const app = schema({ tables: [posts, comments] });
 
 export async function latest(url: string) {
   await using db = connect(url, { schema: app });
-  return db.posts.find({
+  return await db.posts.find({
     limit: 20,
     include: {
       comments: { orderBy: { score: "desc" }, limit: 3, select: ["id", "body"] }, // [!code focus]
@@ -267,7 +267,7 @@ const app = schema({ tables: [tasks] });
 
 export async function numbered(url: string) {
   await using db = connect(url, { schema: app });
-  return db.tasks.find({
+  return await db.tasks.find({
     select: ["id", rowNumber({ orderBy: { amount: "desc" }, as: "n" })], // [!code focus]
     limit: 20,
   });
@@ -291,7 +291,7 @@ const app = schema({ tables: [tasks] });
 
 export async function numbered(url: string) {
   await using db = connect(url, { schema: app });
-  return db.tasks.find({
+  return await db.tasks.find({
     select: [
       "id",
       "status",
@@ -337,7 +337,7 @@ const app = schema({ tables: [events] });
 
 export async function perDay(url: string) {
   await using db = connect(url, { schema: app });
-  return db.events.aggregate({
+  return await db.events.aggregate({
     groupBy: [bucket("at", "day", { tz: "UTC", as: "day" })], // [!code focus]
     count: true,
     limit: 31,
@@ -362,7 +362,7 @@ const app = schema({ tables: [events] });
 
 export async function perWeek(url: string) {
   await using db = connect(url, { schema: app });
-  return db.events.aggregate({
+  return await db.events.aggregate({
     groupBy: [bucket("at", "week", { tz: "UTC", weekStart: "sunday", as: "week" })], // [!code focus]
     count: true,
     sum: ["amount"],

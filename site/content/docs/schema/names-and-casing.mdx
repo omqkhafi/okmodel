@@ -37,7 +37,7 @@ const app = schema({ tables: [notes] });
 
 export async function add(url: string, title: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.insert({ title });
+  return await db.notes.insert({ title });
 }
 ```
 
@@ -58,7 +58,7 @@ const app = schema({ tables: [notes] });
 
 export async function add(url: string, title: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.insert({ title });
+  return await db.notes.insert({ title });
 }
 ```
 

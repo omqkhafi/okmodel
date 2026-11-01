@@ -32,7 +32,7 @@ const app = schema({ tables: [notes] });
 
 export async function pending(url: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.pending().find({ limit: 20 }); // [!code focus]
+  return await db.notes.pending().find({ limit: 20 }); // [!code focus]
 }
 ```
 
@@ -58,7 +58,7 @@ const app = schema({ tables: [notes] });
 
 export async function mine(url: string, owner: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.ownedBy(owner).find({ limit: 20 }); // [!code focus]
+  return await db.notes.ownedBy(owner).find({ limit: 20 }); // [!code focus]
 }
 ```
 
@@ -84,7 +84,7 @@ const app = schema({ tables: [notes] });
 
 export async function openOrPending(url: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.inState("open", "pending").find({ limit: 20 }); // [!code focus]
+  return await db.notes.inState("open", "pending").find({ limit: 20 }); // [!code focus]
 }
 ```
 
@@ -106,7 +106,7 @@ const app = schema({ tables: [notes] });
 
 export async function urgent(url: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.urgent().find({ limit: 20 }); // [!code focus]
+  return await db.notes.urgent().find({ limit: 20 }); // [!code focus]
 }
 ```
 
@@ -133,7 +133,7 @@ const app = schema({ tables: [notes] });
 
 export async function mineOrOpen(url: string, owner: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.mineOrOpen(owner).find({ limit: 20 }); // [!code focus]
+  return await db.notes.mineOrOpen(owner).find({ limit: 20 }); // [!code focus]
 }
 ```
 
@@ -159,7 +159,7 @@ const app = schema({ tables: [notes] });
 
 export async function stale(url: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.stale().find({ limit: 20 }); // [!code focus]
+  return await db.notes.stale().find({ limit: 20 }); // [!code focus]
 }
 ```
 
@@ -189,7 +189,7 @@ const app = schema({ tables: [notes] });
 
 export async function pending(url: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.pending().find({ limit: 20 }); // [!code focus]
+  return await db.notes.pending().find({ limit: 20 }); // [!code focus]
 }
 ```
 
@@ -261,6 +261,6 @@ const app = schema({ tables: [notes] });
 
 export async function flaggedNotes(url: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.flagged().find({ limit: 20 }); // [!code focus]
+  return await db.notes.flagged().find({ limit: 20 }); // [!code focus]
 }
 ```

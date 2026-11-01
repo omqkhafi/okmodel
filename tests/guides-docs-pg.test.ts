@@ -60,8 +60,12 @@ postgresTest(
   "the soft-delete guide archives, hides, and restores a row",
   async () => {
     const text = readFileSync(join(guides, "soft-delete.mdx"), "utf8");
-    expect(titles(text)).toEqual(["ts:archive.ts", "text:archive.out"]);
+    expect(titles(text)).toEqual(["sql:notes.sql", "ts:archive.ts", "text:archive.out"]);
     const example = await load<SoftDelete>(text, "archive.ts");
+    if (example.app === undefined) throw new Error("archive.ts exports no app");
+    expect(`${renderCatalog(example.app.catalog, "public").join(";\n\n")};\n`).toBe(
+      body(text, "sql", "notes.sql"),
+    );
     await apply(example, async (url) => {
       if (example.retire === undefined) throw new Error("archive.ts exports no retire");
       expect(await capture(() => example.retire!(url))).toBe(body(text, "text", "archive.out"));

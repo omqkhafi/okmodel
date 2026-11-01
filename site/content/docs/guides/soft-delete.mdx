@@ -13,7 +13,7 @@ Three things must exist before the program runs: a Postgres database, the `notes
 
 The table comes from the schema in the program (`app`). The test that runs this page applies it by rendering the catalog (`app.catalog`) to DDL, the SQL that creates tables, and executing each statement against an empty database. In your own project, create the table with `bunx okm push` on a database you can recreate, or with `okm generate init` then `okm migrate apply` for reviewed migrations ([First migration](/docs/start/first-migration)). For this schema the DDL is:
 
-```sql
+```sql title="notes.sql"
 create table "public"."notes" (
   "archiveId" uuid,
   "archivedAt" timestamptz,
@@ -21,6 +21,8 @@ create table "public"."notes" (
   "title" text not null,
   constraint "notes_pkey" primary key ("id")
 );
+
+create unique index "notes_title_idx" on "public"."notes" ("title") where ("archivedAt" IS NULL);
 ```
 
 The client, called `db` throughout, comes from `connect(url, { schema })`. An app keeps one in a module and imports it where it needs it:
@@ -36,7 +38,7 @@ The program opens its own client with `await using`, which closes the pool when 
 
 ## Run it
 
-`archivable()` adds two guarded columns, `archivedAt` and `archiveId`. A guarded column is one your input cannot set. Uniques on that table become partial, so an archived row does not block a new row that reuses a unique value.
+`archivable()` adds two guarded columns, `archivedAt` and `archiveId`. A guarded column is one your input cannot set. A unique on that table becomes partial: `title` is unique among live rows only, as the `where ("archivedAt" IS NULL)` on `notes_title_idx` in the DDL above shows, so an archived note does not block a new note with the same title.
 
 Every id is generated with `crypto.randomUUID()`, so the function can run again on the same database without a collision. The ids differ on every run, so the printout replaces the note id with `<note>` and any other uuid with `<archive>`. `.sql()` builds the statements a call would send and runs none of them.
 
@@ -48,7 +50,7 @@ import { OkmError } from "okmodel";
 
 const notes = table(
   "notes",
-  { id: id({ default: "none" }), title: text() },
+  { id: id({ default: "none" }), title: text().unique() },
   { traits: [archivable()] },
 );
 export const app = schema({ tables: [notes] });
@@ -159,7 +161,7 @@ Archiving a row that is already archived matches nothing, so it returns `{ count
 | [OKM1052](/docs/reference/errors#okm1052) | `archive` or `restore` on a table that is not archivable. | Add `archivable()` to that table's `traits`. |
 | [OKM1061](/docs/reference/errors#okm1061) | `strategy: "table"`. | Use `strategy: "column"`, the default. |
 | [OKM1101](/docs/reference/errors#okm1101) | `find` with no `limit`. | Pass `limit`, or set `connect({ limits })`. |
-| `.expect(1)` fails | The row is missing or already archived. | Read with `withArchived()` to tell the two apart. |
+| `not_found` | `.expect(1)` saw another count: `archive on notes changed 0 rows. expect was 1.` The row is missing or already archived. | Read with `withArchived()` to tell the two apart. |
 
 | Next | You use it for |
 | --- | --- |

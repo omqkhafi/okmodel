@@ -2,7 +2,7 @@
 title: "Why OKModel"
 description: "What one schema gives you, what it will not do, and the plain facts that back it."
 ---
-One `schema()` is the source for types, queries, and migrations. A read with no `limit` and a write with no `where` are refused. Tenancy is on the schema. The package has no runtime dependencies.
+You describe each table once, in one `schema()` call, and get typed queries and reviewed migration SQL from it. Calls that would read a whole table or change every row by accident are refused: a bare `find()` is refused until you set `limits` in `connect`, and an update or delete with no `where` is refused unless you call `.all(reason)`. Tenancy, keeping each customer's rows apart in one database, is declared on the schema too. The package has no runtime dependencies.
 
 ## What you get
 
@@ -10,11 +10,13 @@ One `schema()` is the source for types, queries, and migrations. A read with no 
 | --- | --- |
 | One schema for types, queries, and migrations | [How it works](/docs/concepts/how-okmodel-works), [First schema](/docs/start/first-schema) |
 | Typed calls on each table (`find`, `one`, `insert`, …) | [Queries](/docs/queries) |
-| Reviewed migration SQL generated from the schema | [First migration](/docs/start/first-migration), [Drift](/docs/concepts/migrations-and-drift) |
-| A refused bare `find()` unless you pass `limit`, `.all(reason)`, or set `limits` in `connect` | [Query limits](/docs/operate/query-limits) |
-| A refused write with no `where` | [First schema](/docs/start/first-schema) |
+| Reviewed migration SQL generated from the schema, and `okm check` to report drift, a live database that no longer matches the schema | [First migration](/docs/start/first-migration), [Drift](/docs/concepts/migrations-and-drift) |
+| A bare `find()` refused until you pass `limit` or `.all(reason)`, or set `limits` in `connect` | [Query limits](/docs/operate/query-limits) |
+| An update or delete with no `where` refused unless you call `.all(reason)` | [First schema](/docs/start/first-schema) |
 | Tenant isolation declared on the schema | [Tenant isolation](/docs/concepts/tenant-isolation) |
 | No runtime dependencies; each driver is an optional peer | [Installation](/docs/start/installation) |
+
+With no `limits` in `connect`, this read is refused before any SQL is sent:
 
 ```ts title="find-needs-limit.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -39,12 +41,12 @@ OkmError: find() needs a limit.
 
 ## What it will not do
 
-| It will not | You do this instead |
+| It will not | Why, and what you do instead |
 | --- | --- |
-| Invent a SQL dialect for another database | PostgreSQL only ([Compatibility](/docs/reference/compatibility)) |
-| Run on Deno | Use Node 22.18+ or Bun 1.4+ ([Installation](/docs/start/installation)) |
-| Turn on default read limits by itself | Pass `limits` to `connect` ([Query limits](/docs/operate/query-limits)) |
-| Ship a driver inside the package | Install the peer your runtime already uses ([Drivers](/docs/operate/drivers)) |
+| Support a database other than PostgreSQL | The schema and the runtime use PostgreSQL features directly, such as row-level security, `distinct on`, and transaction settings, and every release is tested on PostgreSQL 15 to 18. A dialect, the SQL one database speaks, is written only for PostgreSQL. ([Compatibility](/docs/reference/compatibility)) |
+| Run on Deno | The test suites run on Node.js and Bun only, so no claim is made for Deno. Use Node.js 22.18+ or Bun 1.4+. ([Installation](/docs/start/installation)) |
+| Set a default read limit by itself | Without `limits`, a `find` with no `limit` is refused. Pass `limits` to `connect` to choose the defaults. ([Query limits](/docs/operate/query-limits)) |
+| Ship a driver inside the package | The package has no runtime dependencies, so installing it adds nothing besides the driver you choose. Install the peer your runtime already uses. ([Drivers](/docs/operate/drivers)) |
 
 ## Plain facts
 
@@ -56,4 +58,4 @@ OkmError: find() needs a limit.
 | Neon | Supported as `okmodel/pg/neon`; not a column in that table ([Drivers](/docs/operate/drivers)) |
 | Deno | Unsupported ([Installation](/docs/start/installation)) |
 
-`okm driver test <driver>` runs the conformance suites ([driver test](/docs/reference/cli/check#driver-test)).
+The conformance table lists the drivers that pass the shared driver test suites: the same queries, errors, and transactions checked against each driver. `okm driver test <driver>` runs those suites ([driver test](/docs/reference/cli/check#driver-test)).

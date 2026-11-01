@@ -37,7 +37,7 @@ const app = schema({ tables: [notes] });
 
 export async function add(url: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.insert({}); // [!code focus]
+  return await db.notes.insert({}); // [!code focus]
 }
 ```
 
@@ -62,7 +62,7 @@ const app = schema({ tables: [notes] });
 
 export async function add(url: string, title: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.insert({ title });
+  return await db.notes.insert({ title });
 }
 ```
 
@@ -101,7 +101,7 @@ const app = schema({ tables: [notes] });
 
 export async function add(url: string, title: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.insert({ title });
+  return await db.notes.insert({ title });
 }
 ```
 
@@ -121,7 +121,7 @@ const app = schema({ tables: [notes] });
 
 export async function add(url: string, id: string, title: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.insert({ id, title }); // [!code focus]
+  return await db.notes.insert({ id, title }); // [!code focus]
 }
 ```
 

@@ -34,7 +34,7 @@ const app = schema({ tables: [notes] });
 
 export async function read(url: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.find({ where: { id: "1" } });
+  return await db.notes.find({ where: { id: "1" } });
   // OkmError OKM1101: find() needs a limit.
 }
 ```
@@ -59,7 +59,7 @@ export async function read(url: string) {
     schema: app,
     limits: { find: 50 },
   });
-  return db.notes.find({ where: { id: "1" } }); // limit 50
+  return await db.notes.find({ where: { id: "1" } }); // limit 50
 }
 ```
 

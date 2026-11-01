@@ -22,7 +22,7 @@ import schema from "./schema.ts";
 
 export async function sample(url: string) {
   await using db = connect(url, { schema });
-  return db.notes.find({ where: { id: "1" }, limit: 1 });
+  return await db.notes.find({ where: { id: "1" }, limit: 1 });
 }
 ```
 

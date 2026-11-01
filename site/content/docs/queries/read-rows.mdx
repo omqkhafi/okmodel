@@ -3,22 +3,22 @@ title: "Read rows"
 description: "find, one, count, exists, page, distinct, stream, and explain."
 ---
 
-Read rows with `find`, `one`, `count`, and `exists`. Then page, distinct, stream, and explain.
+Each call on this page reads rows from one table. `find` returns a list, `one` returns one row or `null`, `count` and `exists` return one value, `page` returns a page and a cursor, `.stream()` walks a large set in batches, and `explain` shows the plan Postgres chose. Each example below is a function that takes a database URL. The output under it comes from running it on a `notes` table that holds two rows, `Hello` (id `1`) and `World` (id `2`).
 
 ## Find
 
-`find` returns an array of rows. Pass `where`, `orderBy`, and a `limit` (or `.all(reason)`).
+`find` returns an array of rows. Pass `where`, `orderBy`, and a `limit`.
 
 ```ts title="find.ts"
 import { connect } from "okmodel/pg/postgresjs";
 import { schema, table, t } from "okmodel/pg";
 
 const notes = table("notes", { id: t.identity().primaryKey(), title: t.text() });
-const app = schema({ tables: [notes] });
+export const app = schema({ tables: [notes] });
 
 export async function titles(url: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.find({ where: { id: "1" }, limit: 1 }); // [!code focus]
+  return await db.notes.find({ where: { id: "1" }, limit: 1 }); // [!code focus]
 }
 ```
 
@@ -31,26 +31,28 @@ export async function titles(url: string) {
 ]
 ```
 
-A read needs a `limit`, or `.all(reason)`. With `limits.find` set in `connect`, a bare `find()` is allowed and TypeScript makes the argument and `limit` optional for that call. Without `limits`, nothing changes. [Query limits](/docs/operate/query-limits).
+`id` is a string because an identity column is a Postgres `bigint`, which does not fit a JavaScript number. The function awaits the call before it returns, because `await using` closes the client when the function exits.
 
-| Error | Message |
-| --- | --- |
-| [OKM1101](/docs/reference/errors#okm1101) | `find() needs a limit.` |
+### The limit rule
+
+`find`, `page`, and `.stream()` need a `limit`, or `.all(reason)` to read every row on purpose. A bare `find()` is refused with [OKM1101](/docs/reference/errors#okm1101) until you set `limits` in `connect`. With `limits.find` set, a `find` that omits `limit` takes that number, and TypeScript makes the argument optional. [Query limits](/docs/operate/query-limits) lists every key.
+
+The rule does not apply to `one`, `count`, or `exists`. `one` adds `limit 2` itself, so it can tell one match from several. `count` and `exists` return a single value.
 
 ## One
 
-`one` returns that row, or `null` when nothing matched. More than one match throws `not_unique`.
+`one` returns the row, or `null` when nothing matched.
 
 ```ts title="one.ts"
 import { connect } from "okmodel/pg/postgresjs";
 import { schema, table, t } from "okmodel/pg";
 
 const notes = table("notes", { id: t.identity().primaryKey(), title: t.text() });
-const app = schema({ tables: [notes] });
+export const app = schema({ tables: [notes] });
 
 export async function byId(url: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.one({ where: { id: "1" } }); // [!code focus]
+  return await db.notes.one({ where: { id: "1" } }); // [!code focus]
 }
 ```
 
@@ -61,6 +63,8 @@ export async function byId(url: string) {
 }
 ```
 
+When more than one row matches, `one` throws an `OkmError` whose `code` is `"not_unique"`. That is an error kind, not an `OKM` number. With `orderBy`, `one` reads with `limit 1` and returns the first row instead.
+
 ## Count
 
 `count` returns how many rows match. It does not return the rows.
@@ -70,32 +74,32 @@ import { connect } from "okmodel/pg/postgresjs";
 import { schema, table, t } from "okmodel/pg";
 
 const notes = table("notes", { id: t.identity().primaryKey(), title: t.text() });
-const app = schema({ tables: [notes] });
+export const app = schema({ tables: [notes] });
 
 export async function total(url: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.count(); // [!code focus]
+  return await db.notes.count(); // [!code focus]
 }
 ```
 
 ```text title="count.out"
-1
+2
 ```
 
 ## Exists
 
-`exists` returns true when a row matches. It does not return the row.
+`exists` returns `true` when a row matches. It does not return the row.
 
 ```ts title="exists.ts"
 import { connect } from "okmodel/pg/postgresjs";
 import { schema, table, t } from "okmodel/pg";
 
 const notes = table("notes", { id: t.identity().primaryKey(), title: t.text() });
-const app = schema({ tables: [notes] });
+export const app = schema({ tables: [notes] });
 
 export async function has(url: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.exists({ where: { id: "1" } }); // [!code focus]
+  return await db.notes.exists({ where: { id: "1" } }); // [!code focus]
 }
 ```
 
@@ -105,89 +109,67 @@ true
 
 ## Page
 
-`page` returns `{ items, next }`. `next` is `null` on the last page. Pass it back as `after` with the same `orderBy`. The cursor encodes that order.
-
-When `orderBy` names no hidden or sensitive column, the cursor also carries the sort values of the last row, as the database wrote them. A timestamp keeps its microseconds, and a page stays stable while rows are inserted.
-
-When `orderBy` names a hidden or sensitive column, the cursor carries only the primary key of that row. A composite key is a tuple of its columns. The cursor does not carry those sort values. The next page reads them back in the same query, under the same tenant and archive predicates. A row that is gone is `The cursor is no longer valid.`
-
-| Input | Result |
-| --- | --- |
-| `limit` | Required, unless `connect` set `limits.page`. The page size. A configured default makes it optional. The library does not enable that default itself. [Query limits](/docs/operate/query-limits). |
-| omitted `after` | The first page. |
-| `after` | The cursor from `next`. |
-| `next` | `null` on the last page. |
-
-### first
-
-`limit` is required. Omit `after` for the first page.
-
-```ts title="first.ts"
-import { connect } from "okmodel/pg/postgresjs";
-import { schema, table, t } from "okmodel/pg";
-
-const notes = table("notes", { id: t.identity().primaryKey(), title: t.text() });
-const app = schema({ tables: [notes] });
-
-export async function first(url: string) {
-  await using db = connect(url, { schema: app });
-  return db.notes.page({ orderBy: { title: "asc" }, limit: 20 }); // [!code focus]
-}
-```
-
-```text title="first.out"
-{
-  items: [
-    {
-      id: "1",
-      title: "Hello",
-    }
-  ],
-  next: null,
-}
-```
-
-### next
-
-Pass `next` back as `after`, with the same `orderBy`.
+`page` returns `{ items, next }`. `next` is a cursor string, or `null` on the last page. Pass it back as `after`, with the same `orderBy`, to read the next page. The example reads both rows one page at a time.
 
 ```ts title="page.ts"
 import { connect } from "okmodel/pg/postgresjs";
 import { schema, table, t } from "okmodel/pg";
 
 const notes = table("notes", { id: t.identity().primaryKey(), title: t.text() });
-const app = schema({ tables: [notes] });
+export const app = schema({ tables: [notes] });
 
-export async function next(url: string, after: string | null) {
+export async function pages(url: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.page({ orderBy: { title: "asc" }, limit: 20, after }); // [!code focus]
+  const first = await db.notes.page({ orderBy: { title: "asc" }, limit: 1 }); // [!code focus]
+  const second = await db.notes.page({ orderBy: { title: "asc" }, limit: 1, after: first.next }); // [!code focus]
+  return { first, second };
 }
 ```
 
-With two rows and `limit: 1`, the first page carries a cursor and the second page returns the remaining row:
-
-```text title="page-next.out"
+```text title="page.out"
 {
-  items: [
-    {
-      id: "2",
-      title: "World",
-    }
-  ],
-  next: null,
+  first: {
+    items: [
+      {
+        id: "1",
+        title: "Hello",
+      }
+    ],
+    next: "WyJub3Rlczp0aXRsZS5hc2MubGFzdCxpZC5hc2MubGFzdCIsIkhlbGxvIiwiMSJd",
+  },
+  second: {
+    items: [
+      {
+        id: "2",
+        title: "World",
+      }
+    ],
+    next: null,
+  },
 }
 ```
 
-| Error | Message |
+| Input | Result |
 | --- | --- |
-| [OKM1101](/docs/reference/errors#okm1101) | `page() needs a limit.` |
-| [OKM1130](/docs/reference/errors#okm1130) | `after is not a cursor that page() returned.` A key cursor whose row is gone is `The cursor is no longer valid.` |
+| `limit` | The page size. Required unless `connect` sets `limits.page`. |
+| no `after` | The first page. |
+| `after` | The `next` cursor from the previous page. |
+
+### What a cursor holds
+
+The cursor records the `orderBy` it was made for, and the sort values and primary key of the last row on the page. The next page asks for rows that sort after those values, so it is keyset paging, not an offset:
+
+- Rows already returned do not shift onto the next page.
+- A row inserted before the cursor position does not appear on a later page. A row inserted after it does.
+- A row whose sort value changes can move: it can be skipped or returned a second time. A deleted row is simply gone.
+
+When `orderBy` names a hidden or sensitive column, the cursor does not carry that value. It carries only the primary key of the last row (a tuple for a composite key), and the next page reads the sort values back in the same query, under the same tenant and archive filters. If that row was deleted, the next page is refused with [OKM1130](/docs/reference/errors#okm1130) `The cursor is no longer valid.`
 
 ## Order by a relation
 
-`orderBy` can name more than one relation, and `page` keeps that order. A to-one column is a left join, so a row whose relation is missing stays in the result. A to-many relation orders by `count`, the number of related rows: `{ notes: { count: "desc" } }`. `find`, `one`, `stream`, and `page` accept it. The related table's tenant predicate and archive filter sit on the join, so another tenant or an archived row does not supply the sort value.
+`orderBy` can name a relation. A to-one relation sorts by one of its columns, through a left join, so a row whose relation is missing stays in the result. A to-many relation sorts by `count`, the number of related rows: `{ notes: { count: "desc" } }`. `find`, `one`, `.stream()`, and `page` accept it. The related table's tenant and archive filters sit on the join, so another tenant's row or an archived row never supplies a sort value.
 
-A page cursor carries each related sort value with the other sort values. A hidden or sensitive related column uses the primary-key cursor, and the next page reads the value back under the same predicates. A plain hidden related column is refused as [OKM1120](/docs/reference/errors#okm1120).
+Here `Plan` belongs to project `Alpha`, `Write` to `Beta`, and `Loose` has no project:
 
 ```ts title="order-relation.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -199,33 +181,45 @@ const tasks = table(
   {
     id: t.identity().primaryKey(),
     title: t.text(),
-    projectId: t.integer().nullable().references("projects"),
+    projectId: t.bigint().nullable().references("projects"),
   },
   { relations: { project: one("projects", "projectId") } },
 );
-const app = schema({ tables: [projects, tasks] });
+export const app = schema({ tables: [projects, tasks] });
 
 export async function byProject(url: string) {
   await using db = connect(url, { schema: app });
-  return db.tasks.find({ orderBy: { project: { name: "asc" } }, limit: 20 }); // [!code focus]
+  return await db.tasks.find({ orderBy: { project: { name: "asc" } }, limit: 20 }); // [!code focus]
 }
 ```
 
-| Error | Message |
-| --- | --- |
-| [OKM1127](/docs/reference/errors#okm1127) | orderBy on a relation is not available with distinct or distinctOn |
-| [OKM1128](/docs/reference/errors#okm1128) | orderBy on a relation is not available in aggregate |
-| [OKM1120](/docs/reference/errors#okm1120) | A plain hidden related sort column |
+```text title="order-relation.out"
+[
+  {
+    id: "2",
+    title: "Plan",
+    projectId: "2",
+  }, {
+    id: "1",
+    title: "Write",
+    projectId: "1",
+  }, {
+    id: "3",
+    title: "Loose",
+    projectId: null,
+  }
+]
+```
+
+A page cursor carries the related sort value with the others. A hidden or sensitive related column uses the primary-key cursor described above.
 
 ## Distinct
 
-`find` takes `distinct: true` with a `select`. It keeps one row per different combination of the selected fields, and NULL counts as one value. `orderBy` may name selected fields only. `distinctOn` is Postgres only: it keeps the first row of each key, so `orderBy` must start with the same keys and the keys after them pick the row. `include`, `search`, `page`, and `one` refuse both.
+`distinct: true` keeps one row for each different combination of the `select` fields. NULL counts as one value. `orderBy` may name selected fields only, and without it the order of the rows is not defined.
 
-| Input | Result |
-| --- | --- |
-| `distinct: true` | One row per different combination of `select`. Needs `select`. |
-| `distinctOn: [fields]` | The first row of each key under `orderBy`. Postgres only. |
-| `orderBy` with `distinctOn` | Starts with the same keys. |
+`distinctOn: [fields]` keeps the first row for each value of those fields. `orderBy` must start with the same fields, and the fields after them pick which row is first. The example keeps the note with the largest `amount` for each title.
+
+The table here has an `amount` column and four rows: `Hello` with 5 and 9, `World` with 3 and NULL.
 
 ```ts title="distinct.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -236,11 +230,16 @@ const notes = table("notes", {
   title: t.text(),
   amount: t.integer().nullable(),
 });
-const app = schema({ tables: [notes] });
+export const app = schema({ tables: [notes] });
 
 export async function titles(url: string) {
   await using db = connect(url, { schema: app });
-  const kinds = await db.notes.find({ distinct: true, select: ["title"], limit: 20 }); // [!code focus]
+  const kinds = await db.notes.find({
+    distinct: true, // [!code focus]
+    select: ["title"],
+    orderBy: { title: "asc" },
+    limit: 20,
+  });
   const biggest = await db.notes.find({
     distinctOn: ["title"], // [!code focus]
     orderBy: { title: "asc", amount: { dir: "desc", nulls: "last" } },
@@ -251,47 +250,40 @@ export async function titles(url: string) {
 ```
 
 ```text title="distinct.out"
-[
-  {
-    title: "World",
-  },
-  {
-    title: "Hello",
-  }
-]
+{
+  kinds: [
+    {
+      title: "Hello",
+    }, {
+      title: "World",
+    }
+  ],
+  biggest: [
+    {
+      id: "2",
+      title: "Hello",
+      amount: 9,
+    }, {
+      id: "3",
+      title: "World",
+      amount: 3,
+    }
+  ],
+}
 ```
 
-`kinds` is one object per distinct `title`. Order of distinct rows is not stable unless you pass `orderBy`.
-
-| Error | Message |
-| --- | --- |
-| [OKM1120](/docs/reference/errors#okm1120) | `distinctOn needs an orderBy that starts with title.` |
+`include`, `search`, `page`, and `one` refuse both options.
 
 ## Stream
 
-`.stream()` walks `find` in keyset batches. It does not open a server cursor. Leaving the loop does not hold a connection.
-
-| Option | Result |
-| --- | --- |
-| `batch` | An integer from 1 to 2147483647. The default is 1000. |
-| `limit` | The total. `0` yields nothing and runs no query. |
-| `.all(reason)` | The set, with no `limit`. Both together still honor `limit`. |
-| `orderBy` | Then the primary key. Omit it and the rows follow the primary key. |
-| `timeout` | The time for the whole stream. On a driver that cannot cancel, the check is between batches. |
-| `signal` | Stops the stream. |
-
-`select`, `include`, a preset, and the archive set work as they do on `page()`. A row committed while the stream runs can show up, or not. The snapshot in the next example is a [transaction](/docs/queries/transactions#options). On a client with replicas, the first batch chooses the endpoint and later batches stay there.
-
-### limit
-
-`limit` is the total. `batch` is how many rows each query reads.
+`.stream()` reads a `find` in batches and yields one row at a time. Each batch is its own keyset query, ordered by `orderBy` and then the primary key, so it does not hold a server cursor or a connection between batches.
 
 ```ts title="stream.ts"
 import { connect } from "okmodel/pg/postgresjs";
 import { schema, table, t } from "okmodel/pg";
 
 const notes = table("notes", { id: t.identity().primaryKey(), title: t.text() });
-const app = schema({ tables: [notes] });
+export const app = schema({ tables: [notes] });
 
 export async function titles(url: string): Promise<string[]> {
   await using db = connect(url, { schema: app });
@@ -303,9 +295,22 @@ export async function titles(url: string): Promise<string[]> {
 }
 ```
 
-### snapshot
+```text title="stream.out"
+[ "Hello", "World" ]
+```
 
-`.all(reason)` is the whole set. The call below is one snapshot. What that isolation does is [Transactions](/docs/queries/transactions#options).
+| Option | Result |
+| --- | --- |
+| `batch` | Rows per query. An integer from 1 to 2147483647. The default is 1000. |
+| `limit` | The total number of rows. `0` yields nothing and runs no query. |
+| `.all(reason)` | Every row, with no `limit`. With a `limit` as well, the `limit` still applies. |
+| `orderBy` | The order, then the primary key. Omitted, rows follow the primary key. |
+| `timeout` | Milliseconds for the whole stream. On a driver that cannot cancel a query, it is checked between batches. |
+| `signal` | An `AbortSignal` that stops the stream. |
+
+`select`, `include`, a preset, and the archive set work as they do on `page()`. Because each batch is a separate query, a row committed while the stream runs may or may not show up. On a client with replicas, the first batch chooses the endpoint and later batches stay there.
+
+To read a consistent set, run the stream in a `repeatable read` transaction, so every batch sees the same snapshot of the data ([Transactions](/docs/queries/transactions#options)):
 
 ```ts title="stream-all.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -324,42 +329,67 @@ export async function each(url: string): Promise<void> {
 }
 ```
 
-| Error | Message |
-| --- | --- |
-| [OKM1120](/docs/reference/errors#okm1120) | `stream() needs a primary key on notes.` Also refuses `one()`, `count()`, `exists()`, `search`, and a window on a table with no primary key. |
-| [OKM1101](/docs/reference/errors#okm1101) | A stream with no `limit` and no `.all(reason)` |
-| [OKM1121](/docs/reference/errors#okm1121) | `stream() batch must be an integer from 1 to 2147483647.` The same code refuses a `timeout` that is not a number above 0: `timeout must be a number of milliseconds above 0.` |
-
 ## Explain
 
-`explain` describes a query you already built. Outside production it returns the `EXPLAIN` lines with the statement text and parameters. A hidden or sensitive parameter is `[redacted]` in `params` and in the plan text. Postgres still receives the real parameter, so the plan and its costs stay the ones it chose. An ordinary column stays in both. In production it does not send the statement: `plan` is null and `params` is empty.
+`explain(table, query)` runs Postgres `EXPLAIN` on a query you built, and returns the statement text, the bound parameters, and the plan lines.
 
 ```ts title="explain-notes.ts"
 import { connect } from "okmodel/pg/postgresjs";
 import { explain, schema, table, t } from "okmodel/pg";
 
 const notes = table("notes", { id: t.identity().primaryKey(), title: t.text() });
-const app = schema({ tables: [notes] });
+export const app = schema({ tables: [notes] });
 
 export async function plan(url: string) {
   await using db = connect(url, { schema: app });
-  return explain(db.notes, db.notes.find({ limit: 1 })); // [!code focus]
+  return await explain(db.notes, db.notes.find({ limit: 1 })); // [!code focus]
 }
 ```
 
 ```text title="explain.out"
 {
-  text: 'select t."id", t."title" from "notes" t limit $1',
+  text: "select t.\"id\", t.\"title\" from \"notes\" t limit $1",
   params: [ "1" ],
-  plan: [
-    "Limit  (cost=0.00..0.02 rows=1 width=40)",
-    "  ->  Seq Scan on notes t  (cost=0.00..22.00 rows=1200 width=40)",
-  ],
+  plan: [ "Limit  (cost=0.00..0.02 rows=1 width=40)", "  ->  Seq Scan on notes t  (cost=0.00..22.00 rows=1200 width=40)" ],
 }
 ```
 
-Costs vary by Postgres version and statistics; the shape is the statement text, the bound params, and the `EXPLAIN` lines.
+The costs depend on the Postgres version and the table statistics. A hidden or sensitive parameter is `[redacted]` in `params` and in the plan text. Postgres still receives the real value, so the plan is the one it would choose.
+
+In production, `explain` sends nothing to the database. Production means the process has `NODE_ENV` set to `production`; no other setting is read. The same call then returns the statement with no parameters and no plan:
+
+```text title="explain-production.out"
+{
+  text: "select t.\"id\", t.\"title\" from \"notes\" t limit $1",
+  params: [],
+  plan: null,
+}
+```
+
+## Errors
+
+Every code below is an `OkmError` thrown before the statement is sent, except OKM1130 for a deleted cursor row, which is found by the query.
+
+| Code | Message | When |
+| --- | --- | --- |
+| [OKM1101](/docs/reference/errors#okm1101) | `find() needs a limit.` / `page() needs a limit.` | No `limit`, no `.all(reason)`, and no default in `limits`. |
+| [OKM1101](/docs/reference/errors#okm1101) | `find() .all needs a reason.` | `.all("")`. |
+| `not_unique` | `one() on notes matched more than one row. Pass orderBy to take the first, or narrow where.` | `one` matched several rows. |
+| [OKM1130](/docs/reference/errors#okm1130) | `after is not a cursor that page() returned.` | `after` is not a cursor string from `page`. |
+| [OKM1130](/docs/reference/errors#okm1130) | `The cursor was made for another order: …. This page orders by ….` | `after` came from a page with another `orderBy`. |
+| [OKM1130](/docs/reference/errors#okm1130) | `The cursor is no longer valid.` | A primary-key cursor names a row that is gone. |
+| [OKM1120](/docs/reference/errors#okm1120) | `distinctOn needs an orderBy that starts with title.` | `orderBy` does not start with the `distinctOn` fields. |
+| [OKM1120](/docs/reference/errors#okm1120) | `stream() needs a primary key on notes. A keyset batch orders by that key.` | `.stream()` on a table with no primary key. |
+| [OKM1120](/docs/reference/errors#okm1120) | `page() needs a primary key on notes to break ties.` | `page` on a table with no primary key. |
+| [OKM1120](/docs/reference/errors#okm1120) | `Field secret is hidden.` | `orderBy` names a hidden related column that is not `filterable`. |
+| [OKM1127](/docs/reference/errors#okm1127) | `orderBy on a relation is not available with distinctOn.` | A relation sort with `distinct` or `distinctOn`. |
+| [OKM1128](/docs/reference/errors#okm1128) | `orderBy on a relation is not available in aggregate.` | A relation sort in `aggregate`. |
+| [OKM1121](/docs/reference/errors#okm1121) | `stream() batch must be an integer from 1 to 2147483647.` | `batch` out of range. |
+| [OKM1121](/docs/reference/errors#okm1121) | `timeout must be a number of milliseconds above 0.` | `timeout` is not a positive number. |
+
+OKM1120 is the code for a read option the table cannot honour. The message names the option and the table, so the same code covers the four OKM1120 rows above.
 
 | Next | You use it for |
 | --- | --- |
-| [Write rows](/docs/queries/write-rows) | Inserts and updates. |
+| [Shape results](/docs/queries/shape-results) | `select`, `include`, and aggregates. |
+| [Write rows](/docs/queries/write-rows) | Inserts, updates, and deletes. |

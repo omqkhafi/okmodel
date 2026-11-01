@@ -2,37 +2,86 @@
 title: "Tenancy"
 description: "A tenant key on every table, for() to scope reads and writes, and the SQL that follows."
 ---
-Tenancy keeps one tenant's rows apart from another's. A tenant key is a [guarded uuid](/docs/schema/visibility) column the schema adds — input cannot set it; `for()` supplies it. A predicate is the SQL filter that column adds to every read and write. Importing `okmodel/tenancy` is what loads that predicate.
+Tenancy keeps each tenant's rows apart inside one database. You declare it once on the schema. Every table then stores a tenant key, and every read and write through a scoped client is filtered to one tenant without you writing the filter.
+
+Four terms are used on this page:
+
+- **Tenant key**: the column that says which tenant owns a row. Here it is `tenantId`, a `uuid`.
+- **Guarded**: input cannot set the column. The tenant key is a guarded uuid: an insert takes it from the scope, and a `where` or `set` that names it is refused. [Visibility](/docs/schema/visibility) covers guarded columns in general.
+- **Scope**: the client that `db.for({ tenantId })` returns. Every call on it reads and writes that tenant's rows only.
+- **Tenant filter**: the SQL condition the scope adds, such as `t."tenantId" = $1`.
+
+The tenancy code lives in `okmodel/tenancy` and loads only when you import it.
 
 ## The model
 
-Declare schema tenancy with `columnTenancy({ key, type: "uuid" })`. Every table stores that key unless you mark it otherwise. `for({ tenantId })` opens a scoped client for one tenant.
+The program below declares column tenancy, inserts a note as one tenant, reads it back as that tenant and as another, and prints the SQL. `plans` is a global table, shared by every tenant.
 
-```ts title="model.ts"
+```ts title="tenancy-model.ts"
 import { connect } from "okmodel/pg/postgresjs";
 import { schema, table, t } from "okmodel/pg";
-import { columnTenancy } from "okmodel/tenancy";
+import { columnTenancy, global } from "okmodel/tenancy";
 
-const notes = table("notes", {
-  id: t.identity(),
-  title: t.text(),
-});
+const notes = table("notes", { id: t.identity(), title: t.text() });
+const plans = table(
+  "plans",
+  { id: t.identity(), code: t.text() },
+  { tenancy: global("plans are shared") },
+);
 
-const app = schema({
-  tables: [notes],
+export const app = schema({
+  tables: [notes, plans],
   tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
 });
 
-export async function add(url: string, title: string) {
+const acme = "018f3b2c-7a11-7c3a-8e2d-6b4a9c1d0e5f";
+const globex = "018f3b2c-7a11-7c3a-8e2d-6b4a9c1d0e60";
+
+export async function isolate(url: string): Promise<void> {
   await using db = connect(url, { schema: app });
-  const scoped = db.for({ tenantId: "018f3b2c-7a11-7c3a-8e2d-6b4a9c1d0e5f" });
-  return scoped.notes.insert({ title });
+  const scoped = db.for({ tenantId: acme });
+
+  console.log("insert:", JSON.stringify(await scoped.notes.insert({ title: "Hello" })));
+
+  const find = scoped.notes.find({ where: { id: "1" }, limit: 1 });
+  const inspected = await find.inspect();
+  console.log("find sql:", inspected.sql.text);
+  console.log("find params:", JSON.stringify(inspected.sql.params));
+  console.log("find rule:", JSON.stringify(inspected.rules.find((rule) => rule.rule === "tenancy")));
+  console.log("acme rows:", (await find).length);
+  const other = db.for({ tenantId: globex });
+  console.log("globex rows:", (await other.notes.find({ where: { id: "1" }, limit: 1 })).length);
+
+  const update = await scoped.notes.update({ where: { id: "1" }, set: { title: "Hi" } }).sql();
+  console.log("update sql:", update.statements[0]?.text);
+
+  const shared = await db.plans.find({ limit: 1 }).inspect();
+  console.log("plans sql:", shared.sql.text);
+  console.log("plans rule:", JSON.stringify(shared.rules.find((rule) => rule.rule === "tenancy")));
 }
 ```
 
-`okm generate init` creates the table with the key in the primary key and a unique on `(id, tenantId)`:
+```text title="tenancy-model.out"
+insert: {"id":"1","title":"Hello","tenantId":"018f3b2c-7a11-7c3a-8e2d-6b4a9c1d0e5f"}
+find sql: select t."id", t."title", t."tenantId" from "notes" t where t."tenantId" = $1 and t."id" = $2 limit $3
+find params: ["018f3b2c-7a11-7c3a-8e2d-6b4a9c1d0e5f","1","1"]
+find rule: {"rule":"tenancy","contribution":"scoped","provenance":"planner"}
+acme rows: 1
+globex rows: 0
+update sql: update "notes" as t set "title" = $1::text where t."tenantId" = $2 and t."id" = $3
+plans sql: select t."id", t."code" from "plans" t limit $1
+plans rule: {"rule":"tenancy","contribution":"global plans are shared","provenance":"catalog","source":"tenancy-model.ts:6"}
+```
 
-```sql title="notes-tenant.sql"
+- The insert names only `title`. The scope set `tenantId`, and the row comes back with it.
+- The read added `t."tenantId" = $1` before your `where`. `inspect()` lists that as the `tenancy` rule.
+- The same id read as `globex` returns no row.
+- The update is filtered the same way, so one tenant cannot change another's row.
+- `plans` has no tenant column and no filter. Its `tenancy` rule records the reason you gave.
+
+These are the tables the schema creates. The tenant key is part of the primary key, and `notes` also gets a unique constraint on `(id, tenantId)`. `plans` has no key:
+
+```sql title="tenancy-model.sql"
 create table "public"."notes" (
   "id" bigint generated always as identity not null,
   "tenantId" uuid not null,
@@ -41,172 +90,109 @@ create table "public"."notes" (
 );
 
 alter table "public"."notes" add constraint "notes_id_tenantId_key" unique ("id", "tenantId");
-```
 
-A scoped insert returns the key the scope set. A scoped find adds `tenantId` to the `where`. `inspect()` shows the SQL and a `tenancy` rule:
-
-```text title="insert.out"
-{
-  id: "1",
-  title: "Hello",
-  tenantId: "018f3b2c-7a11-7c3a-8e2d-6b4a9c1d0e5f",
-}
-```
-
-```text title="find.inspect"
-sql: {
-  text: "select t.\"id\", t.\"title\", t.\"tenantId\" from \"notes\" t where t.\"tenantId\" = $1 and t.\"id\" = $2 limit $3",
-  params: [ "018f3b2c-7a11-7c3a-8e2d-6b4a9c1d0e5f", "1", "1" ],
-}
-rules: [
-  …,
-  { rule: "tenancy", contribution: "scoped", provenance: "planner" },
-]
-```
-
-A scoped update filters the same way. `inspect()` and `describe()` both show the statement:
-
-```text title="update.inspect"
-statements: [
-  {
-    text: "update \"notes\" as t set \"title\" = $1::text where t.\"tenantId\" = $2 and t.\"id\" = $3",
-  }
-]
-```
-
-`unscoped("reason")` drops the predicate for that client. Insert still needs `for()`. A call with no scope is refused (see [Errors](#errors-on-a-table)).
-
-## On a table
-
-Omitted, the table stores the schema key. `global` and `via` come from `okmodel/tenancy`.
-
-### Key
-
-The key is a guarded uuid. Insert fills it from `for()`. A read or a write filters on it. Input cannot set it.
-
-A unique includes the key. The primary key does too. An index is prefixed with the key, so a unique index is unique per tenant and two tenants may share a value. `tenantIndexes: false` turns the prefix off for this table. One index can opt out with `.global("reason")` or opt in with `.scoped()`. Nearest level wins: an index option overrides the table's `tenantIndexes`, which overrides the schema's `indexes`. With the prefix off, an index that does not start with the key is refused. A `using` tail is not prefixed that way — `index().global("reason")` is the option that works for it. A foreign key to another tenant table includes the key, so `set null` and `set default` are refused. See [references](/docs/schema/references).
-
-#### unique
-
-`.unique({ global: "reason" })` leaves the key out of that one constraint. `{ global: true, reason }` is the same opt-out.
-
-```ts title="unique.ts"
-import { table, t } from "okmodel/pg";
-
-export const notes = table("notes", {
-  id: t.identity(),
-  email: t.text().unique({ global: "login email" }),
-  title: t.text().unique(),
-});
-```
-
-`email` is unique across tenants. `title` is unique inside one tenant.
-
-### Global
-
-`global("reason")` leaves the tenant column off this table. The reason is stored and `inspect()` shows it on the `tenancy` rule as `contribution: "global <reason>"`.
-
-```ts title="global.ts"
-import { table, t } from "okmodel/pg";
-import { global } from "okmodel/tenancy";
-
-export const plans = table(
-  "plans",
-  { id: t.identity(), code: t.text() },
-  { tenancy: global("plans are shared") },
+create table "public"."plans" (
+  "code" text not null,
+  "id" bigint generated always as identity not null,
+  constraint "plans_pkey" primary key ("id")
 );
 ```
 
-```text title="global.inspect"
-rules: [
-  …,
-  {
-    rule: "tenancy",
-    contribution: "global plans are shared",
-    provenance: "catalog",
-  },
-]
-sql: {
-  text: "select t.\"id\", t.\"code\" from \"plans\" t limit $1",
-  params: [ "1" ],
-}
-```
+## Scoped and unscoped clients
 
-### Path
+| Client | Tenant tables | Global tables |
+| --- | --- | --- |
+| `db` | Not on the client: `db.notes` is a type error and `undefined` at run time. | Read and write. |
+| `db.for({ tenantId })` | Read and write that tenant's rows. Insert takes the key from the scope. | Read and write. |
+| `db.unscoped("reason")` | Read and write every tenant's rows, with no tenant filter. Insert is refused, because there is no key to store. | Read and write. |
 
-`via("project.organization")` follows to-one relations (each step is a `one(...)` relation name), separated by `.`, up to three. The last table stores the tenant key. This table does not. A read or a write adds `exists` along that path. Explain `via()` once here; the schema section links back.
+`for()` takes a uuid string. `unscoped()` needs a reason, which `inspect()` records. Use it for a support tool or a migration script, not for request handling.
 
-```ts title="path.ts"
-import { one, table, t } from "okmodel/pg";
-import { via } from "okmodel/tenancy";
+## Choose a tenancy mode
 
-export const organizations = table("organizations", {
-  id: t.identity(),
-  name: t.text(),
-});
+`tenancy` on `schema()` is one of three functions from `okmodel/tenancy`. Omit it and no table gains a key, `for()` is not on the client, and a table that sets `tenancy` is refused.
 
-export const projects = table(
-  "projects",
-  {
-    id: t.identity(),
-    organizationId: t.bigint().references("organizations"),
-    name: t.text(),
-  },
-  { relations: { organization: one("organizations") } },
-);
+| Mode | Key | Enforcement |
+| --- | --- | --- |
+| `columnTenancy({ key, type: "uuid" })` | One column. | The tenant filter on every call. |
+| `compositeTenancy({ key: [...], type: "uuid" })` | Several columns, in order. `for()` takes every one. | The tenant filter on every call. |
+| `rlsTenancy({ key, type: "uuid" })` | One column. | The tenant filter, plus row-level security (RLS) policies in Postgres. |
 
-export const tasks = table(
-  "tasks",
-  {
-    id: t.identity(),
-    projectId: t.bigint().references("projects"),
-    title: t.text(),
-  },
-  {
-    relations: { project: one("projects") },
-    tenancy: via("project.organization"),
-  },
-);
-```
+`type` is `"uuid"` in every mode.
 
-### Calls
+### Composite
 
-`for({ tenantId })` opens a client for one tenant. The value is a uuid. `unscoped("reason")` drops the predicate. Insert still needs `for()`.
+A tenant inside a tenant, such as a workspace inside an organization:
 
-#### simple
-
-One tenant table. Insert sets `title`. The scope sets `tenantId`.
-
-```ts title="simple.ts"
+```ts title="composite.ts"
 import { connect } from "okmodel/pg/postgresjs";
+import { compositeTenancy } from "okmodel/tenancy";
 import { schema, table, t } from "okmodel/pg";
-import { columnTenancy } from "okmodel/tenancy";
+
+const documents = table("documents", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+const app = schema({
+  tables: [documents],
+  tenancy: compositeTenancy({
+    key: ["organizationId", "workspaceId"],
+    type: "uuid",
+  }),
+});
+
+export async function add(url: string, organizationId: string, workspaceId: string, title: string) {
+  await using db = connect(url, { schema: app });
+  return await db.for({ organizationId, workspaceId }).documents.insert({ title });
+}
+```
+
+A unique index includes every key, so `index(c.title).unique()` stores `(organizationId, workspaceId, title)`. An ordinary index is prefixed with the first key only.
+
+### Row-level security
+
+Row-level security (RLS) is a Postgres feature: a policy on a table decides which rows a role can see or change. `rlsTenancy()` keeps the tenant filter and adds policies, so a query that bypasses okmodel is still limited to one tenant.
+
+```ts title="rls.ts"
+import { rlsTenancy } from "okmodel/tenancy";
+import { schema, table, t } from "okmodel/pg";
 
 const notes = table("notes", {
   id: t.identity(),
   title: t.text(),
 });
 
-const app = schema({
+export default schema({
   tables: [notes],
-  tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
+  tenancy: rlsTenancy({ key: "tenantId", type: "uuid" }),
 });
-
-export async function add(url: string, title: string) {
-  await using db = connect(url, { schema: app });
-  const scoped = db.for({ tenantId: "018f3b2c-7a11-7c3a-8e2d-6b4a9c1d0e5f" });
-  return scoped.notes.insert({ title });
-}
 ```
 
-#### complex
+The migration creates two policies on `notes`: `notes_tenant` for the tenant set in the transaction setting `app.tenant`, and `notes_unscoped_select` for reads when `app.unscoped` is set. A view that exposes the key is created `security_invoker`, so the policies apply through it. `unscoped()` can read and cannot write. A key list and `via()` are refused.
 
-`organizations` stores the key. `projects` follows `organization`. `tasks` follows `project.organization`. `plans` is global, so the root client can insert it. The scoped client inserts the rest.
+On connect, okmodel checks that the role cannot skip the policies: it must not own the tables, be a superuser, or have `BYPASSRLS` ([OKM1707](/docs/reference/errors#okm1707)), and each table must force RLS with the expected policies ([OKM1708](/docs/reference/errors#okm1708)). A passing check is cached for that endpoint until its generation changes. A failed check is not cached, and the message names the endpoint.
 
-```ts title="complex.ts"
+<Callout type="warning" title="What row-level security does not stop">
+The policies trust the transaction settings. A role that can run arbitrary SQL can set `app.tenant` to any tenant and read or write that tenant's rows. A reporting role can set `app.unscoped` and read every tenant through the select policy, although it still cannot write. RLS protects against a query that forgets the filter, not against a role that sets the settings on purpose. [Tenant isolation](/docs/concepts/tenant-isolation) covers where the filter applies and how `unscoped` and `trusted` leave it off.
+</Callout>
+
+## Tables that differ from the default
+
+A table with no `tenancy` option stores the schema's key. Two marks from `okmodel/tenancy` change that.
+
+### Global tables
+
+`global("reason")` leaves the tenant key off the table. Every client reads and writes it with no tenant filter, as `plans` does in the model. The reason is stored and `inspect()` shows it. A global table cannot reference a tenant table.
+
+### Tables that reach the key through a parent
+
+`via("project.organization")` says the table does not store the key. Its tenant is found by following to-one relations, each step a `one(...)` relation name, separated by `.`, up to three steps. The last table on the path stores the key. Every read and write adds an `exists` condition along that path, and an insert checks that the parent belongs to the scope's tenant.
+
+```ts title="path.ts"
 import { connect } from "okmodel/pg/postgresjs";
 import { one, schema, table, t } from "okmodel/pg";
-import { columnTenancy, global, via } from "okmodel/tenancy";
+import { columnTenancy, via } from "okmodel/tenancy";
 
 const organizations = table("organizations", {
   id: t.identity(),
@@ -239,118 +225,54 @@ const tasks = table(
   },
 );
 
-const plans = table(
-  "plans",
-  { id: t.identity(), code: t.text() },
-  { tenancy: global("plans are shared") },
-);
-
 const app = schema({
-  tables: [organizations, projects, tasks, plans],
+  tables: [organizations, projects, tasks],
   tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
 });
 
 export async function open(url: string) {
   await using db = connect(url, { schema: app });
-  await db.plans.insert({ code: "free" });
   const scoped = db.for({ tenantId: "018f3b2c-7a11-7c3a-8e2d-6b4a9c1d0e5f" });
   const org = await scoped.organizations.insert({ name: "Acme" });
-  const project = await scoped.projects.insert({
-    name: "Ship",
-    organizationId: org.id,
-  });
-  return scoped.tasks.insert({ title: "Write", projectId: project.id });
+  const project = await scoped.projects.insert({ name: "Ship", organizationId: org.id });
+  return await scoped.tasks.insert({ title: "Write", projectId: project.id });
 }
 ```
 
-### Errors on a table
+`organizations` stores `tenantId`. `projects` reaches it through `organization`, and `tasks` through `project.organization`.
 
-| Code | When | Message |
+## Uniques and indexes
+
+The tenant key is added to constraints so that one tenant's values never collide with another's:
+
+- The primary key and every unique constraint include the key, so a value is unique inside one tenant and two tenants may store the same value.
+- A foreign key to another tenant table includes the key, so `set null` and `set default` are refused ([References](/docs/schema/references)).
+- An ordinary index is prefixed with the key, so it serves the tenant filter. A unique index gains every key.
+
+`.unique({ global: "reason" })` leaves the key out of one unique constraint:
+
+```ts title="unique.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  email: t.text().unique({ global: "login email" }),
+  title: t.text().unique(),
+});
+```
+
+`email` is unique across all tenants. `title` is unique inside one tenant.
+
+The index prefix can be set at three levels. The nearest level wins:
+
+| Level | Setting | Effect |
 | --- | --- | --- |
-| [OKM1060](/docs/reference/errors#okm1060) | Tenancy mark is neither `global` nor `via` | `Table notes tenancy must be global("reason") or via().` |
-| [OKM1060](/docs/reference/errors#okm1060) | Empty `global` / `via` / unique-global reason | `global() needs a reason.` / `via() needs a relation path.` / `unique() global needs a reason.` |
-| [OKM1012](/docs/reference/errors#okm1012) | Table already declares the key column | `Table notes already declares tenantId, which tenancy adds. Rename the field or drop it from the table.` |
-| [OKM1190](/docs/reference/errors#okm1190) | Insert names the key | `Field notes.tenantId is the tenant key. The scope sets it. Input cannot.` |
-| [OKM1704](/docs/reference/errors#okm1704) | Update or filter names the key | `Field notes.tenantId is the tenant key. An update cannot change it.` / `A filter cannot set it.` |
-| [OKM1701](/docs/reference/errors#okm1701) | Call with no scope | `Table notes is tenant-scoped. Call for({ tenantId }).` |
-| [OKM1705](/docs/reference/errors#okm1705) | Global table references a tenant table; bad `via` path | `Table plans.code is global and references tenant table notes…` / hop, missing to-one, ends on global, cycle, or parent outside tenant. |
-| [OKM1706](/docs/reference/errors#okm1706) | Index does not lead with the key when prefix is off | `Index on notes starts with title. Put tenantId first.` |
+| Schema | `indexes` on the tenancy function, default `true` | `false` leaves every index as written. An index that does not start with the key is then refused (OKM1706). |
+| Table | `tenantIndexes: false` | Leaves this table's indexes as written. Overrides the schema. |
+| Index | `.global("reason")` | Leaves this index as written. Overrides the table. |
+| Index | `.scoped()` | Prefixes this ordinary index. Overrides the table. |
 
-## On the schema
-
-`tenancy` is `columnTenancy()`, `compositeTenancy()`, or `rlsTenancy()` from `okmodel/tenancy`. Omitted, no table gains a key.
-
-Each key is a guarded uuid. Insert fills it from `for()`. Reads and writes filter on it. Input cannot set it. A unique, a unique index, and the primary key include every key. Another index is prefixed with the first key unless `indexes: false`. `global("reason")` and [`via()`](#path) are the table marks.
-
-### omitted
-
-No tenant column, and `for()` is not on the client. A table that still sets `tenancy` is refused.
-
-```ts title="omitted.ts"
-import { schema, table, t } from "okmodel/pg";
-
-const notes = table("notes", {
-  id: t.identity(),
-  title: t.text(),
-});
-
-export default schema({
-  tables: [notes],
-});
-```
-
-### column
-
-`columnTenancy({ key, type: "uuid" })` adds one key. `type` is `"uuid"`.
-
-```ts title="column.ts"
-import { columnTenancy } from "okmodel/tenancy";
-import { schema, table, t } from "okmodel/pg";
-
-const notes = table("notes", {
-  id: t.identity(),
-  title: t.text(),
-});
-
-export default schema({
-  tables: [notes],
-  tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
-});
-```
-
-`for({ tenantId })` opens a client for one tenant. The value is a uuid. `unscoped("reason")` drops the predicate. Insert still needs `for()`. The root client keeps a global table and hides a tenant table.
-
-```ts title="for.ts"
-import { connect } from "okmodel/pg/postgresjs";
-import { columnTenancy, global } from "okmodel/tenancy";
-import { schema, table, t } from "okmodel/pg";
-
-const plans = table(
-  "plans",
-  { id: t.identity(), code: t.text() },
-  { tenancy: global("plans are shared") },
-);
-
-const notes = table("notes", {
-  id: t.identity(),
-  title: t.text(),
-});
-
-const app = schema({
-  tables: [plans, notes],
-  tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
-});
-
-export async function add(url: string, tenantId: string, title: string) {
-  await using db = connect(url, { schema: app });
-  await db.plans.find({ limit: 1 });
-  return db.for({ tenantId }).notes.insert({ title });
-}
-```
-
-### indexes
-
-`indexes` defaults to true. Every ordinary index on a tenant table gains the first key as its first column. A unique index gains every key, in order, so two tenants cannot share the value. Under composite tenancy that is the whole key. `indexes: false` leaves each index as written, and OKM1706 applies. A table's `tenantIndexes` overrides this. An index `.global("reason")` or `.scoped()` overrides the table. Nearest level wins. An index that already names the key moves it to the front and does not list it again. Two indexes that become the same one are OKM1023, and the message names both declarations. The catalog, `okm generate`, and `describe()` show those resolved columns.
+An index that already names the key gets it moved to the front, not listed twice. Two indexes that become the same columns are refused (OKM1023). A `using` index is never prefixed; [Indexes](/docs/schema/indexes) explains the `.global("reason")` call it needs. The catalog, `okm generate`, and `describe()` show the resolved columns.
 
 ```ts title="indexes.ts"
 import { columnTenancy } from "okmodel/tenancy";
@@ -373,122 +295,50 @@ export default schema({
 });
 ```
 
-`email` is unique inside one tenant: the index is `(tenantId, email)`. `title` stays a global index. `indexes: false` on `columnTenancy()` turns the prefix off. `tenantIndexes: false` turns it off for one table, and `.scoped()` turns it back on for one ordinary index. A `using` index is not prefixed that way: the default and `.scoped()` throw OKM1706 (`A using tail is not prefixed.`), and `.global("reason")` is the call that works.
+The `email` index is `(tenantId, email)`, unique inside one tenant. The `title` index stays `(title)`.
 
-A project whose indexes already start with the key sees no migration. An index that does not is replaced once: `okm generate` writes `CREATE INDEX CONCURRENTLY` for the new index, then `DROP INDEX CONCURRENTLY` for the old one. That is not a blocking rebuild. `okm migrate check` accepts it. The next `okm generate` writes nothing.
+When you turn tenancy on for an existing project, an index whose columns already start with the key does not change. Any other index is replaced once: `okm generate` writes `CREATE INDEX CONCURRENTLY` for the new index, then `DROP INDEX CONCURRENTLY` for the old one, so the table is not locked for a rebuild. `okm migrate check` accepts that pair, and the next `okm generate` writes nothing.
 
-### composite
+## Errors
 
-`compositeTenancy({ key, type: "uuid" })` adds every name, in that order. `for()` takes every key. One name is `columnTenancy()`. A unique index includes every key, so `index(c.email).unique()` stores `(organization_id, workspace_id, email)`. An ordinary index is prefixed with the first key only.
+The messages below use the tables on this page. Your table and key names replace `notes` and `tenantId`.
 
-```ts title="composite.ts"
-import { connect } from "okmodel/pg/postgresjs";
-import { compositeTenancy } from "okmodel/tenancy";
-import { schema, table, t } from "okmodel/pg";
+### Declaring the schema
 
-const documents = table("documents", {
-  id: t.identity(),
-  title: t.text(),
-});
-
-const app = schema({
-  tables: [documents],
-  tenancy: compositeTenancy({
-    key: ["organizationId", "workspaceId"],
-    type: "uuid",
-  }),
-});
-
-export async function add(
-  url: string,
-  organizationId: string,
-  workspaceId: string,
-  title: string,
-) {
-  await using db = connect(url, { schema: app });
-  return db.for({ organizationId, workspaceId }).documents.insert({ title });
-}
-```
-
-### row level
-
-`rlsTenancy({ key, type: "uuid" })` is one key. The column predicate stays. Policies are the backstop — a second line of defence in Postgres itself: `notes_tenant` and `notes_unscoped_select` on a table named `notes`. A view that exposes the key is `security_invoker`. `via()` and a key list are refused. `unscoped()` can read and cannot write. Row-level security does not stop the application role from running arbitrary SQL that sets `app.tenant` itself. The reporting role can set `app.unscoped` itself and read every tenant through the select policy; it still cannot write.
-
-```ts title="rls.ts"
-import { rlsTenancy } from "okmodel/tenancy";
-import { schema, table, t } from "okmodel/pg";
-
-const notes = table("notes", {
-  id: t.identity(),
-  title: t.text(),
-});
-
-export default schema({
-  tables: [notes],
-  tenancy: rlsTenancy({ key: "tenantId", type: "uuid" }),
-});
-```
-
-A healthy role check is cached for that endpoint until its generation changes. A failed check is not cached. The message names the endpoint.
-
-### Schema path
-
-Use [`via()`](#path) on the table. The last hop stores the key; this table does not. A read or a write adds `exists` along that path.
-
-```ts title="schema-path.ts"
-import { columnTenancy, via } from "okmodel/tenancy";
-import { one, schema, table, t } from "okmodel/pg";
-
-const organizations = table("organizations", {
-  id: t.identity(),
-  name: t.text(),
-});
-
-const projects = table(
-  "projects",
-  {
-    id: t.identity(),
-    organizationId: t.bigint().references("organizations"),
-    name: t.text(),
-  },
-  { relations: { organization: one("organizations") } },
-);
-
-const tasks = table(
-  "tasks",
-  {
-    id: t.identity(),
-    projectId: t.bigint().references("projects"),
-    title: t.text(),
-  },
-  {
-    relations: { project: one("projects") },
-    tenancy: via("project.organization"),
-  },
-);
-
-export default schema({
-  tables: [organizations, projects, tasks],
-  tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
-});
-```
-
-### Errors on the schema
+These are thrown by `schema()`, before any connection.
 
 | Code | When | Message |
 | --- | --- | --- |
-| [OKM1060](/docs/reference/errors#okm1060) | Table sets tenancy with no schema tenancy | `Table notes sets tenancy, and the schema does not.` |
-| [OKM1060](/docs/reference/errors#okm1060) | Bad `columnTenancy` / `compositeTenancy` / `rlsTenancy` shape | `columnTenancy() needs { key, type }.` / type must be uuid / empty or repeated key / `rlsTenancy() takes one key…` |
-| [OKM1060](/docs/reference/errors#okm1060) | `tenantIndexes` or `index().global()` without tenancy | `Table notes sets tenantIndexes, and the schema has no tenancy.` / `Table notes index().global() needs tenancy.` |
-| [OKM1012](/docs/reference/errors#okm1012) | Table already declares the key | `Table notes already declares tenantId, which tenancy adds…` |
-| [OKM1023](/docs/reference/errors#okm1023) | Two indexes resolve to the same columns after prefixing | Message names both declarations. |
-| [OKM1190](/docs/reference/errors#okm1190) / [OKM1704](/docs/reference/errors#okm1704) | Input names the key | Scope sets it; update and filter cannot change it. |
-| [OKM1701](/docs/reference/errors#okm1701) | Missing `for()`, bad `for()` args, or `unscoped()` write under RLS | `Call for({ tenantId }).` / `for() needs { tenantId } as a uuid.` / `unscoped() cannot write under row-level security.` |
-| [OKM1705](/docs/reference/errors#okm1705) | Global→tenant FK or bad `via` path | Same messages as the table section. |
-| [OKM1706](/docs/reference/errors#okm1706) | Index prefix / `using` tail | `Index on notes starts with title. Put tenantId first.` (snake casing names `tenant_id`.) |
-| [OKM1707](/docs/reference/errors#okm1707) | Connected role owns tables, is superuser, or has `BYPASSRLS` | `…so row-level security would not apply. Endpoint primary.` |
-| [OKM1708](/docs/reference/errors#okm1708) | Forced RLS or policy mismatch | `Table notes does not force row-level security. Endpoint primary.` (or a policy / predicate mismatch). |
+| [OKM1060](/docs/reference/errors#okm1060) | A table sets `tenancy` and the schema does not. | `Table notes sets tenancy, and the schema does not.` |
+| [OKM1060](/docs/reference/errors#okm1060) | A table's `tenancy` is not `global()` or `via()`. | `Table notes tenancy must be global("reason") or via().` |
+| [OKM1060](/docs/reference/errors#okm1060) | An empty reason or path. | `global() needs a reason.` / `via() needs a relation path.` / `unique() global needs a reason.` |
+| [OKM1060](/docs/reference/errors#okm1060) | A key type other than uuid. | `columnTenancy() type text must be uuid.` |
+| [OKM1060](/docs/reference/errors#okm1060) | A composite key names a column twice. | `compositeTenancy() key repeats organizationId.` |
+| [OKM1060](/docs/reference/errors#okm1060) | `rlsTenancy()` with a key list. | `rlsTenancy() takes one key. Combining it with compositeTenancy or via() is not supported yet.` |
+| [OKM1060](/docs/reference/errors#okm1060) | An index setting with no schema tenancy. | `Table notes sets tenantIndexes, and the schema has no tenancy.` / `Table notes index().global() needs tenancy.` |
+| [OKM1012](/docs/reference/errors#okm1012) | The table already declares the key column. | `Table notes already declares tenantId, which tenancy adds. Rename the field or drop it from the table.` |
+| [OKM1023](/docs/reference/errors#okm1023) | Two indexes become the same after the prefix. | `Index on notes (title) and (tenantId, title) both become (tenantId, title).` |
+| [OKM1705](/docs/reference/errors#okm1705) | A global table references a tenant table. | `Table plans.code is global and references tenant table notes. Drop the reference, or make plans a tenant table.` |
+| [OKM1705](/docs/reference/errors#okm1705) | A `via()` step is not a to-one relation, or the path is too long, ends on a global table, or loops. | `Table tasks tenancy via "project" has no to-one relation project.` The message names the step. |
+| [OKM1706](/docs/reference/errors#okm1706) | With the prefix off, an index does not start with the key. | `Index on notes starts with title. Put tenantId first.` |
+
+### Calls and connect
+
+| Code | When | Message |
+| --- | --- | --- |
+| [OKM1701](/docs/reference/errors#okm1701) | An insert on a tenant table without `for()`. | `insert on notes has no tenant. Call for({ tenantId }) so the scope can set it.` |
+| [OKM1701](/docs/reference/errors#okm1701) | The root client reaches a tenant table, for example through an `include` from a global table. | `Table notes is tenant-scoped. Call for({ tenantId }).` |
+| [OKM1701](/docs/reference/errors#okm1701) | `for()` gets no key, or a value that is not a string. | `for() needs { tenantId } as a uuid.` |
+| [OKM1210](/docs/reference/errors#okm1210) | `for()` gets a string that is not a uuid. | `uuid nope must be 8-4-4-4-12 hexadecimal digits, for example 01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c8d.` |
+| [OKM1701](/docs/reference/errors#okm1701) | A write through `unscoped()` under `rlsTenancy()`. | `unscoped() cannot write under row-level security.` |
+| [OKM1190](/docs/reference/errors#okm1190) | An insert names the key. | `Field notes.tenantId is the tenant key. The scope sets it. Input cannot.` |
+| [OKM1704](/docs/reference/errors#okm1704) | An update or a `where` names the key. | `Field notes.tenantId is the tenant key. An update cannot change it.` / `Field notes.tenantId is the tenant key. A filter cannot set it.` |
+| [OKM1705](/docs/reference/errors#okm1705) | A `via()` insert names a parent in another tenant. | `Insert on tasks did not find a parent in this tenant.` |
+| [OKM1707](/docs/reference/errors#okm1707) | Under `rlsTenancy()`, the role owns the tables, is a superuser, or has `BYPASSRLS`. | `The connected role is a superuser, so row-level security would not apply. Endpoint primary.` |
+| [OKM1708](/docs/reference/errors#okm1708) | Under `rlsTenancy()`, a table does not force RLS or its policies differ. | `Table notes does not force row-level security. Endpoint primary.` |
 
 | Next | You use it for |
 | --- | --- |
+| [Multi-tenant guide](/docs/guides/multi-tenant) | A full program that isolates two tenants and checks it with `isolation()`. |
+| [Tenant isolation](/docs/concepts/tenant-isolation) | Where the filter applies and its limits. |
 | [Enums and picklists](/docs/schema/enums-arrays-picklists) | One value, a list, or a Postgres enum. |

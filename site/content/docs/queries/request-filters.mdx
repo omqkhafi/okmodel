@@ -336,7 +336,7 @@ export async function named(url: string) {
     sort: "title", // [!code focus]
   });
   await using db = connect(url, { schema: app });
-  return db.notes.find({ ...parsed, limit: 20 }); // [!code focus]
+  return await db.notes.find({ ...parsed, limit: 20 }); // [!code focus]
 }
 ```
 
@@ -392,6 +392,6 @@ export async function listed(url: string) {
       sort: "rank", // [!code focus]
     });
   await using db = connect(url, { schema: app });
-  return db.notes.find({ ...parsed, limit: 20 }); // [!code focus]
+  return await db.notes.find({ ...parsed, limit: 20 }); // [!code focus]
 }
 ```

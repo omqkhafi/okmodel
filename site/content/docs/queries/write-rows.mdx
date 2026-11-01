@@ -29,7 +29,7 @@ const app = schema({ tables: [users] });
 
 export async function keep(url: string, id: string) {
   await using db = connect(url, { schema: app });
-  return db.users.insert(
+  return await db.users.insert(
     [{ id, name: "Ada" }, { name: "Grace" }],
     { allow: ["id"] },
   );
@@ -66,7 +66,7 @@ const app = schema({ tables: [tags] });
 
 export async function once(url: string) {
   await using db = connect(url, { schema: app });
-  return db.tags.insert({ name: "ship" }, { onConflict: { on: "name", return: true } }); // [!code focus]
+  return await db.tags.insert({ name: "ship" }, { onConflict: { on: "name", return: true } }); // [!code focus]
 }
 ```
 
@@ -83,7 +83,7 @@ const app = schema({ tables: [tags] });
 
 export async function keep(url: string) {
   await using db = connect(url, { schema: app });
-  return db.tags.insert({ name: "ship" }, { onConflict: "ignore" }); // [!code focus]
+  return await db.tags.insert({ name: "ship" }, { onConflict: "ignore" }); // [!code focus]
 }
 ```
 
@@ -100,7 +100,7 @@ const app = schema({ tables: [tags] });
 
 export async function rename(url: string) {
   await using db = connect(url, { schema: app });
-  return db.tags.insert({ name: "ship" }, { onConflict: { on: "name", update: ["name"] } }); // [!code focus]
+  return await db.tags.insert({ name: "ship" }, { onConflict: { on: "name", update: ["name"] } }); // [!code focus]
 }
 ```
 
@@ -132,7 +132,7 @@ const app = schema({ tables: [notes] });
 
 export async function rename(url: string, first: string, second: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.update([
+  return await db.notes.update([
     { where: { id: first }, set: { title: "A" } }, // [!code focus]
     { where: { id: second }, set: { title: "B" } },
   ]);
@@ -156,7 +156,7 @@ const app = schema({ tables: [tasks] });
 
 export async function add(url: string, id: string) {
   await using db = connect(url, { schema: app });
-  return db.tasks.update({ where: { id }, set: { amount: inc(1) } }); // [!code focus]
+  return await db.tasks.update({ where: { id }, set: { amount: inc(1) } }); // [!code focus]
 }
 ```
 
@@ -196,7 +196,7 @@ export async function take(url: string, token: string) {
     lock: "skip",
   });
   if (claimed.count === 0) return [];
-  return db.jobs.find({ where: { claimedBy: token }, limit: claimed.count }); // [!code focus]
+  return await db.jobs.find({ where: { claimedBy: token }, limit: claimed.count }); // [!code focus]
 }
 ```
 
@@ -235,7 +235,7 @@ const app = schema({ tables: [nodes] });
 
 export async function links(url: string, id: string, child: string) {
   await using db = connect(url, { schema: app });
-  return db.nodes.sync(id, "children", [child]); // [!code focus]
+  return await db.nodes.sync(id, "children", [child]); // [!code focus]
 }
 ```
 

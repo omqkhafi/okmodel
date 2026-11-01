@@ -105,7 +105,7 @@ const app = schema({ tables: [accounts] });
 
 export async function register(url: string, email: string) {
   await using db = connect(url, { schema: app });
-  return db.accounts.insert({ email });
+  return await db.accounts.insert({ email });
 }
 ```
 
@@ -130,7 +130,7 @@ const app = schema({ tables: [accounts] });
 
 export async function promote(url: string, email: string) {
   await using db = connect(url, { schema: app });
-  return db.accounts.insert({ email, role: "owner" }, { allow: ["role"] }); // [!code focus]
+  return await db.accounts.insert({ email, role: "owner" }, { allow: ["role"] }); // [!code focus]
 }
 ```
 

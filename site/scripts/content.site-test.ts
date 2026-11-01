@@ -28,20 +28,61 @@ test("every page has a title and a description", () => {
 test("every fence has a language and every /docs link resolves", () => {
   for (const file of pages) {
     const where = relative(contentDir, file);
-    const lines = readFileSync(file, "utf8").split("\n");
-    const prose: string[] = [];
+    const text = readFileSync(file, "utf8");
     let open = false;
-    for (const line of lines) {
-      if (line.startsWith("```")) {
-        if (!open) expect(line.slice(3).trim().length, where).toBeGreaterThan(0);
-        open = !open;
-        continue;
-      }
-      if (!open) prose.push(line);
+    for (const line of text.split("\n")) {
+      if (!line.startsWith("```")) continue;
+      if (!open) expect(line.slice(3).trim().length, where).toBeGreaterThan(0);
+      open = !open;
     }
-    for (const match of prose.join("\n").matchAll(/\]\((\/docs[^)\s#]*)/g)) {
+    for (const match of proseOf(text).matchAll(/\]\((\/docs[^)\s#]*)/g)) {
       const href = match[1] ?? "";
       expect(pageExists(href), `${where} -> ${href}`).toBe(true);
+    }
+  }
+});
+
+/** Text written for the author, not the reader. Matched case-sensitively anywhere on a page. */
+const MARKERS = /\b(?:TODO|FIXME|TBD|XXX)\b/;
+
+/** Editorial phrases, matched in prose outside fences. */
+const EDITORIAL = [
+  /\bword count\b/i,
+  /\bweakness(?:es)?\b/i,
+  /\blinks back\b/i,
+  /\b(?:explain|define|say) [^.\n]* once here\b/i,
+  /\bnotes? (?:to|for) (?:the )?(?:writer|author|editor|reviewer)\b/i,
+  /\breview notes?\b/i,
+  /\bchanges made\b/i,
+  /^\s*(?:draft|todo|editor'?s? note)\s*:/im,
+];
+
+test("no page carries notes to the writer or a second front matter block", () => {
+  for (const file of pages) {
+    const where = relative(contentDir, file);
+    const raw = readFileSync(file, "utf8");
+    const body = raw.slice(raw.indexOf("\n---\n") + 5);
+    expect(MARKERS.exec(raw)?.[0], where).toBeUndefined();
+    expect(/^---\n(?:title|description):/m.test(body), `${where} repeats its front matter`).toBe(false);
+    const prose = proseOf(body);
+    for (const pattern of EDITORIAL) {
+      expect(pattern.exec(prose)?.[0], `${where} ${String(pattern)}`).toBeUndefined();
+    }
+  }
+});
+
+test("an example that closes its client with await using awaits the call it returns", () => {
+  for (const file of pages) {
+    const where = relative(contentDir, file);
+    for (const match of readFileSync(file, "utf8").matchAll(/```(?:ts|tsx|typescript)\b[^\n]*\n([\s\S]*?)```/g)) {
+      const code = match[1] ?? "";
+      const clients = [...code.matchAll(/await using (\w+) =/g)].map((item) => item[1] ?? "");
+      if (clients.length === 0) continue;
+      for (const scoped of code.matchAll(/const (\w+) = (\w+)\.(?:for|unscoped|with)\(/g)) {
+        if (clients.includes(scoped[2] ?? "")) clients.push(scoped[1] ?? "");
+      }
+      const unawaited = new RegExp(`^\\s*return (?:(?:${clients.join("|")})\\.|explain\\().*$`, "m");
+      expect(unawaited.exec(code)?.[0].trim(), where).toBeUndefined();
     }
   }
 });
@@ -70,6 +111,24 @@ test("every page and folder is listed in its meta.json", () => {
   };
   walk(contentDir);
 });
+
+/**
+ * The lines of a page outside its code fences.
+ *
+ * @param text - Page body
+ */
+function proseOf(text: string): string {
+  const prose: string[] = [];
+  let open = false;
+  for (const line of text.split("\n")) {
+    if (line.startsWith("```")) {
+      open = !open;
+      continue;
+    }
+    if (!open) prose.push(line);
+  }
+  return prose.join("\n");
+}
 
 function pageExists(href: string): boolean {
   const rest = href.replace(/^\/docs\/?/, "").replace(/\/$/, "");

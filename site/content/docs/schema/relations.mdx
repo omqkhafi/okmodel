@@ -154,7 +154,7 @@ const app = schema({ tables: [notes, comments] });
 
 export async function discussed(url: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.find({
+  return await db.notes.find({
     limit: 20,
     where: { comments: has({ body: "ship it" }) }, // [!code focus]
   });
@@ -183,7 +183,7 @@ const app = schema({ tables: [notes, comments] });
 
 export async function quiet(url: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.find({
+  return await db.notes.find({
     limit: 20,
     where: { comments: none({ body: "ship it" }) }, // [!code focus]
   });
@@ -212,7 +212,7 @@ const app = schema({ tables: [notes, comments] });
 
 export async function agreed(url: string) {
   await using db = connect(url, { schema: app });
-  return db.notes.find({
+  return await db.notes.find({
     limit: 20,
     where: { comments: every({ body: "ship it" }) }, // [!code focus]
   });

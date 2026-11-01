@@ -2,7 +2,7 @@
 title: "Cloudflare Workers"
 description: "A typed Postgres client in a Cloudflare Worker over Neon, opened and closed per request, with the example's files, a migrate step, and what CI and Nightly prove."
 ---
-You get a Worker that opens a client for each request, reads and writes a table on Neon, and closes the client when the response is done. It runs over WebSocket or HTTP, chosen by one variable.
+You get a Worker that opens a client for each request that needs the database, reads and writes a table on Neon, and closes the client after the response. One variable chooses WebSocket or HTTP.
 
 ## Runtime and driver
 
@@ -12,7 +12,7 @@ You get a Worker that opens a client for each request, reads and writes a table 
 | Driver | `okmodel/pg/neon` + `@neondatabase/serverless` |
 | Example | `examples/workers-neon` |
 
-A Worker has no TCP socket for postgres.js, so this is the Neon driver. `connect` returns a promise, so the Worker awaits it. `okm` does not run in a Worker. Run migrations from Node.js or Bun on a machine with TCP to Postgres.
+A Worker has no TCP socket, so postgres.js cannot run there. `okm` needs TCP too, so run migrations from Node.js or Bun on a machine that can reach Postgres.
 
 ## Install
 
@@ -21,7 +21,7 @@ bun add okmodel @neondatabase/serverless
 bun add -D wrangler miniflare
 ```
 
-`wrangler.toml` must set `nodejs_compat`. `NEON_MODE` is a plain variable:
+`wrangler.toml` must set the `nodejs_compat` flag, which the Neon driver needs. `NEON_MODE` is a plain variable:
 
 ```toml title="wrangler.toml"
 name = "okmodel-workers-neon"
@@ -35,7 +35,7 @@ NEON_MODE = "websocket"
 
 ## `db` module and lifecycle
 
-The client lives for one request. A Worker isolate can serve many requests, so do not keep a pool on the isolate. `openRequestDb` calls `connect` with the mode, and the Worker closes the client in `finally` with `ctx.waitUntil`, so closing does not delay the response.
+The client lives for one request: an isolate serves many requests and can be stopped at any time, so it must not keep a pool. `connect` returns a promise on Neon, so the Worker awaits `openRequestDb`.
 
 ```ts title="src/db.ts" no-check="imports ./schema.js, which re-exports a file outside the example root (shown below)"
 /**
@@ -60,7 +60,7 @@ export function openRequestDb(url: string, mode: NeonMode = "websocket") {
 }
 ```
 
-`src/schema.ts` re-exports the table that every framework example shares from `examples/shared`:
+`src/schema.ts` re-exports the table every framework example shares. In your own Worker, define the table in `src/schema.ts` directly. The table is named `example_notes`, so the client property is `db.example_notes`.
 
 ```ts title="src/schema.ts" no-check="re-exports ../../shared/schema.js, which is outside the example root"
 export { app, notes } from "../../shared/schema.js";
@@ -94,62 +94,29 @@ create table example_notes (
 `;
 ```
 
-In your own Worker, define the table and `schema()` in `src/schema.ts` directly. `db.example_notes` exists because the table is named `example_notes`.
-
 ## Connection config
 
 | Setting | Where | Notes |
 | --- | --- | --- |
-| `DATABASE_URL` | A Worker secret or binding | The Neon connection string. Set it with `bunx wrangler secret put DATABASE_URL`. For local `wrangler dev`, put it in `.dev.vars`. |
-| `NEON_MODE` | `[vars]` in `wrangler.toml` | `websocket` or `http`. Unset means `websocket`. Any other value is an error. |
+| `DATABASE_URL` | A Worker secret | The Neon connection string. Set it with `bunx wrangler secret put DATABASE_URL`. For `wrangler dev`, put it in `.dev.vars`. |
+| `NEON_MODE` | `[vars]` in `wrangler.toml` | `websocket` or `http`. Unset means `websocket`. |
 
-The Worker reads the mode before it opens a client. A value that is not `websocket`, `http`, or unset throws `NEON_MODE must be "websocket" or "http", got "<value>"` on every request, before any client is opened. That includes `GET /health`, so a typo fails loudly instead of falling back. The throw is uncaught, so the request ends as a 500 and the message goes to the Worker's logs. Miniflare shows it in the response body, and a deployed Worker shows Cloudflare's own error page instead. `examples/workers-neon/workers-neon.test.ts` runs the bundled Worker in Miniflare with `NEON_MODE` set to `ws` and asserts the 500 and the message, with no database.
-
-| Mode | Behavior |
-| --- | --- |
-| `websocket` | A pool over WebSocket. `tx()` runs an interactive transaction. |
-| `http` | One HTTP request per statement. `batch([...])` is one atomic transaction. `tx()` is [OKM1111](/docs/reference/errors#okm1111). |
-
-A positive `timeout` on a call, on `tx()`, or on `batch()` is [OKM1120](/docs/reference/errors#okm1120) in both modes. [Drivers](/docs/operate/drivers#neon).
-
-## One route that reads and writes
-
-`GET /notes` returns up to 50 notes ordered by `id`. `POST /notes` takes `{ "title": "..." }` and returns the new row with status 201. `GET /health` returns `{ ok: true, mode }`. A body that is not JSON, or a missing or empty `title`, is a 400 with an `error` message. `id` is a string in the JSON.
-
-The write shows the difference between the modes. In `websocket` mode the insert runs inside `db.tx(...)`. In `http` mode there is no interactive transaction, so the insert goes through `db.batch([...])`, which Neon sends as one atomic HTTP transaction.
+### WebSocket or HTTP
 
 | | `websocket` | `http` |
 | --- | --- | --- |
-| Write path in the example | `db.tx(async (tx) => tx.example_notes.insert({ title }))` | `db.batch([db.example_notes.insert({ title })])` |
-| Result | The row the callback returns | An array with one result per statement, in order, so the example destructures `[row]` |
-| Several writes that commit together | Several statements in one `tx` callback | Several statements in one `batch` array |
-| Later statement needs an earlier result | Use `tx` and read the result in the callback | Not possible in one `batch`. Run them as separate calls, or switch to `websocket` |
-| `tx()` | Supported | [OKM1111](/docs/reference/errors#okm1111) |
+| Connection | A pool over WebSocket | One HTTP request per statement |
+| Several writes that commit together | `db.tx(async (tx) => …)` | `db.batch([...])`, sent as one atomic HTTP transaction |
+| A later statement needs an earlier result | Read it inside the `tx` callback | Not possible in one `batch`. Use separate calls, or `websocket`. |
+| `tx()` | Supported | Refused with [OKM1111](/docs/reference/errors#okm1111) |
 
-A single-row insert is atomic on its own in both modes. The example wraps it so the two paths are visible side by side. [Transactions](/docs/queries/transactions).
+`batch` returns one result per statement, so the example takes `[row]`. A single-row insert is atomic on its own; the example wraps it only to show both paths. [Drivers](/docs/operate/drivers#neon) covers the rest of the Neon driver.
 
-The request and response shapes are the same in both modes. `GET /health` is the one route that also reports the mode. Every request, including `/health` and a 404, opens a client first and closes it in `finally`. This page has no captured output for these routes (Manual, shape only): the example needs a Neon database, and none was available when the page was written. The bodies the code produces are:
+## One route that reads and writes
 
-```json
-{ "ok": true, "mode": "websocket" }
-```
+The Worker checks `NEON_MODE` first, so a typo fails every request instead of falling back. `GET /health` and unknown paths answer without opening a client. Only `/notes` opens one, and `finally` hands `db.close()` to `ctx.waitUntil`, so closing does not delay the response. `close()` returns a promise, which `waitUntil` keeps alive after the response.
 
-```json
-{ "id": "1", "title": "hello" }
-```
-
-```json
-[{ "id": "1", "title": "hello" }]
-```
-
-| Request | Status | Body |
-| --- | --- | --- |
-| `GET /health` | 200 | `{"ok":true,"mode":"websocket"}` or `"http"` |
-| `POST /notes` with `{"title":"hello"}` | 201 | the new row, `id` as a string |
-| `GET /notes` | 200 | an array of rows, oldest first |
-| `POST /notes` with `{}` | 400 | `{"error":"title is required"}` |
-| `POST /notes` with a body that is not JSON | 400 | `{"error":"body must be JSON"}` |
-| any other path or method | 404 | `not found` |
+`POST /notes` has no authentication and no body size limit. Add both before you copy it.
 
 ```ts title="src/worker.ts" no-check="uses the Workers ExecutionContext type, and imports ./db.js, which needs the schema file outside the example root"
 /**
@@ -175,20 +142,23 @@ function neonMode(value: string | undefined): "websocket" | "http" {
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const mode = neonMode(env.NEON_MODE);
+    const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname === "/health") {
+      return Response.json({ ok: true, mode });
+    }
+    if (url.pathname !== "/notes") return new Response("not found", { status: 404 });
+
     const db = await openRequestDb(env.DATABASE_URL, mode);
     try {
-      const url = new URL(request.url);
-      if (request.method === "GET" && url.pathname === "/health") {
-        return Response.json({ ok: true, mode });
-      }
-      if (request.method === "GET" && url.pathname === "/notes") {
+      if (request.method === "GET") {
         const rows = await db.example_notes.find({
           orderBy: { id: "asc" },
           limit: 50,
         });
         return Response.json(rows);
       }
-      if (request.method === "POST" && url.pathname === "/notes") {
+      if (request.method === "POST") {
+        // No authentication and no body size limit: add both before real traffic.
         let body: unknown;
         try {
           body = await request.json();
@@ -212,15 +182,26 @@ export default {
       }
       return new Response("not found", { status: 404 });
     } finally {
-      ctx.waitUntil(Promise.resolve(db.close()));
+      ctx.waitUntil(db.close());
     }
   },
 };
 ```
 
+The responses are the same in both modes. `id` is a string, because an identity column is a Postgres `bigint`. These bodies follow from the code; no run against Neon was captured for this page.
+
+| Request | Status | Body |
+| --- | --- | --- |
+| `GET /health` | 200 | `{"ok":true,"mode":"websocket"}`, or `"http"` |
+| `POST /notes` with `{"title":"hello"}` | 201 | `{"id":"1","title":"hello"}` |
+| `GET /notes` | 200 | Up to 50 rows, oldest first: `[{"id":"1","title":"hello"}]` |
+| `POST /notes` with `{}` | 400 | `{"error":"title is required"}` |
+| `POST /notes` with a body that is not JSON | 400 | `{"error":"body must be JSON"}` |
+| Any other path or method | 404 | `not found` |
+
 ## Dev and test
 
-Neon is a hosted service, so there is no local Postgres step here. Use a Neon database you can drop, such as a branch, and create the table on it. In your Worker project, add an `okmodel.config.ts` next to `package.json` and run `okm` from your machine with the direct (non-pooler) Neon host:
+Use a Neon database you can drop, such as a branch, and create the table from your machine through the direct (non-pooler) host. Add `okmodel.config.ts` next to `package.json`:
 
 ```ts title="okmodel.config.ts"
 import { defineConfig } from "okmodel/migrate";
@@ -236,15 +217,13 @@ export DATABASE_URL='postgres://user:pass@ep-example.region.aws.neon.tech/neondb
 bunx okm push
 ```
 
-`okm push` writes no SQL file and suits a database you can drop. For a database you will deploy, run `bunx okm generate init` then `bunx okm migrate apply`, and commit `migrations/`. `okm` refuses a pooler host unless you pass `--allow-pooler`. [Migrate commands](/docs/reference/cli/migrate).
+`okm push` writes no migration file, so use it only on a database you can drop. For one you will deploy, run `bunx okm generate init` then `bunx okm migrate apply`, and commit `migrations/` ([Migrate commands](/docs/reference/cli/migrate)). `okm` refuses a pooler host unless you pass `--allow-pooler`.
 
-Then run the Worker. Put the same `DATABASE_URL` in `.dev.vars`, and `NEON_MODE` comes from `wrangler.toml`:
+Put the same `DATABASE_URL` in `.dev.vars`, start the Worker on port 8787, and call it from another terminal:
 
 ```sh
 bunx wrangler dev
 ```
-
-`wrangler dev` listens on port 8787 by default. Call it from another terminal:
 
 ```sh
 curl -i http://localhost:8787/health
@@ -252,9 +231,7 @@ curl -i -X POST http://localhost:8787/notes -H 'content-type: application/json' 
 curl -i http://localhost:8787/notes
 ```
 
-The statuses and bodies are in the table under One route that reads and writes. To check the mode switch, change `NEON_MODE` in `wrangler.toml` to `http`, restart `wrangler dev`, and confirm `GET /health` reports `"mode":"http"` and the `POST` still answers 201 through `batch`.
-
-The example's tests live in `examples/workers-neon/workers-neon.test.ts`. The bundle test and the `NEON_MODE` test need no database. The live test needs a Neon URL, and it drops and recreates `example_notes` there, so give it a throwaway branch:
+To try HTTP mode, set `NEON_MODE = "http"`, restart `wrangler dev`, and check that `/health` reports it and the `POST` still answers 201. To run the example's tests from a clone of this repository:
 
 ```sh
 bun run build
@@ -264,45 +241,40 @@ bun test ./workers-neon.test.ts
 OKM_EXAMPLES_NIGHTLY=1 NEON_URL='postgres://...' bun test ./workers-neon.test.ts
 ```
 
-Without `OKM_EXAMPLES_NIGHTLY=1` and `NEON_URL`, the live test is skipped. The live test creates the table with the Neon `sql` tag itself and does not run `okm`.
+The first test command needs no database and skips the live test. The second runs it, and it drops and recreates `example_notes`, so give it a throwaway branch.
 
 ## Deploy and migrate-on-deploy
 
+Apply migrations from a job that has TCP to Postgres, with `DATABASE_URL` set to the direct Neon host, before you deploy:
+
 ```sh
+bunx okm migrate apply
 bunx wrangler secret put DATABASE_URL
 bunx wrangler deploy
 ```
 
-Apply migrations from a job that has TCP to Postgres, before `wrangler deploy`, with `DATABASE_URL` pointing at the direct Neon host:
-
-```sh
-bunx okm migrate apply
-bunx wrangler deploy
-```
-
-A Worker deployed against a database that has not been migrated fails its first check with OKM1520. A migration that only adds things lets the old version keep serving while the new one rolls out. [Migrations in CI](/docs/guides/migrations-in-ci), [Environments](/docs/migrations/environments).
+A migration that only adds tables or columns lets the old version keep serving while the new one rolls out ([Migrations in CI](/docs/guides/migrations-in-ci), [Environments](/docs/migrations/environments)).
 
 ## Limits and gotchas
 
-- `nodejs_compat` is required. CI checks that `wrangler.toml` contains it.
-- Create the client inside `fetch` and close it with `ctx.waitUntil`. Do not hold one across requests.
-- In `http` mode use `batch`, not `tx`.
-- A suspended Neon compute cold-starts on the first request. OKModel does not treat that wait as a result.
-- A transaction-mode pooler does not promise session state. Leave `prepared` unset. [Drivers](/docs/operate/drivers#neon).
-- Deno is unsupported, and there is no D1 adapter.
+- A suspended Neon compute cold-starts on the first request, and that request waits for it.
+- A transaction-mode pooler does not keep session state. Leave `prepared` unset.
+- There is no Cloudflare D1 adapter.
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| 500 and `NEON_MODE must be "websocket" or "http", got ...` in the logs | The variable is set to something else, and every route throws, `/health` included | Set `websocket`, `http`, or remove it. |
+| 500 on every route, and `NEON_MODE must be "websocket" or "http", got "<value>"` in the Worker's logs (Miniflare also puts it in the body) | `NEON_MODE` has another value | Set `websocket` or `http`, or remove it. |
 | [OKM1111](/docs/reference/errors#okm1111) on `tx()` | `NEON_MODE` is `http` | Use `batch([...])`, or switch to `websocket`. |
-| [OKM1120](/docs/reference/errors#okm1120) on a call with `timeout` | Neon refuses a positive `timeout` | Remove `timeout`. |
-| [OKM1520](/docs/reference/errors#okm1520) `The database is behind the app` | The Worker was deployed before `okm migrate apply` | Apply the migrations, then deploy. |
+| [OKM1120](/docs/reference/errors#okm1120) on a call, `tx()`, or `batch()` with `timeout` | Neon does not take a positive `timeout`, in either mode | Remove `timeout`. |
+| [OKM1520](/docs/reference/errors#okm1520) `The database is behind the app` on the first request | The Worker was deployed before `okm migrate apply` | Apply the migrations, then deploy. |
 | [OKM1101](/docs/reference/errors#okm1101) `find() needs a limit.` | A read with no `limit` | Pass `limit`, as the example route does. |
 
-## Verification
+## What is tested
 
-**Evidence level: CI for the bundle, Nightly for reads and writes.**
+| Evidence | Where | What runs |
+| --- | --- | --- |
+| CI | `examples / frameworks` job | `wrangler deploy --dry-run`, the upload size against Cloudflare's free-plan limit, `nodejs_compat` in `wrangler.toml`, and the 500 for `NEON_MODE=ws` in Miniflare. No database. |
+| Nightly | Scheduled run with the `NEON_URL` secret | The bundled Worker in Miniflare against Neon, in `http` then `websocket` mode: `POST /notes` (201) and `GET /notes`. |
+| Not covered | | A deployed Worker, `okm` against Neon, and cold starts. |
 
-- **CI** — `examples/workers-neon/workers-neon.test.ts` runs `wrangler deploy --dry-run`, checks that the compressed upload is under Cloudflare's documented free-plan limit, and checks that `wrangler.toml` contains `nodejs_compat`. A second test runs the bundle in Miniflare with `NEON_MODE` set to `ws` and asserts a 500 whose body carries the `NEON_MODE must be ...` message. Neither needs a database. It runs in the `examples / frameworks` job on pull requests that touch `examples/`, the runtime, the dialects, or the Frameworks pages, and after each merge.
-- **Nightly** — the same file's live test runs the bundled Worker in Miniflare (workerd) against a real Neon database. For `http` and then `websocket` mode it calls `POST /notes` (201) and `GET /notes`. It runs only on the scheduled run, with `OKM_EXAMPLES_NIGHTLY=1` and the `NEON_URL` secret. A pull request does not run it, and it is skipped when either is missing.
-- **Not covered** — a deployed Worker, `okm push` and `okm migrate apply` against Neon, and cold starts of a suspended compute.
+The frameworks job runs on pull requests that touch `examples/`, the runtime, the dialects, or the Frameworks pages, and after each merge.
