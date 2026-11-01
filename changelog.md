@@ -14,6 +14,41 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+## v0.10.1 — 2026-11-01
+
+### 💥 Breaking Changes
+
+- `descendants()` and `ancestors()` on a `tree()` table now need a row bound, the same as `find()`. Pass `limit`, set a default with `connect({ limits: { find } })`, or read every row with `.all(reason)`. Without one the call throws OKM1101 (`descendants() needs a limit.`). A `limit` above `limits.max` is OKM1101 too. `depth` still counts walk steps and is not a row limit.
+
+### ♻️ Changed
+
+- Idle pool connections now close after 30 seconds on postgres.js, node-postgres, Bun.sql, and Neon over WebSocket. Set `idleTimeoutMs` on `connect` or `open` to change it, or `idleTimeoutMs: 0` to keep idle connections open as before. A pool reconnects on the next query, including inside `db.with()` and `tx()`. A short script that ends without `await db.close()` can now wait for the idle timer before it exits; call `db.close()` or set `idleTimeoutMs: 0`. Neon over HTTP refuses the option (OKM1120), and PGlite has no pool to time out.
+
+### ✨ Added
+
+- When `connect({ limits })` sets `limits.find` or `limits.page`, `find()` and `page()` no longer require `limit` in TypeScript, so a bare `find()` compiles and uses that default. Each key works on its own, and `max` does not change the types. A client without `limits`, including `testing()`, still requires `limit`.
+- `okm init` writes `limits: { find: 100, include: 20, page: 50, groupBy: 500, max: 1000 }` into a new generated client. When an existing client has no limits, it prints the snippet instead of editing the file. `okm init --limits` adds them to a generated client you have not edited; an edited client is printed and left as it is.
+
+### 🐛 Fixed
+
+- A generated column is now ordered after the columns its expression reads. `testing().close()` and the migration planner no longer fail with Postgres error `2BP01` when the generated column's name sorts before one of its sources. The catalog hash and existing migration files do not change.
+- `onQuery` on a `db.with()` client reports one event per call. The settings prelude, `BEGIN`, `COMMIT`, and `RESET ALL` are no longer reported as separate queries.
+- `WriteEvent.settings` lists the setting names, never the values, for writes through a `db.with()` client, including `tx()`, typed `raw()`, archive, and restore. It used to be empty.
+- Under `for()`, warning OKM2005 no longer fires when `orderBy` ends on the rest of a unique key that starts with the pinned tenant key.
+- `distinct` and `distinctOn` reads honor `limits.find` and `limits.max`.
+- The OKM1120 list of accepted names on insert, update, upsert, and first-or-create no longer offers the tenant key, which those writes fill in. Reads still list it.
+- OKM1709 says "an int" instead of "a int".
+- When `process.cwd()` throws, as on some edge runtimes, okmodel uses `./.okm`, the same as when `process.cwd` is missing.
+
+### 🔥 Removed
+
+- Error code OKM1025. It was registered but never thrown: two `Register` declarations that give `schema` different types are already TypeScript error TS2717. The number stays unused.
+
+### 📚 Docs
+
+- The handbook at [okm.omqkhafi.dev](https://okm.omqkhafi.dev) has a new structure: capability groups, a first-success path, Concepts, Frameworks pages with tested examples, task Guides, a split CLI reference, Handling errors, one Observability page, and new homepage examples.
+- The Markdown pages in the package's `docs/` folder are now generated from the handbook and the error registry.
+
 ## v0.10.0 — 2026-10-28
 
 ### 💥 Breaking Changes

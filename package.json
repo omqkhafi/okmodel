@@ -1,6 +1,6 @@
 {
   "name": "okmodel",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "okmodel is a TypeScript ORM for PostgreSQL 15 to 18 with no runtime dependencies.",
   "keywords": [
     "migrations",
