@@ -188,7 +188,7 @@ const SHAKEN_OPERATORS = [
  * Ceilings are the P17 measurement plus 25 percent (D127).
  *
  * The postgres.js gate is 17,000 and the PGlite gate is 12,700. Both were
- * raised by decision on 2026-10-21 after the size audit (`docs/size-audit.md`);
+ * raised by decision on 2026-10-21 after the size audit (git history);
  * one-time increase. postgres.js measured 15,909 against 16,000 (91 left) and
  * now has 1,091 left. PGlite measured 11,923 against 12,010 (87 left) and now
  * has 777 left. The featureless app and runtime entry gates did not move.

@@ -94,7 +94,7 @@ postgresTest(
 
 test("the topology example in the guide is the docs sample", () => {
   const readme = fenceSource(join(root, "docs/guide.md"), "replicas.ts");
-  const docs = fenceSource(join(root, "docs/readme-examples.md"), "replicas.ts");
+  const docs = fenceSource(join(root, "tests/fixtures/readme-examples.md"), "replicas.ts");
   expect(docs).toBe(readme);
   expect(readme).toContain("onRoute");
   expect(readme).toContain('route: "primary"');

@@ -4,7 +4,7 @@ OKModel is built one prompt at a time. Use Bun only (`bun`, `bunx`). Do not use 
 
 ## Branches
 
-Each prompt in `docs/okmodel-execution-plan.md` gets its own branch (`p01-foundation`, and so on). Open the pull request into `main`.
+Open one branch per change. Progress lives on the public GitHub project (D149); `docs/okmodel-execution-plan.md` is the design record, not the status board.
 
 The title `type(scope): summary` is the only pull request requirement. The workflow sets `type:` from that title and `area:` from the scope when the scope is a known area, and from the changed paths otherwise. There is no milestone and no `Closes #N` line. See `docs/github.md`.
 
@@ -16,7 +16,7 @@ Do not edit `changelog.md` or bump `package.json` on a pull request. A release g
 
 When CI fails, read only `bun run ci:fail <pull request number>`. It prints the first failing job, the failing step, the last 60 log lines, and the one local command that reproduces it. Fix that, run `bun run verify:fast`, and push. After two failed rounds, stop and report.
 
-`gate / check` is the required status. It always runs. A pull request runs format, lint, typecheck, the build, tests for the changed files (property tests at `OKM_PROPERTY_SCALE=0.25`), the runtime-entry size ceiling, and the title lint. Postgres 18 runs when the diff touches `src/dialects`, `src/runtime`, or `src/tooling/migrate`. A label does not start it. See [docs/ci-and-test-cycle-plan.md](docs/ci-and-test-cycle-plan.md).
+`gate / check` is the required status. It always runs. A pull request runs format, lint, typecheck, the build, tests for the changed files (property tests at `OKM_PROPERTY_SCALE=0.25`), the runtime-entry size ceiling, and the title lint. Postgres 18 runs when the diff touches `src/dialects`, `src/runtime`, or `src/tooling/migrate`. A label does not start it. See `docs/github.md`.
 
 A push to `main` and the nightly run (03:00 UTC) run the rest: type cost, the editor check, attest, the portable runtimes, the temporal matrix, the package checks, Windows, the full test matrix, Postgres 15 through 18, and the tarball. A failure opens or updates one issue titled `CI failed after merge`. A later commit on `main` does not cancel the run already in progress.
 
@@ -73,4 +73,4 @@ Merged titles use `type(scope): summary`.
 
 A group with eight or more bullets gains `####` headings in this order: `contracts`, `dialects`, `adapters`, `runtime`, `tooling`, `docs`. Hand-written bullets already under `## Unreleased` are kept. The generator fills the section only when it has none.
 
-Do not append a changelog bullet on a feature pull request, run `bun run bump next` to mark a pull request as shipped, or update the pack snapshot or `docs/size-audit.md` as pull-request bookkeeping.
+Do not append a changelog bullet on a feature pull request, run `bun run bump next` to mark a pull request as shipped, or update the pack snapshot as pull-request bookkeeping unless the packed file list deliberately changes.

@@ -385,21 +385,12 @@ function internalUrl(url: string): string | undefined {
     "okmodel-decisions.md",
     "okmodel-execution-plan.md",
     "okmodel-api-design.md",
-    "okmodel-gap-research.md",
     "m0-findings.md",
-    "p100-offline-audit.md",
-    "p108-inline-relations-study.md",
-    "oke-windows-audit.md",
-    "ci-and-test-cycle-plan.md",
-    "ci-baseline.md",
-    "offline-first-constraints.md",
     "github.md",
     "release.md",
     "size.md",
     "postgresjs-kill-storm.md",
     "postgresjs-kill-storm.mjs",
-    "describe-spike.md",
-    "editor-check.md",
   ]) {
     if (url.includes(`/${name}`) || url.endsWith(name)) return name;
   }

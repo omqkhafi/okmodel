@@ -6,7 +6,7 @@
  * critical path, re-runs, and why each of those pulls failed a push.
  *
  *   bun ./scripts/ci-report.ts
- *   bun ./scripts/ci-report.ts --out docs/ci-baseline.md
+ *   bun ./scripts/ci-report.ts --out reports/ci-baseline.md
  *   bun ./scripts/ci-report.ts --run 39119208437
  */
 

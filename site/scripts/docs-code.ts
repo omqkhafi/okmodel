@@ -2,7 +2,7 @@
  * Type-check every `ts` / `tsx` / `typescript` fence on a public handbook
  * page against the built package. A fence opts out only with
  * `no-check="reason"` in its info string. Fences copied from
- * `docs/readme-examples.md` are already executed by the package tests.
+ * `tests/fixtures/readme-examples.md` are already executed by the package tests.
  */
 
 import { spawnSync } from "node:child_process";
@@ -298,7 +298,7 @@ function ensureBuilt(): void {
 }
 
 function exampleBodies(): Set<string> {
-  const raw = readFileSync(join(repoRoot(), "docs", "readme-examples.md"), "utf8");
+  const raw = readFileSync(join(repoRoot(), "tests", "fixtures", "readme-examples.md"), "utf8");
   const bodies = new Set<string>();
   for (const fence of extractFences(raw)) {
     if (CHECKED_LANGS.has(fence.lang)) bodies.add(fence.body.trim());
