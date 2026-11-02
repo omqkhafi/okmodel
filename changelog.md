@@ -14,6 +14,25 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+## v0.10.2 — 2026-11-02
+
+Nothing changes in the catalog hash, the generated SQL, or the public API, apart from the stricter `descendants()` and `ancestors()` types below.
+
+### 🐛 Fixed
+
+- A value that a `.sensitive()` or hidden column rejects no longer appears in the error. Reads now say only `Field <name> was rejected.` (OKM1210) in the message, `toHttp()`, `log()`, and the cause, as writes already did. This covers a `where` on `find`, `page`, `one`, `count`, and `exists`, values inside `inList`, relation filters (`has`, `none`, `every`), and the `where` of `update` and `delete`. An ordinary column still names the rejected value.
+- `distinctOn` reports the default-limit warning (OKM2011) even after an earlier `distinct` read. Each read that takes a default limit now reports it from its own call site.
+- The OKM1120 "Accepted names" list on a write names only the fields that write may set. Columns it would refuse with OKM1190 are left out: an `id()` identity default, guarded columns (unless `allow` names them), trait fields, and the primary key on an update. A primary key you set yourself stays in the list on an insert.
+- `descendants()` and `ancestors()` on a `tree()` table now need an options argument with a `limit` in TypeScript when `connect` does not set `limits.find`, the same as `find()`. A bare `descendants(id)` used to compile and then throw OKM1101. With `limits.find` set, a bare id still works, and `.all(reason)` is still available.
+- On a Bun.sql pool from `open()`, a query that the server terminated while it ran (for example with `pg_terminate_backend`) now fails with a lost-connection error. It used to run again on a new connection. Bun 1.4.4 made this happen every time.
+- When a seed file fails to import, `okm seed` now names the seed file and the module that could not be loaded.
+- On the docs site, unknown pages return 404 instead of a server error, and the old `/docs/define/*` and `/docs/start/*` links redirect to their new pages.
+
+### 📚 Docs
+
+- The error pages no longer claim that row values never appear in errors. They say when a value can appear in `toHttp()` for an ordinary column, and that a table with any `.sensitive()` column keeps `values()` undefined and a reduced cause even with `errors.includeValues`.
+- The seed docs explain that relative imports in a seed file use the `.ts` extension under `bunx okm`, with an example that seeds a global `tenants` table and then tenant rows.
+
 ## v0.10.1 — 2026-11-01
 
 ### 💥 Breaking Changes

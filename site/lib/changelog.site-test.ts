@@ -37,9 +37,9 @@ test("unreleased notes stay off the release list and show as next", () => {
   const releases = parseChangelog(raw);
   expect(releases.some((release) => release.tag === "vUnreleased")).toBe(false);
   const first = releases[0];
-  expect(first?.version).toBe("0.10.1");
-  expect(first?.tag).toBe("v0.10.1");
-  expect(first?.date).toBe("2026-11-01");
+  expect(first?.version).toBe("0.10.2");
+  expect(first?.tag).toBe("v0.10.2");
+  expect(first?.date).toBe("2026-11-02");
   const index = renderChangelogIndexMarkdown(loadChangelogSeries(), notes);
   if (notes.length === 0) {
     expect(raw).toContain("## Unreleased");
