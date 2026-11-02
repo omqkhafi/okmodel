@@ -124,7 +124,7 @@ export type Mods = {
    * it for warnings so distinct, distinctOn, and other lazy reads keep their
    * own location instead of collapsing after the import.
    */
-  readonly stack?: string;
+  readonly at?: string | undefined;
 };
 
 const SINGLE_ENDPOINT: RoutingDecision = {
@@ -612,19 +612,18 @@ function lazyRead(
 ): Promise<unknown> & Record<string, unknown> {
   // Capture before the import. After await the caller frame is gone, and every
   // lazy read would share one empty location key in the warning dedupe set.
-  const stack = mods.stack ?? (session.w ? new Error().stack : undefined);
-  const next: Mods = stack === undefined || mods.stack !== undefined ? mods : { ...mods, stack };
+  if (session.w) mods = { ...mods, at: new Error().stack };
   // The handle is a thenable, so it travels inside an object to stay a handle.
-  const read = () => load().then((mod) => ({ it: mod.build(session, table, options, next, view) }));
+  const read = () => load().then((mod) => ({ it: mod.build(session, table, options, mods, view) }));
   const sql = () => read().then((box) => (box.it.sql as () => unknown)());
   const extra: Record<string, unknown> = { sql };
   if (sync) {
     extra.expect = (count: number) =>
-      lazyRead(session, load, table, options, { ...next, expect: count } as Mods, view, true);
+      lazyRead(session, load, table, options, { ...mods, expect: count } as Mods, view, true);
   } else {
     extra.inspect = () => read().then((box) => (box.it.inspect as () => unknown)());
     extra.all = (reason: string) =>
-      lazyRead(session, load, table, options, { ...next, all: reason }, view);
+      lazyRead(session, load, table, options, { ...mods, all: reason }, view);
   }
   return queryHandle(() => read().then((box) => box.it), extra) as unknown as Promise<unknown> &
     Record<string, unknown>;
@@ -675,7 +674,7 @@ export function readHandle(
 ): Promise<unknown> & Record<string, unknown> {
   let prepared: Prepared | undefined;
   const origin = call;
-  const warnStack = mods.stack ?? (session.w && new Error().stack);
+  const warnStack = mods.at || (session.w && new Error().stack);
   const searched = "search" in call;
   const prepare = async (): Promise<Prepared> => {
     if (prepared !== undefined) return prepared;
