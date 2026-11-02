@@ -75,7 +75,7 @@ export async function seedProject(
       }
     }
     harness = await testing(schema, { driver: pool, migrate: false });
-    const imported: unknown = await import(`${pathToFileURL(path).href}?okm=${Date.now()}`);
+    const imported = await importSeed(file, path);
     const seed = isRecord(imported) ? imported.default : undefined;
     if (typeof seed !== "function") {
       throw new OkmError("invalid", `${file} must default-export a function.`, {
@@ -103,6 +103,70 @@ function formatCreated(
     for (const item of counts) lines.push(`${item.table} ${String(item.count)}`);
   }
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * Loads the seed module. An import failure is `invalid` and names the file and
+ * the module that did not resolve. Errors thrown later by the seed function
+ * are not wrapped here.
+ *
+ * @param file - Path the user passed to `okm seed`
+ * @param path - Absolute path of that file
+ * @returns The imported module namespace
+ */
+async function importSeed(file: string, path: string): Promise<unknown> {
+  try {
+    return await import(`${pathToFileURL(path).href}?okm=${Date.now()}`);
+  } catch (error) {
+    throw seedImportFailure(file, error);
+  }
+}
+
+/**
+ * Maps a failed seed `import()` to `invalid`.
+ *
+ * The code and kind stay `invalid`, the same as a missing seed file or a
+ * non-function default export, so this is not a new public error code.
+ *
+ * @param file - Path the user passed to `okm seed`
+ * @param error - The value `import()` rejected with
+ * @returns An {@link OkmError} that names the file and unresolved module
+ */
+function seedImportFailure(file: string, error: unknown): OkmError {
+  const module = unresolvedModule(error) ?? file;
+  return new OkmError("invalid", `Seed file ${file} could not import ${module}.`, {
+    cause: error,
+    fix: {
+      summary:
+        "Relative imports in the seed file must use the .ts extension (./x.ts), not .js. bunx okm loads the seed under Node.",
+    },
+  });
+}
+
+/**
+ * The module specifier or path `import()` could not resolve.
+ *
+ * @param error - The value `import()` rejected with
+ * @returns A path or specifier, or `undefined` when the error has none
+ */
+function unresolvedModule(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const url = Reflect.get(error, "url");
+  if (typeof url === "string" && url.length > 0) {
+    return url.startsWith("file:") ? pathFromFileUrl(url) : url;
+  }
+  const message = Reflect.get(error, "message");
+  if (typeof message !== "string") return undefined;
+  const match = /Cannot find module '([^']+)'/.exec(message);
+  return match?.[1];
+}
+
+function pathFromFileUrl(url: string): string {
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return url;
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

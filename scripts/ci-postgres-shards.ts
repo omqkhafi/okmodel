@@ -71,6 +71,7 @@ const BUILD_FILES: ReadonlySet<string> = new Set([
   "tests/recipes.test.ts",
   "tests/pull-adopt-pg.test.ts",
   "tests/pull-pg.test.ts",
+  "tests/seed-import.test.ts",
 ]);
 
 /** One shard after the files have been dealt. */

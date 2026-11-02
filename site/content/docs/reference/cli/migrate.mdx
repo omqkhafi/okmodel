@@ -141,7 +141,9 @@ bunx okm push
 
 ## seed
 
-`okm seed <file>` loads that module and calls its default export with the testing harness for the selected target. The path is resolved from the project directory. A missing file is `Seed file <file> was not found.` A default export that is not a function is `<file> must default-export a function.` A missing file argument is `okm seed needs a file.`
+`okm seed <file>` loads that module and calls its default export with the testing harness for the selected target. The path is resolved from the project directory. A missing file is `Seed file <file> was not found.` A default export that is not a function is `<file> must default-export a function.` A missing file argument is `okm seed needs a file.` A seed module that fails to import is `Seed file <file> could not import <module>.` (`invalid`), and names the unresolved module.
+
+`bunx okm` runs under Node, so relative imports in the seed file must use the `.ts` extension (`./src/hash.ts`), not `.js`. The same rule applies to schema files written by [`okm pull`](/docs/reference/cli/introspect).
 
 The target is already migrated. The harness does not apply the catalog. A protected target is OKM1850 until `--allow-protected`. Several targets need `--target`. A pooler host is refused until [allowPooler](/docs/reference/config#pooler) or `--allow-pooler`.
 
@@ -157,6 +159,41 @@ export default async function seed(t: Testing): Promise<void> {
     notes: (x) => ({ title: x.words(2) }),
   });
   await f.notes.create();
+}
+```
+
+A schema with a global `tenants` table and a tenant `notes` table seeds the directory first, then passes that row's `id` as `tenantId`:
+
+```ts title="schema-tenants.ts"
+import { id, schema, table, text } from "okmodel/pg";
+import { columnTenancy, global } from "okmodel/tenancy";
+
+const tenants = table(
+  "tenants",
+  { id: id({ default: "none" }), name: text() },
+  { tenancy: global("tenant directory") },
+);
+const notes = table("notes", {
+  id: id({ default: "none" }),
+  title: text(),
+});
+
+export const app = schema({
+  tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
+  tables: [tenants, notes],
+});
+```
+
+```ts title="seed-tenants.ts"
+import type { Testing } from "okmodel/testing";
+
+export default async function seed(t: Testing): Promise<void> {
+  const f = t.factories({
+    tenants: (x) => ({ name: x.words(2) }),
+    notes: (x) => ({ title: x.words(2) }),
+  });
+  const tenant = await f.tenants.create();
+  await f.notes.create({ tenantId: tenant.id });
 }
 ```
 
