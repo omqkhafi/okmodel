@@ -205,7 +205,7 @@ attempt 2: retryable=true kind=serialization
 
 ## Write errors (OKM1120)
 
-[OKM1120](/docs/reference/errors#okm1120) refuses an unknown field or option on a write. The message lists accepted names. On a tenant-scoped write those names omit the tenant key: the scope sets it, so it is not a field you pass. A close typo can still suggest the tenant key (`Did you mean \`tenantId\`?`), and the accepted-names list still leaves it out. Reads keep the tenant key in their accepted names. `toHttp().body.fields` is empty for this guard.
+[OKM1120](/docs/reference/errors#okm1120) refuses an unknown field or option on a write. The message lists accepted names. Those names omit every column a write would refuse with [OKM1190](/docs/reference/errors#okm1190): identity / `id()` defaults, generated columns, other guarded fields, and the tenant key on a tenant-scoped write (the scope sets it). A close typo can still suggest the tenant key (`Did you mean \`tenantId\`?`), and the accepted-names list still leaves it out. Reads keep the tenant key in their accepted names. `toHttp().body.fields` is empty for this guard.
 
 ## Connect options
 

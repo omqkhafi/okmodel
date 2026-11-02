@@ -1763,12 +1763,23 @@ function refuseUnknownField(table: Indexed, key: string, tenancy: QuerySchema["t
   );
 }
 
-/** Column names a write may name. The tenant key is set by the scope, so it is left off. */
+/**
+ * Column names a write may name without OKM1190.
+ *
+ * The tenant key is set by the scope. Identity defaults, generated columns,
+ * other guarded fields, and sealed trait fields are left off too: a write that
+ * names them is OKM1190, so they are not accepted names.
+ */
 function writeNames(table: Indexed, tenancy: QuerySchema["tenancy"]): readonly string[] {
   const keys = tenantKeys(tenancy);
-  if (keys.length === 0) return table.names;
   const names: string[] = [];
-  for (const name of table.names) if (!keys.includes(name)) names.push(name);
+  for (const name of table.names) {
+    if (keys.includes(name)) continue;
+    const column = table.columns.get(name);
+    if (column === undefined) continue;
+    if (fieldSealed(table.model, column.field) || column.guarded || column.guardUpdate) continue;
+    names.push(name);
+  }
   return names;
 }
 
