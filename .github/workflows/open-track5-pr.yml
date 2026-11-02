@@ -1,0 +1,126 @@
+name: Open track5 PR
+# One-shot bootstrap: cloud agent lacks pull-requests:write. Delete after the PR exists.
+on:
+  push:
+    branches: [fix/docs-site-404-redirects]
+jobs:
+  open:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Create pull request if missing
+        uses: actions/github-script@ed597411d8f924073f98dfd5be2d9ea7a75a1d1e # v7.0.1
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const head = 'fix/docs-site-404-redirects';
+            const title = 'fix(site): return 404 for unknown docs pages and redirect old docs URLs';
+            const body = `## Summary
+
+Unknown \`/docs/*\` paths returned HTTP 500 on the published site (\`x-matched-path: /500\`) because the catch-all called \`notFound()\` under on-demand generation and Next threw \`NoFallbackError\`. Old 0.10.0 handbook URLs under \`/docs/define/*\` and \`/docs/start/*\` were not redirected.
+
+## Root cause
+
+\`site/app/docs/[[...slug]]/page.tsx\` used \`generateStaticParams\` without \`dynamicParams = false\`. Requesting a path outside that set logged \`Error: Internal: NoFallbackError\` locally and served a cached 500 on Vercel. \`/changelog/[series]\` already set \`dynamicParams = false\` and correctly returned 404. Markdown \`Accept\` rewrote unknown docs paths to \`/llms.mdx/docs/….md\`, which hit the same failure on Vercel.
+
+## Fix
+
+- Set \`dynamicParams = false\` on the docs page and the docs markdown twin route so unknown paths 404 at the routing layer.
+- Teach markdown negotiation to return a markdown 404 for missing handbook pages instead of rewriting to a twin that cannot be generated.
+- Add permanent (308) redirects in \`site/next.config.ts\` via \`site/lib/docs-redirects.ts\`:
+  - \`/docs/define/table/validation\` → \`/docs/schema/validation\`
+  - \`/docs/define/schema/tenancy\` → \`/docs/schema/tenancy\`
+  - \`/docs/define/table/queries\` → \`/docs/queries/search-and-trees\` (browser keeps \`#text-search\`; \`#claim\` is documented on \`/docs/queries/write-rows#claim\`)
+  - \`/docs/define/table/presets\` → \`/docs/queries/presets\`
+  - \`/docs/define/table/traits\` → \`/docs/schema/traits\`
+  - \`/docs/start/basic-usage\` → \`/docs/start/first-schema\`
+  - \`/docs/start/from-drizzle\` → \`/docs/migrations/from-drizzle\`
+  - \`/docs/define/:path*\` → \`/docs\`
+
+## Test plan
+
+- [x] \`bun run site:check\`
+- [x] \`SITE_HTTP_BASE=… bun test ./lib/docs-redirects.site-test.ts\` (404 / 308 / 200)
+- [x] \`format:check\`, \`lint\`, \`docs:check\`, \`readme:check\`
+- [x] Size gates unchanged (site-only)
+
+Closes #639
+`;
+            const existing = await github.rest.pulls.list({
+              owner,
+              repo,
+              head: `${owner}:${head}`,
+              state: 'open',
+            });
+            if (existing.data.length > 0) {
+              core.info(`PR already open: ${existing.data[0].html_url}`);
+              return;
+            }
+            const pr = await github.rest.pulls.create({
+              owner,
+              repo,
+              title,
+              head,
+              base: 'main',
+              body,
+            });
+            core.info(`Created ${pr.data.html_url}`);
+            try {
+              await github.rest.issues.addLabels({
+                owner,
+                repo,
+                issue_number: pr.data.number,
+                labels: ['type: fix', 'area: docs'],
+              });
+            } catch (e) {
+              core.warning(`labels: ${e.message}`);
+            }
+            try {
+              await github.rest.issues.addLabels({
+                owner,
+                repo,
+                issue_number: 639,
+                labels: ['type: fix', 'area: docs'],
+              });
+            } catch (e) {
+              core.warning(`issue labels: ${e.message}`);
+            }
+            let milestone_number;
+            const milestones = await github.rest.issues.listMilestones({
+              owner,
+              repo,
+              state: 'open',
+            });
+            const found = milestones.data.find((m) => m.title === '0.10.2');
+            if (found) milestone_number = found.number;
+            else {
+              try {
+                const created = await github.rest.issues.createMilestone({
+                  owner,
+                  repo,
+                  title: '0.10.2',
+                  description: 'Patch train after 0.10.1',
+                });
+                milestone_number = created.data.number;
+              } catch (e) {
+                core.warning(`milestone create: ${e.message}`);
+              }
+            }
+            if (milestone_number) {
+              for (const issue_number of [pr.data.number, 639]) {
+                try {
+                  await github.rest.issues.update({
+                    owner,
+                    repo,
+                    issue_number,
+                    milestone: milestone_number,
+                  });
+                } catch (e) {
+                  core.warning(`milestone on #${issue_number}: ${e.message}`);
+                }
+              }
+            }
