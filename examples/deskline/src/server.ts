@@ -1,5 +1,5 @@
-import { app } from "./app.js";
-import { db } from "./db.js";
+import { app } from "./app.ts";
+import { db } from "./db.ts";
 
 Bun.serve({ port: Number(process.env.PORT ?? 3210), fetch: app.fetch });
 console.log("deskline on", process.env.PORT ?? 3210);

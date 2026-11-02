@@ -1,5 +1,5 @@
 import { connect } from "okmodel/pg/postgresjs";
-import { app } from "./schema.js";
+import { app } from "./schema.ts";
 
 const url = process.env.DATABASE_URL;
 if (!url) throw new Error("DATABASE_URL is required");

@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { OkmError } from "okmodel";
-import { db, type TenantDb } from "./db.js";
-import { hashKey } from "./hash.js";
+import { db, type TenantDb } from "./db.ts";
+import { hashKey } from "./hash.ts";
 
 export const app = new Hono<{ Variables: { db: TenantDb } }>();
 
