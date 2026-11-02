@@ -726,23 +726,23 @@ export function readHandle(
     !selectHasWindow(call.select);
   const run = async (): Promise<unknown> => {
     await session.connected;
-    const { plan, params } = await prepare();
-    // 65,533 matches postgres.js (refuses at 65,534). Keep the literal here so
-    // the param-limit chunk stays out of the featureless startup graph (B-48).
-    if (params.length > 65_533) {
-      (await import("./param-limit.js")).refuseParamLimit(params.length);
-    }
-    if (session.q !== undefined) {
-      return (await import("./observe-query.js")).runObservedRead(
-        session,
-        table,
-        plan,
-        params,
-        call,
-        decode,
-      );
-    }
     try {
+      const { plan, params } = await prepare();
+      // 65,533 matches postgres.js (refuses at 65,534). Keep the literal here so
+      // the param-limit chunk stays out of the featureless startup graph (B-48).
+      if (params.length > 65_533) {
+        (await import("./param-limit.js")).refuseParamLimit(params.length);
+      }
+      if (session.q !== undefined) {
+        return (await import("./observe-query.js")).runObservedRead(
+          session,
+          table,
+          plan,
+          params,
+          call,
+          decode,
+        );
+      }
       const result = await session.pool.execute(
         plan.text,
         params as readonly WireValue[],

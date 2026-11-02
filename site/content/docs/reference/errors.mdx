@@ -34,7 +34,7 @@ export function respond(error: unknown) {
 
 `fields()` maps each column to a reason. The same object comes back on later calls. It has no row values.
 
-`values()` returns row values only when the error was built with `includeValues`. [Errors](/docs/operate/errors) on connect is where that flag is set. `log()` returns the structured record: name, code, kind, category, summary, retryable, batch index, fix, fields, and table, columns, constraint, SQLSTATE, and issues when they are set. It leaves the row values out, and so does `toHttp()`. The logger on the client receives `{ code, summary }`.
+`values()` returns row values only when the error was built with `includeValues`. [Errors](/docs/operate/errors) on connect is where that flag is set. A table that has any `.sensitive()` column keeps `values()` undefined and a reduced cause even with that opt-in. `log()` returns the structured record: name, code, kind, category, summary, retryable, batch index, fix, fields, and table, columns, constraint, SQLSTATE, and issues when they are set. It leaves row values out. `toHttp()` is `{ code, reason, fields }`: an ordinary OKM1210 may name the submitted value in `reason`; a `.sensitive()` or hidden column says `Field <field> was rejected.` instead. The logger on the client receives `{ code, summary }`.
 
 `toHttp()` returns `{ status, body }`. The body is `{ code, reason, fields }`. `reason` is the summary. A category missing from the status map keeps the default in the table below.
 

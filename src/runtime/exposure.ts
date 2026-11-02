@@ -7,6 +7,7 @@
 import { OkmError } from "../contracts/error.js";
 import type { ColumnModel, QuerySchema, TableModel } from "../dialects/pg/model.js";
 import { isOperator, operatorName, operatorValue } from "../dialects/pg/operators.js";
+import { scrubCodecEcho } from "./encode-column.js";
 import type { ReadCall } from "./plan.js";
 import { runSafety, safetyInstalled } from "./safety-hook.js";
 import type { Inspection } from "./types.js";
@@ -95,9 +96,16 @@ export function redactParams(
 export function scrubCall(error: OkmError, schema: QuerySchema, call: ReadCall): OkmError {
   const names = concealedNames(schema);
   const secrets = new Set<string>();
+  const echoes: { field: string; value: unknown }[] = [];
   const model = schema.model[call.table];
-  harvest(schema, call.where, names, undefined, secrets, model);
-  harvest(schema, call.include, names, "include", secrets, model);
+  harvest(schema, call.where, names, undefined, secrets, model, echoes);
+  harvest(schema, call.include, names, "include", secrets, model, echoes);
+  if (error.code === "OKM1210") {
+    for (const echo of echoes) {
+      const rewritten = scrubCodecEcho(error, echo.field, echo.value);
+      if (rewritten !== error) return rewritten;
+    }
+  }
   let message = error.message;
   for (const secret of secrets) {
     if (secret.length < 4 || !message.includes(secret)) continue;
@@ -167,23 +175,36 @@ function harvest(
   key: string | undefined,
   into: Set<string>,
   table: TableModel | undefined,
+  echoes?: { field: string; value: unknown }[],
 ): void {
   if (isOperator(value)) {
     const name = operatorName(value);
     const inner = operatorValue(value);
     if (name === "json.set" && isRecord(inner) && "value" in inner && key !== undefined) {
       addEncoded(table, key, inner.value, into);
+      noteEcho(echoes, key, names, inner.value);
     }
     if ((name === "has" || name === "none" || name === "every") && table !== undefined) {
-      harvest(schema, inner, names, undefined, into, relationTable(schema, table, key) ?? table);
+      harvest(
+        schema,
+        inner,
+        names,
+        undefined,
+        into,
+        relationTable(schema, table, key) ?? table,
+        echoes,
+      );
       return;
     }
-    harvest(schema, inner, names, key, into, table);
+    harvest(schema, inner, names, key, into, table, echoes);
     return;
   }
   if (Array.isArray(value)) {
     if (key !== undefined && names.has(key)) addEncoded(table, key, value, into);
-    for (const item of value) harvest(schema, item, names, key, into, table);
+    for (const item of value) {
+      noteEcho(echoes, key, names, item);
+      harvest(schema, item, names, key, into, table, echoes);
+    }
     return;
   }
   if (typeof value === "object" && value !== null) {
@@ -198,17 +219,29 @@ function harvest(
           undefined,
           into,
           relationTable(schema, table, child) ?? table,
+          echoes,
         );
       }
       return;
     }
     for (const child of Object.keys(record)) {
-      harvest(schema, record[child], names, child, into, table);
+      harvest(schema, record[child], names, child, into, table, echoes);
     }
     return;
   }
   if (key === undefined || !names.has(key)) return;
+  noteEcho(echoes, key, names, value);
   addEncoded(table, key, value, into);
+}
+
+function noteEcho(
+  echoes: { field: string; value: unknown }[] | undefined,
+  key: string | undefined,
+  names: ReadonlySet<string>,
+  value: unknown,
+): void {
+  if (echoes === undefined || key === undefined || !names.has(key)) return;
+  echoes.push({ field: key, value });
 }
 
 function addEncoded(

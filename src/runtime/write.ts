@@ -47,6 +47,7 @@ import { effectivePredicate } from "./predicate.js";
 import { fieldSealed, sealingTrait, touchFields } from "./trait-read.js";
 import { assertObserveKeys, observeKeyList } from "./observe-keys.js";
 import { runWrite, settingNames, type RunHost, type WriteObserveMeta } from "./tx.js";
+import { encodeColumn, scrubCodecEcho } from "./encode-column.js";
 import { writeWouldValidate } from "./validate/places.js";
 
 registerFailFix(
@@ -58,30 +59,6 @@ registerFailFix("OKM1190", "Remove the guarded field. Input cannot set it.");
 export const WRITE_PARAM_BUDGET = 2048;
 
 const REDACTED = "[redacted]";
-
-function encodeColumn(column: ColumnModel, value: unknown): string {
-  if (!column.hidden && !column.sensitive) return column.encode(value);
-  try {
-    return column.encode(value);
-  } catch (error) {
-    if (error instanceof OkmError && mentionsValue(error.message, value)) {
-      throw new OkmError(error.code, `Field ${column.field} was rejected.`, {
-        kind: error.kind,
-        fix: error.fix,
-      });
-    }
-    throw error;
-  }
-}
-
-function mentionsValue(message: string, value: unknown): boolean {
-  if (typeof value === "string") return value.length > 0 && message.includes(value);
-  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
-    const text = String(value);
-    return text.length > 0 && message.includes(text);
-  }
-  return false;
-}
 
 /** A write the caller asked for. */
 export type WriteOp = "insert" | "update" | "delete";
@@ -2758,19 +2735,28 @@ function scrubWrite(
   if (!(error instanceof OkmError)) return error;
   const table = indexes(schema).get(tableName);
   if (table === undefined || table.model.conceal !== true) return error;
-  const secrets: string[] = [];
+  const secrets: { field: string; value: unknown }[] = [];
   const names = new Set<string>();
   for (const column of table.model.columns) {
     if (column.hidden || column.sensitive) names.add(column.field);
   }
   collectSecrets(input, names, secrets);
   if (secrets.length === 0) return error;
-  let message = error.message;
-  for (const secret of secrets) {
-    if (secret.length < 4 || !message.includes(secret)) continue;
-    message = message.replaceAll(secret, REDACTED);
+  if (error.code === "OKM1210") {
+    for (const secret of secrets) {
+      const rewritten = scrubCodecEcho(error, secret.field, secret.value);
+      if (rewritten !== error) return rewritten;
+    }
   }
-  const issues = error.issues === undefined ? undefined : redactIssues(error.issues, secrets);
+  let message = error.message;
+  const texts: string[] = [];
+  for (const secret of secrets) {
+    const text = typeof secret.value === "string" ? secret.value : String(secret.value);
+    texts.push(text);
+    if (text.length < 4 || !message.includes(text)) continue;
+    message = message.replaceAll(text, REDACTED);
+  }
+  const issues = error.issues === undefined ? undefined : redactIssues(error.issues, texts);
   if (message === error.message && issues === undefined) return error;
   return new OkmError(error.code, message, {
     kind: error.kind,
@@ -2801,15 +2787,20 @@ function redactIssues(
 function collectSecrets(
   value: unknown,
   names: ReadonlySet<string>,
-  found: string[],
+  found: { field: string; value: unknown }[],
   key?: string,
 ): void {
-  if (typeof value === "string") {
-    if (key !== undefined && names.has(key)) found.push(value);
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint"
+  ) {
+    if (key !== undefined && names.has(key)) found.push({ field: key, value });
     return;
   }
   if (Array.isArray(value)) {
-    for (const item of value) collectSecrets(item, names, found);
+    for (const item of value) collectSecrets(item, names, found, key);
     return;
   }
   if (!isRecord(value)) return;
