@@ -8,9 +8,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { DOCS_REDIRECTS } from "./docs-redirects";
+import { docsPageExists } from "./handbook-pages";
 import { markdownNegotiation, markdownTwinPath } from "./markdown-negotiate";
 import { siteRoot } from "./repo";
-import { docsPageExists, docsUrlResolves } from "./url-contract";
+import { docsUrlResolves } from "./url-contract";
 
 /** Retired URLs from the 0.10.2 QA evidence set (track 5). */
 const BROKEN_BY_DAY = [

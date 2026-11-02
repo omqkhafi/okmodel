@@ -1,11 +1,7 @@
 import { markdownResponse } from "@/lib/markdown-response";
 import { markdownNotFoundResponse } from "@/lib/not-found-markdown";
-import {
-  getPageMarkdownUrl,
-  getPageSourceMarkdown,
-  resolveMarkdownPage,
-  source,
-} from "@/lib/source";
+import { getPageSourceMarkdown } from "@/lib/page-markdown";
+import { getPageMarkdownUrl, resolveMarkdownPage, source } from "@/lib/source";
 
 export const revalidate = false;
 

@@ -4,7 +4,7 @@
 
 import { isMarkdownPreferred } from "fumadocs-core/negotiation";
 
-import { docsPageExists } from "./url-contract";
+import { docsPageExists } from "./handbook-pages";
 
 /** Result of inspecting one request for markdown negotiation. */
 export type MarkdownAction =
