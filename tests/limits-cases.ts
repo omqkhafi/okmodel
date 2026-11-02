@@ -301,11 +301,34 @@ export async function concurrentInsert(make: MakeLimits, size: number): Promise<
 }
 
 /**
+ * Invokes `find(options)` on a stack line that has not been used yet.
+ *
+ * Bun elides thin wrappers, so a fixed line in this file is the call site for
+ * every file that shares the process. OKM2011 dedupes by `file:line`, so the
+ * PGlite and Postgres suites need a fresh line each time. The Function body
+ * pads to a new line number for that key.
+ *
+ * @param find - Table `find`
+ * @param options - Find options
+ * @returns The find result
+ */
+let warningSite = 0;
+function findAtFreshSite(find: (options: object) => unknown, options: object): Promise<unknown> {
+  const line = (warningSite += 1);
+  // oxlint-disable-next-line typescript/no-implied-eval -- unique OKM2011 call-site lines across files
+  return new Function("find", "options", `${"\n".repeat(line)}return find(options);`)(
+    find,
+    options,
+  ) as Promise<unknown>;
+}
+
+/**
  * `distinct` and `distinctOn` take `limits.find` and `limits.max`.
  *
  * Without `limits` both still throw OKM1101. A limit above `max` is OKM1101.
- * `.all(reason)` reads with no limit. A distinct find that returns exactly the
- * default fires OKM2011.
+ * `.all(reason)` reads with no limit. A plain, distinct, and distinctOn find
+ * that each return exactly the default each fire OKM2011 with their own call
+ * site — an earlier distinct must not silence distinctOn.
  *
  * @param make - Client factory
  */
@@ -318,20 +341,31 @@ export async function distinctLimits(make: MakeLimits): Promise<void> {
 
   const notices: WarningNotice[] = [];
   const db = await make({ find: 2, max: 4 }, notices);
-  const kinds = await db.notes.find({
+  const find = db.notes.find.bind(db.notes) as (options: object) => unknown;
+  const plain = await findAtFreshSite(find, { orderBy: { title: "asc" } });
+  expect(plain).toHaveLength(2);
+  const kinds = await findAtFreshSite(find, {
     distinct: true,
     select: ["title"],
     orderBy: { title: "asc" },
   });
   expect(kinds).toHaveLength(2);
-  const on = await db.notes.find({
+  const on = await findAtFreshSite(find, {
     distinctOn: ["rank"],
     orderBy: { rank: "asc", id: "asc" },
   });
   expect(on).toHaveLength(2);
-  expect(
-    notices.filter((notice) => notice.code === "OKM2011").map((notice) => notice.limit),
-  ).toEqual(["limits.find = 2"]);
+  const reached = notices.filter((notice) => notice.code === "OKM2011");
+  expect(reached.map((notice) => notice.limit)).toEqual([
+    "limits.find = 2",
+    "limits.find = 2",
+    "limits.find = 2",
+  ]);
+  const keys = reached.map((notice) =>
+    notice.location === undefined ? "" : `${notice.location.file}:${String(notice.location.line)}`,
+  );
+  expect(keys.every((site) => site.length > 0)).toBe(true);
+  expect(new Set(keys).size).toBe(3);
 
   const over = await failure(
     db.notes.find({ distinct: true, select: ["title"], orderBy: { title: "asc" }, limit: 5 }),
