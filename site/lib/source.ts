@@ -5,7 +5,6 @@
 import { docs } from "collections/server";
 import { loader } from "fumadocs-core/source";
 
-import { readDocsSourceBody } from "./markdown-source";
 import { sidebarIconsPlugin } from "./sidebar-icons";
 
 /** Docs base path. */
@@ -84,28 +83,6 @@ export function resolveMarkdownPage(
 
 /** Line every handbook markdown twin carries so agents can find the index. */
 export const MARKDOWN_TWIN_INDEX_LINE = "Index: [/llms.txt](/llms.txt)";
-
-/**
- * Page markdown for agents: the page body, with the title as the heading.
- *
- * @param page - Loaded page
- */
-export async function getPageSourceMarkdown(
-  page: (typeof source)["$inferPage"],
-): Promise<string> {
-  const body = await readDocsSourceBody(page.path);
-  return withMarkdownTwinIndex(`# ${page.data.title}\n\n${body.trim()}\n`);
-}
-
-/**
- * One page inside `llms-full.txt`.
- *
- * @param page - Loaded page
- */
-export async function getLLMText(page: (typeof source)["$inferPage"]): Promise<string> {
-  const body = await readDocsSourceBody(page.path);
-  return withMarkdownTwinIndex(`# ${page.data.title} (${page.url})\n\n${body.trim()}\n`);
-}
 
 /**
  * Append the llms.txt pointer when the body does not already name it.

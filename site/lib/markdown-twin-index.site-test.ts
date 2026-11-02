@@ -4,12 +4,8 @@
 
 import { expect, test } from "bun:test";
 
-import {
-  getPageSourceMarkdown,
-  MARKDOWN_TWIN_INDEX_LINE,
-  source,
-  withMarkdownTwinIndex,
-} from "./source";
+import { getPageSourceMarkdown } from "./page-markdown";
+import { MARKDOWN_TWIN_INDEX_LINE, source, withMarkdownTwinIndex } from "./source";
 
 test("withMarkdownTwinIndex adds the pointer when missing", () => {
   expect(withMarkdownTwinIndex("# Title\n\nBody.\n")).toBe(

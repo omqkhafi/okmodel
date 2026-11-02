@@ -133,3 +133,8 @@ jobs:
       - name: Build
         working-directory: site
         run: bun run build
+
+      # Vercel deploys site/ alone. Every page must answer without the repository.
+      - name: Production-like run
+        working-directory: site
+        run: bun ./scripts/standalone-smoke.ts

@@ -1,5 +1,6 @@
 import { orderedHandbookUrls } from "@/lib/llms-index";
-import { getLLMText, source } from "@/lib/source";
+import { getLLMText } from "@/lib/page-markdown";
+import { source } from "@/lib/source";
 
 export const revalidate = false;
 
