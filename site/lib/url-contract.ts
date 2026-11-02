@@ -53,6 +53,17 @@ export function docsUrlResolves(href: string): boolean {
 }
 
 /**
+ * Whether the handbook has a page at this path (no hash check).
+ *
+ * @param pathname - `/docs` or `/docs/…`
+ */
+export function docsPageExists(pathname: string): boolean {
+  const path =
+    pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+  return handbookFile(path) !== undefined;
+}
+
+/**
  * Whether the handbook has this page, and the anchor when one is named.
  *
  * @param path - `/docs` or `/docs/…`

@@ -10,6 +10,13 @@ import {
 export const revalidate = false;
 
 /**
+ * Only twins listed in `generateStaticParams` are served. Unknown paths 404
+ * at the routing layer; the proxy answers markdown `Accept` for missing
+ * handbook pages before a rewrite lands here.
+ */
+export const dynamicParams = false;
+
+/**
  * Serve byte-identical source markdown (YAML frontmatter stripped).
  * Canonical: `/llms.mdx/docs/⟨slug⟩.md`. Also accepts `/content.md`
  * and the extensionless slug. Rewrite target for `Accept: text/markdown`
