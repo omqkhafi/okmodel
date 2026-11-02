@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  A TypeScript ORM for PostgreSQL, built around one schema, safe queries, and reviewed migrations.
+  <em>okmodel is a TypeScript ORM for PostgreSQL 15 to 18 with no runtime dependencies. It is built around one schema, safe queries, and reviewed migrations.</em>
 </p>
 
 <p align="center">
@@ -35,10 +35,15 @@ OKModel provides a typed data layer for PostgreSQL 15–18 with no runtime depen
 
 ## Install
 
-```sh
-# postgres.js (Node.js and Bun)
-bun add okmodel postgres
+postgres.js is the default on Node.js and Bun:
 
+```sh
+bun add okmodel postgres
+```
+
+The other drivers:
+
+```sh
 # node-postgres
 bun add okmodel pg
 bun add -D @types/pg
@@ -112,12 +117,12 @@ const notes = await db.notes.find({ limit: 50 });
 Explore the documentation:
 
 - [Get Started](https://okm.omqkhafi.dev/docs/start)
-- [Concepts](https://okm.omqkhafi.dev/docs/concepts)
-- [Schema](https://okm.omqkhafi.dev/docs/schema)
+- [Concepts](https://okm.omqkhafi.dev/docs/concepts/how-okmodel-works)
+- [Schema](https://okm.omqkhafi.dev/docs/schema/tables)
 - [Queries](https://okm.omqkhafi.dev/docs/queries)
 - [Migrations](https://okm.omqkhafi.dev/docs/migrations)
-- [Operate](https://okm.omqkhafi.dev/docs/operate)
-- [Reference](https://okm.omqkhafi.dev/docs/reference)
+- [Operate](https://okm.omqkhafi.dev/docs/operate/production-checklist)
+- [Reference](https://okm.omqkhafi.dev/docs/reference/config)
 
 ## License
 
