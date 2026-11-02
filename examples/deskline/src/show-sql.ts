@@ -1,4 +1,4 @@
-import { db } from "./db.js";
+import { db } from "./db.ts";
 
 const acme = await db.tenants.one({ where: { name: "Acme" } });
 if (!acme) throw new Error("run the seed first");
