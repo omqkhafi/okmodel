@@ -4,6 +4,8 @@
 
 import { isMarkdownPreferred } from "fumadocs-core/negotiation";
 
+import { docsPageExists } from "./url-contract";
+
 /** Result of inspecting one request for markdown negotiation. */
 export type MarkdownAction =
   | { readonly kind: "rewrite"; readonly pathname: string }
@@ -12,7 +14,9 @@ export type MarkdownAction =
 
 /**
  * Markdown twin for an HTML handbook path, or `undefined` when this URL is not
- * a negotiated HTML page.
+ * a negotiated HTML page. Unknown `/docs/*` paths return `undefined` so the
+ * proxy can answer with a markdown 404 instead of rewriting into a static
+ * twin that would throw `NoFallbackError` under `dynamicParams = false`.
  *
  * @param pathname - Request pathname (no query)
  */
@@ -27,7 +31,10 @@ export function markdownTwinPath(pathname: string): string | undefined {
     return `/llms.mdx/releases/${rest}`;
   }
 
-  if (path === "/docs" || path.startsWith("/docs/")) return handbookMarkdownTwin(path);
+  if (path === "/docs" || path.startsWith("/docs/")) {
+    if (!docsPageExists(path)) return undefined;
+    return handbookMarkdownTwin(path);
+  }
 
   return undefined;
 }

@@ -52,9 +52,14 @@ test("a docs path negotiates to its markdown twin", () => {
   });
 });
 
-test("an unknown docs path keeps its own twin", () => {
-  expect(markdownTwinPath("/docs/reference/linter")).toBe("/llms.mdx/docs/reference/linter.md");
-  expect(markdownTwinPath("/docs/operate/drivers")).toBe("/llms.mdx/docs/operate/drivers.md");
+test("an unknown docs path has no twin so Accept: text/markdown 404s", () => {
+  expect(markdownTwinPath("/docs/reference/linter")).toBeUndefined();
+  expect(markdownTwinPath("/docs/define/table/validation")).toBeUndefined();
+  expect(markdownTwinPath("/docs/nope")).toBeUndefined();
+  const request = new Request("https://okm.omqkhafi.dev/docs/nope", {
+    headers: { accept: "text/markdown" },
+  });
+  expect(markdownNegotiation(request)).toEqual({ kind: "not-found" });
 });
 
 test("html and machine routes are not rewritten", () => {

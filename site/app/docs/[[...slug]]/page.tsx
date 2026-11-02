@@ -12,6 +12,13 @@ import { createRelativeLink } from "@fumadocs/base-ui/mdx";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+/**
+ * Only paths from `generateStaticParams` are served. Unknown `/docs/*` used
+ * to hit on-demand generation, throw Next's `NoFallbackError`, and surface as
+ * HTTP 500 on Vercel (`x-matched-path: /500`).
+ */
+export const dynamicParams = false;
+
 export default async function Page(props: PageProps<"/docs/[[...slug]]">) {
   const params = await props.params;
   const page = source.getPage(params.slug);

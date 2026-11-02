@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { DISCOVERY_LINK } from "./lib/discovery-links";
+import { DOCS_REDIRECTS } from "./lib/docs-redirects";
 import { readRootPackage } from "./lib/package-meta";
 import { npmPackageUrl } from "./lib/shared";
 
@@ -39,6 +40,9 @@ const config: NextConfig = {
       { source: "/", headers: [link] },
       { source: "/:path*", headers: [link] },
     ];
+  },
+  async redirects() {
+    return [...DOCS_REDIRECTS];
   },
   // Own lockfile: keep Turbopack rooted here so `next` resolves from site/node_modules.
   turbopack: {
