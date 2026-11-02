@@ -1739,7 +1739,7 @@ function insertRow(
   const row: Record<string, unknown> = {};
   for (const key of Object.keys(value)) {
     const column = table.columns.get(key);
-    if (column === undefined) refuseUnknownField(table, key, tenancy);
+    if (column === undefined) refuseUnknownField(table, key, tenancy, allow, "insert");
     tenancy?.guard(table.model.name, key, "insert");
     if (!writable(table, column, allow, "insert")) refuse(table, column);
     if (value[key] !== undefined) row[key] = value[key];
@@ -1754,21 +1754,41 @@ function insertRow(
  * @param table - Table being written
  * @param key - Caller key
  */
-function refuseUnknownField(table: Indexed, key: string, tenancy: QuerySchema["tenancy"]): never {
+function refuseUnknownField(
+  table: Indexed,
+  key: string,
+  tenancy: QuerySchema["tenancy"],
+  allow: ReadonlySet<string>,
+  op: "insert" | "update",
+): never {
   throwNamed(
     "OKM1120",
     key,
     table.names,
-    `Field ${key} is not on ${table.model.name}. Accepted names: ${list(writeNames(table, tenancy))}.`,
+    `Field ${key} is not on ${table.model.name}. Accepted names: ${list(writeNames(table, tenancy, allow, op))}.`,
   );
 }
 
-/** Column names a write may name. The tenant key is set by the scope, so it is left off. */
-function writeNames(table: Indexed, tenancy: QuerySchema["tenancy"]): readonly string[] {
+/**
+ * Column names this write may set: the same test as OKM1190, so the list
+ * never names a field the write would refuse. The tenant key is set by the
+ * scope, so it is left off.
+ */
+function writeNames(
+  table: Indexed,
+  tenancy: QuerySchema["tenancy"],
+  allow: ReadonlySet<string>,
+  op: "insert" | "update",
+): readonly string[] {
   const keys = tenantKeys(tenancy);
-  if (keys.length === 0) return table.names;
   const names: string[] = [];
-  for (const name of table.names) if (!keys.includes(name)) names.push(name);
+  for (const name of table.names) {
+    if (keys.includes(name)) continue;
+    const column = table.columns.get(name);
+    if (column === undefined) continue;
+    if (op === "update" && column.guardUpdate) continue;
+    if (writable(table, column, allow, op)) names.push(name);
+  }
   return names;
 }
 
@@ -2180,7 +2200,7 @@ export function writeSet(
   const set: Record<string, unknown> = {};
   for (const key of Object.keys(value)) {
     const column = table.columns.get(key);
-    if (column === undefined) refuseUnknownField(table, key, tenancy);
+    if (column === undefined) refuseUnknownField(table, key, tenancy, allow, "update");
     if (value[key] === undefined) continue;
     tenancy?.guard(table.model.name, key, "update");
     if (column.guardUpdate || !writable(table, column, allow, "update")) refuse(table, column);
