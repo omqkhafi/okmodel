@@ -129,7 +129,7 @@
     "code": "OKM1101",
     "kind": "invalid",
     "category": "input",
-    "summary": "find was called without a limit, or a limit is above limits.max. connect({ limits }) can set a default for find, page, and groupBy.",
+    "summary": "find, descendants, or ancestors was called without a limit, or a limit is above limits.max. connect({ limits }) can set a default for find, descendants, ancestors, page, and groupBy.",
     "fix": "Pass a limit. A limit must not be above limits.max.",
     "retryable": false,
     "safeAlternatives": [

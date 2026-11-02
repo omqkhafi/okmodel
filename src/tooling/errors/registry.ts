@@ -163,7 +163,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1101",
     title: "Find without limit",
     summary:
-      "find was called without a limit, or a limit is above limits.max. connect({ limits }) can set a default for find, page, and groupBy.",
+      "find, descendants, or ancestors was called without a limit, or a limit is above limits.max. connect({ limits }) can set a default for find, descendants, ancestors, page, and groupBy.",
     fix: "Pass a limit. A limit must not be above limits.max.",
     safeAlternatives: [
       alt("OKM1101", "Use page() with a cursor."),

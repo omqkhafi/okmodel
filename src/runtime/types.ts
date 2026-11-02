@@ -2052,13 +2052,27 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   ): TreeQuery<readonly ResultRow<S, K, O>[]>;
   descendants<const O extends TreePlainOptions<S, K, WhereOfTarget<O>, OrderOfTarget<O>>>(
     id: unknown,
-    options?: O,
+    options: O,
   ): Unbounded<S, "find", TreeQuery<readonly ResultRow<S, K, O>[]>>;
+  /**
+   * `id` alone when `limits.find` is set. The walk uses that default.
+   *
+   * Not first: a call that passes options, including `as never`, matches an
+   * earlier overload. Not last: excess-property errors stay on the options
+   * object. Without `limits.find` this signature takes a second argument of
+   * `never`, so a bare `descendants(id)` stays an error (same shape as find).
+   */
+  descendants(
+    id: unknown,
+    ...args: BareArgs<S, "find">
+  ): Defaults<S, "find"> extends true
+    ? TreeQuery<readonly ResultRow<S, K, Record<string, never>>[]>
+    : never;
   descendants<
     const O extends ExactConstraint<O, TreeFilterOptions<S, K, WhereOfTarget<O>, OrderOfTarget<O>>>,
   >(
     id: unknown,
-    options?: O,
+    options: O,
   ): Unbounded<S, "find", TreeQuery<readonly ResultRow<S, K, O>[]>>;
   /** Rows above `id`. The options match {@link TableApi.descendants}. */
   ancestors<
@@ -2080,13 +2094,22 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   ): TreeQuery<readonly ResultRow<S, K, O>[]>;
   ancestors<const O extends TreePlainOptions<S, K, WhereOfTarget<O>, OrderOfTarget<O>>>(
     id: unknown,
-    options?: O,
+    options: O,
   ): Unbounded<S, "find", TreeQuery<readonly ResultRow<S, K, O>[]>>;
+  /**
+   * `id` alone when `limits.find` is set. Matches {@link TableApi.descendants}.
+   */
+  ancestors(
+    id: unknown,
+    ...args: BareArgs<S, "find">
+  ): Defaults<S, "find"> extends true
+    ? TreeQuery<readonly ResultRow<S, K, Record<string, never>>[]>
+    : never;
   ancestors<
     const O extends ExactConstraint<O, TreeFilterOptions<S, K, WhereOfTarget<O>, OrderOfTarget<O>>>,
   >(
     id: unknown,
-    options?: O,
+    options: O,
   ): Unbounded<S, "find", TreeQuery<readonly ResultRow<S, K, O>[]>>;
   /**
    * Sets a to-many relation to exactly `ids`.
