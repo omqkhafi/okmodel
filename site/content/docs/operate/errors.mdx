@@ -81,7 +81,7 @@ A duplicate unique on `notes.title` prints:
 
 ## toHttp()
 
-`toHttp()` returns `{ status, body }` for an HTTP response. The body is `{ code, reason, fields }`. `reason` is the summary. Row values stay out.
+`toHttp()` returns `{ status, body }` for an HTTP response. The body is `{ code, reason, fields }`. `reason` is the summary. A codec rejection (OKM1210) may put the submitted value in `reason` for an ordinary column. A `.sensitive()` or hidden column is redacted to `Field <field> was rejected.` instead, on writes and on reads. `fields` never holds row values.
 
 | Category | Default status |
 | --- | --- |
@@ -214,7 +214,7 @@ Set statuses, whether row values are kept, and the error logger once on `connect
 | Field | Result |
 | --- | --- |
 | `errors.http` | Statuses for `OkmError.toHttp`. `toHttp()` uses them when the caller passes no argument. `toHttp(statuses)` replaces them for that call. A category absent from the map keeps the default. |
-| `errors.includeValues` | `true` stores row values for `values()` and keeps bound parameters on the cause. Off unless set. A `.sensitive()` column stays redacted either way. Values are never logged. |
+| `errors.includeValues` | `true` stores row values for `values()` and keeps bound parameters on the cause. Off unless set. A `.sensitive()` column stays redacted either way. A table that has any `.sensitive()` column keeps `values()` undefined and a reduced cause even with this opt-in. Values are never logged. |
 | `logger.error` | Receives `{ code, summary }` only. |
 
 ```ts title="db.ts"
@@ -244,5 +244,5 @@ export const db = connect(process.env.DATABASE_URL!, {
 ```
 
 <Callout type="info" title="Never logged">
-The log record has no row values. `logger.error` receives `{ code, summary }`. The `toHttp` body is `{ code, reason, fields }`.
+`logger.error` receives `{ code, summary }` only. `log()` leaves row values out. `toHttp` is `{ code, reason, fields }`: an ordinary OKM1210 may name the submitted value in `reason`; a sensitive or hidden column does not.
 </Callout>
