@@ -29,7 +29,7 @@ await harness.expectQueries(1, () => harness.db.notes.count());
 await harness.close();
 ```
 
-The fence above is a notes factory on postgres.js. The package doc's tenant example needs the application's schema and uses three shapes. `tenants` is a global table (`global("tenant directory")`). Its `id` is the value passed to `for({ tenantId })`. `users` and `tasks` are tenant tables. `lists` is the table `x.ref("lists")` inserts or reuses. `loadToday` is that application's read. The count is how many statements that read sends.
+The fence above is a notes factory on postgres.js. For a global `tenants` table (`global("tenant directory")`) and tenant rows with an explicit `create({ tenantId })`, see the [`okm seed`](/docs/reference/cli/migrate#seed) example (`schema-tenants.ts` and `seed-tenants.ts`). That seed creates the tenant directory row first, then passes its `id` into the tenant table factory.
 
 ## Factories
 
