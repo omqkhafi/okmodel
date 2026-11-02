@@ -6,7 +6,7 @@
     "start": "bun ./src/server.ts"
   },
   "dependencies": {
-    "okmodel": "0.10.1",
+    "okmodel": "0.10.2",
     "hono": "4.13.16",
     "postgres": "3.4.9"
   },
