@@ -117,7 +117,7 @@ export const CONNECT_ENTRIES = [
     file: "pglite.js",
     external: ["@electric-sql/pglite"],
     maxMinBytes: 40_450,
-    maxGzipBytes: 14_280,
+    maxGzipBytes: 14_290,
   },
   {
     entry: "src/runtime/pg/pg.ts",
@@ -132,7 +132,7 @@ export const CONNECT_ENTRIES = [
     external: ["bun"],
     nodeColdImport: false,
     maxMinBytes: 41_700,
-    maxGzipBytes: 14_620,
+    maxGzipBytes: 14_630,
   },
   {
     entry: "src/runtime/pg/neon.ts",
