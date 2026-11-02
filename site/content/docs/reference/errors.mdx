@@ -238,7 +238,7 @@ Codes are in numeric order. Ranges are schema `OKM1000`, queries and capabilitie
 | <a id="okm1052" />[`OKM1052`](#okm1052) | `invalid` | archive or restore was called on a table that is not archivable. | `docs/errors/OKM1052.md` |
 | <a id="okm1060" />[`OKM1060`](#okm1060) | `invalid` | A column definition has a bad length, precision, scale, array rank, interval qualifier, or an empty or repeated picklist or enum. .unique() on a gin or gist index is this code too: Postgres builds unique indexes with btree only. A schema() casing other than snake or camel is this code too. | `docs/errors/OKM1060.md` |
 | <a id="okm1061" />[`OKM1061`](#okm1061) | `invalid` | The option exists in the types but this version does not implement it. | `docs/errors/OKM1061.md` |
-| <a id="okm1101" />[`OKM1101`](#okm1101) | `invalid` | find was called without a limit, or a limit is above limits.max. connect(\{ limits \}) can set a default for find, page, and groupBy. | `docs/errors/OKM1101.md` |
+| <a id="okm1101" />[`OKM1101`](#okm1101) | `invalid` | find, descendants, or ancestors was called without a limit, or a limit is above limits.max. connect(\{ limits \}) can set a default for find, descendants, ancestors, page, and groupBy. | `docs/errors/OKM1101.md` |
 | <a id="okm1102" />[`OKM1102`](#okm1102) | `invalid` | A write with no effective predicate, including undefined values, is OKM1102. | `docs/errors/OKM1102.md` |
 | <a id="okm1104" />[`OKM1104`](#okm1104) | `invalid` | onConflict names columns that are not a unique constraint. | `docs/errors/OKM1104.md` |
 | <a id="okm1105" />[`OKM1105`](#okm1105) | `invalid` | A to-many include has no limit. connect(\{ limits: \{ include \} \}) sets a default for includes that name none. | `docs/errors/OKM1105.md` |
