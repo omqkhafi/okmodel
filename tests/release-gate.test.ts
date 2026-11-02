@@ -271,7 +271,7 @@ test("the site deploys only after a successful release of a stable tag", () => {
   expect(yaml).not.toContain("secrets.");
   expect(yaml).toContain("bun ./scripts/deploy-ref.ts");
   expect(yaml).toContain("bun ./scripts/deploy-ref.ts --confirm");
-  expect(readFileSync(join(root, ".bun-version"), "utf8").trim()).toBe("1.4.3");
+  expect(readFileSync(join(root, ".bun-version"), "utf8").trim()).toBe("1.4.4");
   expect(yaml).toContain(".bun-version");
   expect(yaml).toContain("bun-version-file: .bun-version");
   expect(yaml).toContain(".bun-version is missing or empty");

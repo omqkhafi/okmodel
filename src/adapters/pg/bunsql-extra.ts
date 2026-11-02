@@ -67,7 +67,10 @@ export async function recover<T>(
 ): Promise<T> {
   if (!lostQuery(error)) throw error;
   await flushClosed(sql, replaceDead);
-  const alreadyDead = closedDuring || socketClosed(error);
+  // A SQLSTATE means the server ran the statement and ended it (57P01), even
+  // when Bun reports the close first, as Bun 1.4.4 does.
+  const answered = error instanceof DriverError && error.sqlstate !== undefined;
+  const alreadyDead = (closedDuring && !answered) || socketClosed(error);
   if ((!clientRead && !alreadyDead) || depth !== 0 || !retryableRead(text)) throw error;
   try {
     return await again();
