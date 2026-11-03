@@ -480,8 +480,8 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
    * @returns The same column, with a default
    */
   defaultNow(): ColumnBuilder<TValue, FlagTrue<TFlags, "hasDefault">> {
-    if (this.state.dims > 0 || !/^(timestamptz|timestamp|date)(\(|$)/.test(this.state.baseType)) {
-      definition("defaultNow() needs a timestamptz, timestamp, or date column.");
+    if (this.state.dims > 0 || !/^(timestamp(tz)?|date)(\(|$)/.test(this.state.baseType)) {
+      definition("defaultNow() is for date and timestamp columns, with or without a zone.");
     }
     return this.defaultSql("now()");
   }

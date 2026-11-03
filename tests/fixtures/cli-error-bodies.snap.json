@@ -362,8 +362,8 @@
     "code": "OKM1210",
     "kind": "invalid",
     "category": "input",
-    "summary": "A codec refused a value: not numeric text, not a valid temporal value, or the wrong shape.",
-    "fix": "Pass a value the error lists as accepted. A missing Temporal global tells you to assign one to globalThis.Temporal.",
+    "summary": "A codec refused a value: not numeric text, not ISO-8601 date or time text, not a valid Date or Temporal value, or the wrong shape. connect() also uses it for a temporal column on a runtime with no Temporal global.",
+    "fix": "Pass a value the error lists as accepted. For a missing Temporal global, use Node 26+ or Bun 1.4+, assign a polyfill to globalThis.Temporal before connect(), or keep strings with defaults: { time: \"iso\" }.",
     "retryable": false,
     "docs": "docs/errors/OKM1210.md"
   },

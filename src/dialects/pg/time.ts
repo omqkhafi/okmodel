@@ -38,7 +38,13 @@ export type IntervalOptions = {
   readonly fields?: string;
 };
 
-declare const timeKind: unique symbol;
+/**
+ * Carries the column type on {@link TimeText}. Every string already has
+ * `charAt(pos)`, so a plain string is a `TimeText` and a subtype of it.
+ */
+export interface TimeTag<K> {
+  charAt(pos: number, kind?: K): string;
+}
 
 /**
  * Text of a column that follows `schema({ defaults: { time } })`.
@@ -46,7 +52,10 @@ declare const timeKind: unique symbol;
  * It is a string. `schema()` swaps it for a `Date` or a Temporal value when
  * the default is `"date"` or `"temporal"`.
  */
-export type TimeText<K extends TimeKind> = string & { readonly [timeKind]?: K };
+export type TimeText<K extends TimeKind> = string & TimeTag<K>;
+
+/** The column type a {@link TimeText} carries, or `never` for any other value. */
+type KindOf<V> = V extends TimeTag<infer K> ? (unknown extends K ? never : K) : never;
 
 type TemporalTypes = {
   readonly timestamptz: Temporal.Instant;
@@ -78,15 +87,15 @@ export type TimeValue<K extends TimeKind, M> = M extends "temporal"
  * A plain `string` stays. Arrays are walked.
  */
 export type Retime<V, M extends TimeMode> = V extends string
-  ? typeof timeKind extends keyof V
-    ? TimeValue<Extract<V[typeof timeKind], TimeKind>, M>
-    : V
+  ? [KindOf<V>] extends [never]
+    ? V
+    : TimeValue<Extract<KindOf<V>, TimeKind>, M>
   : V extends readonly unknown[]
     ? { readonly [I in keyof V]: Retime<V[I], M> }
     : V;
 
 /** `true` when `V` is {@link TimeText}, so `sum` and `avg` can leave it out. */
-export type IsTimeText<V> = typeof timeKind extends keyof NonNullable<V> ? true : false;
+export type IsTimeText<V> = [KindOf<NonNullable<V>>] extends [never] ? false : true;
 
 type ModeOf<O> = O extends { readonly mode: infer M } ? M : undefined;
 

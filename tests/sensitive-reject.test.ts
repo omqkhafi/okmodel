@@ -18,7 +18,7 @@ const marked = table("marked", {
   plain: date(),
 });
 
-const app = schema({ tables: [marked] });
+const app = schema({ tables: [marked], defaults: { time: "temporal" } });
 
 test("a sensitive date keeps the Temporal message, and a sensitive integer does not keep the value", async () => {
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, "Temporal");
