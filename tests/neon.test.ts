@@ -6,6 +6,7 @@
  */
 
 import { expect, test } from "bun:test";
+import { neonConfig } from "@neondatabase/serverless";
 
 import { OkmError } from "../src/contracts/error.js";
 import { open } from "../src/adapters/pg/neon.js";
@@ -36,6 +37,34 @@ test("http mode is batch and has no interactive transaction", async () => {
   if (error instanceof OkmError) expect(error.code).toBe("OKM1120");
   await pool.close();
   expect(await failure(pool.execute("select 1"))).toBeInstanceOf(Error);
+});
+
+test("an http cell that is not wire text is an error, not null", async () => {
+  const saved = neonConfig.fetchFunction;
+  const result = {
+    command: "SELECT",
+    rowCount: 1,
+    rows: [[{ day: 1 }]],
+    fields: [{ name: "d", dataTypeID: 1082 }],
+  };
+  neonConfig.fetchFunction = (_url: string, init: { body: string }) =>
+    Promise.resolve(
+      Response.json(init.body.includes('"queries"') ? { results: [result] } : result),
+    );
+  try {
+    const pool = await open({ url: "postgres://okm:okm@localhost/okm", mode: "http" });
+    for (const call of [pool.execute("select 1"), pool.batch([{ text: "select 1" }])]) {
+      const error = await failure(call);
+      expect(error).toBeInstanceOf(OkmError);
+      if (error instanceof OkmError) {
+        expect([error.kind, error.retryable]).toEqual(["driver", false]);
+        expect(error.message).toContain("[object Object]");
+      }
+    }
+    await pool.close();
+  } finally {
+    neonConfig.fetchFunction = saved;
+  }
 });
 
 async function failure(promise: Promise<unknown>): Promise<unknown> {
