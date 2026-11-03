@@ -2,10 +2,19 @@ name: After merge
 
 # Push to main, and nightly at 03:00 UTC. A failure opens or updates one issue.
 # Pull requests do not run this workflow. `gate / check` stays on ci.yml.
+# A push that touches only the site or agent rules skips it; the nightly
+# still runs everything. examples/, docs/, schemas/, skills/, and README.md
+# are not ignored: the examples job runs only here, and the rest ship.
 on:
   push:
     branches:
       - main
+    paths-ignore:
+      - "site/**"
+      - "AGENTS.md"
+      - "CLAUDE.md"
+      - ".cursor/**"
+      - ".agents/**"
   schedule:
     - cron: "0 3 * * *"
 
