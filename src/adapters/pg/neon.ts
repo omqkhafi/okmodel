@@ -14,31 +14,21 @@
  * a custom `SET`, `LISTEN`, or a prepared statement may still be visible.
  */
 
-import {
-  Pool,
-  neon,
-  neonConfig,
-  type HTTPQueryOptions,
-  type NeonQueryFunction,
-  type PoolClient,
-} from "@neondatabase/serverless";
+import { Pool, neonConfig, type PoolClient } from "@neondatabase/serverless";
 
 import type {
   DriverConnection,
   DriverPool,
   DriverPoolConfig,
   DriverStats,
-  ExecuteResult,
   WireValue,
 } from "../../contracts/driver.js";
-import { NEON_HTTP_CAPABILITIES, NEON_WEBSOCKET_CAPABILITIES } from "../capabilities.js";
-import { outcomeUnknown } from "../error.js";
+import { NEON_WEBSOCKET_CAPABILITIES } from "../capabilities.js";
 import { driverErrors, mapFailure, rejectClosed } from "../failure.js";
 import { runCall } from "./call.js";
 import { idleMs } from "./idle-ms.js";
 import { noTimeout } from "./no-inflight-timeout.js";
 import { noticeBuffer, WireSession, type WireQuery } from "./session.js";
-import { EMPTY_NOTICES, resultFrom } from "./result.js";
 
 export {
   NEON_WEBSOCKET_CAPABILITIES as capabilities,
@@ -108,12 +98,9 @@ type Queryable = {
   }): Promise<unknown>;
 };
 
-/** HTTP client with array rows and a full result. */
-type HttpSql = NeonQueryFunction<true, true>;
-
 const CONNECT_MS = 30_000;
 
-const WIRE = {
+export const WIRE = {
   getTypeParser(): (value: string) => string {
     return (value) => value;
   },
@@ -136,7 +123,7 @@ export async function open(config: NeonConfig): Promise<DriverPool> {
     if (config.idleTimeoutMs != null) {
       return import("../lazy-errors.js").then((mod) => mod.refused());
     }
-    return openHttp(config);
+    return import("./neon-http.js").then((mod) => mod.openHttp(config));
   }
   return openWebSocket(config);
 }
@@ -286,73 +273,6 @@ async function openWebSocket(config: NeonConfig): Promise<DriverPool> {
   };
 }
 
-function openHttp(config: NeonConfig): DriverPool {
-  const max = config.max ?? 10;
-  const counters: Counters = { reserved: 0, busy: 0, reservedBusy: 0, waiting: 0 };
-  let closed = false;
-  const sql: HttpSql = neon(config.url, { arrayMode: true, fullResults: true });
-  const run = async (
-    text: string,
-    params: readonly WireValue[] | undefined,
-  ): Promise<ExecuteResult> => {
-    counters.busy += 1;
-    try {
-      const result = await sql.query(text, params === undefined ? [] : [...params]);
-      return resultFrom(result, EMPTY_NOTICES);
-    } finally {
-      counters.busy = Math.max(0, counters.busy - 1);
-    }
-  };
-
-  return {
-    capabilities: NEON_HTTP_CAPABILITIES,
-    execute(text, params, options) {
-      const refused = noTimeout(options);
-      if (refused !== undefined) return refused;
-      if (closed) return rejectClosed();
-      return runCall(closed, options, () =>
-        run(text, params).catch((error: unknown) =>
-          mapFailure(error).then((mapped) => Promise.reject(mapped)),
-        ),
-      );
-    },
-    async batch(statements, options) {
-      const refused = noTimeout(options);
-      if (refused !== undefined) return refused;
-      if (closed) return rejectClosed();
-      counters.busy += 1;
-      try {
-        const queries = statements.map((statement) =>
-          sql.query(statement.text, statement.params === undefined ? [] : [...statement.params]),
-        );
-        const results = await sql.transaction(queries, httpOptions());
-        return results.map((result) => resultFrom(result, EMPTY_NOTICES));
-      } catch (error) {
-        if (!isDatabaseError(error)) throw outcomeUnknown(error);
-        throw await mapFailure(error);
-      } finally {
-        counters.busy = Math.max(0, counters.busy - 1);
-      }
-    },
-    stats: () => statsOf(counters, max),
-    close() {
-      closed = true;
-      return Promise.resolve();
-    },
-  };
-}
-
-function httpOptions(): HTTPQueryOptions<true, true> {
-  return { arrayMode: true, fullResults: true };
-}
-
-/** A Postgres SQLSTATE. A connection failure wrapped by the HTTP client has none. */
-function isDatabaseError(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  const code: unknown = Reflect.get(error, "code");
-  return typeof code === "string" && /^[0-9A-Z]{5}$/.test(code);
-}
-
 /**
  * The promise form of `pool.connect()`.
  *
@@ -380,7 +300,14 @@ function statementName(text: string): string {
   return name;
 }
 
-function statsOf(counters: Counters, size: number): DriverStats {
+/**
+ * Pool occupancy as {@link DriverStats}.
+ *
+ * @param counters - Pool occupancy
+ * @param size - Pool size
+ * @returns The stats
+ */
+export function statsOf(counters: Counters, size: number): DriverStats {
   return {
     size,
     idle: Math.max(0, size - counters.reserved - counters.busy),
