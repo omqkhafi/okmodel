@@ -80,6 +80,15 @@ The Cloud Agent image has the Bun version from `.bun-version` on `/usr/local/bin
 
 Boot starts Docker, then `bun run db:up` with `OKM_PRIMARY_PORT=55432`, `OKM_REPLICA_A_PORT=55433`, and `OKM_REPLICA_B_PORT=55434`. Leave those set on a rerun so the topology stays on those ports. The primary URL is `postgres://okm:okm@127.0.0.1:55432/okm`. The docs site listens on port 3333. If `docker info` fails, run `sudo service docker start`.
 
+## Claude Code Cloud
+
+- Each session runs in its own isolated VM with its own clone, checked out on a `claude/<random>` session branch. Parallel sessions do not share a checkout, so no worktree is needed. The remote is shared, so each session pushes its own branch name.
+- `gh` reaches GitHub through a proxy that serves the REST API for this repository only. GraphQL is refused, so `gh pr list`, `gh issue list`, and `gh project` fail, and the Projects board is out of reach. Use `gh api repos/omqkhafi/okmodel/...` or the GitHub MCP tools.
+- Auto-merge: `gh api -X PUT repos/omqkhafi/okmodel/pulls/<n>/ccr/auto_merge -f merge_method=squash`.
+- Docker: `sudo service docker start` does not start the daemon here. Run `sudo dockerd` as a background command, wait for `docker info`, then run `bun run db:up` with the ports in the Cursor Cloud section.
+- A foreground command moves to the background after 2 minutes. Run long commands in the background and read their output once.
+- Do not wait for or poll CI.
+
 ## Hygiene
 
 D115: after the M0 gate, P09A removes spike leftovers, dedupes helpers, stabilises flaky tests, and syncs docs. Every later gate (P17, P30, P44, P55, P66, P86, P99, P110, P119) ends with a lighter hygiene step — dead code, duplicated helpers, flaky tests, doc sync, a dependency audit, and the budgets re-checked — before `bun run bump release`. Post-0.10 patch trains do the same before their release.
