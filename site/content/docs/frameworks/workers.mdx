@@ -101,6 +101,12 @@ create table example_notes (
 | `DATABASE_URL` | A Worker secret | The Neon connection string. Set it with `bunx wrangler secret put DATABASE_URL`. For `wrangler dev`, put it in `.dev.vars`. |
 | `NEON_MODE` | `[vars]` in `wrangler.toml` | `websocket` or `http`. Unset means `websocket`. |
 
+`bunx wrangler types` writes an `Env` interface from the Wrangler config, and Hono takes it as `Bindings`. A var becomes a literal type: `NEON_MODE = "websocket"` gives `NEON_MODE: "websocket"`, so `c.env.NEON_MODE === "http"` is TS2367 (the types have no overlap). Read it as a string first:
+
+```ts no-check="uses the Env type that wrangler types writes"
+const mode: string = c.env.NEON_MODE;
+```
+
 ### WebSocket or HTTP
 
 | | `websocket` | `http` |
@@ -116,7 +122,7 @@ create table example_notes (
 
 The Worker checks `NEON_MODE` first, so a typo fails every request instead of falling back. `GET /health` and unknown paths answer without opening a client. Only `/notes` opens one, and `finally` hands `db.close()` to `ctx.waitUntil`, so closing does not delay the response. `close()` returns a promise, which `waitUntil` keeps alive after the response.
 
-Await every query before `finally` runs. A query builder is sent when it is awaited, so a query handed to `ctx.waitUntil` next to `db.close()` can start after `close()` and is not sent. That call fails with OKM1120, kind `invalid`, not retryable. To run work after the response, close the client only after that work settles: `ctx.waitUntil(work.finally(() => db.close()))`. A query that is already running when `close()` is called finishes and returns its rows.
+Await every query before `finally` runs. To run a write after the response, see [Close after background work](#close-after-background-work).
 
 `POST /notes` has no authentication and no body size limit. Add both before you copy it.
 
@@ -190,7 +196,49 @@ export default {
 };
 ```
 
-The responses are the same in both modes. `id` is a string, because an identity column is a Postgres `bigint`. These bodies follow from the code; no run against Neon was captured for this page.
+The responses are the same in both modes. `id` is a string, because an identity column is a Postgres `bigint`. These bodies follow from the code. The Nightly run checks the statuses of `POST /notes` and `GET /notes` and that the new row is listed, not every byte of the body.
+
+## Close after background work
+
+`close()` does not cut off a query that has already started: that query finishes and returns its rows, then the pool ends. Work that has not started when `close()` runs is refused with [OKM1120](/docs/reference/errors#okm1120) `The client is closed. close() already ran, so this call was not sent.`, kind `invalid`, not retryable. Nothing reached the database, and the database is not down.
+
+A query builder is sent when it is awaited, not when it is built. So `ctx.waitUntil(insert)` next to `ctx.waitUntil(db.close())` can lose the insert: `close()` may run before the insert starts, and the insert then fails with OKM1120.
+
+Close only after the background work settles. With Hono, a middleware opens the client, keeps a `pending` list in the context, and closes after everything on it settles. A route that writes after the response pushes its promise:
+
+```ts title="per-request client with Hono" no-check="imports hono, and ./db.js, which are not in the docs check"
+import { Hono } from "hono";
+
+import { openRequestDb } from "./db.js";
+
+type Db = Awaited<ReturnType<typeof openRequestDb>>;
+type Vars = { db: Db; pending: Promise<unknown>[] };
+
+const app = new Hono<{ Bindings: Env; Variables: Vars }>();
+
+app.use("/notes/*", async (c, next) => {
+  const db = await openRequestDb(c.env.DATABASE_URL);
+  const pending: Promise<unknown>[] = [];
+  c.set("db", db);
+  c.set("pending", pending);
+  try {
+    await next();
+  } finally {
+    c.executionCtx.waitUntil(Promise.allSettled(pending).then(() => db.close()));
+  }
+});
+
+app.post("/notes/later", async (c) => {
+  const { title } = await c.req.json<{ title: string }>();
+  // Not awaited: the response does not wait for the insert.
+  c.get("pending").push(c.get("db").example_notes.insert({ title }));
+  return c.body(null, 202);
+});
+```
+
+`Promise.allSettled` awaits each pushed query, which sends it, and `close()` runs only after the last one settles. The pool closes even when a background write fails; catch and log that failure in the route if you need it.
+
+
 
 | Request | Status | Body |
 | --- | --- | --- |
@@ -259,9 +307,11 @@ A migration that only adds tables or columns lets the old version keep serving w
 
 ## Date and time
 
-Workers have no `Temporal` global (compatibility date 2026-11-03). Date and time columns default to ISO strings, so the Worker needs no polyfill. `defaults: { time: "date" }` reads them as `Date`.
+Workers have no `Temporal` global: on a deployed Worker at compatibility date 2026-11-03, `typeof Temporal` is `"undefined"`. Date and time columns default to `"iso"` and read as ISO strings, so the Worker needs no polyfill. `defaults: { time: "date" }` reads them as `Date`, also with no polyfill ([Date and time](/docs/schema/time-columns)).
 
 For Temporal values, set `defaults: { time: "temporal" }` and assign a polyfill once, in the module that opens the client. `connect()` refuses a `temporal` column with OKM1210 when the global is missing.
+
+The polyfill adds to the upload. Measured on one Worker with `wrangler deploy --dry-run`: 283.40 KiB gzip with `temporal-polyfill` 1.0.6, 247.79 KiB without.
 
 ```ts title="src/temporal.ts" no-check="temporal-polyfill is not a dependency of the example"
 import { Temporal } from "temporal-polyfill";
@@ -288,7 +338,9 @@ globalThis.Temporal ??= Temporal;
 | Evidence | Where | What runs |
 | --- | --- | --- |
 | CI | `examples / frameworks` job | `wrangler deploy --dry-run`, the upload size against Cloudflare's free-plan limit, `nodejs_compat` in `wrangler.toml`, and the 500 for `NEON_MODE=ws` in Miniflare. No database. |
+| CI | Postgres suite, after each merge on Postgres 15 to 18, and on a pull request that touches the dialects, the runtime, or migrate | The Neon adapter in `websocket` and `http` mode, with the real `@neondatabase/serverless` driver, against a local endpoint that forwards to the suite's Postgres: date, time, and other column types read the same in both modes, a query running at `close()` returns its rows, and a call after `close()` is OKM1120. The local endpoint is not Neon's proxy and does not run in a Worker. |
 | Nightly | Scheduled run with the `NEON_URL` secret | The bundled Worker in Miniflare against Neon, in `http` then `websocket` mode: `POST /notes` (201) and `GET /notes`. |
-| Not covered | | A deployed Worker, `okm` against Neon, and cold starts. |
+| Manual, 2026-11-03 | okmodel 0.10.2, a Neon primary, a Worker deployed to Cloudflare | A URL-shortener Worker in both modes: create, read, redirect, and stats. `tx()` in `http` mode refused with OKM1111 before any I/O, `batch()` atomic, and an interactive `tx()` in `websocket` mode. This run found that `http` mode read `date` and `timestamptz` columns as `null`, which 0.10.3 fixes. |
+| Not covered | | A deployed Worker in CI, `okm` against Neon, and cold starts. |
 
 The frameworks job runs on pull requests that touch `examples/`, the runtime, the dialects, or the Frameworks pages, and after each merge.
