@@ -39,23 +39,21 @@ export type IntervalOptions = {
 };
 
 /**
- * Carries the column type on {@link TimeText}. Every string already has
- * `charAt(pos)`, so a plain string is a `TimeText` and a subtype of it.
- */
-export interface TimeTag<K> {
-  charAt(pos: number, kind?: K): string;
-}
-
-/**
  * Text of a column that follows `schema({ defaults: { time } })`.
  *
  * It is a string. `schema()` swaps it for a `Date` or a Temporal value when
- * the default is `"date"` or `"temporal"`.
+ * the default is `"date"` or `"temporal"`. The column type rides on a
+ * `charAt` overload every string already has, so a plain string is a
+ * `TimeText` and a subtype of it.
  */
-export type TimeText<K extends TimeKind> = string & TimeTag<K>;
+export type TimeText<K extends TimeKind> = string & { charAt(pos: number, kind?: K): string };
 
 /** The column type a {@link TimeText} carries, or `never` for any other value. */
-type KindOf<V> = V extends TimeTag<infer K> ? (unknown extends K ? never : K) : never;
+type KindOf<V> = V extends { charAt(pos: number, kind?: infer K): string }
+  ? unknown extends K
+    ? never
+    : K
+  : never;
 
 type TemporalTypes = {
   readonly timestamptz: Temporal.Instant;
@@ -97,7 +95,11 @@ export type Retime<V, M extends TimeMode> = V extends string
 /** `true` when `V` is {@link TimeText}, so `sum` and `avg` can leave it out. */
 export type IsTimeText<V> = [KindOf<NonNullable<V>>] extends [never] ? false : true;
 
-type ModeOf<O> = O extends { readonly mode: infer M } ? M : undefined;
+/** `O` with `mode` set to `M`. */
+type Moded<O, M extends TimeMode> = O & { readonly mode: M };
+
+/** Options object for `date()`. */
+export type DateOptions = { readonly mode?: TimeMode };
 
 /** Codec of one mode. */
 export type TimeCodec = {
@@ -124,9 +126,14 @@ export type TimeSpec = {
  * @returns A timestamptz column
  */
 export function timestamptz(precision?: number): ColumnBuilder<TimeText<"timestamptz">, PlainFlags>;
-export function timestamptz<const O extends TimeOptions>(
-  options: O,
-): ColumnBuilder<TimeValue<"timestamptz", ModeOf<O>>, PlainFlags>;
+export function timestamptz(options: Moded<TimeOptions, "iso">): ColumnBuilder<string, PlainFlags>;
+export function timestamptz(options: Moded<TimeOptions, "date">): ColumnBuilder<Date, PlainFlags>;
+export function timestamptz(
+  options: Moded<TimeOptions, "temporal">,
+): ColumnBuilder<Temporal.Instant, PlainFlags>;
+export function timestamptz(
+  options: TimeOptions,
+): ColumnBuilder<TimeText<"timestamptz">, PlainFlags>;
 export function timestamptz<TValue>(
   options?: number | TimeOptions,
 ): ColumnBuilder<TValue, PlainFlags> {
@@ -147,9 +154,12 @@ export function timestamptz<TValue>(
  * @returns A timestamp column
  */
 export function timestamp(precision?: number): ColumnBuilder<TimeText<"timestamp">, PlainFlags>;
-export function timestamp<const O extends TimeOptions>(
-  options: O,
-): ColumnBuilder<TimeValue<"timestamp", ModeOf<O>>, PlainFlags>;
+export function timestamp(options: Moded<TimeOptions, "iso">): ColumnBuilder<string, PlainFlags>;
+export function timestamp(options: Moded<TimeOptions, "date">): ColumnBuilder<Date, PlainFlags>;
+export function timestamp(
+  options: Moded<TimeOptions, "temporal">,
+): ColumnBuilder<Temporal.PlainDateTime, PlainFlags>;
+export function timestamp(options: TimeOptions): ColumnBuilder<TimeText<"timestamp">, PlainFlags>;
 export function timestamp<TValue>(
   options?: number | TimeOptions,
 ): ColumnBuilder<TValue, PlainFlags> {
@@ -169,12 +179,13 @@ export function timestamp<TValue>(
  * @returns A date column
  */
 export function date(): ColumnBuilder<TimeText<"date">, PlainFlags>;
-export function date<const O extends Pick<TimeOptions, "mode">>(
-  options: O,
-): ColumnBuilder<TimeValue<"date", ModeOf<O>>, PlainFlags>;
-export function date<TValue>(
-  options?: Pick<TimeOptions, "mode">,
-): ColumnBuilder<TValue, PlainFlags> {
+export function date(options: Moded<DateOptions, "iso">): ColumnBuilder<string, PlainFlags>;
+export function date(options: Moded<DateOptions, "date">): ColumnBuilder<Date, PlainFlags>;
+export function date(
+  options: Moded<DateOptions, "temporal">,
+): ColumnBuilder<Temporal.PlainDate, PlainFlags>;
+export function date(options: DateOptions): ColumnBuilder<TimeText<"date">, PlainFlags>;
+export function date<TValue>(options?: DateOptions): ColumnBuilder<TValue, PlainFlags> {
   return timed(
     "date",
     options,
@@ -191,9 +202,12 @@ export function date<TValue>(
  * @returns A time column
  */
 export function time(precision?: number): ColumnBuilder<TimeText<"time">, PlainFlags>;
-export function time<const O extends TimeOptions>(
-  options: O,
-): ColumnBuilder<TimeValue<"time", ModeOf<O>>, PlainFlags>;
+export function time(options: Moded<TimeOptions, "iso">): ColumnBuilder<string, PlainFlags>;
+export function time(options: Moded<TimeOptions, "date">): ColumnBuilder<string, PlainFlags>;
+export function time(
+  options: Moded<TimeOptions, "temporal">,
+): ColumnBuilder<Temporal.PlainTime, PlainFlags>;
+export function time(options: TimeOptions): ColumnBuilder<TimeText<"time">, PlainFlags>;
 export function time<TValue>(options?: number | TimeOptions): ColumnBuilder<TValue, PlainFlags> {
   return timed(
     "time",
@@ -212,9 +226,12 @@ export function time<TValue>(options?: number | TimeOptions): ColumnBuilder<TVal
  * @returns A timetz column
  */
 export function timetz(precision?: number): ColumnBuilder<TimeText<"timetz">, PlainFlags>;
-export function timetz<const O extends TimeOptions>(
-  options: O,
-): ColumnBuilder<TimeValue<"timetz", ModeOf<O>>, PlainFlags>;
+export function timetz(options: Moded<TimeOptions, "iso">): ColumnBuilder<string, PlainFlags>;
+export function timetz(options: Moded<TimeOptions, "date">): ColumnBuilder<string, PlainFlags>;
+export function timetz(
+  options: Moded<TimeOptions, "temporal">,
+): ColumnBuilder<TimeWithOffset, PlainFlags>;
+export function timetz(options: TimeOptions): ColumnBuilder<TimeText<"timetz">, PlainFlags>;
 export function timetz<TValue>(options?: number | TimeOptions): ColumnBuilder<TValue, PlainFlags> {
   return timed(
     "timetz",
@@ -233,9 +250,14 @@ export function timetz<TValue>(options?: number | TimeOptions): ColumnBuilder<TV
  * @returns An interval column
  */
 export function interval(fields?: string): ColumnBuilder<TimeText<"interval">, PlainFlags>;
-export function interval<const O extends IntervalOptions>(
-  options: O,
-): ColumnBuilder<TimeValue<"interval", ModeOf<O>>, PlainFlags>;
+export function interval(options: Moded<IntervalOptions, "iso">): ColumnBuilder<string, PlainFlags>;
+export function interval(
+  options: Moded<IntervalOptions, "date">,
+): ColumnBuilder<string, PlainFlags>;
+export function interval(
+  options: Moded<IntervalOptions, "temporal">,
+): ColumnBuilder<Temporal.Duration, PlainFlags>;
+export function interval(options: IntervalOptions): ColumnBuilder<TimeText<"interval">, PlainFlags>;
 export function interval<TValue>(
   options?: string | IntervalOptions,
 ): ColumnBuilder<TValue, PlainFlags> {

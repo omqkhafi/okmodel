@@ -122,22 +122,20 @@ expectTypeOf<ColumnRowOf<typeof payload>>().toEqualTypeOf<{ readonly id: number 
 expectTypeOf<ColumnRowOf<ReturnType<typeof t.jsonb>>>().toEqualTypeOf<unknown>();
 
 const T = { mode: "temporal" } as const;
-expectTypeOf<
-  ColumnRowOf<ReturnType<typeof t.timestamptz<typeof T>>>
->().toEqualTypeOf<Temporal.Instant>();
-expectTypeOf<
-  ColumnRowOf<ReturnType<typeof t.timestamp<typeof T>>>
->().toEqualTypeOf<Temporal.PlainDateTime>();
-expectTypeOf<
-  ColumnRowOf<ReturnType<typeof t.date<typeof T>>>
->().toEqualTypeOf<Temporal.PlainDate>();
-expectTypeOf<
-  ColumnRowOf<ReturnType<typeof t.time<typeof T>>>
->().toEqualTypeOf<Temporal.PlainTime>();
-expectTypeOf<ColumnRowOf<ReturnType<typeof t.timetz<typeof T>>>>().toEqualTypeOf<TimeWithOffset>();
-expectTypeOf<
-  ColumnRowOf<ReturnType<typeof t.interval<typeof T>>>
->().toEqualTypeOf<Temporal.Duration>();
+const temporal = {
+  timestamptz: t.timestamptz(T),
+  timestamp: t.timestamp(T),
+  date: t.date(T),
+  time: t.time(T),
+  timetz: t.timetz(T),
+  interval: t.interval(T),
+};
+expectTypeOf<ColumnRowOf<(typeof temporal)["timestamptz"]>>().toEqualTypeOf<Temporal.Instant>();
+expectTypeOf<ColumnRowOf<(typeof temporal)["timestamp"]>>().toEqualTypeOf<Temporal.PlainDateTime>();
+expectTypeOf<ColumnRowOf<(typeof temporal)["date"]>>().toEqualTypeOf<Temporal.PlainDate>();
+expectTypeOf<ColumnRowOf<(typeof temporal)["time"]>>().toEqualTypeOf<Temporal.PlainTime>();
+expectTypeOf<ColumnRowOf<(typeof temporal)["timetz"]>>().toEqualTypeOf<TimeWithOffset>();
+expectTypeOf<ColumnRowOf<(typeof temporal)["interval"]>>().toEqualTypeOf<Temporal.Duration>();
 // No mode follows schema({ defaults: { time } }): text until schema() swaps it.
 expectTypeOf<ColumnRowOf<ReturnType<typeof t.timestamptz>>>().toEqualTypeOf<
   TimeText<"timestamptz">

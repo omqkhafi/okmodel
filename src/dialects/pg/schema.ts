@@ -111,8 +111,10 @@ export type SchemaRequires = {
  * Later keys are part of the type and rejected when present.
  *
  * @typeParam TTables - Tables in declaration order
+ * @typeParam TTime - `defaults.time` the input accepts. `"date"` and `"temporal"`
+ *   select the `schema()` overloads that swap row types
  */
-export type SchemaInput<TTables extends readonly AnyTable[]> = {
+export type SchemaInput<TTables extends readonly AnyTable[], TTime extends TimeMode = "iso"> = {
   readonly tables: TTables;
   /**
    * Oldest Postgres major this schema runs on.
@@ -151,7 +153,7 @@ export type SchemaInput<TTables extends readonly AnyTable[]> = {
    * generator is filled on insert and stays out of the catalog. A column
    * option wins.
    */
-  readonly defaults?: SchemaDefaults;
+  readonly defaults?: SchemaDefaults<TTime>;
   /**
    * Traits applied to every table.
    *
@@ -175,7 +177,7 @@ export type SchemaInput<TTables extends readonly AnyTable[]> = {
 /**
  * Project defaults for `schema()`. A column option wins over each one.
  */
-export type SchemaDefaults = {
+export type SchemaDefaults<TTime extends TimeMode = TimeMode> = {
   /**
    * What a bare `t.id()` means.
    *
@@ -196,7 +198,7 @@ export type SchemaDefaults = {
    * Bun 1.4+, or a polyfill. `{ mode }` on a column wins. The catalog does
    * not change.
    */
-  readonly time?: TimeMode;
+  readonly time?: TTime;
 };
 
 /**
@@ -463,14 +465,51 @@ export function schema<
   const TTenancy extends ColumnTenancy | undefined = undefined,
   const TValidation = undefined,
   const TViews extends readonly unknown[] = readonly [],
-  const TTime extends TimeMode = "iso",
 >(
-  config: Omit<SchemaInput<TTables>, "traits" | "tenancy" | "validation" | "views" | "defaults"> & {
+  config: Omit<SchemaInput<TTables>, "traits" | "tenancy" | "validation" | "views"> & {
     readonly traits: TTraits;
     readonly tenancy?: TTenancy;
     readonly validation?: TValidation;
     readonly views?: TViews;
-    readonly defaults?: SchemaDefaults & { readonly time?: TTime };
+  },
+): ([TValidation] extends [undefined]
+  ? TenancySchema<SchemaWithTraits<TTables, TTraits>, TTables, TTenancy>
+  : TenancySchema<SchemaWithTraits<TTables, TTraits>, TTables, TTenancy> & {
+      readonly "~validation": TValidation;
+    }) &
+  SchemaViews<TViews>;
+export function schema<
+  const TTables extends readonly AnyTable[],
+  const TTenancy extends ColumnTenancy | undefined = undefined,
+  const TValidation = undefined,
+  const TViews extends readonly unknown[] = readonly [],
+>(
+  config: Omit<SchemaInput<TTables>, "tenancy" | "validation" | "views"> & {
+    readonly tenancy?: TTenancy;
+    readonly validation?: TValidation;
+    readonly views?: TViews;
+  },
+): ([TValidation] extends [undefined]
+  ? TenancySchema<BuiltSchema<TTables>, TTables, TTenancy>
+  : TenancySchema<BuiltSchema<TTables>, TTables, TTenancy> & {
+      readonly "~validation": TValidation;
+    }) &
+  SchemaViews<TViews>;
+export function schema<
+  const TTables extends readonly AnyTable[],
+  const TTraits extends readonly { readonly fields: Readonly<Record<string, object>> }[] =
+    readonly [],
+  const TTenancy extends ColumnTenancy | undefined = undefined,
+  const TValidation = undefined,
+  const TViews extends readonly unknown[] = readonly [],
+  const TTime extends "date" | "temporal" = "date" | "temporal",
+>(
+  config: Omit<SchemaInput<TTables>, "traits" | "tenancy" | "validation" | "views" | "defaults"> & {
+    readonly traits?: TTraits;
+    readonly tenancy?: TTenancy;
+    readonly validation?: TValidation;
+    readonly views?: TViews;
+    readonly defaults: SchemaDefaults<TTime>;
   },
 ): TimedSchema<
   ([TValidation] extends [undefined]
@@ -481,30 +520,8 @@ export function schema<
     SchemaViews<TViews>,
   TTime
 >;
-export function schema<
-  const TTables extends readonly AnyTable[],
-  const TTenancy extends ColumnTenancy | undefined = undefined,
-  const TValidation = undefined,
-  const TViews extends readonly unknown[] = readonly [],
-  const TTime extends TimeMode = "iso",
->(
-  config: Omit<SchemaInput<TTables>, "tenancy" | "validation" | "views" | "defaults"> & {
-    readonly tenancy?: TTenancy;
-    readonly validation?: TValidation;
-    readonly views?: TViews;
-    readonly defaults?: SchemaDefaults & { readonly time?: TTime };
-  },
-): TimedSchema<
-  ([TValidation] extends [undefined]
-    ? TenancySchema<BuiltSchema<TTables>, TTables, TTenancy>
-    : TenancySchema<BuiltSchema<TTables>, TTables, TTenancy> & {
-        readonly "~validation": TValidation;
-      }) &
-    SchemaViews<TViews>,
-  TTime
->;
 export function schema<const TTables extends readonly AnyTable[]>(
-  config: SchemaInput<TTables>,
+  config: SchemaInput<TTables, TimeMode>,
 ): BuiltSchema<TTables> {
   rejectLater(config, SCHEMA_KNOWN, SCHEMA_LATER, "schema()");
   const schemaTraits = openSchemaTraits(config.traits);
@@ -1790,7 +1807,7 @@ function applySchemaTime(column: ColumnView, mode: TimeMode): ColumnView {
  * @param defaults - Schema option
  * @returns The mode, `"iso"` when omitted
  */
-function readTimeDefault(defaults: SchemaInput<readonly AnyTable[]>["defaults"]): TimeMode {
+function readTimeDefault(defaults: SchemaDefaults | undefined): TimeMode {
   return timeMode(defaults?.time ?? "iso", "schema() defaults.time");
 }
 
@@ -1804,9 +1821,7 @@ function requireTemporalHook(): void {
  * @param defaults - Schema option
  * @returns The id default, or `undefined` when the option is omitted
  */
-function readIdDefault(
-  defaults: SchemaInput<readonly AnyTable[]>["defaults"],
-): SchemaIdDefault | undefined {
+function readIdDefault(defaults: SchemaDefaults | undefined): SchemaIdDefault | undefined {
   if (defaults === undefined) return undefined;
   if (typeof defaults !== "object" || defaults === null) {
     definition("schema() defaults must be an object.");
