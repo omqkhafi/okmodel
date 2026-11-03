@@ -14,6 +14,31 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+## v0.10.3 — 2026-11-03
+
+Nothing changes in the catalog hash or the generated SQL. Date and time modes only change how values are read and written in your code.
+
+### 💥 Breaking Changes
+
+- Date and time columns now read as ISO strings by default (`iso` mode), so their row types become `string`. To keep the old Temporal values, set `schema({ tables, defaults: { time: "temporal" } })`. Temporal mode needs Node 26+ or Bun 1.4+, or a `Temporal` polyfill on Node 22, Node 24, and Cloudflare Workers.
+
+### ✨ Added
+
+- Date and time columns take a mode: `iso`, `date` (JavaScript `Date`), or `temporal`. Set it for the whole schema with `schema({ defaults: { time } })`, or per column with `{ mode }`, for example `t.timestamptz({ mode: "temporal" })`.
+- `okm init --time <iso|date|temporal>` writes the chosen mode into a new schema.
+- `.defaultNow()` sets a date or timestamp column's default to the database's current time.
+- `connect()` fails at once, with a clear message, when a column uses `temporal` mode and the runtime has no `Temporal` global.
+
+### 🐛 Fixed
+
+- In `okmodel/pg/neon` HTTP mode, `date`, `timestamptz`, `json`, and array values, and day `bucket()` keys, read as `null`. HTTP mode now reads every column the same way as WebSocket mode, and a value it cannot decode raises an error instead of becoming `null`.
+- On the Neon adapter, `close()` lets queries that already started finish, and a call made after `close()` is now reported as a misuse (OKM1120, not retryable) instead of a database outage.
+
+### ♻️ Changed
+
+- Docs: a new page on date and time columns, and the Workers page now covers Temporal on Workers, closing the client after background work with `waitUntil`, and what was verified against Neon. The `workers-neon` example is refreshed with Hono, current Wrangler, and a date and time column.
+- Internal: the docs site no longer reads the repository at request time, and CI skips the post-merge suite for site-only changes.
+
 ## v0.10.2 — 2026-11-02
 
 Nothing changes in the catalog hash, the generated SQL, or the public API, apart from the stricter `descendants()` and `ancestors()` types below.
