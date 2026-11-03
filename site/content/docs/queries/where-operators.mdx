@@ -9,7 +9,7 @@ Families: text is `text`, `citext`, `varchar(n)`, `char(n)`, or a name starting 
 
 ## How a where is built
 
-A scalar writes `=`. An object needs `eq`: json, jsonb, Temporal, an array, a range, or another object the codec accepts. A bare object is refused on every column. A `Date` is refused inside `eq` too.
+A scalar writes `=`. An object needs `eq`: json, jsonb, a `Date` or a Temporal value on a column in that [mode](/docs/schema/time-columns#modes), an array, a range, or another object the codec accepts. A bare object is refused on every column. A `Date` on a column in another mode is refused inside `eq` too.
 
 Fields of one object join with `and`, in key order. Two operators on one field do too. There is no `and()` helper. The caller's predicate is first, then a preset `where`. [Request filters](/docs/queries/request-filters) builds that `and` when one field sends two operators. `undefined` adds no predicate. `or()` takes one array.
 

@@ -38,6 +38,7 @@ type Columns = readonly {
 type Codecs = {
   readonly bigint: string | undefined;
   readonly numeric: string | undefined;
+  readonly timestamps: string | undefined;
   readonly params: readonly RawCodec[];
   readonly columns: Columns;
 };
@@ -80,6 +81,7 @@ export async function runTypedRaw(
   }
   await live.connected;
   const statement = await lockedStatement(live, sql);
+  await (await import("../dialects/pg/time.js")).loadTimeCodecs();
   const bound = codecsOf(live, statement);
   if (!Array.isArray(params) || params.length !== bound.params.length) {
     const got = Array.isArray(params) ? String(params.length) : "no list of";
@@ -153,12 +155,18 @@ async function loadLock(session: Session, path: string): Promise<RawLock> {
 function codecsOf(session: Session, statement: RawLockStatement): Codecs {
   const modes = Reflect.get(session.schema, "codecs") as RawCodecModes | undefined;
   const found = codecs.get(statement);
-  if (found !== undefined && found.bigint === modes?.bigint && found.numeric === modes?.numeric) {
+  if (
+    found !== undefined &&
+    found.bigint === modes?.bigint &&
+    found.numeric === modes?.numeric &&
+    found.timestamps === modes?.timestamps
+  ) {
     return found;
   }
   const made: Codecs = {
     bigint: modes?.bigint,
     numeric: modes?.numeric,
+    timestamps: modes?.timestamps,
     params: statement.params.map((param) => rawCodec(param.pgType, param.enumLabels, modes)),
     columns: statement.columns.map((column) => ({
       name: column.name,

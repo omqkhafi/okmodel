@@ -102,6 +102,7 @@ const slots = table(
 );
 
 const app = schema({
+  defaults: { time: "temporal" },
   casing: "snake",
   tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
   tables: [tags, tasks, items, moments, days, blobs, slots],

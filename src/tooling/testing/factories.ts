@@ -526,6 +526,19 @@ function candidatesFor(host: FactoryHost, column: ColumnFacts): readonly unknown
     values.push(Temporal.PlainTime.from(`00:00:${String(n % 60).padStart(2, "0")}`));
   }
   if (accepts.includes("Temporal.Duration")) values.push(Temporal.Duration.from({ seconds: n }));
+  const second = String(n % 60).padStart(2, "0");
+  if (accepts.includes("Date")) values.push(new Date(`2020-01-01T00:00:${second}Z`));
+  const clock = `00:00:${second}`;
+  const iso: Readonly<Record<string, string>> = {
+    timestamptz: `2020-01-01T00:00:${second}Z`,
+    timestamp: `2020-01-01T${clock}`,
+    date: `2020-01-${String((n % 28) + 1).padStart(2, "0")}`,
+    time: clock,
+    timetz: `${clock}+00`,
+    interval: `${String(n)} seconds`,
+  };
+  const text = iso[type.replace(/[ (].*$/, "")];
+  if (text !== undefined) values.push(text);
   if (
     type === "json" ||
     type === "jsonb" ||

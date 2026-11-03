@@ -1157,6 +1157,10 @@
       "kind": "stable"
     },
     {
+      "name": "IntervalOptions",
+      "kind": "stable"
+    },
+    {
       "name": "Line",
       "kind": "stable"
     },
@@ -1229,6 +1233,10 @@
       "kind": "stable"
     },
     {
+      "name": "SchemaDefaults",
+      "kind": "stable"
+    },
+    {
       "name": "SchemaInput",
       "kind": "stable"
     },
@@ -1258,6 +1266,18 @@
     },
     {
       "name": "TableOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "TimeMode",
+      "kind": "stable"
+    },
+    {
+      "name": "TimeOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "TimeText",
       "kind": "stable"
     },
     {
@@ -1470,6 +1490,10 @@
     },
     {
       "name": "line",
+      "kind": "stable"
+    },
+    {
+      "name": "loadTimeCodecs",
       "kind": "stable"
     },
     {

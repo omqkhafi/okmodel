@@ -30,6 +30,23 @@ export type InitTenancy = (typeof INIT_TENANCY)[number];
 /** Tenancy modes init can write. */
 export type InitSupportedTenancy = "none" | "column";
 
+/** `defaults.time` modes init can write. */
+export type InitTime = "iso" | "date" | "temporal";
+
+/**
+ * Reads `--time`.
+ *
+ * @param value - Flag text, when passed
+ * @returns The mode, or `undefined` when the flag is absent
+ */
+export function timeFlag(value: string | undefined): InitTime | undefined {
+  if (value === undefined) return undefined;
+  if (value !== "iso" && value !== "date" && value !== "temporal") {
+    initUsage(`Unknown time mode ${value}.`, "Pass --time iso, date, or temporal.");
+  }
+  return value;
+}
+
 /**
  * Throws an init error with a fixed outcome and `retryable: false`.
  *

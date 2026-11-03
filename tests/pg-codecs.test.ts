@@ -47,6 +47,10 @@ import {
   type ColumnFlags,
   type Range,
 } from "../src/dialects/pg/index.js";
+import { loadTimeCodecs } from "../src/dialects/pg/time.js";
+
+await loadTimeCodecs();
+const T = { mode: "temporal" } as const;
 
 test("scalar codecs round-trip", () => {
   round(smallint(), 12);
@@ -72,17 +76,17 @@ test("scalar codecs round-trip", () => {
   round(json<{ readonly n: number }>(), { n: 1 });
   round(jsonb(), ["a", null]);
   round(uuid(), "01890c40-7e8a-7c3e-8c3e-9c6d5c2a1b00");
-  round(timestamptz(), Temporal.Instant.from("2020-01-02T03:04:05.123456789Z"));
-  round(timestamptz(0), Temporal.Instant.from("2020-01-02T03:04:05Z"));
-  round(timestamp(), Temporal.PlainDateTime.from("2020-01-02T03:04:05.1"));
-  round(date(), Temporal.PlainDate.from("2020-01-02"));
-  round(time(0), Temporal.PlainTime.from("03:04:05"));
-  round(timetz(), {
+  round(timestamptz(T), Temporal.Instant.from("2020-01-02T03:04:05.123456789Z"));
+  round(timestamptz({ ...T, precision: 0 }), Temporal.Instant.from("2020-01-02T03:04:05Z"));
+  round(timestamp(T), Temporal.PlainDateTime.from("2020-01-02T03:04:05.1"));
+  round(date(T), Temporal.PlainDate.from("2020-01-02"));
+  round(time({ ...T, precision: 0 }), Temporal.PlainTime.from("03:04:05"));
+  round(timetz(T), {
     time: Temporal.PlainTime.from("03:04:05"),
     offset: "+00:00",
   });
-  round(interval(), Temporal.Duration.from("P1DT2H"));
-  round(interval("day to second"), Temporal.Duration.from("PT2H"));
+  round(interval(T), Temporal.Duration.from("P1DT2H"));
+  round(interval({ ...T, fields: "day to second" }), Temporal.Duration.from("PT2H"));
   round(tsvector(), "cat:1 fat:2");
   round(ltree(), "Top.Science.Astronomy");
   round(enumColumn("color", ["red", "blue"]), "red");
@@ -148,7 +152,8 @@ test("OKM1210 rejects a value a codec cannot accept", () => {
   expect(codeOf(() => varchar(2).encode("abcd"))).toBe("OKM1210");
   expect(codeOf(() => numeric().encode("1.2.3"))).toBe("OKM1210");
   expect(codeOf(() => numeric().decode("nope"))).toBe("OKM1210");
-  expect(codeOf(() => timestamptz().decode("not-a-time"))).toBe("OKM1210");
+  expect(codeOf(() => timestamptz(T).decode("not-a-time"))).toBe("OKM1210");
+  expect(codeOf(() => timestamptz().encode("not-a-time"))).toBe("OKM1210");
   expect(codeOf(() => point().decode("nope"))).toBe("OKM1210");
   expect(codeOf(() => boolean().decode("yes"))).toBe("OKM1210");
   expect(codeOf(() => ltree().encode("bad label"))).toBe("OKM1210");
@@ -166,7 +171,7 @@ test("a missing Temporal global says the app must supply it", () => {
   try {
     let error: unknown;
     try {
-      timestamptz().decode("2020-01-01T00:00:00Z");
+      timestamptz(T).decode("2020-01-01T00:00:00Z");
     } catch (caught) {
       error = caught;
     }

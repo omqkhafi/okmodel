@@ -17,6 +17,7 @@ import { readClientGenerator, type ClientFill } from "../../contracts/generator.
 import { readArray, writeArray } from "./array-literal.js";
 import { definition, rejected } from "./misuse.js";
 import { quoteLiteral } from "./quote.js";
+import type { TimeCodec, TimeMode, TimeSpec } from "./time.js";
 
 /** Flags that decide the row, insert, and update shapes of one column. */
 export type ColumnFlags = {
@@ -310,6 +311,8 @@ export type ColumnState<TValue> = {
    * (`"Array"`, `"Temporal.Instant"`). Absent when the codec takes only scalars.
    */
   readonly accepts: readonly string[] | undefined;
+  /** Date and time mode and codecs. Absent on other columns. Not part of the catalog. */
+  readonly time?: TimeSpec;
 };
 
 /** Fields a scalar builder sets. Flags are passed beside the codec. */
@@ -345,6 +348,7 @@ export type OpenColumn<TValue> = {
   };
   readonly primaryKey?: boolean;
   readonly typeLabel?: string;
+  readonly time?: TimeSpec;
 };
 
 /**
@@ -415,6 +419,12 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
     value: (TFlags["nullable"] extends true ? TValue | null : TValue) | (() => TValue),
   ): ColumnBuilder<TValue, FlagTrue<TFlags, "hasDefault">> {
     const clientDefault = readClientGenerator(value);
+    const tag = {}.toString.call(value);
+    if (tag === "[object Date]" || tag.startsWith("[object Temporal.")) {
+      definition(
+        "A Date or Temporal default is frozen at the time schema() runs. Use .defaultNow() for the database time or .default(() => ...) for a client value.",
+      );
+    }
     if (clientDefault !== undefined) {
       return rebuild<TValue, FlagTrue<TFlags, "hasDefault">>(this.state, {
         hasDefault: true,
@@ -461,6 +471,19 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
       clientDefault: undefined,
       generated: undefined,
     });
+  }
+
+  /**
+   * Stores `now()` as the default. Exactly `.defaultSql("now()")`: same
+   * catalog, same hash. For `timestamptz`, `timestamp`, and `date`.
+   *
+   * @returns The same column, with a default
+   */
+  defaultNow(): ColumnBuilder<TValue, FlagTrue<TFlags, "hasDefault">> {
+    if (this.state.dims > 0 || !/^(timestamptz|timestamp|date)(\(|$)/.test(this.state.baseType)) {
+      definition("defaultNow() needs a timestamptz, timestamp, or date column.");
+    }
+    return this.defaultSql("now()");
   }
 
   /**
@@ -802,6 +825,7 @@ export function openColumn<TValue, TFlags extends ColumnFlags>(
     elementEncode,
     elementDecode,
     accepts: input.accepts,
+    ...(input.time !== undefined ? { time: input.time } : {}),
   });
 }
 
@@ -901,6 +925,35 @@ export function retarget<TValue, TFlags extends ColumnFlags>(
     ...(patch.dropPrimary === true ? { primaryKey: false } : {}),
     ...(patch.references !== undefined ? { references: patch.references } : {}),
   });
+}
+
+/**
+ * Returns a time column in another mode. `schema()` applies `defaults.time`
+ * with it. The catalog does not change.
+ *
+ * @param state - Column definition with a {@link TimeSpec}
+ * @param mode - Mode to apply
+ * @param codec - Codec of that mode
+ * @returns A new column builder
+ */
+export function retimed(
+  state: ColumnState<unknown>,
+  mode: TimeMode,
+  codec: TimeCodec,
+): ColumnBuilder<unknown, ColumnFlags> {
+  const encode = codec.encode as (value: unknown) => string;
+  const scalar = rebuild<unknown, ColumnFlags>(state, {
+    dims: 0,
+    encode,
+    decode: codec.decode,
+    elementEncode: encode,
+    elementDecode: codec.decode,
+    accepts: codec.accepts,
+    time: { mode, codec: (state.time as TimeSpec).codec },
+  });
+  return state.dims === 0
+    ? scalar
+    : (scalar.array({ dims: state.dims }) as ColumnBuilder<unknown, ColumnFlags>);
 }
 
 function rebuild<TValue, TFlags extends ColumnFlags>(

@@ -109,6 +109,10 @@ export async function acceptServer(
   onWrite?: object,
 ): Promise<void> {
   if (source.limits !== undefined) (await import("./limits.js")).assertLimits(source.limits);
+  // Date and time decoders stay out of every graph until a client connects.
+  if (Object.values(schema.model).some((table) => table.columns.some((c) => c.time))) {
+    await (await import("../dialects/pg/time.js")).loadTimeCodecs();
+  }
   if (onWrite !== undefined) {
     const { assertObserveKeys, observeKeyList } = await import("./observe-keys.js");
     const observeKeys = observeKeyList(onWrite);

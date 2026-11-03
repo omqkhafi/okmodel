@@ -64,6 +64,8 @@ export type ColumnModel = {
    * object for the column (OKM1121).
    */
   readonly accepts?: readonly string[] | undefined;
+  /** Mode of a date or time column, after `defaults.time`. Absent on other columns. */
+  readonly time?: "iso" | "date" | "temporal";
 };
 
 /**

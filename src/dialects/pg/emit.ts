@@ -7,6 +7,7 @@
 
 import { ColumnBuilder, type ColumnState } from "./column.js";
 import { type BuiltSchema } from "./schema.js";
+import type { TimeMode } from "./time.js";
 import { type AnyTable, emittedTypeName } from "./table.js";
 import { contributedFields, type Trait } from "./trait.js";
 
@@ -186,7 +187,7 @@ function fields(
     if (kind === "row") {
       if (!state.hidden) {
         printed.push(
-          `  readonly ${field}: ${valueType(state, jsonTypes?.get(`${item.name}.${field}`))};`,
+          `  readonly ${field}: ${valueType(state, jsonTypes?.get(`${item.name}.${field}`), source.codecs.timestamps)};`,
         );
       }
       continue;
@@ -196,7 +197,11 @@ function fields(
       continue;
     }
     const mode = kind === "update" ? "optional" : written;
-    const label = valueType(state, jsonTypes?.get(`${item.name}.${field}`));
+    const label = valueType(
+      state,
+      jsonTypes?.get(`${item.name}.${field}`),
+      source.codecs.timestamps,
+    );
     printed.push(
       mode === "optional" ? `  readonly ${field}?: ${label};` : `  readonly ${field}: ${label};`,
     );
@@ -225,8 +230,12 @@ function updateMode(state: ColumnState<unknown>): "omit" | "optional" {
   return "optional";
 }
 
-function valueType(state: ColumnState<unknown>, jsonArg: string | undefined): string {
-  let label = scalarLabel(state, jsonArg);
+function valueType(
+  state: ColumnState<unknown>,
+  jsonArg: string | undefined,
+  time: TimeMode,
+): string {
+  let label = scalarLabel(state, jsonArg, time);
   if (state.dims > 0) {
     for (let rank = 0; rank < state.dims; rank += 1) {
       label = `readonly (${label})[]`;
@@ -238,20 +247,58 @@ function valueType(state: ColumnState<unknown>, jsonArg: string | undefined): st
   return label;
 }
 
-function scalarLabel(state: ColumnState<unknown>, jsonArg: string | undefined): string {
+function scalarLabel(
+  state: ColumnState<unknown>,
+  jsonArg: string | undefined,
+  time: TimeMode,
+): string {
   if (state.picklist !== undefined) {
     return state.picklist.values.map((value) => JSON.stringify(value)).join(" | ");
   }
   if (state.typeLabel !== undefined) {
     return state.typeLabel;
   }
-  return pgScalarType(baseName(state.baseType), jsonArg) ?? "unknown";
+  return (
+    pgScalarType(baseName(state.baseType), jsonArg, {
+      timestamps: state.time?.mode ?? time,
+    }) ?? "unknown"
+  );
 }
 
-/** Codec choices that change the TypeScript type of `bigint` and `numeric`. */
+/**
+ * TypeScript type of a date or time type in one mode.
+ *
+ * @param base - Postgres base name
+ * @param mode - Column mode
+ * @returns The type expression
+ */
+function timeLabel(base: string, mode: TimeMode): string {
+  if (mode === "date") {
+    return base === "timestamptz" || base === "timestamp" || base === "date" ? "Date" : "string";
+  }
+  if (mode === "iso") return "string";
+  switch (base) {
+    case "timestamptz":
+      return "Temporal.Instant";
+    case "timestamp":
+      return "Temporal.PlainDateTime";
+    case "date":
+      return "Temporal.PlainDate";
+    case "time":
+      return "Temporal.PlainTime";
+    case "timetz":
+      return "{ readonly time: Temporal.PlainTime; readonly offset: string }";
+    default:
+      return "Temporal.Duration";
+  }
+}
+
+/** Codec choices that change the TypeScript type of `bigint`, `numeric`, and time types. */
 export type PgTypescriptCodecs = {
   readonly bigint?: "string" | "number" | "bigint";
   readonly numeric?: "string" | "number";
+  /** `defaults.time`. Omitted is `iso`. */
+  readonly timestamps?: TimeMode;
 };
 
 /**
@@ -336,17 +383,12 @@ function pgScalarType(
     case "jsonb":
       return `jsonb<${jsonArg ?? "unknown"}>`;
     case "timestamptz":
-      return "Temporal.Instant";
     case "timestamp":
-      return "Temporal.PlainDateTime";
     case "date":
-      return "Temporal.PlainDate";
     case "time":
-      return "Temporal.PlainTime";
     case "timetz":
-      return "{ readonly time: Temporal.PlainTime; readonly offset: string }";
     case "interval":
-      return "Temporal.Duration";
+      return timeLabel(base, codecs?.timestamps ?? "iso");
     case "tstzrange":
       return rangeLabel("Temporal.Instant");
     case "daterange":

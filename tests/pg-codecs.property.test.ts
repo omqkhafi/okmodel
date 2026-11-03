@@ -49,7 +49,7 @@ test("integers and timestamps round-trip", () => {
   fc.assert(
     fc.property(fc.integer({ min: Date.UTC(1970, 0, 1), max: Date.UTC(2100, 0, 1) }), (ms) => {
       const instant = Temporal.Instant.from(new Date(ms).toISOString());
-      const column = timestamptz();
+      const column = timestamptz({ mode: "temporal" });
       expect(column.decode(column.encode(instant)).toString()).toBe(instant.toString());
     }),
   );

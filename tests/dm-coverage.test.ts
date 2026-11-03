@@ -103,7 +103,7 @@ test("status failedAt stays 0-based; apply messages are 1-based", () => {
 
 test("area pages record DM and B-07/B-08 honesty statements", () => {
   const time = readFileSync(join(root, "site/content/docs/schema/time-columns.mdx"), "utf8");
-  expect(time).toContain("Node 22 and 24 need a polyfill");
+  expect(time).toContain("Node 22, Node 24, and Cloudflare Workers have none");
 
   const drivers = readFileSync(join(root, "site/content/docs/operate/drivers.mdx"), "utf8");
   expect(drivers).toContain("Minimum Bun is 1.4");

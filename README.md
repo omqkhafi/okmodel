@@ -55,7 +55,7 @@ bun add okmodel @electric-sql/pglite
 bun add okmodel
 ```
 
-Date and time columns need a `Temporal` global. Bun and Node 26 have it. On Node 22 and 24, assign a polyfill such as `temporal-polyfill` to `globalThis.Temporal` before those columns run.
+Date and time columns are ISO-8601 strings by default and run on every runtime. `schema({ defaults: { time: "date" } })` reads them as `Date`, and `"temporal"` as Temporal values, which need a `Temporal` global: Node 26+ and Bun 1.4+ have it, and on Node 22 and 24 a polyfill such as `temporal-polyfill` is assigned to `globalThis.Temporal`.
 
 ## Quick Start
 

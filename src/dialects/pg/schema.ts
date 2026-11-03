@@ -36,7 +36,13 @@ import {
   type ClientGenerator,
 } from "../../contracts/generator.js";
 import { compileColumn, type CompilableColumn } from "./compile.js";
-import { ColumnBuilder, formatType, type ColumnState, type ReferenceModifier } from "./column.js";
+import {
+  ColumnBuilder,
+  formatType,
+  retimed,
+  type ColumnState,
+  type ReferenceModifier,
+} from "./column.js";
 import {
   formatPostgresFloor,
   isPostgresMajor,
@@ -56,6 +62,7 @@ import {
 import { definition, unavailable } from "./misuse.js";
 import { isRelationCall, type ManyThroughRelation, type RelationEdge } from "./relations.js";
 import { decodeText, encodeText } from "./text.js";
+import { hasTemporal, temporalMissing, timeMode, type Retime, type TimeMode } from "./time.js";
 import type {
   FieldsOfList,
   HasArchive,
@@ -78,11 +85,11 @@ import {
   rejectLater,
 } from "./table.js";
 
-/** Codec defaults from spec section 6.6. */
+/** Codec defaults from spec section 6.6. `timestamps` is the applied `defaults.time`. */
 export type SchemaCodecs = {
   readonly bigint: "string" | "number" | "bigint";
   readonly numeric: "string" | "number";
-  readonly timestamps: "temporal";
+  readonly timestamps: TimeMode;
 };
 
 /**
@@ -127,7 +134,10 @@ export type SchemaInput<TTables extends readonly AnyTable[]> = {
   readonly codecs?: {
     readonly bigint?: SchemaCodecs["bigint"];
     readonly numeric?: SchemaCodecs["numeric"];
-    readonly timestamps?: SchemaCodecs["timestamps"];
+    /**
+     * @deprecated Moved to `defaults.time`. `defaults: { time: "temporal" }` keeps Temporal values.
+     */
+    readonly timestamps?: never;
   };
   readonly types?: "emitted" | "inferred";
   /**
@@ -141,9 +151,7 @@ export type SchemaInput<TTables extends readonly AnyTable[]> = {
    * generator is filled on insert and stays out of the catalog. A column
    * option wins.
    */
-  readonly defaults?: {
-    readonly id?: "uuidv7" | "uuidv4" | ClientGenerator<string>;
-  };
+  readonly defaults?: SchemaDefaults;
   /**
    * Traits applied to every table.
    *
@@ -163,6 +171,62 @@ export type SchemaInput<TTables extends readonly AnyTable[]> = {
   readonly triggers?: unknown;
   readonly views?: unknown;
 };
+
+/**
+ * Project defaults for `schema()`. A column option wins over each one.
+ */
+export type SchemaDefaults = {
+  /**
+   * What a bare `t.id()` means.
+   *
+   * Omitted, the database default is `gen_random_uuid()`. `"uuidv4"` stores
+   * the same function. `"uuidv7"` stores `uuidv7()` and needs Postgres 18
+   * (`minPostgres: 18`).
+   * Pick `uuidv7` for a large write-heavy table: the ids are time-ordered
+   * and the index stays local. Random ids are fine elsewhere. A client
+   * generator is filled on insert and stays out of the catalog.
+   */
+  readonly id?: "uuidv7" | "uuidv4" | ClientGenerator<string>;
+  /**
+   * How date and time columns read and write.
+   *
+   * Omitted is `"iso"`: ISO-8601 strings on every runtime. `"date"` is a JS
+   * `Date` for `date`, `timestamp`, and `timestamptz` (milliseconds).
+   * `"temporal"` is Temporal values and needs a `Temporal` global: Node 26+,
+   * Bun 1.4+, or a polyfill. `{ mode }` on a column wins. The catalog does
+   * not change.
+   */
+  readonly time?: TimeMode;
+};
+
+/**
+ * A schema whose date and time columns follow `defaults.time`.
+ *
+ * `"iso"` and an omitted default keep the schema type. `"date"` and
+ * `"temporal"` swap the text of every column that names no mode.
+ *
+ * @typeParam S - Schema type
+ * @typeParam M - `defaults.time`
+ */
+export type TimedSchema<S, M extends TimeMode> = M extends "iso"
+  ? S
+  : S extends { readonly "~byName": infer B }
+    ? Omit<S, "~byName"> & {
+        readonly "~byName": {
+          readonly [N in keyof B]: Omit<B[N], "~row" | "~insert" | "~update"> & {
+            readonly "~row": RetimeShape<B[N], "~row", M>;
+            readonly "~insert": RetimeShape<B[N], "~insert", M>;
+            readonly "~update": RetimeShape<B[N], "~update", M>;
+          };
+        };
+      }
+    : S;
+
+type RetimeShape<T, K extends string, M extends TimeMode> = T extends {
+  readonly [P in K]: infer R;
+}
+  ? { readonly [F in keyof R]: Retime<R[F], M> }
+  : never;
 
 /**
  * A compiled schema.
@@ -330,6 +394,8 @@ type PreparedColumn = {
   readonly fill: ClientFill | undefined;
   readonly elementEncode: ((value: unknown) => string) | undefined;
   readonly accepts: readonly string[] | undefined;
+  /** Date and time mode after `defaults.time`. Absent on other columns. */
+  readonly time: TimeMode | undefined;
 };
 
 /** Fills catalog objects on the first `.catalog` read. `schema()` itself does not. */
@@ -397,36 +463,46 @@ export function schema<
   const TTenancy extends ColumnTenancy | undefined = undefined,
   const TValidation = undefined,
   const TViews extends readonly unknown[] = readonly [],
+  const TTime extends TimeMode = "iso",
 >(
-  config: Omit<SchemaInput<TTables>, "traits" | "tenancy" | "validation" | "views"> & {
+  config: Omit<SchemaInput<TTables>, "traits" | "tenancy" | "validation" | "views" | "defaults"> & {
     readonly traits: TTraits;
     readonly tenancy?: TTenancy;
     readonly validation?: TValidation;
     readonly views?: TViews;
+    readonly defaults?: SchemaDefaults & { readonly time?: TTime };
   },
-): ([TValidation] extends [undefined]
-  ? TenancySchema<SchemaWithTraits<TTables, TTraits>, TTables, TTenancy>
-  : TenancySchema<SchemaWithTraits<TTables, TTraits>, TTables, TTenancy> & {
-      readonly "~validation": TValidation;
-    }) &
-  SchemaViews<TViews>;
+): TimedSchema<
+  ([TValidation] extends [undefined]
+    ? TenancySchema<SchemaWithTraits<TTables, TTraits>, TTables, TTenancy>
+    : TenancySchema<SchemaWithTraits<TTables, TTraits>, TTables, TTenancy> & {
+        readonly "~validation": TValidation;
+      }) &
+    SchemaViews<TViews>,
+  TTime
+>;
 export function schema<
   const TTables extends readonly AnyTable[],
   const TTenancy extends ColumnTenancy | undefined = undefined,
   const TValidation = undefined,
   const TViews extends readonly unknown[] = readonly [],
+  const TTime extends TimeMode = "iso",
 >(
-  config: Omit<SchemaInput<TTables>, "tenancy" | "validation" | "views"> & {
+  config: Omit<SchemaInput<TTables>, "tenancy" | "validation" | "views" | "defaults"> & {
     readonly tenancy?: TTenancy;
     readonly validation?: TValidation;
     readonly views?: TViews;
+    readonly defaults?: SchemaDefaults & { readonly time?: TTime };
   },
-): ([TValidation] extends [undefined]
-  ? TenancySchema<BuiltSchema<TTables>, TTables, TTenancy>
-  : TenancySchema<BuiltSchema<TTables>, TTables, TTenancy> & {
-      readonly "~validation": TValidation;
-    }) &
-  SchemaViews<TViews>;
+): TimedSchema<
+  ([TValidation] extends [undefined]
+    ? TenancySchema<BuiltSchema<TTables>, TTables, TTenancy>
+    : TenancySchema<BuiltSchema<TTables>, TTables, TTenancy> & {
+        readonly "~validation": TValidation;
+      }) &
+    SchemaViews<TViews>,
+  TTime
+>;
 export function schema<const TTables extends readonly AnyTable[]>(
   config: SchemaInput<TTables>,
 ): BuiltSchema<TTables> {
@@ -441,9 +517,9 @@ export function schema<const TTables extends readonly AnyTable[]>(
   const tables = rewritePass(config.tables, tenancy, schemaTraits, names);
   const hooks = collectHooks(tenancy, schemaTraits, config.tables, config.views);
   const types = readTypes(config.types);
-  const codecs = readCodecs(config.codecs);
-  const requires = readFloor(config.minPostgres, config.requires);
   const idDefault = readIdDefault(config.defaults);
+  const codecs = readCodecs(config.codecs, readTimeDefault(config.defaults));
+  const requires = readFloor(config.minPostgres, config.requires);
   const namespace = staticNamespace("public");
   const accepted = acceptTables(config.tables);
   const jobs: CatalogJob[] = [];
@@ -484,9 +560,15 @@ export function schema<const TTables extends readonly AnyTable[]>(
   const model = {} as Record<string, TableModel>;
   const scopeFields =
     tenancy === undefined ? undefined : tenancy.keys !== undefined ? tenancy.keys : [tenancy.key];
+  let temporal = false;
   for (const item of prepared) {
     model[item.tsName] = tableModel(item, edges, byName, accepted, scopeFields);
+    temporal ||= item.columns.some((column) => column.time === "temporal");
   }
+  // A temporal column with no Temporal global fails in connect(), before a query.
+  const clientHooks: readonly SchemaHook[] | undefined = temporal
+    ? [requireTemporalHook, ...(hooks ?? [])]
+    : hooks;
   bindViews(config.views, model, tenancy, tables, names);
 
   // Catalog objects, enum types, and the cycle check run on first read.
@@ -533,7 +615,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
     model,
     ...(schemaTraits !== undefined && schemaTraits.length > 0 ? { traits: schemaTraits } : {}),
     ...(tenancy !== undefined ? { tenancy } : {}),
-    ...(hooks !== undefined ? { hooks } : {}),
+    ...(clientHooks !== undefined ? { hooks: clientHooks } : {}),
     ...(config.validation !== undefined ? { validation: config.validation } : {}),
   } as unknown as BuiltSchema<TTables>;
 }
@@ -912,7 +994,10 @@ function compileTable(
     if (!(builder instanceof ColumnBuilder)) {
       definition(`Column ${item.name}.${field} must be a column builder.`);
     }
-    const column = applySchemaId(builder as unknown as ColumnView, idDefault);
+    const column = applySchemaTime(
+      applySchemaId(builder as unknown as ColumnView, idDefault),
+      codecs.timestamps,
+    );
     const columnSql = column.state.sqlName ?? names.name(field);
     if (bySql.has(columnSql)) {
       catalogError(
@@ -994,6 +1079,7 @@ function compileTable(
           : undefined,
       fill: column.state.clientDefault,
       accepts: column.state.accepts,
+      time: column.state.time && (column.state.time.mode ?? codecs.timestamps),
     };
     columns.push(prepared);
     byField.set(field, prepared);
@@ -1475,18 +1561,22 @@ function readCasing(casing: Casing | undefined): Casing | undefined {
   return casing;
 }
 
-function readCodecs(codecs: SchemaInput<readonly AnyTable[]>["codecs"]): SchemaCodecs {
+function readCodecs(
+  codecs: SchemaInput<readonly AnyTable[]>["codecs"],
+  timestamps: TimeMode,
+): SchemaCodecs {
   const bigint = codecs?.bigint ?? "string";
   const numeric = codecs?.numeric ?? "string";
-  const timestamps = codecs?.timestamps ?? "temporal";
   if (!BIGINT_CODECS.has(bigint)) {
     definition(`schema() codecs.bigint ${String(bigint)} must be string, number, or bigint.`);
   }
   if (!NUMERIC_CODECS.has(numeric)) {
     definition(`schema() codecs.numeric ${String(numeric)} must be string or number.`);
   }
-  if (timestamps !== "temporal") {
-    definition(`schema() codecs.timestamps ${String(timestamps)} must be temporal.`);
+  if (codecs?.timestamps !== undefined) {
+    definition(
+      'schema() codecs.timestamps moved to defaults.time, for example defaults: { time: "temporal" }.',
+    );
   }
   return { bigint, numeric, timestamps };
 }
@@ -1520,6 +1610,7 @@ function tableModel(
       ...(column.fill !== undefined ? { fill: column.fill, clientDefault: "client" as const } : {}),
       ...(column.elementEncode !== undefined ? { elementEncode: column.elementEncode } : {}),
       accepts: column.accepts,
+      ...(column.time !== undefined ? { time: column.time } : {}),
     };
   });
   return {
@@ -1681,6 +1772,33 @@ function applySchemaId(column: ColumnView, idDefault: SchemaIdDefault | undefine
 }
 
 /**
+ * Applies `defaults.time` to a date or time column that names no mode.
+ *
+ * @param column - Column as declared
+ * @param mode - Schema time default
+ * @returns The column with that mode's codec, and its mode recorded
+ */
+function applySchemaTime(column: ColumnView, mode: TimeMode): ColumnView {
+  const time = column.state.time;
+  if (time === undefined || time.mode !== undefined || mode === "iso") return column;
+  return retimed(column.state, mode, time.codec(mode)) as unknown as ColumnView;
+}
+
+/**
+ * Reads `defaults.time`. Called after {@link readIdDefault} checked the object.
+ *
+ * @param defaults - Schema option
+ * @returns The mode, `"iso"` when omitted
+ */
+function readTimeDefault(defaults: SchemaInput<readonly AnyTable[]>["defaults"]): TimeMode {
+  return timeMode(defaults?.time ?? "iso", "schema() defaults.time");
+}
+
+function requireTemporalHook(): void {
+  if (!hasTemporal()) temporalMissing();
+}
+
+/**
  * Reads `defaults.id`.
  *
  * @param defaults - Schema option
@@ -1694,8 +1812,8 @@ function readIdDefault(
     definition("schema() defaults must be an object.");
   }
   for (const key of Object.keys(defaults)) {
-    if (key !== "id") {
-      definition(`schema() defaults.${key} is not a schema default. Accepted names: id.`);
+    if (key !== "id" && key !== "time") {
+      definition(`schema() defaults.${key} is not a schema default. Accepted names: id, time.`);
     }
   }
   const id = defaults.id;

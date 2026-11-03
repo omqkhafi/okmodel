@@ -25,7 +25,7 @@ const orders = table("orders", {
   openedOn: date(),
 });
 
-const app = schema({ tables: [orders] });
+const app = schema({ tables: [orders], defaults: { time: "temporal" } });
 declare const db: Connected<typeof app>;
 
 const plain = db.orders.aggregate({ groupBy: ["status"], count: true, limit: 1 });

@@ -22,7 +22,7 @@ const spans = table("spans", {
   tz: timetz().nullable(),
 });
 
-const app = schema({ casing: "snake", tables: [spans] });
+const app = schema({ casing: "snake", tables: [spans], defaults: { time: "temporal" } });
 const T = globalThis.Temporal;
 const gate = await loadPostgresGate();
 

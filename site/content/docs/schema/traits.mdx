@@ -319,7 +319,7 @@ const app = schema({ tables: [jobs] });
 
 export async function work(url: string, owner: string) {
   await using db = connect(url, { schema: app });
-  const now = Temporal.Now.instant();
+  const now = new Date().toISOString();
   const [job] = await db.jobs.update({
     where: { status: "pending" },
     set: { status: "running", attempt: inc(1), claimedAt: now, owner },
@@ -346,8 +346,8 @@ export async function work(url: string, owner: string) {
 
 export async function rescue(url: string, owner: string) {
   await using db = connect(url, { schema: app });
-  const now = Temporal.Now.instant();
-  const stale = now.subtract({ minutes: 5 });
+  const now = new Date().toISOString();
+  const stale = new Date(Date.now() - 5 * 60_000).toISOString();
   await db.jobs.update({
     where: or([
       { status: "running", heartbeatAt: null, claimedAt: lt(stale) },

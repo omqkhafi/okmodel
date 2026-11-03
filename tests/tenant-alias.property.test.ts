@@ -44,6 +44,7 @@ const valued = table("valued", {
 });
 
 const valuedApp = schema({
+  defaults: { time: "temporal" },
   casing: "snake",
   tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
   tables: [valued],

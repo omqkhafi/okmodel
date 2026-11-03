@@ -35,6 +35,7 @@ import {
   type InitDriver,
   type InitPackageManager,
   type InitSupportedTenancy,
+  type InitTime,
 } from "./guards.js";
 import { patchPackageJson, type PackageEdit, type PackageVersions } from "./package-json.js";
 import { resolveInside } from "./paths.js";
@@ -121,6 +122,8 @@ export type InitChoices = {
   readonly root: string;
   readonly driver: InitDriver;
   readonly tenancy: InitSupportedTenancy;
+  /** `--time`. Omitted keeps the recorded mode, or `iso`. */
+  readonly time?: InitTime;
   readonly dir: string;
   readonly pm: InitPackageManager;
   readonly yes: boolean;
@@ -273,7 +276,8 @@ export function buildPlan(choices: InitChoices): InitPlan {
   const record = readRecord(readIfFile(choices.root, ".okm/init.json"));
   const recorded = record?.files ?? {};
   const desired = new Map<string, string>();
-  desired.set(`${choices.dir}/schema.ts`, schemaText(choices.tenancy));
+  const time = choices.time ?? record?.choices?.time ?? "iso";
+  desired.set(`${choices.dir}/schema.ts`, schemaText(choices.tenancy, time));
   desired.set(`${choices.dir}/client.ts`, clientText(driver));
   desired.set("migrations/.gitkeep", "\n");
   desired.set(CONFIG_FILE, choices.configSource ?? configText(choices.dir));
@@ -306,7 +310,7 @@ export function buildPlan(choices: InitChoices): InitPlan {
   files.push(classifyPackage(patched.text, scan.packageText, patched.edits));
 
   const hashes = postHashes(files);
-  const recordText = recordTextOf(choices, driver, hashes, record?.agents);
+  const recordText = recordTextOf(choices, driver, time, hashes, record?.agents);
   const recordCurrent = readIfFile(choices.root, ".okm/init.json");
   files.push(classifyRecord(recordCurrent, recordText, choices));
   files.sort(
@@ -468,6 +472,9 @@ type Planned = {
 export type InitRecordChoices = {
   readonly driver: InitDriver;
   readonly dir: string;
+  /** Tenancy and `defaults.time`, when the record has them. */
+  readonly tenancy?: InitSupportedTenancy;
+  readonly time?: InitTime;
 };
 
 /** `.okm/init.json` when the version and the file map parse. */
@@ -651,6 +658,7 @@ function postHashes(files: readonly Planned[]): Record<string, string> {
 function recordTextOf(
   choices: InitChoices,
   driver: InitDriver,
+  time: InitTime,
   hashes: Readonly<Record<string, string>>,
   agents: unknown,
 ): string {
@@ -667,6 +675,7 @@ function recordTextOf(
         driver,
         dir: choices.dir,
         tenancy: choices.tenancy,
+        time,
       },
       files,
       ...(agents === undefined ? {} : { agents }),
@@ -995,10 +1004,24 @@ export function readInitRecord(text: string | undefined): InitRecord | undefined
 
 function choicesOf(value: unknown): InitRecordChoices | undefined {
   if (typeof value !== "object" || value === null) return undefined;
-  const choices = value as { readonly driver?: unknown; readonly dir?: unknown };
+  const choices = value as {
+    readonly driver?: unknown;
+    readonly dir?: unknown;
+    readonly tenancy?: unknown;
+    readonly time?: unknown;
+  };
   if (typeof choices.driver !== "string" || !isInitDriver(choices.driver)) return undefined;
   if (typeof choices.dir !== "string" || choices.dir.length === 0) return undefined;
-  return { driver: choices.driver, dir: choices.dir };
+  return {
+    driver: choices.driver,
+    dir: choices.dir,
+    ...(choices.tenancy === "none" || choices.tenancy === "column"
+      ? { tenancy: choices.tenancy }
+      : {}),
+    ...(choices.time === "iso" || choices.time === "date" || choices.time === "temporal"
+      ? { time: choices.time }
+      : {}),
+  };
 }
 
 function allowOrder(path: string, dir: string): number {

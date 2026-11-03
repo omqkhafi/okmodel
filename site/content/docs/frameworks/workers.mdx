@@ -257,6 +257,18 @@ bunx wrangler deploy
 
 A migration that only adds tables or columns lets the old version keep serving while the new one rolls out ([Migrations in CI](/docs/guides/migrations-in-ci), [Environments](/docs/migrations/environments)).
 
+## Date and time
+
+Workers have no `Temporal` global (compatibility date 2026-11-03). Date and time columns default to ISO strings, so the Worker needs no polyfill. `defaults: { time: "date" }` reads them as `Date`.
+
+For Temporal values, set `defaults: { time: "temporal" }` and assign a polyfill once, in the module that opens the client. `connect()` refuses a `temporal` column with OKM1210 when the global is missing.
+
+```ts title="src/temporal.ts" no-check="temporal-polyfill is not a dependency of the example"
+import { Temporal } from "temporal-polyfill";
+
+globalThis.Temporal ??= Temporal;
+```
+
 ## Limits and gotchas
 
 - A suspended Neon compute cold-starts on the first request, and that request waits for it.

@@ -7,7 +7,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { OkmError } from "../../contracts/error.js";
@@ -42,6 +42,7 @@ import {
   refuseSharedMigrations,
   refuseUserModified,
   refuseWorkspaceChoice,
+  timeFlag,
   type InitDriver,
   type InitPackageManager,
 } from "./guards.js";
@@ -53,7 +54,7 @@ import {
   type InitSelection,
 } from "./monorepo.js";
 import type { PackageVersions } from "./package-json.js";
-import { limitsCommand } from "./limits.js";
+import { limitsCommand, timeCommand } from "./limits.js";
 import { normalizeInitPath } from "./paths.js";
 
 /** What `okm` dispatch returns for one command. */
@@ -78,6 +79,7 @@ export async function initCommand(
   human: (text: string) => void,
 ): Promise<InitProduced> {
   if (parsed.limits) return limitsOnly(parsed, cwd, human);
+  if (parsed.time !== undefined && hasInitRecord(parsed, cwd)) return timeOnly(parsed, cwd, human);
   if (parsed.dialect !== undefined && parsed.dialect !== "postgres") {
     initUsage(`Unknown dialect ${parsed.dialect}.`, "Pass --dialect postgres.");
   }
@@ -146,6 +148,27 @@ function limitsOnly(parsed: ParsedCli, cwd: string, human: (text: string) => voi
 }
 
 /**
+ * `okm init --time` in an initialised package edits only an unmodified
+ * generated schema. A package with no `.okm/init.json` runs a full init.
+ */
+function timeOnly(parsed: ParsedCli, cwd: string, human: (text: string) => void): InitProduced {
+  if (parsed.forceFile.length > 0 || parsed.limits) {
+    initUsage(
+      "--time does not replace a modified file or combine with --limits.",
+      "Drop --force-file and --limits. A modified schema is left as it is.",
+    );
+  }
+  const produced = timeCommand(parsed, cwd);
+  human(produced.text);
+  return produced;
+}
+
+function hasInitRecord(parsed: ParsedCli, cwd: string): boolean {
+  const project = parsed.operands[0];
+  return existsSync(join(project === undefined ? cwd : resolve(cwd, project), ".okm/init.json"));
+}
+
+/**
  * Writes one package. A workspace catalog that already names `okmodel`
  * uses `catalog:`. The package manager is the workspace root's when this
  * package has no lockfile of its own.
@@ -183,6 +206,7 @@ async function singlePackage(
       root,
       driver: resolveDriver(scan, requested),
       tenancy,
+      ...(parsed.time === undefined ? {} : { time: timeFlag(parsed.time) ?? "iso" }),
       dir,
       pm: usedPm,
       yes: parsed.yes,
@@ -254,6 +278,7 @@ async function repoPackage(
       choice: choice.choice,
       driver: requested,
       tenancy,
+      ...(parsed.time === undefined ? {} : { time: timeFlag(parsed.time) ?? "iso" }),
       dir,
       pm: usedPm,
       yes: parsed.yes,

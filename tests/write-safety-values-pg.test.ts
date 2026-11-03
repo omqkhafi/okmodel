@@ -51,7 +51,7 @@ const notes = table(
   { traits: [archivable()] },
 );
 
-const app = schema({ casing: "snake", tables: [notes] });
+const app = schema({ casing: "snake", tables: [notes], defaults: { time: "temporal" } });
 
 const gate = await loadPostgresGate();
 

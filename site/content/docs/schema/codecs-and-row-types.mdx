@@ -6,7 +6,7 @@ Codecs choose the TypeScript value of a column, and the SQL type stays. Row type
 
 ## Codecs
 
-`codecs` chooses the TypeScript value of `t.bigint()`, `t.identity()`, and `t.numeric()`. The SQL type stays `bigint` or `numeric`. A time column is already `Temporal`. Omit a key and that codec stays at its default.
+`codecs` chooses the TypeScript value of `t.bigint()`, `t.identity()`, and `t.numeric()`. The SQL type stays `bigint` or `numeric`. A date or time column takes its mode from [`defaults.time`](/docs/schema/time-columns#the-project-default). Omit a key and that codec stays at its default.
 
 The column `as` is what types the value. While the schema codec is `"string"`, a column may pass another `as`. When the schema codec is `"number"` or `"bigint"`, every column of that type must pass the same `as`. A bare column was built as `"string"`.
 
@@ -14,7 +14,6 @@ The column `as` is what types the value. While the schema codec is `"string"`, a
 | --- | --- | --- |
 | `bigint` | `"string"`, `"number"`, `"bigint"` | `"string"` |
 | `numeric` | `"string"`, `"number"` | `"string"` |
-| `timestamps` | `"temporal"` | `"temporal"` |
 
 ### bigint
 
@@ -118,24 +117,10 @@ A bare column under `"number"` is `Schema codecs.numeric is number, and payments
 
 ### timestamps
 
-`"temporal"` is the only value. Omitting it is the same. A time column has no `as`. `t.timestamptz()` is `Temporal.Instant`. See [time](/docs/schema/time-columns#time).
-
-```ts title="timestamps.ts"
-import { schema, table, t } from "okmodel/pg";
-
-const payments = table("payments", {
-  id: t.identity(),
-  paidAt: t.timestamptz(), // [!code focus]
-});
-
-export default schema({
-  tables: [payments],
-  codecs: { timestamps: "temporal" }, // [!code focus]
-});
-```
+`codecs.timestamps` moved to [`defaults.time`](/docs/schema/time-columns#the-project-default). `defaults: { time: "temporal" }` keeps Temporal values.
 
 <Callout type="error" title="OKM1060">
-Any other value is `schema() codecs.timestamps date must be temporal.`
+Any value is `schema() codecs.timestamps moved to defaults.time, for example defaults: { time: "temporal" }.`
 </Callout>
 
 ### together
@@ -157,7 +142,6 @@ export default schema({
   codecs: {
     bigint: "bigint", // [!code focus]
     numeric: "number", // [!code focus]
-    timestamps: "temporal", // [!code focus]
   },
 });
 ```

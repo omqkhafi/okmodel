@@ -306,6 +306,46 @@ test("limits are scaffolded, hinted on a later run, and applied only to an unmod
   }
 });
 
+test("init writes defaults.time, and --time changes it only in an unmodified schema", () => {
+  const cwd = copyFixture("bun");
+  const schemaPath = join(cwd, "db/schema.ts");
+  try {
+    expect(run(["init", "--yes"], cwd).code).toBe(0);
+    const written = readFileSync(schemaPath, "utf8");
+    expect(written).toContain('defaults: { time: "iso" },');
+    expect(written).toContain("Node 26+, Bun 1.4+, or a polyfill");
+
+    const dry = run(["init", "--time", "temporal", "--dry-run", "--json"], cwd);
+    expect(dry.code).toBe(0);
+    expect(envelope(dry.stdout).data.status).toBe("planned");
+    expect(readFileSync(schemaPath, "utf8")).toBe(written);
+
+    const applied = run(["init", "--time", "temporal", "--json"], cwd);
+    expect(applied.code).toBe(0);
+    expect(envelope(applied.stdout).data.status).toBe("applied");
+    const temporal = readFileSync(schemaPath, "utf8");
+    expect(temporal).toBe(written.replace('time: "iso"', 'time: "temporal"'));
+    const record = JSON.parse(readFileSync(join(cwd, ".okm/init.json"), "utf8")) as {
+      files: Record<string, string>;
+    };
+    expect(record.files["db/schema.ts"]).toBe(contentHash(temporal));
+
+    const same = run(["init", "--time", "temporal"], cwd);
+    expect(same.stdout).toContain('already sets defaults: { time: "temporal" }');
+
+    const edited = `${temporal}// local\n`;
+    writeFileSync(schemaPath, edited);
+    const left = run(["init", "--time", "date"], cwd);
+    expect(left.code).toBe(0);
+    expect(left.stdout).toContain('Set defaults: { time: "date" } in schema() yourself.');
+    expect(readFileSync(schemaPath, "utf8")).toBe(edited);
+
+    expect(run(["init", "--time", "week"], cwd).code).not.toBe(0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("a user-modified config is left unchanged until force-file names it", () => {
   const cwd = copyFixture("npm");
   const config = join(cwd, "okmodel.config.ts");
@@ -673,11 +713,11 @@ function assertPackage(cwd: string, name: "bun" | "npm" | "pnpm" | "drizzle"): v
 function assertRecord(cwd: string, driver: string, tenancy: string): void {
   const record = JSON.parse(readFileSync(join(cwd, ".okm/init.json"), "utf8")) as {
     version: number;
-    choices: { dialect: string; driver: string; dir: string; tenancy: string };
+    choices: { dialect: string; driver: string; dir: string; tenancy: string; time: string };
     files: Record<string, string>;
   };
   expect(record.version).toBe(1);
-  expect(record.choices).toEqual({ dialect: "postgres", driver, dir: "db", tenancy });
+  expect(record.choices).toEqual({ dialect: "postgres", driver, dir: "db", tenancy, time: "iso" });
   expect(record.files[".okm/init.json"]).toBeUndefined();
   for (const [path, hash] of Object.entries(record.files)) {
     expect(hash).toBe(contentHash(readFileSync(join(cwd, path), "utf8")));

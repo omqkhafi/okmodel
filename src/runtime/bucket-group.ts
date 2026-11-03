@@ -9,6 +9,7 @@
 import { throwNamed } from "../contracts/error.js";
 import type { ColumnModel } from "../dialects/pg/model.js";
 import { isBucket, type BucketUnit } from "../dialects/pg/ops/bucket.js";
+import { decodeDate } from "../dialects/pg/temporal.js";
 import { fail, list, projectExpr, quote, type Built, type Indexed, type Sink } from "./plan.js";
 import { refusePrototypeKey } from "./result-name.js";
 
@@ -217,39 +218,18 @@ function iana(tz: string): boolean {
 }
 
 /**
- * Decodes a bucket cell.
+ * Decodes a bucket cell in the column's mode.
  *
  * A clock bucket and a `date` column already carry the right codec. A
- * `timestamptz` calendar bucket comes back as `::date`. This file does not
- * import the temporal codecs: that module is already in the startup chunk,
- * and a second import would split it into a chunk the featureless app loads.
+ * `timestamptz` calendar bucket comes back as `::date`: `YYYY-MM-DD` text in
+ * `iso` mode, a `Date` at midnight UTC in `date` mode, and a
+ * `Temporal.PlainDate` in `temporal` mode.
  */
 function bucketDecode(group: BucketGroup): ((wire: string) => unknown) | undefined {
   if (group.clock || !group.column.dataType.startsWith("timestamptz")) return group.column.decode;
-  return decodeDay;
-}
-
-/**
- * Reads a calendar bucket's `YYYY-MM-DD` wire as a local date.
- *
- * @param wire - Postgres date text
- * @returns The period start
- */
-function decodeDay(wire: string): Temporal.PlainDate {
-  const temporal: unknown = (globalThis as { readonly Temporal?: unknown }).Temporal;
-  if (typeof temporal !== "object" || temporal === null || !("PlainDate" in temporal)) {
-    return fail(
-      "OKM1120",
-      "Date and time codecs need the Temporal global. okmodel does not ship a polyfill. Use a runtime that provides Temporal, or assign a polyfill to globalThis.Temporal before using these columns.",
-    );
-  }
-  try {
-    return (
-      temporal as { readonly PlainDate: { from(text: string): Temporal.PlainDate } }
-    ).PlainDate.from(wire);
-  } catch {
-    return fail("OKM1120", `date ${wire} must be YYYY-MM-DD.`);
-  }
+  const mode = group.column.time;
+  if (mode === "temporal") return decodeDate;
+  return mode === "date" ? (wire) => new Date(wire) : undefined;
 }
 
 /** Placeholder split out of the select expression so `tz` is bound once. */

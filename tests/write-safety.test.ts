@@ -44,7 +44,7 @@ const notes = table(
   { relations: { comments: many("comments", "noteId") } },
 );
 
-const app = schema({ casing: "snake", tables: [notes, comments] });
+const app = schema({ casing: "snake", tables: [notes, comments], defaults: { time: "temporal" } });
 
 const pool = {
   capabilities: {
@@ -242,7 +242,7 @@ test("QA-C1: an eq object value stays in the compiled where", async () => {
     blob: bytea(),
     meta: jsonb(),
   });
-  const stampsApp = schema({ casing: "snake", tables: [stamps] });
+  const stampsApp = schema({ casing: "snake", tables: [stamps], defaults: { time: "temporal" } });
   const db = connect(pool, { schema: stampsApp });
   await db.connected;
   const instant = Temporal.Instant.from("2020-01-02T03:04:05Z");
@@ -275,7 +275,9 @@ test("QA-C1: a bare object is a predicate, then OKM1121", async () => {
     blob: bytea(),
     meta: jsonb(),
   });
-  const db = connect(pool, { schema: schema({ casing: "snake", tables: [stamps] }) });
+  const db = connect(pool, {
+    schema: schema({ casing: "snake", tables: [stamps], defaults: { time: "temporal" } }),
+  });
   await db.connected;
   const instant = Temporal.Instant.from("2020-01-02T03:04:05Z");
   const plain = Temporal.PlainDate.from("2020-02-29");
