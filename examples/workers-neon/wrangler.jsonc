@@ -1,0 +1,13 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "okmodel-workers-neon",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-11-03",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "NEON_MODE": "websocket"
+  },
+  "secrets": {
+    "required": ["DATABASE_URL"]
+  }
+}

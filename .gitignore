@@ -39,5 +39,7 @@ packages/spikes/.m0-measure
 examples/**/.next/
 examples/**/.run/
 examples/**/.wrangler-bundle/
+examples/workers-neon/bun.lock
+examples/workers-neon/worker-configuration.d.ts
 examples/**/.tanstack/
 examples/**/dist/

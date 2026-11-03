@@ -1,7 +1,0 @@
-name = "okmodel-workers-neon"
-main = "src/worker.ts"
-compatibility_date = "2025-10-01"
-compatibility_flags = ["nodejs_compat"]
-
-[vars]
-NEON_MODE = "websocket"

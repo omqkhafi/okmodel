@@ -18,6 +18,8 @@ import pg, { type PoolClient } from "pg";
 export type NeonLocal = {
   /** URL to pass to the Neon adapter. The host is never resolved. */
   readonly url: string;
+  /** `127.0.0.1:<port>`, for a client in another process such as workerd. */
+  readonly host: string;
   /** Stops the server, its sockets, and its Postgres pool. */
   close(): Promise<void>;
 };
@@ -95,6 +97,7 @@ export function startNeonLocal(postgresUrl: string): NeonLocal {
   neonConfig.pipelineConnect = false;
   neonConfig.pipelineTLS = false;
   return {
+    host: `127.0.0.1:${String(port)}`,
     url: `postgres://${target.username}:${target.password}@neon.local${target.pathname}`,
     async close() {
       await server.stop(true);

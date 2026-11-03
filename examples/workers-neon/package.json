@@ -5,11 +5,16 @@
   "scripts": {
     "dev": "bunx wrangler dev",
     "deploy": "bunx wrangler deploy",
+    "types": "bunx wrangler types",
     "test": "bun test ./workers-neon.test.ts"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^1.2.0",
-    "miniflare": "^4.20250906.0",
-    "wrangler": "^4.40.0"
+    "@neondatabase/serverless": "1.2.0",
+    "hono": "4.13.16",
+    "okmodel": "^0.10.2"
+  },
+  "devDependencies": {
+    "miniflare": "5.20261103.0-beta",
+    "wrangler": "4.157.0"
   }
 }
