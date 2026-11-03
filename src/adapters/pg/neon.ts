@@ -24,7 +24,7 @@ import type {
   WireValue,
 } from "../../contracts/driver.js";
 import { NEON_WEBSOCKET_CAPABILITIES } from "../capabilities.js";
-import { driverErrors, mapFailure, rejectClosed } from "../failure.js";
+import { driverErrors, mapFailure } from "../failure.js";
 import { runCall } from "./call.js";
 import { idleMs } from "./idle-ms.js";
 import { noTimeout } from "./no-inflight-timeout.js";
@@ -245,13 +245,14 @@ async function openWebSocket(config: NeonConfig): Promise<DriverPool> {
   );
   const held: HeldPool = { pool, acquireMs, counters, notices, named, isClosed };
   const checkout = (): Promise<DriverConnection> =>
-    closed ? rejectClosed() : import("./neon-extra.js").then((mod) => mod.checkout(held));
+    closed ? rejectAfterClose() : import("./neon-extra.js").then((mod) => mod.checkout(held));
 
   return {
     capabilities: NEON_WEBSOCKET_CAPABILITIES,
     execute(text, params, options) {
       const refused = noTimeout(options);
       if (refused !== undefined) return refused;
+      if (closed) return rejectAfterClose();
       return runCall(closed, options, (watch) => root.query(text, params, watch));
     },
     async batch(statements, options) {
@@ -284,6 +285,17 @@ async function openWebSocket(config: NeonConfig): Promise<DriverPool> {
 function take(pool: Pool): Promise<PoolClient> {
   const connect = pool.connect.bind(pool) as () => Promise<PoolClient>;
   return connect();
+}
+
+/**
+ * Rejects a call made after `close()` with OKM1120 (not `unavailable`).
+ *
+ * The error text loads with the lazy module.
+ *
+ * @returns A rejected promise
+ */
+export function rejectAfterClose(): Promise<never> {
+  return import("./neon-extra.js").then((mod) => mod.afterClose());
 }
 
 function ensureWebSocket(): void {
