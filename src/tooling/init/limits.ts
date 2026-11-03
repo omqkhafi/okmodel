@@ -1,9 +1,10 @@
 /**
- * `okm init --limits`.
+ * `okm init --limits` and `okm init --time`.
  *
- * Writes `limits` into the client init generated, and only when that file
- * still matches the hash in `.okm/init.json`. Anything else is printed and
- * left on disk.
+ * `--limits` writes `limits` into the client init generated. `--time` writes
+ * `defaults.time` into the schema init generated. Each edits its file only
+ * when it still matches the hash in `.okm/init.json`. Anything else is printed
+ * and left on disk.
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -26,13 +27,14 @@ import {
   initUsage,
   isInitDriver,
   isInitPackageManager,
+  timeFlag,
   type InitDriver,
   type InitPackageManager,
 } from "./guards.js";
 import { normalizeInitPath, resolveInside } from "./paths.js";
-import { clientHasLimits, clientText, limitsHint, nextSteps } from "./text.js";
+import { clientHasLimits, clientText, limitsHint, nextSteps, schemaText } from "./text.js";
 
-/** What `okm init --limits` returns. Same shape as a normal init plan. */
+/** What `okm init --limits` and `--time` return. Same shape as a normal init plan. */
 export type LimitsProduced = {
   readonly text: string;
   readonly data: InitData;
@@ -48,6 +50,58 @@ export type LimitsProduced = {
  * @returns The plan document. Nothing else init writes is touched
  */
 export function limitsCommand(parsed: ParsedCli, cwd: string): LimitsProduced {
+  return editGenerated(parsed, cwd, "init --limits", (_record, driver, dir) => {
+    const path = `${dir}/client.ts`;
+    return {
+      path,
+      next: driver === undefined ? undefined : clientText(driver),
+      already: (current) => clientHasLimits(current),
+      alreadyNote: `${path} already sets limits.`,
+      hint: limitsHint(path),
+    };
+  });
+}
+
+/**
+ * Sets `defaults.time` in an unmodified generated schema.
+ *
+ * @param parsed - Parsed flags. `--time` is the mode
+ * @param cwd - Working directory
+ * @returns The plan document. Nothing else init writes is touched
+ */
+export function timeCommand(parsed: ParsedCli, cwd: string): LimitsProduced {
+  const time = timeFlag(parsed.time) ?? "iso";
+  return editGenerated(parsed, cwd, "init --time", (record, _driver, dir) => {
+    const path = `${dir}/schema.ts`;
+    const next = schemaText(record?.choices?.tenancy ?? "none", time);
+    return {
+      path,
+      next,
+      already: (current) => current === next,
+      alreadyNote: `${path} already sets defaults: { time: "${time}" }.`,
+      hint: `${path} was changed after okm init, so it is left as it is. Set defaults: { time: "${time}" } in schema() yourself.`,
+    };
+  });
+}
+
+type GeneratedEdit = {
+  readonly path: string;
+  readonly next: string | undefined;
+  readonly already: (current: string) => boolean;
+  readonly alreadyNote: string;
+  readonly hint: string;
+};
+
+function editGenerated(
+  parsed: ParsedCli,
+  cwd: string,
+  command: string,
+  target: (
+    record: ReturnType<typeof readInitRecord>,
+    driver: InitDriver | undefined,
+    dir: string,
+  ) => GeneratedEdit,
+): LimitsProduced {
   const project = parsed.operands[0];
   const start = project === undefined ? cwd : resolve(cwd, project);
   const root = prepareRoot(start);
@@ -57,17 +111,16 @@ export function limitsCommand(parsed: ParsedCli, cwd: string): LimitsProduced {
   const record = readInitRecord(recordText);
   const dir = normalizeInitPath(parsed.dbDir ?? record?.choices?.dir ?? "db");
   const driver = flaggedDriver(parsed.driver) ?? record?.choices?.driver;
-  const path = `${dir}/client.ts`;
+  const { path, next, already: isAlready, alreadyNote, hint } = target(record, driver, dir);
   const current = readOptional(root, path);
   const recorded = record?.files[path];
+  const already = current !== undefined && isAlready(current);
   const untouched =
     driver !== undefined &&
     current !== undefined &&
     recorded !== undefined &&
     recorded === contentHash(current) &&
-    !clientHasLimits(current);
-  const already = current !== undefined && clientHasLimits(current);
-  const next = driver === undefined ? undefined : clientText(driver);
+    !already;
   const write = untouched && next !== undefined && !parsed.dryRun;
   const showDiff = untouched && next !== undefined && current !== undefined;
 
@@ -79,7 +132,7 @@ export function limitsCommand(parsed: ParsedCli, cwd: string): LimitsProduced {
     ]);
   }
 
-  const note = already ? `${path} already sets limits.` : limitsHint(path);
+  const note = already ? alreadyNote : hint;
   const action = write || (showDiff && parsed.dryRun) ? "update" : "skip";
   const state = already
     ? "identical"
@@ -121,7 +174,7 @@ export function limitsCommand(parsed: ParsedCli, cwd: string): LimitsProduced {
     note,
   };
   const planHash = canonicalHash({
-    command: "init --limits",
+    command,
     path,
     action,
     state,

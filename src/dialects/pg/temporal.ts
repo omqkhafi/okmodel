@@ -1,27 +1,91 @@
 /**
  * Temporal codecs. `Temporal` is read when a value is encoded or decoded.
- */
-
-import { definition, rejected } from "./misuse.js";
-
-/** What to install when the runtime has no Temporal global. */
-const TEMPORAL_MISSING =
-  "Date and time codecs need the Temporal global. okmodel does not ship a polyfill. Use a runtime that provides Temporal, or assign a polyfill to globalThis.Temporal before using these columns.";
-
-/**
- * Reads `globalThis.Temporal`.
  *
- * The codecs do not bundle a polyfill. Node and Bun provide the global;
- * another runtime must assign one before encode or decode.
+ * `time.ts` loads this module when a client connects and a column is in
+ * `temporal` mode. `tstzrange` and `daterange` import it directly.
  */
+
+import { rejected } from "./misuse.js";
+import { hasTemporal, temporalMissing, type TimeKind, type TimePrecision } from "./time.js";
+
 type ClockText = {
   toString(options?: { readonly fractionalSecondDigits?: number }): string;
 };
 
+/** Refuses a missing Temporal global. okmodel does not ship a polyfill. */
 function requireTemporal(): void {
-  const temporal: unknown = (globalThis as { readonly Temporal?: unknown }).Temporal;
-  if (typeof temporal !== "object" || temporal === null || !("Instant" in temporal)) {
-    rejected(TEMPORAL_MISSING);
+  if (!hasTemporal()) temporalMissing();
+}
+
+/** `Object.prototype.toString` tag of each kind's Temporal value. */
+const TAGS: Readonly<Record<TimeKind, string>> = {
+  timestamptz: "Temporal.Instant",
+  timestamp: "Temporal.PlainDateTime",
+  date: "Temporal.PlainDate",
+  time: "Temporal.PlainTime",
+  timetz: "Object",
+  interval: "Temporal.Duration",
+};
+
+/**
+ * Encodes a Temporal value of one kind.
+ *
+ * A value of another type is refused, not converted with `toString()`.
+ *
+ * @param kind - Column type
+ * @param value - Application value
+ * @param digits - Fractional digits, or full precision when omitted
+ * @returns Wire text
+ */
+export function encodeTemporal(
+  kind: TimeKind,
+  value: unknown,
+  digits: TimePrecision | undefined,
+): string {
+  requireTemporal();
+  const tag = TAGS[kind];
+  if ({}.toString.call(value) !== `[object ${tag}]`) {
+    rejected(
+      `${kind} ${String(value)} must be ${kind === "timetz" ? "{ time: Temporal.PlainTime, offset }" : `a ${tag}`}.`,
+    );
+  }
+  switch (kind) {
+    case "timestamptz":
+      return encodeInstant(value as Temporal.Instant, digits);
+    case "timestamp":
+      return encodeDateTime(value as Temporal.PlainDateTime, digits);
+    case "date":
+      return encodeDate(value as Temporal.PlainDate);
+    case "time":
+      return encodeTime(value as Temporal.PlainTime, digits);
+    case "timetz":
+      return encodeTimeZone(value as TimeWithOffset, digits);
+    default:
+      return encodeDuration(value as Temporal.Duration);
+  }
+}
+
+/**
+ * Decodes wire text to the Temporal value of one kind.
+ *
+ * @param kind - Column type
+ * @param wire - Wire text
+ * @returns Temporal value
+ */
+export function decodeTemporal(kind: TimeKind, wire: string): unknown {
+  switch (kind) {
+    case "timestamptz":
+      return decodeInstant(wire);
+    case "timestamp":
+      return decodeDateTime(wire);
+    case "date":
+      return decodeDate(wire);
+    case "time":
+      return decodeTime(wire);
+    case "timetz":
+      return decodeTimeZone(wire);
+    default:
+      return decodeDuration(wire);
   }
 }
 
@@ -30,29 +94,6 @@ export type TimeWithOffset = {
   readonly time: Temporal.PlainTime;
   readonly offset: string;
 };
-
-/** Fractional seconds accepted by the date/time builders. */
-export type TimePrecision = 0 | 1 | 2 | 3 | 4 | 5 | 6;
-
-/**
- * Checks a fractional-second precision.
- *
- * @param precision - Digits, or omitted
- * @param role - Column type name
- * @returns The precision, or undefined when omitted
- */
-export function timePrecision(
-  precision: number | undefined,
-  role: string,
-): TimePrecision | undefined {
-  if (precision === undefined) {
-    return undefined;
-  }
-  if (!Number.isInteger(precision) || precision < 0 || precision > 6) {
-    definition(`${role} precision ${String(precision)} must be an integer from 0 to 6.`);
-  }
-  return precision as TimePrecision;
-}
 
 /**
  * Encodes an instant.
@@ -256,35 +297,6 @@ export function decodeDuration(wire: string): Temporal.Duration {
     rejected(
       `interval ${wire} must be what Postgres sends (for example 01:30:00 or 1 day 02:03:04) or an ISO-8601 duration (PT1H). Parts of different signs are not one Temporal.Duration.`,
     );
-  }
-}
-
-/**
- * Postgres interval field qualifier.
- *
- * @param fields - Qualifier such as `day to second`
- * @returns The same qualifier when it is known
- */
-export function intervalFields(fields: string): string {
-  switch (fields) {
-    case "year":
-    case "month":
-    case "day":
-    case "hour":
-    case "minute":
-    case "second":
-    case "year to month":
-    case "day to hour":
-    case "day to minute":
-    case "day to second":
-    case "hour to minute":
-    case "hour to second":
-    case "minute to second":
-      return fields;
-    default:
-      definition(
-        `interval fields ${fields} must be one of: year, month, day, hour, minute, second, year to month, day to hour, day to minute, day to second, hour to minute, hour to second, minute to second.`,
-      );
   }
 }
 

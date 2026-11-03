@@ -60,7 +60,7 @@ test("schema compiles a hashable catalog", () => {
   const second = built();
   expect(first.types).toBe("inferred");
   expect(first.casing).toBe("snake");
-  expect(first.codecs).toEqual({ bigint: "string", numeric: "string", timestamps: "temporal" });
+  expect(first.codecs).toEqual({ bigint: "string", numeric: "string", timestamps: "iso" });
   expect(first.requires).toEqual({ postgres: ">=17" });
   expect(serializeCatalog(first.catalog)).toBe(serializeCatalog(second.catalog));
   expect(catalogHash(first.catalog)).toBe(catalogHash(second.catalog));

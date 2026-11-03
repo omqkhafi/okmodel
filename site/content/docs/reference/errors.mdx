@@ -258,7 +258,7 @@ Codes are in numeric order. Ranges are schema `OKM1000`, queries and capabilitie
 | <a id="okm1191" />[`OKM1191`](#okm1191) | `invalid` | A multi-statement read was requested inside READ COMMITTED and no single-statement plan exists. | `docs/errors/OKM1191.md` |
 | <a id="okm1200" />[`OKM1200`](#okm1200) | `invalid` | A write or a standalone check failed a validation rule. issues lists each path and message key. | `docs/errors/OKM1200.md` |
 | <a id="okm1201" />[`OKM1201`](#okm1201) | `invalid` | Validation is enabled but `okmodel/validate` was not imported. | `docs/errors/OKM1201.md` |
-| <a id="okm1210" />[`OKM1210`](#okm1210) | `invalid` | A codec refused a value: not numeric text, not a valid temporal value, or the wrong shape. | `docs/errors/OKM1210.md` |
+| <a id="okm1210" />[`OKM1210`](#okm1210) | `invalid` | A codec refused a value: not numeric text, not ISO-8601 date or time text, not a valid Date or Temporal value, or the wrong shape. connect() also uses it for a temporal column on a runtime with no Temporal global. | `docs/errors/OKM1210.md` |
 | <a id="okm1401" />[`OKM1401`](#okm1401) | `outcome_unknown` | A commit or batch was sent and its result never arrived, so the write may or may not have happened. | `docs/errors/OKM1401.md` |
 | <a id="okm1510" />[`OKM1510`](#okm1510) | `invalid` | A migration has an unresolved lint error, or an override with an empty reason or a code no statement in the step triggered. | `docs/errors/OKM1510.md` |
 | <a id="okm1511" />[`OKM1511`](#okm1511) | `invalid` | A statement drops a table. The rows and anything that reads them are gone. | `docs/errors/OKM1511.md` |

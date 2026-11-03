@@ -16,13 +16,15 @@ import { bigint, integer, smallint } from "./integer.js";
 import { json, jsonb } from "./json.js";
 import { rejected } from "./misuse.js";
 import { daterange, int4range, int8range, numrange, tstzrange } from "./range.js";
-import { date, interval, time, timestamp, timestamptz, timetz } from "./time.js";
+import { date, interval, time, timestamp, timestamptz, timetz, type TimeMode } from "./time.js";
 import { text } from "./text.js";
 
 /** How the schema spells `bigint` and `numeric`. Both default to `string`. */
 export type RawCodecModes = {
   readonly bigint?: "string" | "number" | "bigint";
   readonly numeric?: "string" | "number";
+  /** `defaults.time`. Omitted is `iso`. */
+  readonly timestamps?: TimeMode;
 };
 
 /** Encode for a parameter and decode for a column. */
@@ -37,7 +39,7 @@ export type RawCodec = {
  *
  * @param pgType - Lock type name, such as `integer`, `jsonb`, or `mood[]`
  * @param enumLabels - Labels when the type is an enum or an array of one
- * @param modes - Schema codec modes for `bigint` and `numeric`
+ * @param modes - Schema codec modes for `bigint`, `numeric`, and time
  * @returns The codec. A type with no codec encodes strings and decodes nothing
  */
 export function rawCodec(
@@ -75,6 +77,7 @@ function textOnly(value: unknown): string {
 type Erased = ColumnBuilder<unknown, ColumnFlags>;
 
 function scalar(base: string, modes: RawCodecModes | undefined): object | undefined {
+  const mode = { mode: modes?.timestamps ?? "iso" };
   switch (base) {
     case "smallint":
       return smallint();
@@ -109,17 +112,17 @@ function scalar(base: string, modes: RawCodecModes | undefined): object | undefi
     case "jsonb":
       return jsonb();
     case "timestamptz":
-      return timestamptz();
+      return timestamptz(mode);
     case "timestamp":
-      return timestamp();
+      return timestamp(mode);
     case "date":
-      return date();
+      return date(mode);
     case "time":
-      return time();
+      return time(mode);
     case "timetz":
-      return timetz();
+      return timetz(mode);
     case "interval":
-      return interval();
+      return interval(mode);
     case "tstzrange":
       return tstzrange();
     case "daterange":

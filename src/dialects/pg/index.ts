@@ -10,6 +10,7 @@ export {
   schema,
   type BuiltSchema,
   type SchemaCodecs,
+  type SchemaDefaults,
   type SchemaInput,
   type SchemaRequires,
 } from "./schema.js";
@@ -65,7 +66,19 @@ export { boolean, bytea } from "./bool.js";
 export { jsonb, jsonReplacer } from "./json.js";
 export { id, uuid } from "./keys.js";
 export { char, citext, text, varchar } from "./text.js";
-export { date, interval, time, timestamp, timestamptz, timetz } from "./time.js";
+export {
+  date,
+  interval,
+  loadTimeCodecs,
+  time,
+  timestamp,
+  timestamptz,
+  timetz,
+  type IntervalOptions,
+  type TimeMode,
+  type TimeOptions,
+  type TimeText,
+} from "./time.js";
 export { type TimeWithOffset } from "./temporal.js";
 export { daterange, int4range, int8range, numrange, tstzrange, type Range } from "./range.js";
 export { cidr, inet, macaddr, macaddr8 } from "./network.js";

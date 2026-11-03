@@ -77,7 +77,7 @@ const samples = table("samples", {
   }).nullable(),
 });
 
-const app = schema({ casing: "snake", tables: [samples] });
+const app = schema({ casing: "snake", tables: [samples], defaults: { time: "temporal" } });
 
 const T = globalThis.Temporal;
 const NOON = T.Instant.from("2020-01-02T12:00:00.123456Z");

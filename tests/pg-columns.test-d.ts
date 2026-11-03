@@ -13,6 +13,7 @@ import {
   type Line,
   type Point,
   type Range,
+  type TimeText,
   type TimeWithOffset,
 } from "../src/dialects/pg/index.js";
 
@@ -120,12 +121,25 @@ const payload = t.json<{ readonly id: number }>();
 expectTypeOf<ColumnRowOf<typeof payload>>().toEqualTypeOf<{ readonly id: number }>();
 expectTypeOf<ColumnRowOf<ReturnType<typeof t.jsonb>>>().toEqualTypeOf<unknown>();
 
-expectTypeOf<ColumnRowOf<ReturnType<typeof t.timestamptz>>>().toEqualTypeOf<Temporal.Instant>();
-expectTypeOf<ColumnRowOf<ReturnType<typeof t.timestamp>>>().toEqualTypeOf<Temporal.PlainDateTime>();
-expectTypeOf<ColumnRowOf<ReturnType<typeof t.date>>>().toEqualTypeOf<Temporal.PlainDate>();
-expectTypeOf<ColumnRowOf<ReturnType<typeof t.time>>>().toEqualTypeOf<Temporal.PlainTime>();
-expectTypeOf<ColumnRowOf<ReturnType<typeof t.timetz>>>().toEqualTypeOf<TimeWithOffset>();
-expectTypeOf<ColumnRowOf<ReturnType<typeof t.interval>>>().toEqualTypeOf<Temporal.Duration>();
+const T = { mode: "temporal" } as const;
+const temporal = {
+  timestamptz: t.timestamptz(T),
+  timestamp: t.timestamp(T),
+  date: t.date(T),
+  time: t.time(T),
+  timetz: t.timetz(T),
+  interval: t.interval(T),
+};
+expectTypeOf<ColumnRowOf<(typeof temporal)["timestamptz"]>>().toEqualTypeOf<Temporal.Instant>();
+expectTypeOf<ColumnRowOf<(typeof temporal)["timestamp"]>>().toEqualTypeOf<Temporal.PlainDateTime>();
+expectTypeOf<ColumnRowOf<(typeof temporal)["date"]>>().toEqualTypeOf<Temporal.PlainDate>();
+expectTypeOf<ColumnRowOf<(typeof temporal)["time"]>>().toEqualTypeOf<Temporal.PlainTime>();
+expectTypeOf<ColumnRowOf<(typeof temporal)["timetz"]>>().toEqualTypeOf<TimeWithOffset>();
+expectTypeOf<ColumnRowOf<(typeof temporal)["interval"]>>().toEqualTypeOf<Temporal.Duration>();
+// No mode follows schema({ defaults: { time } }): text until schema() swaps it.
+expectTypeOf<ColumnRowOf<ReturnType<typeof t.timestamptz>>>().toEqualTypeOf<
+  TimeText<"timestamptz">
+>();
 
 expectTypeOf<ColumnRowOf<ReturnType<typeof t.tstzrange>>>().toEqualTypeOf<
   Range<Temporal.Instant>

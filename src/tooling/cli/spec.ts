@@ -634,6 +634,11 @@ export const COMMANDS: readonly CommandSpec[] = [
         type: "boolean",
         hint: "Add limits to an unmodified generated client.ts. Otherwise print the snippet.",
       },
+      {
+        name: "time",
+        type: "string",
+        hint: "<iso|date|temporal> sets defaults.time in the schema. An initialised project gets it only in an unmodified generated schema.ts.",
+      },
     ],
   }),
   spec({

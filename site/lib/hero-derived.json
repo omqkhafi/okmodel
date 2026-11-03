@@ -751,12 +751,12 @@
           {
             "n": 23,
             "mark": "add",
-            "text": "  readonly createdAt: Temporal.Instant;"
+            "text": "  readonly createdAt: string;"
           },
           {
             "n": 24,
             "mark": "add",
-            "text": "  readonly updatedAt: Temporal.Instant;"
+            "text": "  readonly updatedAt: string;"
           }
         ],
         "more": 0
@@ -849,7 +849,7 @@
           {
             "n": 23,
             "mark": "add",
-            "text": "  readonly archivedAt: Temporal.Instant | null;"
+            "text": "  readonly archivedAt: string | null;"
           },
           {
             "n": 24,

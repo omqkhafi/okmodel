@@ -17,7 +17,7 @@ A range is empty, or a pair of bounds. A null bound is unbounded. `lowerInclusiv
 | `t.daterange()` | `daterange` | `Temporal.PlainDate` | variable | yes |
 | `t.tstzrange()` | `tstzrange` | `Temporal.Instant` | variable | yes |
 
-There is no `tsrange` builder. An instant range is `t.tstzrange()`.
+There is no `tsrange` builder. An instant range is `t.tstzrange()`. Range bounds are Temporal values whatever [`defaults.time`](/docs/schema/time-columns#modes) says, so a range column needs a `Temporal` global.
 
 ```ts title="plans.ts"
 import { table, t } from "okmodel/pg";

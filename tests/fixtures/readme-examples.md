@@ -197,7 +197,7 @@ export async function report(url: string): Promise<void> {
   await using db = connect(url, { schema: app });
   // next is the cursor for the following page. Pass it back as after.
   const page = await db.notes.page({ orderBy: { title: "asc" }, limit: 20 });
-  // day is a Temporal.PlainDate. A NULL createdAt is one group, and day is null.
+  // day is "YYYY-MM-DD" text in the default iso mode. A NULL createdAt is one group, and day is null.
   const days = await db.notes.aggregate({
     groupBy: [bucket("createdAt", "day", { tz: "Asia/Riyadh", as: "day" })],
     count: true,

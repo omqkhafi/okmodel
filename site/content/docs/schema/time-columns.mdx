@@ -1,15 +1,23 @@
 ---
 title: "Date and time"
-description: "Instants, dates, clock times, and spans."
+description: "Instants, dates, clock times, and spans, as strings, Dates, or Temporal values."
 ---
 
-A time column is an instant, a calendar value, or a span.
+A time column is an instant, a calendar value, or a span. A mode sets its TypeScript value. The mode is client only: the SQL type, the catalog, its hash, and migrations are the same in every mode.
 
-## Time
+## Modes
 
-The value is a `Temporal` object. The schema [timestamps codec](/docs/schema/codecs-and-row-types#codecs) is `"temporal"`. [Fractional seconds](#fractional-seconds) apply to `timestamptz`, `timestamp`, `time`, and `timetz`.
+| Mode | `timestamptz` | `timestamp` | `date` | `time` | `timetz`, `interval` | Precision | Runtime |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `"iso"` (default) | `string` `2026-11-03T09:00:53.582634Z` | `string` `2026-11-03T09:00:53.582634` | `string` `2026-11-03` | `string` `09:00:53.582634` | `string`, as Postgres sends it | microseconds | any |
+| `"date"` | `Date` | `Date`, as UTC | `Date`, midnight UTC | `string` | `string`, as Postgres sends it | milliseconds | any |
+| `"temporal"` | `Temporal.Instant` | `Temporal.PlainDateTime` | `Temporal.PlainDate` | `Temporal.PlainTime` | `{ time, offset }`, `Temporal.Duration` | microseconds stored | a `Temporal` global |
 
-Bun and Node 26 provide a `Temporal` global. Node 22 and 24 need a polyfill assigned to `globalThis.Temporal` before these columns run. okmodel does not ship one. A missing global is OKM1210.
+`"iso"` is the default. It is lossless, it works on every runtime, it has no time-zone trap, and a row goes into JSON as it is. A `timestamptz` reads in UTC with six fractional digits, so two values compare as strings. A write takes ISO-8601 text: `T` or a space between date and time, and an offset (`Z`, `+05:30`) on `timestamptz`. Malformed text is OKM1210 before the database sees it.
+
+`"date"` is a JS `Date` for `date`, `timestamp`, and `timestamptz`. A `Date` holds milliseconds, so a read drops the microseconds. `timestamp` has no zone and `date` has no time: both are read and written as UTC.
+
+`"temporal"` is a Temporal value. Native `Temporal` is in Node 26+ and Bun 1.4+. Node 22, Node 24, and Cloudflare Workers have none: assign a polyfill to `globalThis.Temporal` before `connect()`. okmodel does not ship one. `connect()` refuses a `temporal` column at once when the global is missing (OKM1210), and the message names the runtime and the `"iso"` alternative.
 
 ```ts title="polyfill.ts"
 import { Temporal } from "temporal-polyfill";
@@ -17,84 +25,102 @@ import { Temporal } from "temporal-polyfill";
 globalThis.Temporal = Temporal;
 ```
 
-### Instant
+`interval` and `timetz` have no `Date`. In `"iso"` and `"date"` mode they are the text Postgres sends, such as `1 day 02:00:00` and `09:00:53.5+05:30`. That text is not an ISO-8601 duration. Use `"temporal"` for a duration object.
 
-`t.timestamptz()` is `timestamptz`. The TypeScript value is `Temporal.Instant`. Postgres stores it in UTC. Storage is 8 bytes. A created time or an event uses it.
+### The project default
 
-```ts title="instant.ts"
+`defaults.time` on `schema()` sets the mode of every column that names none. `okm init` writes it.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+export const events = table("events", {
+  id: t.id(),
+  at: t.timestamptz(),
+});
+
+export const app = schema({
+  tables: [events],
+  defaults: { time: "temporal" }, // [!code focus]
+});
+```
+
+### One column
+
+`{ mode }` on a column wins over the project default. The object also takes `precision`, the same number as the positional form. `interval` takes `{ mode, fields }`.
+
+```ts title="one-column.ts"
+import { table, t } from "okmodel/pg";
+
+export const events = table("events", {
+  id: t.id(),
+  at: t.timestamptz({ mode: "temporal", precision: 3 }), // [!code focus]
+  day: t.date({ mode: "date" }), // [!code focus]
+  length: t.interval({ mode: "temporal", fields: "day to second" }), // [!code focus]
+});
+```
+
+<Callout type="error" title="OKM1060">
+A mode other than `"iso"`, `"date"`, or `"temporal"` is refused when the column or the schema is built.
+</Callout>
+
+## Defaults and updates
+
+`.defaultNow()` stores `now()` as the database default. It is exactly `.defaultSql("now()")`: same catalog, same hash. It is on `timestamptz`, `timestamp`, and `date`. The database fills the value, so it works the same in every mode and reads back in the column's mode.
+
+```ts title="default-now.ts"
 import { table, t } from "okmodel/pg";
 
 export const notes = table("notes", {
-  id: t.identity(),
-  publishedAt: t.timestamptz(), // [!code focus]
+  id: t.id(),
+  body: t.text(),
+  createdAt: t.timestamptz().defaultNow(), // [!code focus]
 });
 ```
+
+A column has no "on update" option. To move a time on every update, use the [`timestamps()` trait](/docs/schema/traits#timestamps) or a trait with [`touch`](/docs/schema/traits#touch). `{ enforce: "trigger" }` also moves it for writers that bypass the client. Trait columns follow `defaults.time` like any other column.
+
+A client generator, `.default(() => ...)`, returns the column's mode type: a string in `"iso"`, a `Date` in `"date"`, a Temporal value in `"temporal"`. A value of another type is refused on insert, not converted. A column that follows `defaults.time` is typed as text where it is declared; name the mode on that column to return another type.
+
+<Callout type="error" title="OKM1060">
+A `Date` or Temporal object passed to `.default()` is refused: it is the time `schema()` ran, frozen into the catalog. Use `.defaultNow()` for the database time or `.default(() => ...)` for a client value.
+</Callout>
+
+## Types
+
+### Instant
+
+`t.timestamptz()` is `timestamptz`. Postgres stores it in UTC. Storage is 8 bytes. A created time or an event uses it.
 
 ### Timestamp
 
-`t.timestamp()` is `timestamp`. The TypeScript value is `Temporal.PlainDateTime`. It stores a civil date and time. Storage is 8 bytes.
-
-```ts title="timestamp.ts"
-import { table, t } from "okmodel/pg";
-
-export const notes = table("notes", {
-  id: t.identity(),
-  editedAt: t.timestamp(), // [!code focus]
-});
-```
+`t.timestamp()` is `timestamp`. It stores a civil date and time with no zone. Storage is 8 bytes.
 
 ### Date
 
-`t.date()` is `date`. The TypeScript value is `Temporal.PlainDate`. It stores a calendar day. Storage is 4 bytes.
-
-```ts title="date.ts"
-import { table, t } from "okmodel/pg";
-
-export const notes = table("notes", {
-  id: t.identity(),
-  day: t.date(), // [!code focus]
-});
-```
+`t.date()` is `date`. It stores a calendar day. Storage is 4 bytes.
 
 ### Time of day
 
-`t.time()` is `time`. The TypeScript value is `Temporal.PlainTime`. It stores a clock time. The zone is its own column. Storage is 8 bytes.
-
-```ts title="time-of-day.ts"
-import { table, t } from "okmodel/pg";
-
-export const notes = table("notes", {
-  id: t.identity(),
-  opens: t.time(), // [!code focus]
-});
-```
+`t.time()` is `time`. It stores a clock time. The zone is its own column. Storage is 8 bytes.
 
 ### Offset
 
-`t.timetz()` is `timetz`. The TypeScript value is `{ time, offset }`. `time` is a `Temporal.PlainTime`. `offset` is `+HH:MM` or `-HH:MM`. A daylight-saving change needs the zone in its own column. Storage is 12 bytes.
-
-```ts title="offset.ts"
-import { table, t } from "okmodel/pg";
-
-export const notes = table("notes", {
-  id: t.identity(),
-  shift: t.timetz(), // [!code focus]
-});
-```
+`t.timetz()` is `timetz`. In `"temporal"` mode the value is `{ time, offset }`: `time` is a `Temporal.PlainTime` and `offset` is `+HH:MM` or `-HH:MM`. A daylight-saving change needs the zone in its own column. Storage is 12 bytes.
 
 <Callout type="error" title="OKM1210">
-An offset other than `±HH:MM` is refused when the value is encoded. A `timetz` with a seconds offset such as `+05:30:15` is OKM1210 on read.
+In `"temporal"` mode an offset other than `±HH:MM` is refused when the value is encoded, and a seconds offset such as `+05:30:15` is refused on read.
 </Callout>
 
 ### Interval
 
-`t.interval()` is `interval`. The TypeScript value is `Temporal.Duration`. It stores a span. Storage is 16 bytes. `fields` is one of `year`, `month`, `day`, `hour`, `minute`, `second`, `year to month`, `day to hour`, `day to minute`, `day to second`, `hour to minute`, `hour to second`, `minute to second`.
+`t.interval()` is `interval`. It stores a span. Storage is 16 bytes. `fields` is one of `year`, `month`, `day`, `hour`, `minute`, `second`, `year to month`, `day to hour`, `day to minute`, `day to second`, `hour to minute`, `hour to second`, `minute to second`.
 
 ```ts title="interval.ts"
 import { table, t } from "okmodel/pg";
 
 export const notes = table("notes", {
-  id: t.identity(),
+  id: t.id(),
   length: t.interval("day to second"), // [!code focus]
 });
 ```
@@ -104,18 +130,18 @@ Any other `fields` value is refused.
 </Callout>
 
 <Callout type="error" title="OKM1210">
-An interval that mixes signs, such as `1 day -01:00:00`, cannot be one `Temporal.Duration`. The decoders take the default `IntervalStyle` (`postgres`) and ISO-8601; `sql_standard` and `postgres_verbose` output is not read.
+In `"temporal"` mode an interval that mixes signs, such as `1 day -01:00:00`, cannot be one `Temporal.Duration`. The decoders take the default `IntervalStyle` (`postgres`) and ISO-8601; `sql_standard` and `postgres_verbose` output is not read.
 </Callout>
 
 ### Fractional seconds
 
-`precision` is fractional seconds, an integer from 0 to 6. Omit it for full precision. It applies to `t.timestamptz()`, `t.timestamp()`, `t.time()`, and `t.timetz()`. Digits past the sixth are rounded by Postgres on write: `2020-01-02T03:04:05.123456789Z` reads back as `.123457`. An explicit `precision` truncates client-side instead. Either way a read-back differs from the written value past microseconds, with no warning.
+`precision` is fractional seconds, an integer from 0 to 6. Omit it for full precision. It applies to `t.timestamptz()`, `t.timestamp()`, `t.time()`, and `t.timetz()`. Postgres rounds digits past the column's precision on write. In `"temporal"` mode an explicit `precision` truncates client-side instead, and digits past the sixth are rounded by Postgres: `2020-01-02T03:04:05.123456789Z` reads back as `.123457`.
 
 ```ts title="fractional-seconds.ts"
 import { table, t } from "okmodel/pg";
 
 export const notes = table("notes", {
-  id: t.identity(),
+  id: t.id(),
   editedAt: t.timestamp(0), // [!code focus]
 });
 ```
@@ -123,5 +149,9 @@ export const notes = table("notes", {
 <Callout type="error" title="OKM1060">
 A precision outside 0 to 6 is refused.
 </Callout>
+
+## Buckets and aggregates
+
+A [`bucket()`](/docs/queries/shape-results#grouped) key and a `min` or `max` follow the mode of their column. A day, week, month, quarter, or year bucket is the period's first day: `YYYY-MM-DD` text, a `Date` at midnight UTC, or a `Temporal.PlainDate`. A second, minute, or hour bucket is the column's own value.
 
 Next: [Columns](/docs/schema/columns).

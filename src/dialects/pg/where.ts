@@ -25,13 +25,15 @@ import type {
 } from "./operators.js";
 import type { Range } from "./range.js";
 
-export type IsObject<V> = V extends object
-  ? V extends readonly unknown[]
-    ? false
-    : null extends V
+export type IsObject<V> = V extends string
+  ? false
+  : V extends object
+    ? V extends readonly unknown[]
       ? false
-      : true
-  : false;
+      : null extends V
+        ? false
+        : true
+    : false;
 
 /** Text patterns, including substring `contains`. `matches` is for tsvector, which is also `string`. */
 type TextOps =

@@ -38,6 +38,7 @@ export const sales = table("sales", {
 });
 
 export const app = schema({
+  defaults: { time: "temporal" },
   casing: "snake",
   tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
   tables: [sales],

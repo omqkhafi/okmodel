@@ -468,7 +468,7 @@ postgresTest(
           count: 2,
           sum: { score: 30 },
           avg: { score: 15 },
-          min: { due: "2024-01-03T00:00:00Z" },
+          min: { due: "2024-01-03T00:00:00.000000Z" },
           max: { score: 20 },
         },
         {
@@ -476,7 +476,7 @@ postgresTest(
           count: 1,
           sum: { score: 6 },
           avg: { score: 6 },
-          min: { due: "2024-01-09T00:00:00Z" },
+          min: { due: "2024-01-09T00:00:00.000000Z" },
           max: { score: 6 },
         },
         {

@@ -29,7 +29,7 @@ const jobs = table(
   },
   { traits: [versioned()] },
 );
-const app = schema({ tables: [jobs] });
+const app = schema({ tables: [jobs], defaults: { time: "temporal" } });
 
 type Db = Connected<typeof app>;
 

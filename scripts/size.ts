@@ -82,8 +82,9 @@ export const FULL_ENTRY = "scripts/app-full.ts";
  * 92,900: casing, pull, the Drizzle import, and orderBy on a relation.
  * `schema()` calls `namesFor()` synchronously, so casing stays on this graph, and pull and the
  * Drizzle import share it. The relation-order scan stays eager so the join chunk can stay lazy.
+ * 94,680: date and time modes measured 94,653, plus 20, rounded up (D322).
  */
-export const APP_MAX_MIN_BYTES = 92_900;
+export const APP_MAX_MIN_BYTES = 94_680;
 
 /**
  * Gzipped app-fixture ceiling, in bytes (D160).
@@ -91,8 +92,9 @@ export const APP_MAX_MIN_BYTES = 92_900;
  * P27 measured 29,326. Plus 3 percent is 30,206, so the 30,000 allowance (D143) was the gate.
  * P67 measured 30,007 and set the gate to that plus 20, rounded up (D210).
  * Was 29,210 (P24).
+ * 30,830: date and time modes measured 30,810, plus 20 (D322).
  */
-export const APP_MAX_GZIP_BYTES = 30_170;
+export const APP_MAX_GZIP_BYTES = 30_830;
 
 /**
  * Public connect entries, driver left external (D142, D143, D156).

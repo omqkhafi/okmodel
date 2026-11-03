@@ -41,6 +41,38 @@ const kinds = table(`okm_wire_${suffix}`, {
   address: t.inet(),
 });
 const app = schema({ casing: "snake", tables: [kinds] });
+const apps = {
+  iso: app,
+  date: schema({ casing: "snake", tables: [kinds], defaults: { time: "date" } }),
+  temporal: schema({ casing: "snake", tables: [kinds], defaults: { time: "temporal" } }),
+} as const;
+
+/** What each time mode reads back for the row above. */
+const expected = {
+  iso: {
+    day: "2026-11-03",
+    instant: "2026-11-03T10:14:15.123456Z",
+    local: "2026-11-03T13:14:15.123456",
+    clock: "13:14:15.123456",
+    clockTz: "13:14:15.123456+03",
+    span: "1 day 02:03:04.5",
+  },
+  date: {
+    day: "Date 2026-11-03T00:00:00.000Z",
+    instant: "Date 2026-11-03T10:14:15.123Z",
+    local: "Date 2026-11-03T13:14:15.123Z",
+    clock: "13:14:15.123456",
+    clockTz: "13:14:15.123456+03",
+    span: "1 day 02:03:04.5",
+  },
+  temporal: {
+    day: "Temporal.PlainDate 2026-11-03",
+    instant: "Temporal.Instant 2026-11-03T10:14:15.123456Z",
+    local: "Temporal.PlainDateTime 2026-11-03T13:14:15.123456",
+    clock: "Temporal.PlainTime 13:14:15.123456",
+    span: "Temporal.Duration P1DT2H3M4.5S",
+  },
+} as const;
 
 let local: NeonLocal | undefined;
 
@@ -75,35 +107,35 @@ afterAll(async () => {
   }
 });
 
-postgresTest(
-  gate,
-  "http and websocket modes read every column type the same",
-  async () => {
-    const rows: Record<string, unknown>[] = [];
-    for (const mode of ["websocket", "http"] as const) {
-      const db = await connect(local!.url, { schema: app, mode });
-      try {
-        const found = await db[kinds.name]!.find({ where: { id: 1 }, limit: 1 });
-        rows.push(plain(found[0]) as Record<string, unknown>);
-      } finally {
-        await db.close();
+for (const time of ["iso", "date", "temporal"] as const) {
+  postgresTest(
+    gate,
+    `http and websocket modes read every column type the same (time: ${time})`,
+    async () => {
+      const rows: Record<string, unknown>[] = [];
+      for (const mode of ["websocket", "http"] as const) {
+        const db = await connect(local!.url, { schema: apps[time], mode });
+        try {
+          const found = await db[kinds.name]!.find({ where: { id: 1 }, limit: 1 });
+          rows.push(plain(found[0]) as Record<string, unknown>);
+        } finally {
+          await db.close();
+        }
       }
-    }
-    const [websocket, http] = rows;
-    expect(websocket).toMatchObject({
-      day: "Temporal.PlainDate 2026-11-03",
-      instant: "Temporal.Instant 2026-11-03T10:14:15.123456Z",
-      local: "Temporal.PlainDateTime 2026-11-03T13:14:15.123456",
-      big: "bigint 9223372036854775807",
-      flag: true,
-      bytes: [222, 173, 190, 239],
-    });
-    for (const [field, value] of Object.entries(websocket ?? {})) {
-      expect({ field, value: http?.[field] }).toEqual({ field, value });
-    }
-  },
-  30_000,
-);
+      const [websocket, http] = rows;
+      expect(websocket).toMatchObject({
+        ...expected[time],
+        big: "bigint 9223372036854775807",
+        flag: true,
+        bytes: [222, 173, 190, 239],
+      });
+      for (const [field, value] of Object.entries(websocket ?? {})) {
+        expect({ field, value: http?.[field] }).toEqual({ field, value });
+      }
+    },
+    30_000,
+  );
+}
 
 postgresTest(
   gate,
@@ -145,12 +177,13 @@ postgresTest(
   30_000,
 );
 
-/** Temporal values, bigints, and bytes as comparable JSON values. */
+/** Dates, Temporal values, bigints, and bytes as comparable JSON values. */
 function plain(value: unknown): unknown {
   if (value === null || typeof value !== "object") {
     return typeof value === "bigint" ? `bigint ${value.toString()}` : value;
   }
   if (value instanceof Uint8Array) return [...value];
+  if (value instanceof Date) return `Date ${value.toISOString()}`;
   const tag: unknown = Reflect.get(value, Symbol.toStringTag);
   if (typeof tag === "string" && tag.startsWith("Temporal."))
     return `${tag} ${(value as { toString(): string }).toString()}`;

@@ -6,7 +6,7 @@
  */
 
 import { migrationGitAttributes } from "../migrate/project.js";
-import type { InitDriver, InitSupportedTenancy } from "./guards.js";
+import type { InitDriver, InitSupportedTenancy, InitTime } from "./guards.js";
 
 /** Connect import and whether `connect` returns a promise. */
 const DRIVERS: Readonly<
@@ -126,9 +126,10 @@ export const settings = {
  * does not declare that column.
  *
  * @param tenancy - `none` or `column`
+ * @param time - `defaults.time`
  * @returns The file text
  */
-export function schemaText(tenancy: InitSupportedTenancy): string {
+export function schemaText(tenancy: InitSupportedTenancy, time: InitTime = "iso"): string {
   const tenancyImport =
     tenancy === "column" ? 'import { columnTenancy } from "okmodel/tenancy";\n' : "";
   const tenancyField =
@@ -147,6 +148,9 @@ export const users = table("users", {
 export const app = schema({
   minPostgres: 15,
   tables: [users],${tenancyField}
+  // Date and time columns: "iso" strings, "date" (JS Date), or "temporal",
+  // which needs a Temporal global (Node 26+, Bun 1.4+, or a polyfill).
+  defaults: { time: ${JSON.stringify(time)} },
 });
 
 declare module "okmodel" {

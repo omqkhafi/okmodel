@@ -43,7 +43,7 @@ export const db = connect(process.env.DATABASE_URL!, { schema: app }); // [!code
 | 1 | [Drivers](/docs/operate/drivers) | The import. |
 | 2 | [Target](/docs/operate/target) | A URL, a pool, or memory. |
 | 3 | [Topology](/docs/operate/replicas-and-topology) | A primary and its replicas. |
-| 4 | [Check](/docs/operate/startup-check) | The server, the floor, and the catalog hash. |
+| 4 | [Check](/docs/operate/startup-check) | The server, the floor, the catalog hash, and a `Temporal` global for a [`temporal` column](/docs/schema/time-columns#modes). |
 | 5 | [Session](/docs/operate/session-and-pool) | Pool size, TLS, search path, and deadlines. |
 | 6 | [Session settings](/docs/operate/session-settings) | `sessionSettings()` and `db.with()` GUC values. |
 | 7 | [Limits](/docs/operate/query-limits) | Defaults for `find`, `page`, `groupBy`, and includes. |

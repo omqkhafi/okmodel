@@ -202,7 +202,7 @@ export function timestamps(options?: TimestampsOptions) {
 }
 
 function stamped() {
-  return timestamptz().defaultSql("now()").guarded();
+  return timestamptz().defaultNow().guarded();
 }
 
 /**

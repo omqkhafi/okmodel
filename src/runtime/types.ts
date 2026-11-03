@@ -11,6 +11,7 @@ import type { OptionalInsert, RequiredInsert } from "../contracts/rows.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
 import type { Bucket } from "../dialects/pg/ops/bucket.js";
 import type { Window } from "../dialects/pg/ops/window.js";
+import type { IsTimeText } from "../dialects/pg/time.js";
 import type { Inc } from "../dialects/pg/ops/inc.js";
 import type {
   ArrAppend,
@@ -908,7 +909,11 @@ type NoRank<O> = [O] extends [{ readonly orderBy?: infer B }]
  * `text` column, so `sum` over `text` is refused when the call runs (OKM1124).
  */
 type NumericKeys<Row> = {
-  readonly [F in keyof Row]-?: [NonNullable<Row[F]>] extends [number | string] ? F : never;
+  readonly [F in keyof Row]-?: [NonNullable<Row[F]>] extends [number | string]
+    ? IsTimeText<Row[F]> extends true
+      ? never
+      : F
+    : never;
 }[keyof Row] &
   string;
 
@@ -1122,15 +1127,28 @@ export type AggregateOptions<S extends QuerySchema, K extends keyof S["~byName"]
 /** `true` when a group entry is a bucket. A mix of fields and buckets is `boolean`. */
 type HasBucket<G> = G extends Bucket<string, string, string> ? true : false;
 
-/** One bucket key. A string group contributes nothing. */
+/**
+ * One bucket key. A string group contributes nothing.
+ *
+ * A clock unit keeps the column's value. A calendar unit is the day in the
+ * column's mode: text, a `Date`, or a `Temporal.PlainDate`.
+ */
 type BucketPiece<Row, G> =
   G extends Bucket<infer C, infer U, infer A>
     ? {
         readonly [K in A]:
-          | (U extends "second" | "minute" | "hour" ? Temporal.Instant : Temporal.PlainDate)
+          | BucketKey<C extends keyof Row ? NonNullable<Row[C]> : Temporal.Instant, U>
           | (C extends keyof Row ? (null extends Row[C] ? null : never) : null);
       }
     : {};
+
+type BucketKey<V, U> = U extends "second" | "minute" | "hour"
+  ? V
+  : [V] extends [Date]
+    ? Date
+    : [V] extends [string]
+      ? string
+      : Temporal.PlainDate;
 
 /** Intersection of a union of group pieces. */
 type Intersect<U> = (U extends unknown ? (arg: U) => void : never) extends (arg: infer I) => void
@@ -1141,8 +1159,8 @@ type Intersect<U> = (U extends unknown ? (arg: U) => void : never) extends (arg:
  * Group keys on an aggregate row.
  *
  * A plain field list stays `Pick`. A bucket list adds each `as` key. The value
- * is `Temporal.PlainDate` for a calendar unit and `Temporal.Instant` for a
- * clock unit, and includes `null` when the column does.
+ * is the day for a calendar unit and the column's value for a clock unit, in
+ * the column's mode, and includes `null` when the column does.
  */
 type GroupOf<Row, G> =
   boolean extends HasBucket<G>
