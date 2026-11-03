@@ -116,6 +116,8 @@ create table example_notes (
 
 The Worker checks `NEON_MODE` first, so a typo fails every request instead of falling back. `GET /health` and unknown paths answer without opening a client. Only `/notes` opens one, and `finally` hands `db.close()` to `ctx.waitUntil`, so closing does not delay the response. `close()` returns a promise, which `waitUntil` keeps alive after the response.
 
+Await every query before `finally` runs. A query builder is sent when it is awaited, so a query handed to `ctx.waitUntil` next to `db.close()` can start after `close()` and is not sent. That call fails with OKM1120, kind `invalid`, not retryable. To run work after the response, close the client only after that work settles: `ctx.waitUntil(work.finally(() => db.close()))`. A query that is already running when `close()` is called finishes and returns its rows.
+
 `POST /notes` has no authentication and no body size limit. Add both before you copy it.
 
 ```ts title="src/worker.ts" no-check="uses the Workers ExecutionContext type, and imports ./db.js, which needs the schema file outside the example root"

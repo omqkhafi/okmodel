@@ -10,9 +10,9 @@ import { OkmError } from "../../contracts/error.js";
 import type { DriverPool, ExecuteResult, WireValue } from "../../contracts/driver.js";
 import { NEON_HTTP_CAPABILITIES } from "../capabilities.js";
 import { outcomeUnknown } from "../error.js";
-import { mapFailure, rejectClosed } from "../failure.js";
+import { mapFailure } from "../failure.js";
 import { runCall } from "./call.js";
-import { WIRE, statsOf, type Counters, type NeonConfig } from "./neon.js";
+import { WIRE, rejectAfterClose, statsOf, type Counters, type NeonConfig } from "./neon.js";
 import { noTimeout } from "./no-inflight-timeout.js";
 import { EMPTY_NOTICES, resultFrom } from "./result.js";
 
@@ -59,7 +59,7 @@ export function openHttp(config: NeonConfig): DriverPool {
     execute(text, params, options) {
       const refused = noTimeout(options);
       if (refused !== undefined) return refused;
-      if (closed) return rejectClosed();
+      if (closed) return rejectAfterClose();
       return runCall(closed, options, () =>
         run(text, params).catch((error: unknown) =>
           mapFailure(error).then((mapped) => Promise.reject(mapped)),
@@ -69,7 +69,7 @@ export function openHttp(config: NeonConfig): DriverPool {
     async batch(statements, options) {
       const refused = noTimeout(options);
       if (refused !== undefined) return refused;
-      if (closed) return rejectClosed();
+      if (closed) return rejectAfterClose();
       counters.busy += 1;
       let results: unknown[];
       try {

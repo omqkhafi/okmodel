@@ -36,7 +36,11 @@ test("http mode is batch and has no interactive transaction", async () => {
   expect(error).toBeInstanceOf(OkmError);
   if (error instanceof OkmError) expect(error.code).toBe("OKM1120");
   await pool.close();
-  expect(await failure(pool.execute("select 1"))).toBeInstanceOf(Error);
+  const closed = await failure(pool.execute("select 1"));
+  expect(closed).toBeInstanceOf(OkmError);
+  if (closed instanceof OkmError) {
+    expect([closed.code, closed.kind, closed.retryable]).toEqual(["OKM1120", "invalid", false]);
+  }
 });
 
 test("an http cell that is not wire text is an error, not null", async () => {

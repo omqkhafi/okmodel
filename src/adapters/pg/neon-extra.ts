@@ -8,6 +8,7 @@ import type { PoolClient } from "@neondatabase/serverless";
 
 import { isConnectionLost } from "../../contracts/connection.js";
 import type { DriverConnection } from "../../contracts/driver.js";
+import { OkmError } from "../../contracts/error.js";
 import { DriverError } from "../error.js";
 import { rejectClosed } from "../failure.js";
 import { runCall, type Watch } from "./call.js";
@@ -28,7 +29,7 @@ import { WireSession, type WireQuery } from "./session.js";
  */
 export async function checkout(held: HeldPool): Promise<DriverConnection> {
   const { pool, counters, named, isClosed } = held;
-  if (isClosed()) return rejectClosed();
+  if (isClosed()) return afterClose();
   const client = await connectClient(pool, held.acquireMs, counters);
   counters.reserved += 1;
   let lost = false;
@@ -107,4 +108,27 @@ export async function checkout(held: HeldPool): Promise<DriverConnection> {
 
 async function reset(session: WireSession, client: PoolClient): Promise<void> {
   await resetSession(session.depth(), (text) => client.query(text));
+}
+
+/**
+ * A call made after `close()`.
+ *
+ * OKM1120, kind `invalid`, not retryable: the call was never sent, and the
+ * database is not down. A lost connection stays `unavailable`.
+ *
+ * @returns A rejected promise
+ */
+export function afterClose(): Promise<never> {
+  return Promise.reject(
+    new OkmError(
+      "OKM1120",
+      "The client is closed. close() already ran, so this call was not sent.",
+      {
+        fix: {
+          summary:
+            "Await queries before close(). With waitUntil, call close() only after the other background work settles.",
+        },
+      },
+    ),
+  );
 }
