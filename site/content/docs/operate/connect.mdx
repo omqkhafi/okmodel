@@ -82,6 +82,8 @@ export async function read() {
 }
 ```
 
+On Neon, a query that has started when `close()` is called finishes and returns its rows, then the pool ends. A call that has not started is refused with [OKM1120](/docs/reference/errors#okm1120) `The client is closed. close() already ran, so this call was not sent.`, kind `invalid`, not retryable. A client from a topology refuses it with OKM1120 `The client is closed.` A query is sent when it is awaited, so a query that nothing has awaited yet has not started. Await queries before `close()`. For work that runs after a response, such as `waitUntil` on Cloudflare Workers, close after that work settles ([Close after background work](/docs/frameworks/workers#close-after-background-work)).
+
 A second `close()` waits on the same close when this client opened the pool. The first call starts the close. A later call returns that promise. `for()` and `unscoped()` reuse it. An adopted pool resolves without closing it, on every call.
 
 [`using()`](/docs/operate/replicas-and-topology) returns a client with no `close`. The root `close()` stops the probes and closes every pool that `connect` opened.
