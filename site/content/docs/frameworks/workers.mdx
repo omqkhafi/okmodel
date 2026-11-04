@@ -18,10 +18,10 @@ A Worker has no TCP socket, so postgres.js cannot run there. `okm` needs TCP too
 
 ```sh
 bun add okmodel @neondatabase/serverless
-bun add -D wrangler miniflare
+bun add -D wrangler miniflare typescript
 ```
 
-`wrangler.toml` must set the `nodejs_compat` flag, which the Neon driver needs. `NEON_MODE` is a plain variable:
+`wrangler.jsonc` must set the `nodejs_compat` flag, which the Neon driver needs. `NEON_MODE` is a plain variable:
 
 ```jsonc title="wrangler.jsonc"
 {
@@ -115,9 +115,9 @@ create table example_notes (
 | Setting | Where | Notes |
 | --- | --- | --- |
 | `DATABASE_URL` | A Worker secret | The Neon connection string. Set it with `bunx wrangler secret put DATABASE_URL`. For `wrangler dev`, put it in `.dev.vars`. |
-| `NEON_MODE` | `[vars]` in `wrangler.toml` | `websocket` or `http`. Unset means `websocket`. |
+| `NEON_MODE` | `vars` in `wrangler.jsonc` | `websocket` or `http`. Unset means `websocket`. |
 
-`bunx wrangler types` writes an `Env` interface from the Wrangler config, and Hono takes it as `Bindings`. A var becomes a literal type: `NEON_MODE = "websocket"` gives `NEON_MODE: "websocket"`, so `c.env.NEON_MODE === "http"` is TS2367 (the types have no overlap). Read it as a string first:
+`bunx wrangler types` writes an `Env` interface from the Wrangler config, and Hono takes it as `Bindings`. A var becomes a literal type: `"NEON_MODE": "websocket"` gives `NEON_MODE: "websocket"`, so `c.env.NEON_MODE === "http"` is TS2367 (the types have no overlap). Read it as a string first:
 
 ```ts no-check="uses the Env type that wrangler types writes"
 const mode: string = c.env.NEON_MODE;
@@ -249,7 +249,7 @@ The responses are the same in both modes. `id` is a string, because an identity 
 
 `close()` does not cut off a query that has already started: that query finishes and returns its rows, then the pool ends. Work that has not started when `close()` runs is refused with [OKM1120](/docs/reference/errors#okm1120) `The client is closed. close() already ran, so this call was not sent.`, kind `invalid`, not retryable. Nothing reached the database, and the database is not down.
 
-A query builder is sent when it is awaited, not when it is built. So `ctx.waitUntil(insert)` next to `ctx.waitUntil(db.close())` can lose the insert: `close()` may run before the insert starts, and the insert then fails with OKM1120.
+A query builder is sent when it is awaited, not when it is built, and it starts only when it reaches the pool: after the startup check settles and a few microtasks after the await. A query awaited in the same tick as `close()`, or one still waiting on the startup check, has not started and is refused with OKM1120. `close()` before the startup check settles lets the check finish, then ends the pool; any call after that is OKM1120 too. So `ctx.waitUntil(insert)` next to `ctx.waitUntil(db.close())` can lose the insert: `close()` may run before the insert starts, and the insert then fails with OKM1120.
 
 Close only after the background work settles. With Hono, a middleware opens the client, keeps a `pending` list in the context, and closes after everything on it settles. A route that writes after the response pushes its promise:
 
@@ -328,7 +328,7 @@ curl -i -X POST http://localhost:8787/notes -H 'content-type: application/json' 
 curl -i http://localhost:8787/notes
 ```
 
-To try HTTP mode, set `NEON_MODE = "http"`, restart `wrangler dev`, and check that `/health` reports it and the `POST` still answers 201. To run the example's tests from a clone of this repository:
+To try HTTP mode, set `"NEON_MODE": "http"` in `vars`, restart `wrangler dev`, and check that `/health` reports it and the `POST` still answers 201. To run the example's tests from a clone of this repository:
 
 ```sh
 bun run build
@@ -384,7 +384,7 @@ globalThis.Temporal ??= Temporal;
 
 | Evidence | Where | What runs |
 | --- | --- | --- |
-| CI | `examples / frameworks` job | `wrangler deploy --dry-run`, the upload size against Cloudflare's free-plan limit, `nodejs_compat` in `wrangler.toml`, and the 500 for `NEON_MODE=ws` in Miniflare. No database. |
+| CI | `examples / frameworks` job | `wrangler deploy --dry-run`, the upload size against Cloudflare's free-plan limit, `nodejs_compat` in `wrangler.jsonc`, and the 500 for `NEON_MODE=ws` in Miniflare. No database. |
 | CI | Postgres suite, after each merge on Postgres 15 to 18, and on a pull request that touches the dialects, the runtime, or migrate | The Neon adapter in `websocket` and `http` mode, with the real `@neondatabase/serverless` driver, against a local endpoint that forwards to the suite's Postgres: date, time, and other column types read the same in both modes, a query running at `close()` returns its rows, and a call after `close()` is OKM1120. The local endpoint is not Neon's proxy and does not run in a Worker. |
 | Nightly | Scheduled run with the `NEON_URL` secret | The bundled Worker in Miniflare against Neon, in `http` then `websocket` mode: `POST /notes` (201) and `GET /notes`. |
 | Manual, 2026-11-03 | okmodel 0.10.2, a Neon primary, a Worker deployed to Cloudflare | A URL-shortener Worker in both modes: create, read, redirect, and stats. `tx()` in `http` mode refused with OKM1111 before any I/O, `batch()` atomic, and an interactive `tx()` in `websocket` mode. This run found that `http` mode read `date` and `timestamptz` columns as `null`, which 0.10.3 fixes. |

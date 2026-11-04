@@ -8,7 +8,7 @@
 
 import type { DriverPool } from "../../contracts/driver.js";
 import type { QuerySchema } from "../../dialects/pg/model.js";
-import { open, type NeonConfig } from "../../adapters/pg/neon.js";
+import { open, rejectAfterClose, type NeonConfig } from "../../adapters/pg/neon.js";
 import { createClient } from "../client.js";
 import type { RoutedClient, TopologyInput, TopologyOptions } from "../topology.js";
 import type { SessionContext } from "../session/index.js";
@@ -98,7 +98,50 @@ export function connect<
         prepared: options.prepared,
         searchPath: options.searchPath,
       } as NeonConfig);
-  return opened.then((pool) => createClient(options.schema, pool, options, owned));
+  return opened.then((pool) =>
+    owned ? admitCheck(pool, options) : createClient(options.schema, pool, options, false),
+  );
+}
+
+/**
+ * Builds a client whose `close()` lets a pending startup check finish.
+ *
+ * Every call waits for `connected`, so only the check reaches the pool while it
+ * runs. After `close()`, a call is OKM1120 whether or not the check had settled.
+ *
+ * @param pool - The pool `connect` opened
+ * @param options - Connect options
+ * @returns The client
+ */
+function admitCheck<S extends QuerySchema, C extends SessionContext | undefined>(
+  pool: DriverPool,
+  options: NeonConnectOptions<S, C>,
+): Connected<S, C> {
+  let checking = true;
+  let shut = false;
+  let settled: Promise<void> | undefined;
+  const refused = (): Promise<never> | undefined =>
+    shut && !checking ? rejectAfterClose() : undefined;
+  const client = createClient(
+    options.schema,
+    {
+      ...pool,
+      execute: (text, params, call) => refused() ?? pool.execute(text, params, call),
+      batch: (statements, call) => refused() ?? pool.batch(statements, call),
+      ...(pool.reserve !== undefined ? { reserve: () => refused() ?? pool.reserve!() } : {}),
+      close() {
+        shut = true;
+        return settled!.then(() => pool.close());
+      },
+    },
+    options,
+    true,
+  );
+  const done = (): void => {
+    checking = false;
+  };
+  settled = client.connected.then(done, done);
+  return client as unknown as Connected<S, C>;
 }
 
 function isPool(target: NeonTarget | TopologyInput): target is DriverPool {
