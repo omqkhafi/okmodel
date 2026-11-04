@@ -4,14 +4,17 @@
  *
  * - `next --publish` sets `<next minor>-next.N` and does not touch the changelog.
  *   It publishes a prerelease. A pull request does not run it.
- * - `release` drops a `-next.N` suffix. An empty `## Unreleased` is filled from
- *   merged pull request titles, then promoted.
+ * - `release` drops a `-next.N` suffix. From a bare `X.Y.Z` it takes the next
+ *   patch or minor, named explicitly (`release 0.10.4`). An empty `## Unreleased`
+ *   is filled from merged pull request titles since the last `vX.Y.Z` tag, then
+ *   promoted. With no such tag it stops before writing anything.
  * - `patch`, `minor`, `major`, and `--set` still promote `## Unreleased`.
  *
  * Does not touch git, tags, or workspace packages under `packages/*`.
  *
  * Usage:
  *   bun run scripts/bump-version.ts [patch|minor|major|release] [--dry-run]
+ *   bun run scripts/bump-version.ts release X.Y.Z [--dry-run]
  *   bun run scripts/bump-version.ts next --publish [--dry-run]
  *   bun run scripts/bump-version.ts --set X.Y.Z [--dry-run]
  */
@@ -20,7 +23,11 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 
-import { insertUnreleasedNotes, notesSinceLastRelease } from "./changelog-from-commits.js";
+import {
+  insertUnreleasedNotes,
+  lastReleaseTag,
+  notesSinceLastRelease,
+} from "./changelog-from-commits.js";
 
 const REPO_ROOT = join(import.meta.dir, "..");
 
@@ -61,6 +68,7 @@ type ParsedVersion = {
 function parseFlags(): {
   kind: BumpKind | undefined;
   set: string | undefined;
+  release: string | undefined;
   publish: boolean;
   dryRun: boolean;
 } {
@@ -80,9 +88,14 @@ function parseFlags(): {
       `Unknown bump kind '${kindRaw}'. Expected patch, minor, major, next, or release.`,
     );
   }
+  const release = positionals[1];
+  if (release !== undefined && kind !== "release") {
+    throw new Error(`Unexpected argument '${release}'. Only release takes a version.`);
+  }
   return {
     kind,
     set: values.set,
+    release,
     publish: values.publish ?? false,
     dryRun: values["dry-run"] ?? false,
   };
@@ -102,12 +115,12 @@ function isBumpKind(value: string | undefined): value is BumpKind {
  * Plans the next version and whether `## Unreleased` is promoted.
  *
  * @param current - Current package version (`X.Y.Z` or `X.Y.Z-next.N`)
- * @param request - A bump kind or an explicit `--set` version
+ * @param request - A bump kind or an explicit `--set` version. `release` may name its version.
  * @returns The version to write and whether the changelog is promoted
  */
 export function planBump(
   current: string,
-  request: { readonly kind?: BumpKind; readonly set?: string },
+  request: { readonly kind?: BumpKind; readonly set?: string; readonly release?: string },
 ): BumpPlan {
   if (request.set !== undefined && request.kind !== undefined) {
     throw new Error("Pass either a bump kind or --set, not both.");
@@ -122,7 +135,7 @@ export function planBump(
     return { version: nextVersion(current), promoteChangelog: false };
   }
   if (request.kind === "release") {
-    return { version: releaseVersion(current), promoteChangelog: true };
+    return { version: releaseVersion(current, request.release), promoteChangelog: true };
   }
   return { version: bumpRelease(current, request.kind), promoteChangelog: true };
 }
@@ -198,17 +211,30 @@ export function nextVersion(current: string): string {
 }
 
 /**
- * Drops a `-next.N` suffix, leaving the release version.
+ * The release version: `X.Y.Z-next.N` drops its suffix, and a bare `X.Y.Z`
+ * moves to the next patch or minor the caller names.
  *
- * @param current - A version of the form `X.Y.Z-next.N`
+ * @param current - Current package version
+ * @param requested - Explicit release version, required from a bare version
  * @returns The bare release version
  */
-function releaseVersion(current: string): string {
+function releaseVersion(current: string, requested: string | undefined): string {
   const parsed = parseVersion(current);
-  if (parsed.next === undefined) {
-    throw new Error(`release expects an X.Y.Z-next.N version, got '${current}'.`);
+  const allowed =
+    parsed.next !== undefined
+      ? [formatBare(parsed)]
+      : [bumpRelease(current, "patch"), bumpRelease(current, "minor")];
+  if (requested === undefined) {
+    if (parsed.next !== undefined) return formatBare(parsed);
+    throw new Error(
+      `release from ${current} needs the version: release ${allowed.join(" or release ")}.`,
+    );
   }
-  return formatBare(parsed);
+  const version = parseSetVersion(requested);
+  if (!allowed.includes(version)) {
+    throw new Error(`release from ${current} accepts ${allowed.join(" or ")}, got '${requested}'.`);
+  }
+  return version;
 }
 
 /**
@@ -305,6 +331,20 @@ export function promoteUnreleasedSection(raw: string, version: string, date: str
 }
 
 /**
+ * Stops a release before any write when an empty `## Unreleased` has no
+ * `vX.Y.Z` tag to fill it from. A fresh clone often has no tags.
+ *
+ * @param root - Repository root
+ * @param changelog - Full changelog text
+ */
+export function assertNotesSource(root: string, changelog: string): void {
+  if (unreleasedHasBullets(changelog) || lastReleaseTag(root) !== undefined) return;
+  throw new Error(
+    "## Unreleased is empty and no vX.Y.Z tag is reachable to fill it from. Run `git fetch --tags` and retry.",
+  );
+}
+
+/**
  * Promotes Unreleased in the on-disk changelog.
  *
  * @param version - Next bare version
@@ -357,6 +397,7 @@ async function main(): Promise<void> {
   if (!flags.set && !flags.kind) {
     console.error(
       "[bump] Usage: bun run scripts/bump-version.ts [patch|minor|major|release] [--dry-run]\n" +
+        "       bun run scripts/bump-version.ts release X.Y.Z [--dry-run]\n" +
         "       bun run scripts/bump-version.ts next --publish [--dry-run]\n" +
         "       bun run scripts/bump-version.ts --set X.Y.Z [--dry-run]",
     );
@@ -371,8 +412,10 @@ async function main(): Promise<void> {
   const plan = planBump(current, {
     ...(flags.kind !== undefined ? { kind: flags.kind } : {}),
     ...(flags.set !== undefined ? { set: flags.set } : {}),
+    ...(flags.release !== undefined ? { release: flags.release } : {}),
   });
 
+  if (plan.promoteChangelog) assertNotesSource(REPO_ROOT, readFileSync(CHANGELOG_PATH, "utf-8"));
   setManifestVersion(PACKAGE_PATH, plan.version, flags.dryRun);
   if (plan.promoteChangelog) applyChangelog(plan.version, flags.dryRun);
 
@@ -384,7 +427,7 @@ async function main(): Promise<void> {
 
 if (import.meta.main) {
   main().catch((error: unknown) => {
-    console.error("[bump]", error);
+    console.error("[bump]", error instanceof Error ? error.message : error);
     process.exit(2);
   });
 }
