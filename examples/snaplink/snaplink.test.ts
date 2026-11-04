@@ -206,7 +206,7 @@ postgresTest(
     const local = startNeonLocal(isolated.url);
     try {
       linkOkmodel(exampleDir);
-      await run([join(repoRoot(), "dist/okm.js"), "migrate", "apply"], {
+      await run([process.execPath, join(repoRoot(), "dist/okm.js"), "migrate", "apply"], {
         DATABASE_URL: isolated.url,
       });
       const { script } = await bundle("test/neon-local-entry.ts");
