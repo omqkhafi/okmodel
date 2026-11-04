@@ -14,6 +14,19 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+## v0.10.4 — 2026-11-04
+
+Nothing changes in the catalog hash, the generated SQL, or the public API.
+
+### 🐛 Fixed
+
+- `okm` now runs in a project without the `postgres` package, and a command that needs to connect exits with code 2 and says to run `bun add -d postgres` instead of failing with `ERR_MODULE_NOT_FOUND`.
+- On the Neon adapter, a call after `close()` is now refused with OKM1120 (not retryable) even when `close()` ran before the startup check finished, instead of failing as a retryable outage.
+
+### ♻️ Changed
+
+- Docs: the CLI, drivers, and Workers pages say that `okm` connects with postgres.js whichever driver the app uses, and the connect page explains when a Neon query counts as started at `close()`.
+
 ## v0.10.3 — 2026-11-03
 
 Nothing changes in the catalog hash or the generated SQL. Date and time modes only change how values are read and written in your code.
