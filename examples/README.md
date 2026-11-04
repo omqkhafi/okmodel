@@ -11,6 +11,7 @@ does not include this directory.
 | `hono` | Bun and Node | postgres.js | CI |
 | `express` | Node or Bun | postgres.js | CI |
 | `workers-neon` | Cloudflare Workers | Neon | Nightly (live) + CI (bundle) |
+| `snaplink` | Cloudflare Workers | Neon | CI (bundle, `tsc`, local Neon endpoint) |
 
 From the repository root, after `bun run build` and `bun run db:up`:
 
