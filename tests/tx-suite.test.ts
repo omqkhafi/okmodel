@@ -107,6 +107,4 @@ if (bunSql) {
     notices: false,
     test: postgresCases,
   });
-} else {
-  test.skip("bun.sql transactions (Bun.sql runs only under Bun)", () => undefined);
 }

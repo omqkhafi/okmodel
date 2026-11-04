@@ -15,6 +15,9 @@ import {
   daterange,
 } from "../src/dialects/pg/index.js";
 import { json } from "../src/dialects/pg/json.js";
+import { loadTimeCodecs } from "../src/dialects/pg/time.js";
+
+await loadTimeCodecs();
 
 test("bigint strings round-trip", () => {
   fc.assert(

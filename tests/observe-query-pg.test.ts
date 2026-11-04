@@ -343,5 +343,3 @@ for (const driver of REPLICA_DRIVERS) {
     60_000,
   );
 }
-
-test.skip("pglite: a replica route has no endpoint to reach (PGlite has no streaming replica)", () => {});
