@@ -81,6 +81,12 @@ jobs:
         env:
           REQUIRE_DOCKER: "1"
           POSTGRES_VERSION: ${{ matrix.version }}
+          OKM_TEST_TIMINGS: ${{ runner.temp }}/timings.json
+
+      - name: Slowest files
+        if: always()
+        continue-on-error: true
+        run: bun ./scripts/ci-timings.ts "$RUNNER_TEMP/timings.json" "suite / ${{ matrix.version }} / ${{ matrix.shard }}"
 
       - name: Stop Postgres
         if: always()

@@ -123,7 +123,12 @@ jobs:
             echo "no test files"
             exit 1
           fi
-          bun test $files
+          bun test --timings="$RUNNER_TEMP/timings.json" --update-timings $files
+
+      - name: Slowest files
+        if: always()
+        continue-on-error: true
+        run: bun ./scripts/ci-timings.ts "$RUNNER_TEMP/timings.json" "test / ${{ matrix.group }}"
 
   test-dist:
     name: test / ${{ matrix.group }}
@@ -154,7 +159,12 @@ jobs:
             echo "no test files"
             exit 1
           fi
-          bun test $files
+          bun test --timings="$RUNNER_TEMP/timings.json" --update-timings $files
+
+      - name: Slowest files
+        if: always()
+        continue-on-error: true
+        run: bun ./scripts/ci-timings.ts "$RUNNER_TEMP/timings.json" "test / ${{ matrix.group }}"
 
   runtimes:
     name: runtimes / portable

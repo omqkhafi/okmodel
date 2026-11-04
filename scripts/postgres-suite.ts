@@ -214,7 +214,12 @@ async function runBunTest(
   files: readonly string[],
   env: Readonly<Record<string, string | undefined>>,
 ): Promise<number> {
-  const proc = Bun.spawn(["bun", "test", ...files], {
+  // CI names a fresh file here; Bun writes per-file durations to it after
+  // the run and `scripts/ci-timings.ts` lists the slowest in the summary.
+  const timings = process.env.OKM_TEST_TIMINGS;
+  const flags =
+    timings === undefined || timings === "" ? [] : [`--timings=${timings}`, "--update-timings"];
+  const proc = Bun.spawn(["bun", "test", ...flags, ...files], {
     cwd: root,
     env: { ...process.env, REQUIRE_DOCKER: "1", ...env },
     stdout: "inherit",
