@@ -41,5 +41,6 @@ examples/**/.run/
 examples/**/.wrangler-bundle/
 examples/workers-neon/bun.lock
 examples/workers-neon/worker-configuration.d.ts
+examples/snaplink/worker-configuration.d.ts
 examples/**/.tanstack/
 examples/**/dist/

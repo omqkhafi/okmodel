@@ -7,7 +7,8 @@
     "deploy": "wrangler deploy",
     "types": "wrangler types --env-interface CloudflareBindings",
     "typecheck": "tsc",
-    "db:push": "okm push"
+    "db:push": "okm push",
+    "test": "bun test ./snaplink.test.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "1.2.0",
@@ -16,6 +17,7 @@
   },
   "devDependencies": {
     "@types/node": "26.6.6",
+    "miniflare": "5.20261103.0-beta",
     "postgres": "3.4.9",
     "typescript": "7.0.2",
     "wrangler": "4.157.0"

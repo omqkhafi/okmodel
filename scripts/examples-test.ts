@@ -18,7 +18,14 @@ import { join } from "node:path";
 
 import { repoRoot } from "./root.js";
 
-const EXAMPLES = ["express", "hono", "nextjs", "tanstack-start", "workers-neon"] as const;
+const EXAMPLES = [
+  "express",
+  "hono",
+  "nextjs",
+  "snaplink",
+  "tanstack-start",
+  "workers-neon",
+] as const;
 
 const root = repoRoot();
 
