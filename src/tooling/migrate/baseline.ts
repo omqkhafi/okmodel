@@ -71,28 +71,6 @@ export type BaselineFlags = InvokeFlags & {
 };
 
 /**
- * Records the head snapshot as applied on one configured target.
- *
- * Same rules as `okm migrate baseline`. `default` is the `database` target.
- *
- * @param target - Configured target name
- * @param project - Project directory or context. Defaults to the process cwd
- * @returns The same text the CLI prints for a successful write
- */
-export async function baseline(
-  target: string,
-  project: string | ProjectContext = process.cwd(),
-): Promise<string> {
-  return formatBaseline(
-    await runBaseline(project, {
-      target,
-      allowProtected: false,
-      allowPooler: false,
-    }),
-  );
-}
-
-/**
  * Runs `okm migrate baseline` for the selected target.
  *
  * @param project - Project directory or context (supports `--config`)
@@ -108,7 +86,14 @@ export async function baselineProject(
   return formatBaseline(report);
 }
 
-async function runBaseline(
+/**
+ * Baselines the selected target and returns the report.
+ *
+ * @param project - Project directory or context (supports `--config`)
+ * @param flags - Target, protection, pooler, and dry-run
+ * @returns What was or would be written
+ */
+export async function runBaseline(
   project: string | ProjectContext,
   flags: BaselineFlags,
 ): Promise<BaselineReport> {

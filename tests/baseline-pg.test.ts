@@ -15,7 +15,7 @@ import { OkmError } from "../src/contracts/error.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
 import { repoRoot } from "../scripts/root.js";
-import { baseline } from "../src/tooling/migrate/baseline.js";
+import { baseline } from "../src/tooling/migrate/api.js";
 import { run } from "../src/tooling/migrate/commands.js";
 
 const gate = await loadPostgresGate();

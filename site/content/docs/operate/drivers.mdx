@@ -94,6 +94,8 @@ export const db = await connect("./data", { schema: app }); // [!code focus]
 
 The peer package is `@neondatabase/serverless`. `connect` and `open` return a promise. `mode` is `websocket` or `http`. Omitted is `websocket`.
 
+`okm` connects with postgres.js over TCP, whichever driver the app uses. A Neon-only project adds it for the CLI with `bun add -d postgres`. `okm generate` and `okm migrate plan` run without it.
+
 WebSocket mode is a pool. `transactions` is `interactive`, so `tx()` works on a direct connection. `prepared` defaults to `unnamed`. `stream`, `listen`, and `cancel` are false, and there is no `pool.describe`. A positive `timeout` is refused.
 
 HTTP mode sends one request per statement. `transactions` is `batch`. `batch()` is one atomic HTTP transaction. `tx()` is OKM1111 ([Transactions](/docs/queries/transactions#drivers)). There is no `reserve`. `prepared` defaults to `none`. Both modes read the same wire text, so a column decodes to the same value in either mode.

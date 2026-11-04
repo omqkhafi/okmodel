@@ -314,3 +314,34 @@ export class CommandFinished extends Error {
     this.stderr = stderr;
   }
 }
+
+/**
+ * Turns a failed load of the `postgres` package into a setup error.
+ *
+ * Commands that reach a database load postgres.js on demand. A project whose
+ * app uses another driver may not have it, and Node's `ERR_MODULE_NOT_FOUND`
+ * does not say why `okm` wants it.
+ *
+ * @param error - Any failure from a command
+ * @returns The setup error (exit 2), or `undefined` for any other failure
+ */
+export function missingPostgres(error: unknown): OkmError | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  if (!("code" in error) || error.code !== "ERR_MODULE_NOT_FOUND") return undefined;
+  if (!("message" in error) || typeof error.message !== "string") return undefined;
+  if (!/^Cannot find (?:package|module) 'postgres'/.test(error.message)) return undefined;
+  return tagOutcome(
+    new OkmError(
+      "invalid",
+      "okm needs the postgres package to connect to a database. This project does not have it.",
+      {
+        cause: error,
+        fix: {
+          summary:
+            "Run bun add -d postgres. okm connects with postgres.js whichever driver the app uses.",
+        },
+      },
+    ),
+    "usage",
+  );
+}

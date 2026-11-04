@@ -6,7 +6,6 @@
  * and `okm generate` never asks for them.
  */
 
-import { open } from "../../adapters/pg/postgresjs.js";
 import { aboutBatchCount } from "./backfill.js";
 import { driverUrl } from "./driver-url.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
@@ -51,6 +50,8 @@ export async function readRowEstimates(
   schema: string,
   tables: readonly string[],
 ): Promise<ReadonlyMap<string, RowEstimate>> {
+  // Loaded here so a command that never reaches a target does not need `postgres`.
+  const { open } = await import("../../adapters/pg/postgresjs.js");
   const pool = open({ url: driverUrl(url), max: 1 });
   try {
     const connection = await pool.reserve?.();

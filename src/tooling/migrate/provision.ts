@@ -9,7 +9,6 @@
 import { asProject, projectPath, type ProjectContext } from "./paths.js";
 
 import { OkmError } from "../../contracts/error.js";
-import { applyTarget, backfillTiming } from "./apply.js";
 import { loadHeadSnapshot, loadMigrations } from "./files.js";
 import { assertTargetPolicy, selectTarget } from "./policy.js";
 import { loadBuiltSchema, loadConfig } from "./project.js";
@@ -42,6 +41,7 @@ export async function provision(
     });
   }
   const built = await loadBuiltSchema(cwd, config);
+  const { applyTarget, backfillTiming } = await import("./apply.js");
   const report = await applyTarget({
     url: selected.url,
     target: selected.name,

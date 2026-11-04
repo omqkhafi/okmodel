@@ -12,7 +12,7 @@ You get a Worker that opens a client for each request that needs the database, r
 | Driver | `okmodel/pg/neon` + `@neondatabase/serverless` |
 | Example | `examples/workers-neon` |
 
-A Worker has no TCP socket, so postgres.js cannot run there. `okm` needs TCP too, so run migrations from Node.js or Bun on a machine that can reach Postgres.
+A Worker has no TCP socket, so postgres.js cannot run there. `okm` needs TCP too, so run migrations from Node.js or Bun on a machine that can reach Postgres. It connects with postgres.js, so add it as a dev dependency: `bun add -d postgres`.
 
 ## Install
 

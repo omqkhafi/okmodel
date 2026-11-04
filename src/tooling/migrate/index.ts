@@ -7,7 +7,6 @@
  * adopts an existing database (D299).
  */
 
-export { baseline } from "./baseline.js";
 export { defineConfig, type MigrateConfig, type TargetInput } from "./config.js";
 export { type LogicalIdentity } from "./export.js";
 export {
@@ -22,6 +21,7 @@ export type { FeatureEntry, Registry, Support } from "../capabilities/types.js";
 export { provision } from "./provision.js";
 export {
   apply,
+  baseline,
   plan,
   status,
   type ApplyOptions,
