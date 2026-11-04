@@ -14,7 +14,7 @@ A pull request does not edit `changelog.md` and does not bump `package.json`. Fi
 
 ## When to run
 
-- `bun run bump release` when publishing the release. An empty `## Unreleased` is filled from squash-merge subjects since the last `vX.Y.Z` tag, then promoted to `## vX.Y.Z — <date>`.
+- `bun run bump release` when publishing the release. An empty `## Unreleased` is filled from squash-merge subjects since the last `vX.Y.Z` tag, then promoted to `## vX.Y.Z — <date>`. From a bare version, name the next patch or minor: `bun run bump release 0.10.4`. A fresh clone has no tags: run `git fetch --tags` first, or the command stops before writing.
 - `bun run bump next --publish` when publishing a prerelease. The version becomes `<next minor>-next.N`. The changelog stays as it is. Without `--publish` the command refuses.
 
 `patch`, `minor`, `major`, and `--set` still promote the changelog. `--dry-run` prints the plan and writes nothing.

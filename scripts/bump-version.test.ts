@@ -3,10 +3,16 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { BUMP_OUTPUTS, planBump, promoteUnreleasedSection } from "./bump-version.js";
+import {
+  assertNotesSource,
+  BUMP_OUTPUTS,
+  planBump,
+  promoteUnreleasedSection,
+} from "./bump-version.js";
 import { repoRoot } from "./root.js";
 
 describe("planBump", () => {
@@ -38,8 +44,33 @@ describe("planBump", () => {
     });
   });
 
-  test("release rejects a version that has no suffix", () => {
-    expect(() => planBump("0.1.0", { kind: "release" })).toThrow(/X\.Y\.Z-next\.N/);
+  test("release from a bare version needs the next patch or minor named", () => {
+    expect(() => planBump("0.10.3", { kind: "release" })).toThrow(
+      /needs the version: release 0\.10\.4 or release 0\.11\.0/,
+    );
+  });
+
+  test("release accepts the next patch or minor from a bare version", () => {
+    expect(planBump("0.10.3", { kind: "release", release: "0.10.4" })).toEqual({
+      version: "0.10.4",
+      promoteChangelog: true,
+    });
+    expect(planBump("0.10.3", { kind: "release", release: "v0.11.0" })).toEqual({
+      version: "0.11.0",
+      promoteChangelog: true,
+    });
+  });
+
+  test("release refuses any other explicit version", () => {
+    for (const version of ["0.10.3", "0.10.5", "0.12.0", "1.0.0", "0.10.4-next.1"]) {
+      expect(() => planBump("0.10.3", { kind: "release", release: version })).toThrow();
+    }
+    expect(() => planBump("0.11.0-next.2", { kind: "release", release: "0.11.1" })).toThrow(
+      /accepts 0\.11\.0/,
+    );
+    expect(planBump("0.11.0-next.2", { kind: "release", release: "0.11.0" }).version).toBe(
+      "0.11.0",
+    );
   });
 
   test("patch, minor, major, and --set still promote", () => {
@@ -133,6 +164,36 @@ describe("promoteUnreleasedSection", () => {
         "2026-01-02",
       ),
     ).toThrow(/no bullets/);
+  });
+});
+
+describe("assertNotesSource", () => {
+  const empty = "# Changelog\n\n## Unreleased\n\n## v0.1.0 — 2026-01-01\n\n- x.\n";
+  const filled = "# Changelog\n\n## Unreleased\n\n- Ready.\n\n## v0.1.0 — 2026-01-01\n";
+
+  function withRepo(tag: boolean, run: (root: string) => void): void {
+    const root = mkdtempSync(join(tmpdir(), "okm-bump-"));
+    try {
+      const git = (...args: string[]) =>
+        Bun.spawnSync(["git", "-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: root });
+      git("init", "-q");
+      git("commit", "-q", "--allow-empty", "-m", "init");
+      if (tag) git("tag", "v0.1.0");
+      run(root);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  test("an empty Unreleased with no vX.Y.Z tag says to fetch tags", () => {
+    withRepo(false, (root) => {
+      expect(() => assertNotesSource(root, empty)).toThrow(/git fetch --tags/);
+    });
+  });
+
+  test("passes with a tag, or with hand-written bullets", () => {
+    withRepo(true, (root) => expect(() => assertNotesSource(root, empty)).not.toThrow());
+    withRepo(false, (root) => expect(() => assertNotesSource(root, filled)).not.toThrow());
   });
 });
 
