@@ -595,6 +595,4 @@ if (bunSql) {
     },
     60_000,
   );
-} else {
-  test.skip("bun.sql first-or-create (Bun.sql runs only under Bun)", () => undefined);
 }

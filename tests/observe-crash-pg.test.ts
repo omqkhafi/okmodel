@@ -9,7 +9,7 @@
  * not killed shows the events do arrive.
  */
 
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, expect } from "bun:test";
 
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { openRig, runnable, type DriverName, type Rig } from "./observe-conformance-kit.js";
@@ -156,5 +156,3 @@ for (const driver of ["postgresjs", "pg", "bun"] as const) {
     60_000,
   );
 }
-
-test.skip("pglite: a crash yields no event (the database dies with the child, so there is no record to compare)", () => {});
