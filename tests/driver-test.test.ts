@@ -1,9 +1,13 @@
 /**
- * `okm driver test` report shape.
+ * `okm driver test` command shape and report plumbing.
  *
- * PGlite runs here. The same rows on postgres.js, node-postgres, and Bun.sql
- * are the `r3.` and `r6.` cases in `tests/tx-suite.test.ts`.
+ * The conformance rows themselves run on PGlite, postgres.js, node-postgres,
+ * and Bun.sql in `driver-suite`, `error-suite`, and `tx-suite` (`r3.`, `r6.`).
  */
+
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { expect, test } from "bun:test";
 
@@ -21,6 +25,25 @@ test("okm driver test is a command", async () => {
   await expectFailure(["driver"], /Unknown command driver/);
   await expectFailure(["driver", "test"], /needs a driver/);
   await expectFailure(["driver", "test", "nope"], /Unknown driver nope/);
+});
+
+test("okm driver test prints the runner report", async () => {
+  // The runner imports this module, which prints a report and exits 0 before
+  // its import settles, so the CLI path runs without the conformance suites.
+  const dir = mkdtempSync(join(tmpdir(), "okm-driver-test-"));
+  const report = "driver stub\ndialect postgres\nr6.commit\tcommit\tpass\t\n";
+  const driver = join(dir, "stub.ts");
+  writeFileSync(
+    driver,
+    `await new Promise(() => process.stdout.write(${JSON.stringify(report)}, () => process.exit(0)));\n`,
+  );
+  try {
+    const lines: string[] = [];
+    await run(["driver", "test", driver], { stdout: (text) => lines.push(text) });
+    expect(lines.join("")).toBe(report);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 async function expectFailure(argv: readonly string[], pattern: RegExp): Promise<void> {

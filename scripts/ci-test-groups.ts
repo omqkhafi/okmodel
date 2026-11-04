@@ -94,10 +94,7 @@ const TOPOLOGY_SELECTION = new Set(["tests/selection.test.ts", "tests/routing.te
  *
  * Replaced on the fast path by `compatibility-sync.test.ts`.
  */
-const DRIVERS_CONFORMANCE = new Set([
-  "tests/driver-conformance.test.ts",
-  "tests/compatibility.test.ts",
-]);
+const DRIVERS_CONFORMANCE = new Set(["tests/compatibility.test.ts"]);
 
 /**
  * Files on the `drivers suite` shard.

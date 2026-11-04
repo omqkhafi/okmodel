@@ -82,7 +82,6 @@ test("every test file is in exactly one CI group", () => {
     "tests/driver-types.test.ts": 75,
     "tests/error.test.ts": 277,
     "tests/driver-storm-pg.test.ts": 400,
-    "tests/driver-conformance.test.ts": 12_109,
     "tests/compatibility.test.ts": 6_427,
   };
   expectBalanced(
@@ -90,10 +89,7 @@ test("every test file is in exactly one CI group", () => {
     driverWeights,
   );
   const conformance = groups.find((group) => group.name === "drivers-conformance");
-  expect(conformance?.files).toEqual([
-    "tests/compatibility.test.ts",
-    "tests/driver-conformance.test.ts",
-  ]);
+  expect(conformance?.files).toEqual(["tests/compatibility.test.ts"]);
 });
 
 function expectBalanced(
