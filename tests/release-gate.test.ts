@@ -14,6 +14,7 @@ import { verifyVersions } from "../scripts/verify.js";
 import {
   changelogReleaseNotes,
   closesMilestone,
+  findMilestone,
   milestoneTitle,
 } from "../scripts/github-release.js";
 import {
@@ -102,6 +103,13 @@ test("changelog release notes are the version section", () => {
   const shipped = changelogReleaseNotes(readFileSync(join(root, "changelog.md"), "utf8"), "0.1.1");
   expect(shipped).toContain("Supported Postgres majors are 15, 16, 17, and 18.");
   expect(shipped.startsWith("## v")).toBe(false);
+});
+
+test("a release without a milestone finds none instead of failing", () => {
+  const listed = [{ number: 16, title: "0.10.3", state: "closed" }];
+  expect(findMilestone(listed, "0.10.4")).toBeUndefined();
+  expect(findMilestone(listed, "0.10.3")?.number).toBe(16);
+  expect(() => findMilestone({}, "0.10.4")).toThrow("milestone list is not an array");
 });
 
 test("a release milestone drops a trailing .0", () => {

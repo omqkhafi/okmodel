@@ -32,7 +32,7 @@ A Dependabot pull request is linted like any other. Its title starts with `chore
 
 ## Milestones
 
-One milestone per release train (`0.5`). A patch keeps its number (`0.2.1`). The `github release` job in `.github/workflows/release.yml` closes that milestone when the release ships: `scripts/github-release.ts` creates the GitHub Release, then closes the milestone named by the version (`0.5.0` closes `0.5`, `0.2.1` closes `0.2.1`). A train whose `.0` was never published (0.2) keeps its milestone open until it is closed by hand.
+One milestone per release train (`0.5`). A patch keeps its number (`0.2.1`). The `github release` job in `.github/workflows/release.yml` closes that milestone when the release ships: `scripts/github-release.ts` creates the GitHub Release, then closes the milestone named by the version (`0.5.0` closes `0.5`, `0.2.1` closes `0.2.1`). A release with no milestone of that name logs it and still succeeds. A train whose `.0` was never published (0.2) keeps its milestone open until it is closed by hand.
 
 ## Project
 

@@ -3,8 +3,8 @@
  *
  * The notes are the body of `## v` plus `package.json` version. The tag is
  * the same string. The publish job runs this after `npm stage publish`,
- * then closes the milestone for that version. It does not wait for the npm
- * smoke. That smoke runs after a maintainer approves the staged version.
+ * then closes the milestone for that version when one exists. It does not
+ * wait for the npm smoke. That smoke runs after a maintainer approves the staged version.
  */
 
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -68,14 +68,36 @@ export function closesMilestone(version: string): boolean {
   return !version.includes("-");
 }
 
-interface Milestone {
+export interface Milestone {
   readonly number: number;
   readonly title: string;
   readonly state: string;
 }
 
 /**
- * Closes the milestone for this version. A milestone that is already closed stays closed.
+ * The milestone with this title in a `GET /milestones` response.
+ *
+ * @param listed - Parsed response body
+ * @param title - Milestone title, from {@link milestoneTitle}
+ * @returns The milestone, or `undefined` when none has that title
+ */
+export function findMilestone(listed: unknown, title: string): Milestone | undefined {
+  if (!Array.isArray(listed)) throw new Error("milestone list is not an array");
+  return listed.find((item): item is Milestone => {
+    if (typeof item !== "object" || item === null) return false;
+    if (!("number" in item) || !("title" in item) || !("state" in item)) return false;
+    return (
+      typeof item.number === "number" &&
+      typeof item.title === "string" &&
+      typeof item.state === "string" &&
+      item.title === title
+    );
+  });
+}
+
+/**
+ * Closes the milestone for this version. A milestone that is already closed
+ * stays closed, and a version without a milestone logs that and returns.
  *
  * @param version - `package.json` version
  */
@@ -91,19 +113,12 @@ function closeMilestone(version: string): void {
       `gh api milestones exited ${String(listed.exitCode)}\n${listed.stderr.toString()}`,
     );
   }
-  const parsed: unknown = JSON.parse(listed.stdout.toString());
-  if (!Array.isArray(parsed)) throw new Error("milestone list is not an array");
-  const found = parsed.find((item): item is Milestone => {
-    if (typeof item !== "object" || item === null) return false;
-    if (!("number" in item) || !("title" in item) || !("state" in item)) return false;
-    return (
-      typeof item.number === "number" &&
-      typeof item.title === "string" &&
-      typeof item.state === "string" &&
-      item.title === title
-    );
-  });
-  if (found === undefined) throw new Error(`No milestone titled ${title}`);
+  const found = findMilestone(JSON.parse(listed.stdout.toString()), title);
+  if (found === undefined) {
+    // The release and the npm stage are already done, so a missing milestone is not a failure.
+    console.warn(`No milestone titled ${title}. Nothing to close.`);
+    return;
+  }
   if (found.state === "closed") return;
   const closed = Bun.spawnSync(
     [
