@@ -18,11 +18,7 @@ import { join, relative, sep } from "node:path";
 
 import { postgresVersionFromEnv, type PostgresVersion } from "../packages/harness/src/version.js";
 import { primaryUrl } from "../packages/harness/src/topology.js";
-import {
-  assignPostgresShards,
-  parsePostgresShard,
-  type PostgresShard,
-} from "./ci-postgres-shards.js";
+import { parsePostgresShard, postgresShards, type PostgresShard } from "./ci-postgres-shards.js";
 import { repoRoot } from "./root.js";
 
 /** A test file the Docker run does not execute, and why. */
@@ -259,7 +255,7 @@ function shardFiles(
   shard: PostgresShard | undefined,
 ): ReadonlySet<string> | undefined {
   if (shard === undefined) return undefined;
-  const group = assignPostgresShards(discoverTestFiles(root)).find((item) => item.name === shard);
+  const group = postgresShards(root, discoverTestFiles(root)).find((item) => item.name === shard);
   return new Set(group?.files ?? []);
 }
 
