@@ -338,8 +338,8 @@ jobs:
           REQUIRE_DOCKER: "1"
           POSTGRES_VERSION: ${{ matrix.version }}
           OKM_LIFECYCLE: "1"
-          OKM_LIFECYCLE_TIER: "nightly"
-          OKM_LIFECYCLE_CASES: "300"
+          OKM_LIFECYCLE_TIER: ${{ github.event_name == 'schedule' && 'nightly' || 'pr' }}
+          OKM_LIFECYCLE_CASES: ${{ github.event_name == 'schedule' && '300' || '20' }}
           OKM_LIFECYCLE_RANDOM: "1"
 
       - name: Stop Postgres
