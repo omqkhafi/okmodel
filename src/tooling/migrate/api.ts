@@ -1,15 +1,17 @@
 /**
- * Programmatic `plan`, `apply`, and `status` (D298).
+ * Programmatic `plan`, `apply`, and `status` (D298), and `baseline` (D299).
  *
- * Same behaviour as `okm migrate plan`, `apply`, and `status`. Nothing here
- * exits the process, prompts, or reads stdin.
+ * Same behaviour as `okm migrate plan`, `apply`, `status`, and `baseline`.
+ * Nothing here exits the process, prompts, or reads stdin. Modules that open
+ * a connection load on call, so a config that imports `defineConfig` does
+ * not need the `postgres` package.
  */
 
 import type { MigrationClass } from "./plan.js";
 import type { Finding } from "./lint.js";
 import { projectContext, type ProjectContext } from "./paths.js";
 import { planProject } from "./project.js";
-import { statusProjectRows, type CompatibilityState } from "./status.js";
+import type { CompatibilityState } from "./status.js";
 import type { InvokeFlags } from "./policy.js";
 
 /**
@@ -143,7 +145,7 @@ export async function apply(options: ApplyOptions = {}): Promise<ApplyResult> {
  * @returns One result per target. `text` is the full CLI table
  */
 export async function status(options: MigrateOptions = {}): Promise<readonly StatusResult[]> {
-  const { formatStatus } = await import("./status.js");
+  const { formatStatus, statusProjectRows } = await import("./status.js");
   const rows = await statusProjectRows(contextOf(options), invokeOf(options));
   const text = formatStatus(rows);
   return rows.map((row) => ({
@@ -152,6 +154,29 @@ export async function status(options: MigrateOptions = {}): Promise<readonly Sta
     pending: row.pending,
     text,
   }));
+}
+
+/**
+ * Records the head snapshot as applied on one configured target.
+ *
+ * Same rules as `okm migrate baseline`. `default` is the `database` target.
+ *
+ * @param target - Configured target name
+ * @param project - Project directory or context. Defaults to the process cwd
+ * @returns The same text the CLI prints for a successful write
+ */
+export async function baseline(
+  target: string,
+  project: string | ProjectContext = process.cwd(),
+): Promise<string> {
+  const { formatBaseline, runBaseline } = await import("./baseline.js");
+  return formatBaseline(
+    await runBaseline(project, {
+      target,
+      allowProtected: false,
+      allowPooler: false,
+    }),
+  );
 }
 
 function contextOf(options: MigrateOptions): ProjectContext {

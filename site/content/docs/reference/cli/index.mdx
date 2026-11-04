@@ -19,6 +19,8 @@ export default defineConfig({
 
 Node.js 22.18 or newer loads the config. `bunx okm` uses Node. `bun --bun okm` uses Bun.
 
+A command that connects to a database uses postgres.js, whichever driver the app uses. Without the `postgres` package it exits 2 with `okm needs the postgres package to connect to a database.` and the fix `Run bun add -d postgres.`
+
 <Callout type="info" title="Node.js">
 A process that cannot load a `.ts` config exits 2. The line is `okm needs Node.js >=22.18 to load a .ts config (type stripping). This process is <version>. Run bun --bun okm to use the Bun runtime.`
 </Callout>

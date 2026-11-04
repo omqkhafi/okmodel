@@ -27,6 +27,7 @@ import {
   attachPartial,
   CommandFinished,
   exitCodeFor,
+  missingPostgres,
   readConfigPath,
   readPartial,
   tagConfigPath,
@@ -203,7 +204,7 @@ function writeDocument(
 }
 
 function finish(
-  error: unknown,
+  raw: unknown,
   json: boolean,
   command: string | null,
   stdout: (text: string) => void,
@@ -214,6 +215,7 @@ function finish(
     readonly target?: CliTarget;
   },
 ): never {
+  const error = missingPostgres(raw) ?? raw;
   if (!json) throw error;
   const body = partial ?? { data: {}, warnings: [], outFile: null };
   stdout(
