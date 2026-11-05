@@ -689,6 +689,7 @@
     "dist/tooling/migrate/classify.d.ts",
     "dist/tooling/migrate/commands.d.ts",
     "dist/tooling/migrate/config.d.ts",
+    "dist/tooling/migrate/confirm-drop.d.ts",
     "dist/tooling/migrate/data-loss.d.ts",
     "dist/tooling/migrate/dev.d.ts",
     "dist/tooling/migrate/discover.d.ts",

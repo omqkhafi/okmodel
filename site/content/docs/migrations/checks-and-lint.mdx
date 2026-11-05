@@ -64,6 +64,8 @@ Put the line on the step, directly above its statements. The reason is the text 
 drop table "public"."notes";
 ```
 
+For a drop, [`okm generate`](/docs/reference/cli/migrate#generate) on a terminal asks first and writes this line with the reason you type. Other codes are written by hand.
+
 An override silences only the code it names, on every statement of that step. A missing or empty reason, or a code no statement triggered, is [OKM1510](/docs/reference/errors#okm1510) and does not silence the finding. `okm check` and `okm migrate check` list every override. A weak reason is warning [OKM2300](/docs/reference/errors#okm2300).
 
 ## Where lint runs

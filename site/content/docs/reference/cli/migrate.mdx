@@ -10,6 +10,15 @@ The file is `<number>_<name>.sql` in the [migrations](/docs/reference/config#mig
 
 An empty plan writes no SQL file and prints `no changes`. The [out](/docs/reference/config#out) catalog is still written. A written file prints its path, then one line per lint finding. An error finding still writes the file, then exits 1; stderr says `okm migrate apply` will refuse until it is fixed. A warning does not change the exit code. `migrate plan` and `check` also exit 1 on an error finding.
 
+On a terminal without `--json`, a plan that drops a table, column, enum, domain, function, view, extension, or materialized view (OKM1511 to OKM1518) is listed by step, code, and statement before anything is written. `Drop it? [y/N]` decides the next step. A no writes neither file and exits 1 with OKM1510. A yes asks for a reason and writes `-- okm-allow CODE: reason` above each drop, so `okm migrate apply` accepts the file. Pressing Enter at the reason writes `confirmed at okm generate`. No flag skips the question. In CI, a pipe, or `--json`, nothing is asked: the file is written with the finding and the command exits 1.
+
+```text
+This migration drops data:
+  step 1 OKM1512: alter table "public"."users" drop column "uname"
+Drop it? [y/N] y
+Reason (Enter for "confirmed at okm generate"): uname moved to profiles
+```
+
 `--replace` records a removed picklist or enum value. The schema stores no replacement. A chain, a value replaced by another removed value, is OKM1541. `=null` on a column that is not nullable is OKM1541.
 
 ```sh

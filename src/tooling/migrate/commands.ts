@@ -45,6 +45,8 @@ import {
   listAllows,
   type AllowRecord,
 } from "./allows.js";
+import { ask } from "../prompt.js";
+import { terminalConfirm } from "./confirm-drop.js";
 import { formatFindings, hasError, lintRefusal, type Finding } from "./lint.js";
 import { formatAdvice, type IgnoreReport } from "./schema-rules.js";
 import { sessionFailure } from "./lost.js";
@@ -254,7 +256,7 @@ async function dispatch(
     stdout(text);
   };
   try {
-    const produced = await route(spec.id, project, parsed, cwd, human);
+    const produced = await route(spec.id, project, parsed, cwd, human, reportConfig);
     if (reportConfig && announce && project.ambiguous === undefined) {
       process.stderr.write(`config: ${project.configPath}\n`);
     }
@@ -278,6 +280,7 @@ async function route(
   parsed: ParsedCli,
   cwd: string,
   human: (text: string) => void,
+  terminal: boolean,
 ): Promise<Produced> {
   if (id === "build") return build(project, human);
   if (id === "catalog export") return catalog(project, parsed, cwd, human);
@@ -293,7 +296,7 @@ async function route(
   if (id === "ext list" || id === "ext check") return extRead(project, id, parsed, human);
   if (id === "ext scaffold") return extScaffoldCommand(project, parsed, cwd, human);
   if (id === "ext test") return extTestCommand(project, parsed, human);
-  if (id === "generate") return generate(project, parsed, human);
+  if (id === "generate") return generate(project, parsed, human, terminal);
   if (id === "init") {
     const { initCommand } = await import("../init/command.js");
     return initCommand(parsed, cwd, human);
@@ -642,8 +645,18 @@ async function generate(
   project: ProjectContext,
   parsed: ParsedCli,
   human: (text: string) => void,
+  terminal: boolean,
 ): Promise<Produced> {
-  const written = await generateProject(project, parsed.operands[0] ?? "migration", parsed.replace);
+  const confirm =
+    terminal && process.stdin.isTTY === true
+      ? terminalConfirm(ask, (text) => process.stderr.write(text))
+      : undefined;
+  const written = await generateProject(
+    project,
+    parsed.operands[0] ?? "migration",
+    parsed.replace,
+    confirm,
+  );
   if (written === undefined) {
     human("no changes\n");
     return { text: "no changes\n", data: { path: null }, warnings: [], outFile: null };
