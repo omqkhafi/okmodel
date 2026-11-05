@@ -14,6 +14,15 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+## v0.10.5 — 2026-11-05
+
+Nothing changes in the catalog hash, the generated SQL, or the public API.
+
+### ✨ Added
+
+- `okm generate` on a terminal now asks before it writes a migration that drops a table, column, or other object. It lists each drop and asks `Drop it? [y/N]`. A yes asks for a reason and writes the `-- okm-allow` line for you, so `okm migrate apply` accepts the file; pressing Enter writes `confirmed at okm generate`. A no writes nothing. CI, pipes, and `--json` behave as before.
+- Examples: snaplink, a link shortener on Cloudflare Workers, Hono, and Neon.
+
 ## v0.10.4 — 2026-11-04
 
 Nothing changes in the catalog hash, the generated SQL, or the public API.
