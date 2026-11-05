@@ -75,6 +75,7 @@ import {
   type PlanStep,
 } from "./plan.js";
 import { allowFindings, listAllows, type AllowEntry } from "./allows.js";
+import { acknowledgeDrops, plannedDrops, type ConfirmDrops } from "./confirm-drop.js";
 import { projectFilterUses } from "./filter-scan.js";
 import {
   hasError,
@@ -128,12 +129,15 @@ export async function buildProject(
  * @param project - Project directory or {@link ProjectContext}
  * @param name - Migration name
  * @param flags - `--replace` values
+ * @param confirm - Asked when the plan drops an object. A reason writes `-- okm-allow` on those steps
  * @returns The SQL path and lint findings, or `undefined` when nothing changed
+ * @throws OkmError OKM1510 when `confirm` declines the drops. Nothing is written
  */
 export async function generateProject(
   project: string | ProjectContext,
   name: string,
   flags: readonly string[],
+  confirm?: ConfirmDrops,
 ): Promise<{ readonly path: string; readonly findings: readonly Finding[] } | undefined> {
   const { cwd } = asProject(project);
   const prepared = await prepare(project, name, flags);
@@ -141,12 +145,31 @@ export async function generateProject(
   writeArtifact(cwd, prepared.config, prepared.built);
   const directory = projectPath(cwd, prepared.config.migrations ?? "migrations");
   if (prepared.plan.steps.length === 0) return pendingLint(directory);
+  let plan = prepared.plan;
+  let findings = lintPrepared(prepared);
+  const drops = confirm === undefined ? [] : plannedDrops(plan, findings);
+  if (confirm !== undefined && drops.length > 0) {
+    const reason = await confirm(drops);
+    if (reason === undefined) {
+      throw new OkmError(
+        "OKM1510",
+        "The migration drops data and was not confirmed. Nothing was written.",
+        {
+          fix: {
+            summary: "Put the object back in the schema, or run okm generate again and answer y.",
+          },
+        },
+      );
+    }
+    plan = acknowledgeDrops(plan, drops, reason);
+    findings = lintPrepared({ ...prepared, plan });
+  }
   mkdirSync(directory, { recursive: true });
   const base = `${nextNumber(directory)}_${safeName(name)}`;
   const sqlPath = join(directory, `${base}.sql`);
-  writeFileSync(sqlPath, formatPlan(prepared.plan));
+  writeFileSync(sqlPath, formatPlan(plan));
   writeFileSync(join(directory, `${base}.catalog.json`), serializeCatalog(prepared.built.catalog));
-  return { path: sqlPath, findings: lintPrepared(prepared) };
+  return { path: sqlPath, findings };
 }
 
 /**
