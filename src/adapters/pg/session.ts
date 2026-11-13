@@ -6,7 +6,7 @@
  */
 
 import type { ExecuteResult, Notice, WireValue } from "../../contracts/driver.js";
-import { driverErrors, rejectClosed } from "../failure.js";
+import { rejectClosed } from "../failure.js";
 import type { BatchSession } from "./batch.js";
 import type { Watch } from "./call.js";
 import { nextTransactionDepth } from "./call.js";
@@ -114,7 +114,7 @@ export class WireSession implements BatchSession {
       pending = this.send(text, params);
     } catch (error) {
       this.onLeave();
-      return rejectMapped(error, text);
+      return import("./session-extra.js").then((mod) => mod.rejectMapped(error, text));
     }
     if (watch === undefined) {
       return pending.then(
@@ -125,7 +125,7 @@ export class WireSession implements BatchSession {
         },
         (error: unknown) => {
           this.onLeave();
-          return rejectMapped(error, text);
+          return import("./session-extra.js").then((mod) => mod.rejectMapped(error, text));
         },
       );
     }
@@ -180,55 +180,34 @@ export class WireSession implements BatchSession {
     const onAbort = (): void => {
       pending.cancel?.();
     };
+    // Attached before the lazy module loads, so an abort in that turn still cancels.
     if (watch.signal.aborted) onAbort();
     else watch.signal.addEventListener("abort", onAbort, { once: true });
-    return pending.then(
-      (result) => {
-        this.finishWatched(pending, watch, onAbort);
-        const why = watch.reason();
-        if (why === "timeout" || why === "cancelled") return classify(why, watch);
-        this.note(text);
-        return resultFrom(result, this.notices.since(start));
+    // The settlement handlers attach when the module loads. Hold the rejection
+    // until then so it cannot surface as unhandled.
+    pending.catch(() => undefined);
+    const ctx = {
+      leave: () => {
+        this.onLeave();
       },
+      untrack: () => {
+        this.untrack(pending);
+      },
+      note: () => {
+        this.note(text);
+      },
+      notices: this.notices,
+      start,
+      text,
+    };
+    return import("./session-extra.js").then(
+      (mod) => mod.settleWatched(pending, watch, onAbort, ctx),
       (error: unknown) => {
-        this.finishWatched(pending, watch, onAbort);
-        return classify(stampQuery(error, text), watch);
+        ctx.leave();
+        ctx.untrack();
+        watch.signal.removeEventListener("abort", onAbort);
+        throw error;
       },
     );
   }
-
-  private finishWatched(pending: WireQuery, watch: Watch, onAbort: () => void): void {
-    this.onLeave();
-    this.untrack(pending);
-    watch.signal.removeEventListener("abort", onAbort);
-  }
-}
-
-function stampQuery(error: unknown, text: string): unknown {
-  if (typeof error === "object" && error !== null && !("query" in error))
-    Reflect.set(error, "query", text);
-  return error;
-}
-
-function rejectMapped(error: unknown, text: string): Promise<never> {
-  return driverErrors().then(async (errors) => {
-    const { closedSocketError } = await import("./bun-closed.js");
-    throw errors.mapDriverError(stampQuery(closedSocketError(error), text));
-  });
-}
-
-async function classify(error: unknown, watch: Watch): Promise<never> {
-  const errors = await driverErrors();
-  if (typeof error === "string") {
-    if (error === "timeout") throw errors.timedOut();
-    throw errors.cancelled();
-  }
-  const { closedSocketError } = await import("./bun-closed.js");
-  const stamped = closedSocketError(error);
-  if (stamped instanceof errors.DriverError) throw stamped;
-  const why = watch.reason();
-  if (why === "timeout") throw errors.timedOut(error);
-  const code = errors.errorField(stamped, "code") ?? errors.errorField(stamped, "errno");
-  if (why === "cancelled" || code === "57014") throw errors.cancelled(error);
-  throw errors.mapDriverError(stamped);
 }

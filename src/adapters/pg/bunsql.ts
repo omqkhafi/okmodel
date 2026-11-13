@@ -12,7 +12,7 @@
 
 import { SQL as BunSQL } from "bun";
 
-import type { ReservedSQL, SQL } from "./bun-sql.js";
+import type { SQL } from "./bun-sql.js";
 
 import type {
   DriverConnection,
@@ -23,8 +23,7 @@ import type {
 } from "../../contracts/driver.js";
 import { BUNSQL_CAPABILITIES } from "../capabilities.js";
 import { DriverError } from "../error.js";
-import { driverErrors, mapFailure, rejectClosed } from "../failure.js";
-import { closedSocketError } from "./bun-closed.js";
+import { rejectClosed } from "../failure.js";
 import { runCall, type Watch } from "./call.js";
 import { idleMs } from "./idle-ms.js";
 import { noTimeout } from "./no-inflight-timeout.js";
@@ -36,7 +35,6 @@ export {
   readCapability,
 } from "../capabilities.js";
 export { DriverError };
-export { isBunClosedMessage } from "./bun-closed.js";
 
 /** TLS values Bun.sql accepts that this adapter forwards. */
 export type BunSqlTls =
@@ -94,24 +92,6 @@ export type HeldPool = {
    */
   readonly replaceDead: (dead: SQL) => SQL | undefined;
 };
-
-/**
- * Bun.sql's wrapper is gone.
- *
- * The text carries no SQLSTATE. A closed socket (`Connection closed`) is not
- * this: that one still dials on the same client.
- *
- * @param error - A rejection from `Bun.SQL`
- * @returns `true` when the client cannot serve another statement
- */
-export function bunWrapperDead(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  if (error.message === "connection must be a PostgresSQLConnection") return true;
-  return (
-    error.cause instanceof Error &&
-    error.cause.message === "connection must be a PostgresSQLConnection"
-  );
-}
 
 const clientPools = new WeakSet<DriverPool>();
 
@@ -313,7 +293,7 @@ export function send(sql: SQL, text: string, params: readonly WireValue[] | unde
     if (params === undefined || params.length === 0) return sql.unsafe(text).raw();
     return sql.unsafe(text, [...params]).raw();
   } catch (error) {
-    return rejected(closedSocketError(error));
+    return import("./bun-closed.js").then((mod) => rejected(mod.closedSocketError(error)));
   }
 }
 
@@ -344,58 +324,6 @@ function refuseInt8(params: readonly WireValue[] | undefined): WireQuery | undef
     }
   }
   return undefined;
-}
-
-export async function reserve(
-  sql: SQL,
-  acquireMs: number | undefined,
-  counters: Counters,
-  replaceDead?: (dead: SQL) => SQL | undefined,
-): Promise<ReservedSQL> {
-  counters.waiting += 1;
-  try {
-    try {
-      return await take(sql, acquireMs);
-    } catch (error) {
-      const next = bunWrapperDead(error) ? replaceDead?.(sql) : undefined;
-      if (next === undefined || next === sql) throw error;
-      return await take(next, acquireMs);
-    }
-  } catch (error) {
-    if (isAbort(error)) {
-      const errors = await driverErrors();
-      throw errors.acquireTimeout();
-    }
-    // Bun.sql closed-socket texts carry no code. Stamp 08006 here so a
-    // reserve that fails before the reserved-handle guard still classifies
-    // as unavailable (B-03). Kept off the shared mapDriverError path so the
-    // postgres.js incremental gate does not grow.
-    const closed = closedSocketError(error);
-    if (closed !== error) throw closed;
-    throw await mapFailure(error);
-  } finally {
-    counters.waiting = Math.max(0, counters.waiting - 1);
-  }
-}
-
-function take(sql: SQL, acquireMs: number | undefined): Promise<ReservedSQL> {
-  if (acquireMs === undefined) return sql.reserve();
-  return sql.reserve({ signal: AbortSignal.timeout(acquireMs) });
-}
-
-/**
- * Returns a reserved handle to Bun's pool.
- *
- * @param reserved - The handle to release
- */
-export function releaseReserved(reserved: ReservedSQL): Promise<void> {
-  const done: unknown = reserved.release();
-  return done instanceof Promise ? done.then(() => undefined) : Promise.resolve();
-}
-
-function isAbort(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  return error.name === "AbortError" || error.name === "TimeoutError";
 }
 
 function statsOf(counters: Counters, size: number): DriverStats {
