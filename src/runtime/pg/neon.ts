@@ -8,7 +8,7 @@
 
 import type { DriverPool } from "../../contracts/driver.js";
 import type { QuerySchema } from "../../dialects/pg/model.js";
-import { open, rejectAfterClose, type NeonConfig } from "../../adapters/pg/neon.js";
+import { open, openReplica, rejectAfterClose, type NeonConfig } from "../../adapters/pg/neon.js";
 import { createClient } from "../client.js";
 import type { RoutedClient, TopologyInput, TopologyOptions } from "../topology.js";
 import type { SessionContext } from "../session/index.js";
@@ -74,8 +74,10 @@ export function connect<
 ): Promise<Connected<S, C> | RoutedClient<S, C>> {
   if (typeof target === "object" && !isPool(target)) {
     return import("../topology.js").then((mod) =>
-      mod.default(target, options, ((config: NeonConfig) =>
-        open({
+      mod.default(target, options, ((
+        config: NeonConfig & { readonly role?: "primary" | "replica" },
+      ) => {
+        const fields = {
           url: config.url,
           mode: options.mode,
           max: config.max,
@@ -83,7 +85,11 @@ export function connect<
           timeouts: config.timeouts,
           prepared: config.prepared,
           searchPath: config.searchPath,
-        } as NeonConfig).catch(mapOpenFailure)) as never),
+        } as NeonConfig;
+        // A replica that cannot be warmed stays a pool. The primary still rejects.
+        if (config.role === "replica") return openReplica(fields);
+        return open(fields).catch(mapOpenFailure);
+      }) as never),
     );
   }
   const owned = !isPool(target);

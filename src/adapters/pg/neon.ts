@@ -125,7 +125,23 @@ export async function open(config: NeonConfig): Promise<DriverPool> {
     }
     return import("./neon-http.js").then((mod) => mod.openHttp(config));
   }
-  return openWebSocket(config);
+  return openWebSocket(config, true);
+}
+
+/**
+ * Opens a replica pool without the connect-time WebSocket warm-up.
+ *
+ * A refused or unresolvable replica would reject `open` and abort the whole
+ * topology. The pool stays, the first probe fails, and later probes connect
+ * when the replica answers. A primary still uses {@link open}, which warms
+ * and rejects. HTTP mode never warms.
+ *
+ * @param config - URL, mode, pool size, and acquire timeout
+ * @returns The pool
+ */
+export function openReplica(config: NeonConfig): Promise<DriverPool> {
+  if (config.mode === "http") return open(config);
+  return openWebSocket(config, false);
 }
 
 /**
@@ -203,7 +219,7 @@ export function send(
   return runner.query(query) as WireQuery;
 }
 
-async function openWebSocket(config: NeonConfig): Promise<DriverPool> {
+async function openWebSocket(config: NeonConfig, warm: boolean): Promise<DriverPool> {
   ensureWebSocket();
   const max = config.max ?? 10;
   const acquireMs = config.timeouts?.acquire;
@@ -223,12 +239,14 @@ async function openWebSocket(config: NeonConfig): Promise<DriverPool> {
     ...(config.searchPath !== undefined ? { options: `-c search_path=${config.searchPath}` } : {}),
   });
   pool.on("error", () => undefined);
-  try {
-    const warmed = await take(pool);
-    warmed.release();
-  } catch (error) {
-    await pool.end().catch(() => undefined);
-    throw await mapFailure(error);
+  if (warm) {
+    try {
+      const warmed = await take(pool);
+      warmed.release();
+    } catch (error) {
+      await pool.end().catch(() => undefined);
+      throw await mapFailure(error);
+    }
   }
 
   const root = new WireSession(
