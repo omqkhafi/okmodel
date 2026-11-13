@@ -83,7 +83,7 @@ export function isConnectionLost(error: unknown): boolean {
 function at(error: unknown, failure: boolean): boolean {
   if (typeof error !== "object" || error === null) return false;
   const named = readCode(error, "sqlstate");
-  if (isState(named)) return lostState(named);
+  if (isSqlstate(named)) return lostState(named);
   const code = readCode(error, "code");
   const errno = readCode(error, "errno");
   if (
@@ -93,8 +93,8 @@ function at(error: unknown, failure: boolean): boolean {
     return true;
   }
   if (errno !== undefined && isConnectionErrno(errno)) return true;
-  if (isState(code)) return lostState(code);
-  if (isState(errno)) return lostState(errno);
+  if (isSqlstate(code)) return lostState(code);
+  if (isSqlstate(errno)) return lostState(errno);
   if (!failure && Reflect.get(error, "kind") === "outcome_unknown") return true;
   const cause: unknown = Reflect.get(error, "cause");
   return cause !== undefined && cause !== error && at(cause, failure);
@@ -104,11 +104,27 @@ function lostState(state: string): boolean {
   return isConnectionSqlstate(state) && state !== "53300";
 }
 
-function isState(value: string | undefined): value is string {
+/**
+ * Reports whether `value` is a SQLSTATE.
+ *
+ * @param value - A driver field
+ * @returns `true` for five characters from `0-9` and `A-Z`
+ */
+export function isSqlstate(value: string | undefined): value is string {
   return value !== undefined && /^[0-9A-Z]{5}$/.test(value);
 }
 
-function readCode(error: unknown, key: string): string | undefined {
+/**
+ * Reads a string field from an unknown error object.
+ *
+ * Empty strings are absent. Adapters share this with the connection check so
+ * a driver field is read once.
+ *
+ * @param error - Caught value
+ * @param key - Field name
+ * @returns The string, or `undefined`
+ */
+export function readCode(error: unknown, key: string): string | undefined {
   if (typeof error !== "object" || error === null || !(key in error)) return undefined;
   const value: unknown = Reflect.get(error, key);
   return typeof value === "string" && value.length > 0 ? value : undefined;

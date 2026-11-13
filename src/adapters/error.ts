@@ -6,8 +6,20 @@
  * that code is the pool's own deadline (spec §15.2), not a SQLSTATE.
  */
 
+import { isSqlstate, readCode as errorField } from "../contracts/connection.js";
 import { OkmError } from "../contracts/error.js";
 import type { DriverErrorFields, DriverFailureKind } from "../contracts/driver.js";
+
+/**
+ * Reads a string field from an unknown error object.
+ *
+ * Empty strings are absent. Shared with the connection check ({@link readCode}).
+ *
+ * @param error - Caught value
+ * @param key - Field name
+ * @returns The string, or `undefined`
+ */
+export { errorField };
 
 /**
  * A driver failure normalised to the contract fields.
@@ -120,19 +132,6 @@ export function acquireTimeout(): OkmError {
 }
 
 /**
- * Reads a string field from an unknown error object.
- *
- * @param error - Caught value
- * @param key - Field name
- * @returns The string, or `undefined`
- */
-export function errorField(error: unknown, key: string): string | undefined {
-  if (typeof error !== "object" || error === null || !(key in error)) return undefined;
-  const value: unknown = Reflect.get(error, key);
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-/**
  * SQLSTATE from a driver's own error object.
  *
  * postgres.js and node-postgres put it on `code`. Bun.sql puts
@@ -147,16 +146,6 @@ function sqlstateOf(error: unknown): string | undefined {
   const errno = errorField(error, "errno");
   if (isSqlstate(errno)) return errno;
   return errorField(error, "sqlstate");
-}
-
-/**
- * Reports whether `value` is a SQLSTATE.
- *
- * @param value - A driver field
- * @returns `true` for five characters from `0-9` and `A-Z`
- */
-function isSqlstate(value: string | undefined): value is string {
-  return value !== undefined && /^[0-9A-Z]{5}$/.test(value);
 }
 
 /**
