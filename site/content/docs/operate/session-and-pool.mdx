@@ -240,7 +240,7 @@ The idle clock runs while no statement is in flight. It starts after `BEGIN`, an
 
 `timeout` and `signal` are fields on `connect`, beside `timeouts`. They bound the check `connected` waits on. That check is [Check](/docs/operate/startup-check). It runs the version query. When the catalog hash differs, the same two bound the compatibility read. `timeouts.statement` applies on the next call.
 
-A later call sets its own `timeout`, or takes `timeouts.statement`. On Bun.sql and PGlite a positive `timeout` on this check is OKM1120, because the check is an execute. A `timeout` of 0 fails the check at once as kind `timeout`. An aborted `signal` fails the check as kind `cancelled`. The message is `The call was cancelled`.
+A later call sets its own `timeout`, or takes `timeouts.statement`. On Bun.sql and PGlite a positive `timeout` on this check is OKM1120, because the check is an execute. Neon keeps the check's positive `timeout` and its `signal`. The check is read-only, so the wait is raced: a positive `timeout` that elapses is kind `timeout`, and an aborted `signal` is kind `cancelled`. The HTTP request or WebSocket may still finish; `close()` drops it, and that late result is ignored. A `timeout` of 0 fails the check at once as kind `timeout`. An aborted `signal` fails the check as kind `cancelled`. The message is `The call was cancelled`.
 
 #### drivers
 

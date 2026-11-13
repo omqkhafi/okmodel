@@ -48,6 +48,10 @@ export type NeonConnectOptions<
  * @typeParam S - Schema
  * @typeParam C - The `session` context
  * @typeParam D - The `limits` literal. It decides which reads need no `limit`
+ * `timeout` and `signal` bound the read-only startup check. A positive
+ * `timeout` that elapses is kind `timeout`. An aborted `signal` is kind
+ * `cancelled`. A later call still refuses a positive `timeout`.
+ *
  * @param target - URL, an existing pool, or `{ primary, replicas }`
  * @param options - Schema, mode, errors, logger, and driver options
  * @returns The client. A topology returns a promise. Await `connected` for the dialect check
@@ -86,6 +90,9 @@ export function connect<
         } as NeonConfig).catch(mapOpenFailure)) as never),
     );
   }
+  if (typeof target === "string" && boundsStartup(options)) {
+    return import("./neon-startup.js").then((mod) => mod.connectBounded(target, options));
+  }
   const owned = !isPool(target);
   const opened = isPool(target)
     ? Promise.resolve(target)
@@ -113,6 +120,22 @@ export function connect<
  * @param error - Rejection from {@link open}
  * @returns A rejected promise
  */
+/**
+ * Reports whether `connect` must race the startup check.
+ *
+ * A positive `timeout` or any `signal` loads that path. `timeout: 0` stays on
+ * the shared execute path, which already fails at once as kind `timeout`.
+ *
+ * @param options - Connect options
+ * @returns True when the check is bounded
+ */
+function boundsStartup(options: {
+  readonly signal?: AbortSignal;
+  readonly timeout?: number;
+}): boolean {
+  return options.signal !== undefined || (options.timeout ?? 0) > 0;
+}
+
 function mapOpenFailure(error: unknown): Promise<never> {
   return import("../../dialects/pg/errors.js").then((mod) =>
     Promise.reject(mod.mapPostgresError(error)),

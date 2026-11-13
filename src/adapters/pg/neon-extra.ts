@@ -11,9 +11,10 @@ import type { DriverConnection } from "../../contracts/driver.js";
 import { OkmError } from "../../contracts/error.js";
 import { DriverError } from "../error.js";
 import { rejectClosed } from "../failure.js";
+import { rejectCancelled } from "../failure.js";
 import { runCall, type Watch } from "./call.js";
 import { noTimeout } from "./no-inflight-timeout.js";
-import { connectClient, send, type HeldPool } from "./neon.js";
+import { connectClient, releasedSignal, send, type HeldPool } from "./neon.js";
 import { resetSession } from "./reserved.js";
 import { WireSession, type WireQuery } from "./session.js";
 
@@ -74,16 +75,25 @@ export async function checkout(held: HeldPool): Promise<DriverConnection> {
     execute: (text, params, options) => {
       const refused = noTimeout(options);
       if (refused !== undefined) return refused;
-      return guard(() =>
-        runCall(isClosed(), options, (watch) => session.query(text, params, watch)),
-      );
+      const next = releasedSignal(options);
+      if (next === null) return rejectCancelled();
+      const signal = options?.signal;
+      return guard(() => {
+        const again = signal?.aborted === true ? null : next;
+        if (again === null) return rejectCancelled();
+        return runCall(isClosed(), again, (watch) => session.query(text, params, watch));
+      });
     },
     batch: (statements, options) => {
       const refused = noTimeout(options);
       if (refused !== undefined) return refused;
+      const first = releasedSignal(options);
+      if (first === null) return rejectCancelled();
       return guard(() =>
-        runCall(isClosed(), options, async (watch: Watch | undefined) => {
+        runCall(isClosed(), first, async (watch: Watch | undefined) => {
+          if (releasedSignal(options) === null) return rejectCancelled();
           const { runAtomicBatch } = await import("./batch.js");
+          if (releasedSignal(options) === null) return rejectCancelled();
           return runAtomicBatch(session, statements, watch);
         }),
       );

@@ -21,10 +21,12 @@ import type {
   DriverPool,
   DriverPoolConfig,
   DriverStats,
+  ExecuteOptions,
+  Statement,
   WireValue,
 } from "../../contracts/driver.js";
 import { NEON_WEBSOCKET_CAPABILITIES } from "../capabilities.js";
-import { driverErrors, mapFailure } from "../failure.js";
+import { driverErrors, mapFailure, rejectCancelled } from "../failure.js";
 import { runCall } from "./call.js";
 import { idleMs } from "./idle-ms.js";
 import { noTimeout } from "./no-inflight-timeout.js";
@@ -99,6 +101,23 @@ type Queryable = {
 };
 
 const CONNECT_MS = 30_000;
+
+/**
+ * Set on the config passed to {@link open} when the caller is bounding startup.
+ *
+ * The WebSocket pool is then returned before the first socket opens, so
+ * `connected` can settle on the caller's signal or timeout.
+ */
+export const neonEarly: unique symbol = Symbol();
+
+/** The Neon `Pool` behind a WebSocket driver, so a startup bound can drop its sockets. */
+export const neonPool: unique symbol = Symbol();
+
+/**
+ * HTTP startup hook. Called with `true` to abort fetches still in flight, and
+ * with `false` once the check has finished.
+ */
+export const neonSettle: unique symbol = Symbol();
 
 export const WIRE = {
   getTypeParser(): (value: string) => string {
@@ -223,14 +242,6 @@ async function openWebSocket(config: NeonConfig): Promise<DriverPool> {
     ...(config.searchPath !== undefined ? { options: `-c search_path=${config.searchPath}` } : {}),
   });
   pool.on("error", () => undefined);
-  try {
-    const warmed = await take(pool);
-    warmed.release();
-  } catch (error) {
-    await pool.end().catch(() => undefined);
-    throw await mapFailure(error);
-  }
-
   const root = new WireSession(
     (text, params) => send(pool, text, params, named),
     notices,
@@ -246,32 +257,78 @@ async function openWebSocket(config: NeonConfig): Promise<DriverPool> {
   const held: HeldPool = { pool, acquireMs, counters, notices, named, isClosed };
   const checkout = (): Promise<DriverConnection> =>
     closed ? rejectAfterClose() : import("./neon-extra.js").then((mod) => mod.checkout(held));
+  const driver = Object.assign(
+    {
+      capabilities: NEON_WEBSOCKET_CAPABILITIES,
+      execute(
+        text: string,
+        params: readonly WireValue[] | undefined,
+        options: ExecuteOptions | undefined,
+      ) {
+        const refused = noTimeout(options);
+        if (refused !== undefined) return refused;
+        if (closed) return rejectAfterClose();
+        const next = releasedSignal(options);
+        if (next === null) return rejectCancelled();
+        return runCall(closed, next, (watch) => root.query(text, params, watch));
+      },
+      async batch(statements: readonly Statement[], options: ExecuteOptions | undefined) {
+        const refused = noTimeout(options);
+        if (refused !== undefined) return refused;
+        if (releasedSignal(options) === null) return rejectCancelled();
+        const connection = await checkout();
+        try {
+          const next = releasedSignal(options);
+          if (next === null) return rejectCancelled();
+          return await connection.batch(statements, next);
+        } finally {
+          await connection.release();
+        }
+      },
+      reserve: () => checkout(),
+      stats: () => statsOf(counters, max),
+      async close() {
+        closed = true;
+        await pool.end();
+      },
+    } satisfies DriverPool,
+    { [neonPool]: pool },
+  );
+  const warming = take(pool).then((client) => {
+    client.release();
+  });
+  // A bounded startup check has to return a client before this socket opens.
+  if (neonEarly in config) {
+    void warming.catch(() => undefined);
+    return driver;
+  }
+  try {
+    await warming;
+  } catch (error) {
+    await pool.end().catch(() => undefined);
+    throw await mapFailure(error);
+  }
+  return driver;
+}
 
-  return {
-    capabilities: NEON_WEBSOCKET_CAPABILITIES,
-    execute(text, params, options) {
-      const refused = noTimeout(options);
-      if (refused !== undefined) return refused;
-      if (closed) return rejectAfterClose();
-      return runCall(closed, options, (watch) => root.query(text, params, watch));
-    },
-    async batch(statements, options) {
-      const refused = noTimeout(options);
-      if (refused !== undefined) return refused;
-      const connection = await checkout();
-      try {
-        return await connection.batch(statements, options);
-      } finally {
-        await connection.release();
-      }
-    },
-    reserve: () => checkout(),
-    stats: () => statsOf(counters, max),
-    async close() {
-      closed = true;
-      await pool.end();
-    },
-  };
+/**
+ * Drops `signal` once an abort can no longer stop the statement.
+ *
+ * An abort that has already fired returns `null`: the caller rejects with
+ * `cancelled` and sends nothing. A later abort is ignored. Neon cannot cancel
+ * a statement it has sent. `timeout` is kept. This driver does not read `route`.
+ *
+ * @param options - Per-call options
+ * @returns Options with no signal, the same object when there was none, or `null`
+ */
+export function releasedSignal(
+  options: ExecuteOptions | undefined,
+): ExecuteOptions | undefined | null {
+  const signal = options?.signal;
+  if (signal?.aborted === true) return null;
+  if (signal === undefined) return options;
+  const timeout = options?.timeout;
+  return timeout === undefined ? undefined : { timeout };
 }
 
 /**
