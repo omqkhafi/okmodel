@@ -7,12 +7,26 @@
 import { neon, type HTTPQueryOptions, type NeonQueryFunction } from "@neondatabase/serverless";
 
 import { OkmError } from "../../contracts/error.js";
-import type { DriverPool, ExecuteResult, WireValue } from "../../contracts/driver.js";
+import type {
+  DriverPool,
+  ExecuteOptions,
+  ExecuteResult,
+  Statement,
+  WireValue,
+} from "../../contracts/driver.js";
 import { NEON_HTTP_CAPABILITIES } from "../capabilities.js";
 import { outcomeUnknown } from "../error.js";
-import { mapFailure } from "../failure.js";
+import { mapFailure, rejectCancelled } from "../failure.js";
 import { runCall } from "./call.js";
-import { WIRE, rejectAfterClose, statsOf, type Counters, type NeonConfig } from "./neon.js";
+import {
+  WIRE,
+  neonSettle,
+  releasedSignal,
+  rejectAfterClose,
+  statsOf,
+  type Counters,
+  type NeonConfig,
+} from "./neon.js";
 import { noTimeout } from "./no-inflight-timeout.js";
 import { EMPTY_NOTICES, resultFrom } from "./result.js";
 
@@ -40,65 +54,96 @@ export function openHttp(config: NeonConfig): DriverPool {
   const counters: Counters = { reserved: 0, busy: 0, reservedBusy: 0, waiting: 0 };
   let closed = false;
   const sql: HttpSql = neon(config.url, HTTP_QUERY);
+  const inflight = new Set<AbortController>();
+  let arm = true;
   const run = async (
     text: string,
     params: readonly WireValue[] | undefined,
+    signal: AbortSignal | undefined,
   ): Promise<ExecuteResult> => {
+    if (signal?.aborted === true) return rejectCancelled();
+    const controller = arm ? new AbortController() : undefined;
+    if (controller !== undefined) inflight.add(controller);
     counters.busy += 1;
     try {
-      const result = await sql.query(text, params === undefined ? [] : [...params], HTTP_QUERY);
+      const result = await sql.query(
+        text,
+        params === undefined ? [] : [...params],
+        controller === undefined
+          ? HTTP_QUERY
+          : { ...HTTP_QUERY, fetchOptions: { signal: controller.signal } },
+      );
       const odd = oddCell(result);
       return odd === undefined ? resultFrom(result, EMPTY_NOTICES) : rejectOdd(odd);
     } finally {
+      if (controller !== undefined) inflight.delete(controller);
       counters.busy = Math.max(0, counters.busy - 1);
     }
   };
 
-  return {
-    capabilities: NEON_HTTP_CAPABILITIES,
-    execute(text, params, options) {
-      const refused = noTimeout(options);
-      if (refused !== undefined) return refused;
-      if (closed) return rejectAfterClose();
-      return runCall(closed, options, () =>
-        run(text, params).catch((error: unknown) =>
-          mapFailure(error).then((mapped) => Promise.reject(mapped)),
-        ),
-      );
-    },
-    async batch(statements, options) {
-      const refused = noTimeout(options);
-      if (refused !== undefined) return refused;
-      if (closed) return rejectAfterClose();
-      counters.busy += 1;
-      let results: unknown[];
-      try {
-        const queries = statements.map((statement) =>
-          sql.query(
-            statement.text,
-            statement.params === undefined ? [] : [...statement.params],
-            HTTP_QUERY,
+  return Object.assign(
+    {
+      capabilities: NEON_HTTP_CAPABILITIES,
+      execute(
+        text: string,
+        params: readonly WireValue[] | undefined,
+        options: ExecuteOptions | undefined,
+      ) {
+        const refused = noTimeout(options);
+        if (refused !== undefined) return refused;
+        if (closed) return rejectAfterClose();
+        const next = releasedSignal(options);
+        if (next === null) return rejectCancelled();
+        const signal = options?.signal;
+        return runCall(closed, next, () =>
+          run(text, params, signal).catch((error: unknown) =>
+            mapFailure(error).then((mapped) => Promise.reject(mapped)),
           ),
         );
-        results = await sql.transaction(queries, HTTP_QUERY);
-      } catch (error) {
-        if (!isDatabaseError(error)) throw outcomeUnknown(error);
-        throw await mapFailure(error);
-      } finally {
-        counters.busy = Math.max(0, counters.busy - 1);
-      }
-      for (const result of results) {
-        const odd = oddCell(result);
-        if (odd !== undefined) return rejectOdd(odd);
-      }
-      return results.map((result) => resultFrom(result, EMPTY_NOTICES));
+      },
+      async batch(statements: readonly Statement[], options: ExecuteOptions | undefined) {
+        const refused = noTimeout(options);
+        if (refused !== undefined) return refused;
+        if (closed) return rejectAfterClose();
+        if (releasedSignal(options) === null) return rejectCancelled();
+        counters.busy += 1;
+        let results: unknown[];
+        try {
+          const queries = statements.map((statement) =>
+            sql.query(
+              statement.text,
+              statement.params === undefined ? [] : [...statement.params],
+              HTTP_QUERY,
+            ),
+          );
+          results = await sql.transaction(queries, HTTP_QUERY);
+        } catch (error) {
+          if (!isDatabaseError(error)) throw outcomeUnknown(error);
+          throw await mapFailure(error);
+        } finally {
+          counters.busy = Math.max(0, counters.busy - 1);
+        }
+        for (const result of results) {
+          const odd = oddCell(result);
+          if (odd !== undefined) return rejectOdd(odd);
+        }
+        return results.map((result) => resultFrom(result, EMPTY_NOTICES));
+      },
+      stats: () => statsOf(counters, max),
+      close() {
+        closed = true;
+        return Promise.resolve();
+      },
+    } satisfies DriverPool,
+    {
+      [neonSettle](abort: boolean): void {
+        arm = false;
+        if (!abort) return;
+        for (const controller of inflight) controller.abort();
+        inflight.clear();
+      },
     },
-    stats: () => statsOf(counters, max),
-    close() {
-      closed = true;
-      return Promise.resolve();
-    },
-  };
+  );
 }
 
 /**

@@ -115,7 +115,7 @@ When the constructor is given no `fix`, the kind supplies one sentence.
 
 | Kinds | Default fix |
 | --- | --- |
-| `cancelled` | Do not retry. The caller aborted the call. |
+| `cancelled` | Do not retry. The caller aborted the call. On Neon, an abort cannot stop a statement that was already sent; that call keeps the statement's own result. |
 | `outcome_unknown` | Check whether the write landed, using an idempotency key, before retrying. |
 | `timeout`, `serialization`, `deadlock`, `lock_timeout`, `unavailable` | Retry the call. |
 | `unique`, `exclusion`, `conflict` | Change the conflicting value, or update the existing row. |
