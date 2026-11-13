@@ -13,6 +13,7 @@ import { primaryUrl } from "../packages/harness/src/topology.js";
 import { OkmError } from "../src/contracts/error.js";
 import { renderCatalog } from "../src/dialects/pg/ddl.js";
 import { fragment, raw, schema, t, table } from "../src/dialects/pg/index.js";
+import { connect as connectBun } from "../src/runtime/pg/bun.js";
 import { connect as connectPg } from "../src/runtime/pg/pg.js";
 import { connect as connectPostgres } from "../src/runtime/pg/postgresjs.js";
 
@@ -91,6 +92,19 @@ async function timed(run: () => Promise<unknown>): Promise<{ error: unknown; ms:
   } catch (error) {
     return { error, ms: Date.now() - start };
   }
+}
+
+function holdQuery(db: Handle, seconds: number): { ready: Promise<void>; done: Promise<unknown> } {
+  let go: () => void = () => undefined;
+  const ready = new Promise<void>((resolve) => {
+    go = resolve;
+  });
+  const done = (async () => {
+    go();
+    await raw(db.notes, Cell, "read", fragment`select pg_sleep(${seconds})::text as ok`);
+  })();
+  done.catch(() => undefined);
+  return { ready, done };
 }
 
 function hold(db: Handle, seconds: number): { ready: Promise<void>; done: Promise<unknown> } {
@@ -225,6 +239,30 @@ for (const [name, open] of Object.entries(drivers)) {
   });
 }
 
+postgresTest(gate, "node-postgres acquire bounds a plain statement holder", async () => {
+  await withTable(async (url, searchPath) => {
+    const open = drivers["node-postgres"];
+    if (open === undefined) return;
+    const db = open(url, searchPath, 1, { acquire: 200 });
+    try {
+      await db.connected;
+      const held = holdQuery(db, 1.5);
+      await held.ready;
+      await Bun.sleep(40);
+      const calls = await Promise.all([
+        timed(() => db.notes.find({ limit: 1 })),
+        timed(() => db.notes.insert({ id: 1, title: "queued" })),
+        timed(() => db.notes.count()),
+      ]);
+      for (const call of calls) assertAcquire(call.error, call.ms, 150, 600);
+      await held.done;
+      expect(await db.notes.count()).toBe(0);
+    } finally {
+      await db.close();
+    }
+  });
+});
+
 postgresTest(
   gate,
   "node-postgres acquire 5500 is the pool deadline",
@@ -247,3 +285,50 @@ postgresTest(
   },
   15_000,
 );
+
+postgresTest(gate, "bun.sql class-form raw applies the statement timeout", async () => {
+  await withTable(async (url, searchPath) => {
+    const openBun = (timeouts?: Timeouts): Handle =>
+      connectBun(url, {
+        schema: app,
+        searchPath,
+        max: 1,
+        ...(timeouts !== undefined ? { timeouts } : {}),
+      }) as unknown as Handle;
+    const db = openBun({ statement: 300 });
+    try {
+      await db.connected;
+      const outer = await timed(() =>
+        raw(db.notes, Cell, "read", fragment`select pg_sleep(2)::text as ok`),
+      );
+      assertRefused(outer.error, outer.ms);
+      const inner = await timed(() =>
+        db.tx((tx) => raw(tx.notes, Cell, "read", fragment`select pg_sleep(2)::text as ok`)),
+      );
+      assertRefused(inner.error, inner.ms);
+    } finally {
+      await db.close();
+    }
+    const plain = openBun();
+    try {
+      await plain.connected;
+      const slept = await timed(() =>
+        raw(plain.notes, Cell, "read", fragment`select pg_sleep(0.4)::text as ok`),
+      );
+      expect(slept.error).toBeUndefined();
+      expect(slept.ms).toBeGreaterThanOrEqual(300);
+      expect(slept.ms).toBeLessThan(1_000);
+    } finally {
+      await plain.close();
+    }
+  });
+});
+
+function assertRefused(error: unknown, ms: number): void {
+  expect(ms).toBeLessThan(200);
+  expect(error).toBeInstanceOf(OkmError);
+  if (!(error instanceof OkmError)) return;
+  expect(error.code).toBe("OKM1120");
+  expect(error.kind).toBe("invalid");
+  expect(error.message).toBe("timeout");
+}

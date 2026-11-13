@@ -212,9 +212,11 @@ The pool waits for a connection up to `timeouts.acquire`. postgres.js and node-p
 
 node-postgres sets the pool's connection timeout to that number. The wait fails as OKM1846. There is no separate 5 second cap.
 
-postgres.js applies `acquire` to a call that is still queued and has not been handed to a connection. That covers `find`, `insert`, `count`, `tx`, and the other calls on the pool. A statement the driver has already written to a socket is a statement wait. Opening a new socket still uses the driver's connect timeout of 5 seconds.
+postgres.js applies `acquire` to a call that is still queued and has not been handed to a connection. A `tx()` or `reserve()` keeps the connection out of the busy set, so `find`, `insert`, `count`, and another `tx()` wait in that queue and fail as OKM1846. An ordinary statement leaves the connection busy. postgres.js writes the next call onto that socket, and the call runs when the statement finishes. `acquire` does not cancel it. A statement the driver has already written to a socket is a statement wait. Opening a new socket still uses the driver's own `connect_timeout` of 5 seconds, which is not `acquire`.
 
-Bun.sql applies `acquire` to `reserve` and `tx`. A query on the outer client waits in the driver's queue without that deadline. PGlite applies `acquire` to every call that takes its one slot, and waits with no deadline when the key is omitted.
+node-postgres applies `acquire` to every call, including one waiting on an ordinary statement.
+
+Bun.sql does not bound the pool wait. `acquire` applies to `reserve` and `tx`. A `find`, `insert`, or `count` waits in the driver's queue until a connection is free. Use a `max` large enough for the concurrent calls, or set `timeouts.statement` or a call `timeout`. A positive statement timeout on Bun.sql is OKM1120, so that call fails instead of waiting. PGlite applies `acquire` to every call that takes its one slot. PGlite waits with no deadline when the key is omitted.
 
 A call that fails with OKM1846 has not sent its statement. A write that fails this way is not in the table. The kind is `timeout` and the error is retryable.
 
@@ -224,7 +226,7 @@ A call that fails with OKM1846 has not sent its statement. A write that fails th
 
 #### statement
 
-A call that sets `timeout` uses that number. A call that sets none takes `timeouts.statement`. `batch()` does the same. Class-form `raw(handle, Class, "read" | "write", fragment)` does the same, on the client and inside `tx()`. The code on the error is `timeout`. The message is `The call timed out`. A call that passes `timeout` uses that number instead of `timeouts.statement`.
+A call that sets `timeout` uses that number. A call that sets none takes `timeouts.statement`. `batch()` does the same. Class-form `raw(handle, Class, "read" | "write", fragment)` takes `timeouts.statement` on the client and inside `tx()`. A call that passes `timeout` uses that number instead of `timeouts.statement`. The code on the error is `timeout`. The message is `The call timed out`.
 
 #### transaction
 
@@ -240,7 +242,7 @@ The idle clock runs while no statement is in flight. It starts after `BEGIN`, an
 
 `timeout` and `signal` are fields on `connect`, beside `timeouts`. They bound the check `connected` waits on. That check is [Check](/docs/operate/startup-check). It runs the version query. When the catalog hash differs, the same two bound the compatibility read. `timeouts.statement` applies on the next call.
 
-A later call sets its own `timeout`, or takes `timeouts.statement`. On Bun.sql and PGlite a positive `timeout` on this check is OKM1120, because the check is an execute. A `timeout` of 0 fails the check at once as kind `timeout`. An aborted `signal` fails the check as kind `cancelled`. The message is `The call was cancelled`.
+A later call sets its own `timeout`, or takes `timeouts.statement`. On Bun.sql and PGlite a positive `timeout` on this check is OKM1120, because the check is an execute. Neon keeps the check's positive `timeout` and its `signal`. The check is read-only, so the wait is raced: a positive `timeout` that elapses is kind `timeout`, and an aborted `signal` is kind `cancelled`. The HTTP request or WebSocket may still finish; `close()` drops it, and that late result is ignored. A `timeout` of 0 fails the check at once as kind `timeout`. An aborted `signal` fails the check as kind `cancelled`. The message is `The call was cancelled`.
 
 #### drivers
 
