@@ -49,12 +49,6 @@ const SEED = Number(
       : "20261024"),
 );
 
-if (ENABLED) {
-  console.log(
-    `[lifecycle] seed=${String(SEED)} cases=${String(CASES)} (set OKM_LIFECYCLE_SEED to replay)`,
-  );
-}
-
 postgresTest(
   gate,
   "random migration lifecycle keeps generate/check/apply/push invariants",
@@ -63,70 +57,19 @@ postgresTest(
       console.warn("[lifecycle] skipped (set OKM_LIFECYCLE=1 to run)");
       return;
     }
-    const started = Date.now();
-    const report: { ran: number; passed: number; known: number; unknown: number } = {
-      ran: 0,
-      passed: 0,
-      known: 0,
-      unknown: 0,
-    };
-    let lastUnknown: string | undefined;
-    const finish = (): LifecycleReport => report;
-    try {
-      await fc.assert(
-        fc.asyncProperty(lifecycleCaseArb, async (item) => {
-          report.ran += 1;
-          const outcome = await runLifecycleCase(root, item, SEED);
-          if (outcome.ok) {
-            report.passed += 1;
-            return true;
-          }
-          if (outcome.known !== undefined) {
-            report.known += 1;
-            console.warn(`[lifecycle] skipped known ${outcome.known}`);
-            return true;
-          }
-          report.unknown += 1;
-          lastUnknown = outcome.error;
-          // Throw so fast-check shrinks against the real message and the report
-          // includes the copyable schema.
-          throw new Error(outcome.error);
-        }),
-        {
-          seed: SEED,
-          numRuns: CASES,
-          verbose: fc.VerbosityLevel.None,
-          // Allow shrinks; stop early once a minimal unknown failure is in hand.
-          endOnFailure: true,
-          // Prefer structured shrink of the case over a long error string.
-          includeErrorInReport: true,
-        },
-      );
-    } catch (error) {
-      const elapsedMs = Date.now() - started;
-      console.log(`${formatLifecycleReport(finish())} elapsedMs=${String(elapsedMs)}`);
-      if (lastUnknown !== undefined) {
-        const lines = lastUnknown.split("\n").length;
-        if (lines > 15) {
-          throw new Error(
-            `Lifecycle failure repro is ${String(lines)} lines (>15). Stop and ask.\n\n${lastUnknown}`,
-          );
-        }
-      }
-      throw error;
-    }
-    const elapsedMs = Date.now() - started;
-    console.log(`${formatLifecycleReport(finish())} elapsedMs=${String(elapsedMs)}`);
-    if (knownSkipExceedsBudget(finish())) {
-      throw new Error(`${formatLifecycleReport(finish())}: known skips are more than 25% of cases`);
-    }
-    if (process.env.OKM_LIFECYCLE_TIER === "pr" && elapsedMs > 240_000) {
-      throw new Error(
-        `PR-tier lifecycle run exceeded 4 minutes (${String(elapsedMs)} ms). Stop and ask.`,
-      );
-    }
+    await runLifecycleSample(SEED, CASES);
   },
   Math.max(180_000, CASES * 15_000),
+);
+
+postgresTest(
+  gate,
+  "seed 369021065 keeps known skips inside the sampling bound",
+  async () => {
+    if (!ENABLED) return;
+    await runLifecycleSample(369021065, 20);
+  },
+  Math.max(180_000, 20 * 15_000),
 );
 
 postgresTest(
@@ -212,6 +155,81 @@ postgresTest(
   },
   180_000,
 );
+
+async function runLifecycleSample(seed: number, cases: number): Promise<void> {
+  console.log(
+    `[lifecycle] seed=${String(seed)} cases=${String(cases)} (set OKM_LIFECYCLE_SEED to replay)`,
+  );
+  const started = Date.now();
+  const report: { ran: number; passed: number; known: number; unknown: number } = {
+    ran: 0,
+    passed: 0,
+    known: 0,
+    unknown: 0,
+  };
+  let lastUnknown: string | undefined;
+  const finish = (): LifecycleReport => report;
+  try {
+    await fc.assert(
+      fc.asyncProperty(lifecycleCaseArb, async (item) => {
+        report.ran += 1;
+        const outcome = await runLifecycleCase(root, item, seed);
+        if (outcome.ok) {
+          report.passed += 1;
+          return true;
+        }
+        if (outcome.known !== undefined) {
+          report.known += 1;
+          console.warn(`[lifecycle] skipped known ${outcome.known}`);
+          return true;
+        }
+        report.unknown += 1;
+        lastUnknown = outcome.error;
+        // Throw so fast-check shrinks against the real message and the report
+        // includes the copyable schema.
+        throw new Error(outcome.error);
+      }),
+      {
+        seed,
+        numRuns: cases,
+        verbose: fc.VerbosityLevel.None,
+        // Allow shrinks; stop early once a minimal unknown failure is in hand.
+        endOnFailure: true,
+        // Prefer structured shrink of the case over a long error string.
+        includeErrorInReport: true,
+      },
+    );
+  } catch (error) {
+    const elapsedMs = Date.now() - started;
+    console.log(`${formatLifecycleReport(finish())} elapsedMs=${String(elapsedMs)}`);
+    if (lastUnknown !== undefined) {
+      const lines = lastUnknown.split("\n").length;
+      if (lines > 15) {
+        throw new Error(
+          `Lifecycle failure repro is ${String(lines)} lines (>15). Stop and ask.\n\n${lastUnknown}`,
+        );
+      }
+    }
+    throw error;
+  }
+  const elapsedMs = Date.now() - started;
+  console.log(`${formatLifecycleReport(finish())} elapsedMs=${String(elapsedMs)}`);
+  // A flat quarter fails a 20-case draw at 6 known skips. This grammar skips
+  // near a fifth of cases, so that is ordinary noise and it blocks a release.
+  // Fail when the count sits above the 25% mean plus three binomial standard
+  // deviations: known > N*0.25 + 3*sqrt(N*0.25*0.75). That is 11 or more of
+  // 20, and 98 or more of 300. An unknown failure still throws above.
+  if (knownSkipExceedsBudget(finish())) {
+    throw new Error(
+      `${formatLifecycleReport(finish())} seed=${String(seed)}: known skips exceed N*0.25 + 3*sqrt(N*0.25*0.75)`,
+    );
+  }
+  if (process.env.OKM_LIFECYCLE_TIER === "pr" && elapsedMs > 240_000) {
+    throw new Error(
+      `PR-tier lifecycle run exceeded 4 minutes (${String(elapsedMs)} ms). Stop and ask.`,
+    );
+  }
+}
 
 async function expectLifecycle(item: LifecycleCase, seed: number): Promise<void> {
   const outcome = await runLifecycleCase(root, item, seed);

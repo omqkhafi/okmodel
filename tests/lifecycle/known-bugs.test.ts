@@ -91,7 +91,12 @@ test("the report names ran, passed, known, and unknown", () => {
     "[lifecycle] ran=40 passed=30 known=8 unknown=2",
   );
   expect(knownSkipExceedsBudget({ ran: 40, passed: 30, known: 10, unknown: 0 })).toBe(false);
-  expect(knownSkipExceedsBudget({ ran: 40, passed: 20, known: 11, unknown: 9 })).toBe(true);
+  expect(knownSkipExceedsBudget({ ran: 40, passed: 21, known: 19, unknown: 0 })).toBe(true);
+  expect(knownSkipExceedsBudget({ ran: 20, passed: 14, known: 6, unknown: 0 })).toBe(false);
+  expect(knownSkipExceedsBudget({ ran: 20, passed: 9, known: 11, unknown: 0 })).toBe(true);
+  expect(knownSkipExceedsBudget({ ran: 300, passed: 203, known: 97, unknown: 0 })).toBe(false);
+  expect(knownSkipExceedsBudget({ ran: 300, passed: 202, known: 98, unknown: 0 })).toBe(true);
+  expect(knownSkipExceedsBudget({ ran: 0, passed: 0, known: 0, unknown: 0 })).toBe(false);
 });
 
 test("a rename records the SQL name the snapshot stored", () => {

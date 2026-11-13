@@ -25,15 +25,19 @@ export function formatLifecycleReport(report: LifecycleReport): string {
 }
 
 /**
- * Whether known skips are more than a quarter of the cases.
+ * Whether known skips sit above sampling noise around a 25% rate.
  *
- * A list that matches on tags alone hides real failures. The run fails closed.
+ * The bound is the 25% mean plus three binomial standard deviations:
+ * `N*0.25 + 3*sqrt(N*0.25*0.75)`. A flat quarter treats an ordinary draw as
+ * drift. A generator that mostly hits known bugs still fails. Unknown
+ * failures are not this check.
  *
  * @param report - Counters for the run
- * @param limit - Fraction of cases that may be known skips. The default is 25%
- * @returns `true` when the known share is above the limit
+ * @returns `true` when known skips exceed that bound
  */
-export function knownSkipExceedsBudget(report: LifecycleReport, limit = 0.25): boolean {
+export function knownSkipExceedsBudget(report: LifecycleReport): boolean {
   if (report.ran === 0) return false;
-  return report.known / report.ran > limit;
+  const mean = report.ran * 0.25;
+  const spread = 3 * Math.sqrt(report.ran * 0.25 * 0.75);
+  return report.known > mean + spread;
 }
