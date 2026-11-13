@@ -2,7 +2,7 @@
 title: "Query limits"
 description: "Opt-in default limits for find, tree walks, to-many include, page, and groupBy, with a hard ceiling."
 ---
-By default a read with no `limit` is refused (OKM1101 for `find`, `descendants`, `ancestors`, `page`, and a grouped aggregate; OKM1105 for a to-many `include`). `limits` is an opt-in default for those calls. Leave it out and nothing changes: TypeScript still requires the argument and a `limit` on each of those calls.
+By default a read with no `limit` is refused (OKM1101 for `find`, `descendants`, `ancestors`, `page`, and a grouped aggregate; OKM1105 for a to-many `include`). `limits` is an opt-in default for those calls. Leave it out and a `find` that passes options and omits `limit` is a runtime refusal (OKM1101): `db.notes.find({ where: { title: "a" } })` and `db.notes.find({})` typecheck, and awaiting them throws. `db.notes.find()` and `db.notes.page({ orderBy: { id: "asc" } })` are compile errors. Set `limits` and TypeScript treats a missing `limit` on that key as the default (`limits: { find: 50 }`).
 
 When you set a key, TypeScript makes that call's argument and `limit` optional for that key only:
 
@@ -50,7 +50,7 @@ A call that states a `limit` or `.all(reason)` never takes a default.
 
 ## Set defaults once
 
-`okm init` writes this object on `connect`. The library never turns a default on by itself. Leave `limits` out and `find()` still needs a `limit` (OKM1101). With `limits.find` set, a bare `find()` uses that default.
+`okm init` writes this object on `connect`. The library never turns a default on by itself. Leave `limits` out and a bare `find()` is a compile error; a `find` that passes options and omits `limit` throws OKM1101 when it runs. With `limits.find` set, a bare `find()` uses that default.
 
 ```ts
 import { connect } from "okmodel/pg/postgresjs";

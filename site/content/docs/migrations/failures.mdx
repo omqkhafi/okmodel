@@ -35,7 +35,7 @@ Postgres: native. Proof passes (`concurrent index create and drop run outside th
 
 The primary key of both tables is `(migration_id, step_index)`.
 
-The step id is `migrationId:stepIndex`. `0002_add_orders:2` is step index 2 of that migration. `okm migrate status` prints that id and says which command to run. `failed at step N` in that line is 0-based, the same N as the id. Apply's own `Migration <id> failed at step N` is 1-based.
+The step id is `migrationId:stepIndex`. `0002_add_orders:2` is step index 2 of that migration, and the steps section prints that id. A partial migration, some steps in `okm_history` and some not, prints `resumes at step N; the last recorded step is M (resume with okm migrate apply)`. N and M count from 1, the same numbers apply prints in `Migration <id> failed at step N`. N is the first step with no history row. A group that rolls back leaves no row for the statement that threw, so status does not name that statement.
 
 Renaming `okm_steps` or `okm_history` in the schema is [OKM1899](/docs/reference/errors#okm1899). The name is the ledger.
 

@@ -16,11 +16,11 @@ import { connect } from "../src/runtime/pg/postgresjs.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { withPostgresSchema } from "../packages/harness/src/postgres.js";
 import { primaryUrl } from "../packages/harness/src/topology.js";
-import { applyTarget } from "../src/tooling/migrate/apply.js";
-import { pushProject } from "../src/tooling/migrate/apply.js";
+import { applyTarget, ensureMigrationTables, pushProject } from "../src/tooling/migrate/apply.js";
 import type { StoredMigration } from "../src/tooling/migrate/files.js";
 import { planMigration, type PlanStep } from "../src/tooling/migrate/plan.js";
-import { readTargetStatus } from "../src/tooling/migrate/status.js";
+import { formatStatus, readTargetStatus } from "../src/tooling/migrate/status.js";
+import { stepSqlHash } from "../src/tooling/migrate/step-engine.js";
 
 const gate = await loadPostgresGate();
 const url = primaryUrl();
@@ -364,7 +364,9 @@ postgresTest(
         searchPath: schemaName,
         migrations: [expand, partial],
       });
-      expect(failed.state).toBe("failed at step 1 (resume with okm migrate apply)");
+      expect(failed.state).toBe(
+        "resumes at step 2; the last recorded step is 1 (resume with okm migrate apply)",
+      );
     });
   },
   20_000,
@@ -459,6 +461,90 @@ postgresTest(
       expect(behindError).toBeInstanceOf(OkmError);
       if (behindError instanceof OkmError) expect(behindError.code).toBe("OKM1520");
       await behind.close();
+    });
+  },
+  20_000,
+);
+
+postgresTest(
+  gate,
+  "status names the resume step after a not-null validate rolls its group back",
+  async () => {
+    await withPostgresSchema(async (sql, schemaName) => {
+      await sql.unsafe(`create table ${q(schemaName)}.notes (id integer primary key, title text)`);
+      await sql.unsafe(`create index notes_title_idx on ${q(schemaName)}.notes (title)`);
+      await sql.unsafe(`insert into ${q(schemaName)}.notes (id, title) values (1, null)`);
+      const file = migration("0003_v3", "hash-v3", [
+        step(`drop index concurrently ${q(schemaName)}.notes_title_idx`, false),
+        step(
+          `alter table ${q(schemaName)}.notes add constraint notes_title_notnull check (title is not null) not valid`,
+        ),
+        step(`alter table ${q(schemaName)}.notes validate constraint notes_title_notnull`),
+        step(`alter table ${q(schemaName)}.notes alter column title set not null`),
+        step(`alter table ${q(schemaName)}.notes drop constraint notes_title_notnull`),
+      ]);
+      const failed = await catchError(() => applyTo(schemaName, [file]));
+      expect(messageOf(failed)).toContain(
+        'Migration 0003_v3 failed at step 3: check constraint "notes_title_notnull" of relation "notes" is violated by some row',
+      );
+      const history = await sql<{ step_index: number }[]>`
+        select step_index from okm_history where migration_id = '0003_v3' order by step_index
+      `;
+      expect(history.map((row) => row.step_index)).toEqual([0]);
+      const during = await readTargetStatus({
+        url,
+        target: schemaName,
+        protected: false,
+        searchPath: schemaName,
+        migrations: [file],
+      });
+      expect(during.state).toBe(
+        "resumes at step 2; the last recorded step is 1 (resume with okm migrate apply)",
+      );
+      expect(during.compatibility).toBe("pending");
+      await sql.unsafe(`update ${q(schemaName)}.notes set title = 'kept' where title is null`);
+      await applyTo(schemaName, [file]);
+      const clean = await readTargetStatus({
+        url,
+        target: schemaName,
+        protected: false,
+        searchPath: schemaName,
+        migrations: [file],
+      });
+      expect(clean.state).toBe("current");
+      expect(clean.pending).toEqual([]);
+      const done = await sql<{ step_index: number }[]>`
+        select step_index from okm_history where migration_id = '0003_v3' order by step_index
+      `;
+      expect(done.map((row) => row.step_index)).toEqual([0, 1, 2, 3, 4]);
+    });
+  },
+  20_000,
+);
+
+postgresTest(
+  gate,
+  "an interrupted 0007_v7:0 step keeps its stored id",
+  async () => {
+    await withPostgresSchema(async (sql, schemaName) => {
+      await ensureMigrationTables((text) => sql.unsafe(text));
+      const statement = "select 1";
+      await sql.unsafe(
+        `insert into okm_steps (migration_id, step_index, kind, sql_hash, state, attempt, started_at, runner)
+         values ('0007_v7', 0, 'raw-sql', '${stepSqlHash(statement)}', 'failed', 1, now(), '1 test')`,
+      );
+      const only = migration("0007_v7", "hash-v7", [step(statement, false)]);
+      const open = await readTargetStatus({
+        url,
+        target: schemaName,
+        protected: false,
+        searchPath: schemaName,
+        migrations: [only],
+      });
+      expect(open.state).toBe("behind by expand");
+      expect(open.pending).toEqual(["0007_v7:0"]);
+      expect(open.steps.map((item) => item.id)).toEqual(["0007_v7:0"]);
+      expect(formatStatus([open])).toContain("0007_v7:0");
     });
   },
   20_000,

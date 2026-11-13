@@ -243,7 +243,23 @@ test("status states from history", () => {
       [{ migrationId: "0003_two", stepIndex: 0, class: "expand" }],
       undefined,
     ).state,
-  ).toBe("failed at step 1 (resume with okm migrate apply)");
+  ).toBe("resumes at step 2; the last recorded step is 1 (resume with okm migrate apply)");
+  const interrupted = describeStatus(
+    [migration("0007_v7", "v", [step("select 1", false)])],
+    [],
+    undefined,
+  );
+  expect(interrupted.state).toBe("behind by expand");
+  expect(interrupted.pending).toEqual(["0007_v7:0"]);
+  const laterRecorded = describeStatus(
+    [migration("0007_v7", "v", [step("select 1", false), step("select 2")])],
+    [{ migrationId: "0007_v7", stepIndex: 1, class: "expand" }],
+    undefined,
+  );
+  expect(laterRecorded.state).toBe(
+    "resumes at step 1; the last recorded step is 2 (resume with okm migrate apply)",
+  );
+  expect(laterRecorded.pending).toEqual(["0007_v7:0"]);
 });
 
 test("ahead by expand is compatible and contract or behind is not", () => {

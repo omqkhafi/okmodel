@@ -150,7 +150,9 @@ postgresTest(
         searchPath: schemaName,
         migrations: [migration("0003_two", "two", [step("select 1"), step("select 2")])],
       });
-      expect(failed.state).toBe("failed at step 1 (resume with okm migrate apply)");
+      expect(failed.state).toBe(
+        "resumes at step 2; the last recorded step is 1 (resume with okm migrate apply)",
+      );
     });
   },
   20_000,

@@ -69,7 +69,7 @@ bunx okm migrate apply --target prod
 
 `okm migrate status` prints every configured target, in name order. `--target` keeps one name. Several targets do not need `--target`. No target is OKM1845.
 
-The columns are tab-separated: `target`, `version`, `catalog`, `state`, `protected`. `protected` is `true` or `false`. The state is `current`, `behind by expand`, `behind by contract`, `ahead by expand`, `ahead by contract`, or `failed at step <n> (resume with okm migrate apply)`.
+The columns are tab-separated: `target`, `version`, `catalog`, `state`, `protected`. `protected` is `true` or `false`. The state is `current`, `behind by expand`, `behind by contract`, `ahead by expand`, `ahead by contract`, or `resumes at step N; the last recorded step is M (resume with okm migrate apply)`. N and M count from 1. N is the first step with no `okm_history` row.
 
 A committed step that is in flight or broken follows as its own section: a line `steps`, then the tab-separated header `id`, `kind`, `state`, `attempt`, `next`. `id` is `<migration>:<step>` with a 0-based step index.
 
