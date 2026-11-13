@@ -180,7 +180,7 @@ The client maps that error. An `OkmError` passes through. A driver kind of `time
 
 Anything else is kind `driver`. With no SQLSTATE, a TLS failure or a dropped connection is `unavailable`.
 
-The connection codes are `ECONNRESET`, `ECONNREFUSED`, `EPIPE`, `ENOTFOUND`, `ETIMEDOUT`, `CONNECT_TIMEOUT`, `EHOSTUNREACH`, `ENETUNREACH`, `EAI_AGAIN`, `CONNECTION_CLOSED`, `CONNECTION_ENDED`, `CONNECTION_DESTROYED`, and `ERR_POSTGRES_CONNECTION_CLOSED`. Classification reads the code, the errno, or the SQLSTATE. It does not read the message. A TLS cause starts with `ERR_TLS_`, `ERR_POSTGRES_TLS_`, or `SELF_SIGNED_CERT_`, or is exactly `DEPTH_ZERO_SELF_SIGNED_CERT` or `UNABLE_TO_VERIFY_LEAF_SIGNATURE`.
+The connection codes are `ECONNRESET`, `ECONNREFUSED`, `EPIPE`, `ENOTFOUND`, `ETIMEDOUT`, `CONNECT_TIMEOUT`, `EHOSTUNREACH`, `ENETUNREACH`, `EAI_AGAIN`, `CONNECTION_CLOSED`, `CONNECTION_ENDED`, `CONNECTION_DESTROYED`, `ERR_POSTGRES_CONNECTION_CLOSED`, `ERR_POSTGRES_CONNECTION_REFUSED`, and Bun's fetch code `ConnectionRefused`. The same codes count on `cause`, on `errno`, on a Neon HTTP `sourceError`, and on an `ErrorEvent`'s `error`. A SQLSTATE still decides the kind. node-postgres sets no code on `Connection terminated unexpectedly` or `Connection terminated due to connection timeout`. Those two messages, and no other message, are `unavailable`. A TLS cause starts with `ERR_TLS_`, `ERR_POSTGRES_TLS_`, or `SELF_SIGNED_CERT_`, or is exactly `DEPTH_ZERO_SELF_SIGNED_CERT` or `UNABLE_TO_VERIFY_LEAF_SIGNATURE`.
 
 These SQLSTATEs keep their kind and add a reason.
 

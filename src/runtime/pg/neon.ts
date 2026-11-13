@@ -83,7 +83,7 @@ export function connect<
           timeouts: config.timeouts,
           prepared: config.prepared,
           searchPath: config.searchPath,
-        } as NeonConfig)) as never),
+        } as NeonConfig).catch(mapOpenFailure)) as never),
     );
   }
   const owned = !isPool(target);
@@ -98,8 +98,24 @@ export function connect<
         prepared: options.prepared,
         searchPath: options.searchPath,
       } as NeonConfig);
-  return opened.then((pool) =>
-    owned ? admitCheck(pool, options) : createClient(options.schema, pool, options, false),
+  return opened.then(
+    (pool) =>
+      owned ? admitCheck(pool, options) : createClient(options.schema, pool, options, false),
+    mapOpenFailure,
+  );
+}
+
+/**
+ * A WebSocket `open` failure is an {@link OkmError}, as a query failure is.
+ *
+ * The adapter throws a `DriverError`. The kind is decided with the other drivers.
+ *
+ * @param error - Rejection from {@link open}
+ * @returns A rejected promise
+ */
+function mapOpenFailure(error: unknown): Promise<never> {
+  return import("../../dialects/pg/errors.js").then((mod) =>
+    Promise.reject(mod.mapPostgresError(error)),
   );
 }
 

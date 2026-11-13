@@ -8,6 +8,7 @@
  */
 
 import { isConnectionFailure, isConnectionSqlstate } from "../../contracts/connection.js";
+import { connectionCause, isDroppedConnection } from "./connect-failure.js";
 import type { Catalog, ConstraintObject, IndexObject } from "../../contracts/catalog/types.js";
 import {
   OkmError,
@@ -181,7 +182,8 @@ function statementTableOf(error: DriverShape): string | undefined {
 /**
  * Cause fields that cannot hold a row value.
  *
- * Omits `detail`, `message`, parameters, `where`, and `internalQuery`.
+ * Omits `detail`, parameters, `where`, and `internalQuery`. A dropped
+ * connection may keep its fixed driver text. Row values stay off.
  *
  * @param error - Normalised driver error
  */
@@ -195,6 +197,9 @@ function safeCause(error: DriverShape): Readonly<Record<string, string>> {
   if (typeof nested === "object" && nested !== null) {
     const code = Reflect.get(nested, "code");
     if (typeof code === "string" && code.length > 0 && code.length <= 64) out.code = code;
+    const extra = connectionCause(nested);
+    if (out.code === undefined && extra.code !== undefined) out.code = extra.code;
+    if (extra.message !== undefined) out.message = extra.message;
   }
   return out;
 }
@@ -305,7 +310,9 @@ function kindOf(error: DriverShape): ErrorKind {
     const mapped = kindFromSqlstate(sqlstate);
     if (mapped !== undefined) return mapped;
   }
-  if (isTlsFailure(error) || isConnectionFailure(error)) return "unavailable";
+  if (isTlsFailure(error) || isConnectionFailure(error) || isDroppedConnection(error)) {
+    return "unavailable";
+  }
   return "driver";
 }
 
