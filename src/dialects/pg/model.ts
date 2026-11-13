@@ -14,6 +14,14 @@ export type ColumnModel = {
   readonly sql: string;
   /** Catalog type, used when a value is projected through JSON. */
   readonly dataType: string;
+  /**
+   * Whether the column accepts null.
+   *
+   * `false` means `NOT NULL`, including every primary key. A keyset sort key
+   * copies that and skips the null branch. Absent when this model did not
+   * record it; the planner then keeps the null branch.
+   */
+  readonly nullable?: boolean;
   /** Codec encode. Identity text still returns the same string. */
   readonly encode: (value: unknown) => string;
   /**

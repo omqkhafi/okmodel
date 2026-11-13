@@ -97,7 +97,7 @@ export async function list(url: string): Promise<void> {
 first sql: select t."id", t."title" from "notes" t order by t."title" asc nulls last, t."id" asc nulls last limit $1
 first params: ["3"]
 {"items":["a","b"],"next":true}
-second sql: select t."id", t."title" from "notes" t where (((t."title" > $1 or t."title" is null)) or (t."title" = $2 and (t."id" > $3 or t."id" is null))) order by t."title" asc nulls last, t."id" asc nulls last limit $4
+second sql: select t."id", t."title" from "notes" t where ((t."title" > $1) or (t."title" = $2 and t."id" > $3)) order by t."title" asc nulls last, t."id" asc nulls last limit $4
 second params: ["b","b","<id>","3"]
 {"items":["c","d"],"next":true}
 {"items":["e"],"next":null}
@@ -118,7 +118,7 @@ The SQL orders by `title` then `id` and asks for `limit $1`, where the parameter
 
 ### 2. The next page is keyset, not offset
 
-The second query has no `offset`. It filters on the last row you saw: rows after that `title`, or with the same `title` and a later `id`. Postgres starts at that key in the index instead of counting and discarding rows, so page 500 costs what page 1 does. The cursor holds the last row's sort values, and `page` checks them against the `orderBy` it was made for.
+The second query has no `offset`. It filters on the last row you saw: rows after that `title`, or with the same `title` and a later `id`. `title` and `id` are both `NOT NULL`, so each comparison is `>` alone. A nullable sort column still adds `or column is null`, because a null sorts after every value. Postgres starts at that key in the index instead of counting and discarding rows, so page 500 costs what page 1 does. The cursor holds the last row's sort values, and `page` checks them against the `orderBy` it was made for.
 
 That is also why `orderBy` has to end in a unique key. Here `id` breaks ties between equal titles. With a duplicated tail, the filter could skip or repeat a row between pages.
 

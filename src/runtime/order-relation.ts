@@ -50,6 +50,15 @@ export type SortKey = {
   readonly dataType?: string;
   /** Hidden or sensitive related column. Count is never concealed. */
   readonly relationConcealed?: boolean;
+  /**
+   * The sorted value cannot be null.
+   *
+   * Set for a primary-key tie-break, a non-nullable column of this table, and
+   * a to-many count. Absent on a nullable column and on a left-joined column,
+   * which is null when the related row is missing. The keyset comparison then
+   * omits the `is null` branch.
+   */
+  readonly notNull?: true;
 };
 
 /** One order item `writeOrder` emits. */
@@ -59,6 +68,27 @@ export type OrderItem = {
   readonly nulls: "first" | "last";
   readonly mark: string;
 };
+
+/**
+ * Builds a sort key for a column of this table.
+ *
+ * A non-nullable column carries `notNull`, so the keyset predicate is a plain
+ * comparison. A nullable column does not. A left-joined column is not this
+ * helper: the join can make a non-nullable column null.
+ *
+ * @param column - Column of the page's table
+ * @param parsed - Direction and null placement
+ * @returns The key
+ */
+export function columnKey(
+  column: ColumnModel,
+  parsed: { readonly dir: "asc" | "desc"; readonly nulls: "first" | "last" },
+): SortKey {
+  if (column.nullable === false) {
+    return { column, dir: parsed.dir, nulls: parsed.nulls, notNull: true };
+  }
+  return { column, dir: parsed.dir, nulls: parsed.nulls };
+}
 
 /** Parsed relation order: the keys, and the joins those keys share. */
 export type RelationPlan = {
@@ -142,7 +172,7 @@ export function parseRelationOrder(
       );
     }
     const parsed = parseOrder(key, value);
-    keys.push({ column, dir: parsed.dir, nulls: parsed.nulls });
+    keys.push(columnKey(column, parsed));
   }
   return {
     keys,
@@ -289,6 +319,7 @@ function readRelation(
       label: `${relation.name}.count`,
       dataType: "bigint",
       relationConcealed: false,
+      notNull: true,
     });
     return;
   }
@@ -321,6 +352,8 @@ function readRelation(
     refuseHidden(column);
     const parsed = parseOrder(`${relation.name}.${field}`, value[field]);
     const cursor = cursorOf();
+    // Left join: a missing related row makes this value null even when the
+    // column itself is NOT NULL. The null branch stays.
     keys.push({
       column,
       dir: parsed.dir,

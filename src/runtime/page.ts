@@ -24,6 +24,7 @@ import { OkmError, throwNamed } from "../contracts/error.js";
 import type { ColumnModel } from "../dialects/pg/model.js";
 import { attachHttp, decodeRows, readCall, readHandle, type Mods, type Session } from "./client.js";
 import {
+  columnKey,
   orderItems,
   parseRelationOrder,
   writeOrder,
@@ -311,7 +312,7 @@ function orderKeys(table: Indexed, orderBy: unknown): readonly Key[] {
         `Field ${field} is not on ${table.model.name}. Accepted names: ${list(table.names)}.`,
       );
     }
-    keys.push({ column, ...parseOrder(field, orderBy?.[field]) });
+    keys.push(columnKey(column, parseOrder(field, orderBy?.[field])));
   }
   return tieBreak(table, keys);
 }
@@ -330,7 +331,7 @@ function tieBreak(table: Indexed, keys: readonly Key[]): readonly Key[] {
     ) {
       continue;
     }
-    next.push({ column, dir: "asc", nulls: "last" });
+    next.push({ column, dir: "asc", nulls: "last", notNull: true });
   }
   return next;
 }
@@ -342,7 +343,9 @@ function tieBreak(table: Indexed, keys: readonly Key[]): readonly Key[] {
  * `i` equal and key `i` later. A null sorts after every value with `nulls:
  * "last"` and before every value with `nulls: "first"`, so nothing is later
  * than a null in a nulls-last key, and every non-null is later than a null in
- * a nulls-first key.
+ * a nulls-first key. A key marked `notNull` cannot be null, so its comparison
+ * is the operator alone: the `is null` arm would keep Postgres from starting
+ * at that key in the index.
  */
 function keyset(keys: readonly Key[], signature: string, token: unknown): Keyset {
   const values = readCursor(token, signature, keys.length);
@@ -372,10 +375,13 @@ function keyset(keys: readonly Key[], signature: string, token: unknown): Keyset
       const ref = leftOf(key, alias);
       if (value === null) {
         sink.text(`${ref} is not null`);
-      } else {
-        sink.text(key.nulls === "last" ? `(${ref} ${compare(key)} ` : `${ref} ${compare(key)} `);
+      } else if (key.notNull === true || key.nulls !== "last") {
+        sink.text(`${ref} ${compare(key)} `);
         sink.param(value);
-        sink.text(key.nulls === "last" ? ` or ${ref} is null)` : "");
+      } else {
+        sink.text(`(${ref} ${compare(key)} `);
+        sink.param(value);
+        sink.text(` or ${ref} is null)`);
       }
       sink.text(")");
     }
@@ -480,6 +486,10 @@ function later(sink: Sink, key: Key, alias: string): void {
   const left = leftOf(key, alias);
   const right = rightOf(key);
   const op = key.dir === "asc" ? ">" : "<";
+  if (key.notNull === true) {
+    sink.text(`${left} ${op} ${right}`);
+    return;
+  }
   if (key.nulls === "last") {
     sink.text(`(${right} is not null and (${left} ${op} ${right} or ${left} is null))`);
     return;

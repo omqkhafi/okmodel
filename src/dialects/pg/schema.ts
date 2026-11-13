@@ -1628,6 +1628,7 @@ function tableModel(
       ...(column.elementEncode !== undefined ? { elementEncode: column.elementEncode } : {}),
       accepts: column.accepts,
       ...(column.time !== undefined ? { time: column.time } : {}),
+      nullable: column.nullable,
     };
   });
   return {
