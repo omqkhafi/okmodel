@@ -143,9 +143,10 @@ export const CONNECT_ENTRIES = [
     entry: "src/runtime/pg/neon.ts",
     file: "neon.js",
     external: ["@neondatabase/serverless"],
-    maxMinBytes: 42_000,
-    // 14,700: casing, pull, the Drizzle import, and orderBy on a relation.
-    maxGzipBytes: 14_700,
+    // 42,030: #696 and #697, measured 42,009, rounded up plus 20 (D325).
+    maxMinBytes: 42_030,
+    // 14,770: #696 and #697, measured 14,743, rounded up plus 20 (D325).
+    maxGzipBytes: 14_770,
   },
 ] as const;
 
