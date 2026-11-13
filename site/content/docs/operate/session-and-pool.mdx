@@ -212,7 +212,7 @@ The pool waits for a connection up to `timeouts.acquire`. postgres.js and node-p
 
 node-postgres sets the pool's connection timeout to that number. The wait fails as OKM1846. There is no separate 5 second cap.
 
-postgres.js applies `acquire` to a call that is still queued and has not been handed to a connection. A `tx()` or `reserve()` keeps the connection out of the busy set, so `find`, `insert`, `count`, and another `tx()` wait in that queue and fail as OKM1846. An ordinary statement leaves the connection busy. postgres.js writes the next call onto that socket, and the call runs when the statement finishes. `acquire` does not cancel it. A statement the driver has already written to a socket is a statement wait. Opening a new socket still uses the driver's own `connect_timeout` of 5 seconds, which is not `acquire`.
+postgres.js applies `acquire` to a call that is still queued and has not been handed to a connection. A `tx()` or `reserve()` keeps the connection out of the busy set, so `find`, `insert`, `count`, and another `tx()` wait in that queue and fail as OKM1846. An ordinary statement leaves the connection busy. postgres.js writes the next call onto that socket, and the call runs when the statement finishes. `acquire` does not cancel it. postgres.js pipelines ordinary calls onto a connection, so they have no pool wait for `acquire` to bound (use `timeouts.statement` or a call `timeout` to bound a slow call, or a transaction or `reserve` to get the pool wait). A statement the driver has already written to a socket is a statement wait. Opening a new socket still uses the driver's own `connect_timeout` of 5 seconds, which is not `acquire`.
 
 node-postgres applies `acquire` to every call, including one waiting on an ordinary statement.
 
