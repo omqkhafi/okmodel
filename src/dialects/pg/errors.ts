@@ -8,7 +8,7 @@
  */
 
 import { isConnectionFailure, isConnectionSqlstate } from "../../contracts/connection.js";
-import { connectionCause, isDroppedConnection } from "./connect-failure.js";
+import { connectionCause, isDroppedConnection, isPoolAcquireTimeout } from "./connect-failure.js";
 import type { Catalog, ConstraintObject, IndexObject } from "../../contracts/catalog/types.js";
 import {
   OkmError,
@@ -82,6 +82,12 @@ export type MapPostgresErrorOptions = {
  */
 export function mapPostgresError(error: unknown, options?: MapPostgresErrorOptions): OkmError {
   if (error instanceof OkmError) return error;
+  if (isPoolAcquireTimeout(error)) {
+    return new OkmError(
+      "OKM1846",
+      "Timed out waiting for a connection. This pool did not hand one out within timeouts.acquire.",
+    );
+  }
   if (!isDriverError(error)) return OkmError.from(error);
   const search = searchInputError(error, options);
   if (search !== undefined) return search;

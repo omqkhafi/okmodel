@@ -137,6 +137,9 @@ function isConnectCode(code: string): boolean {
  * @param error - One node of the chain
  * @returns That text, or `undefined`
  */
+/** node-postgres pool checkout deadline. Not a dropped socket. */
+const POOL_ACQUIRE = "timeout exceeded when trying to connect";
+
 function fixedMessage(error: object): string | undefined {
   if (!(error instanceof Error)) return undefined;
   if (
@@ -146,6 +149,33 @@ function fixedMessage(error: object): string | undefined {
     return error.message;
   }
   return undefined;
+}
+
+/**
+ * Reports whether `error` is the node-postgres pool checkout deadline.
+ *
+ * The text is `timeout exceeded when trying to connect`. That wait is
+ * OKM1846. A TCP connect that dies is `Connection terminated due to connection
+ * timeout` and stays {@link isDroppedConnection}.
+ *
+ * @param error - A driver error, usually a `DriverError`
+ * @returns `true` when the kind is the acquire timeout
+ */
+export function isPoolAcquireTimeout(error: unknown): boolean {
+  return sawPoolAcquire(error, 0, new Set());
+}
+
+function sawPoolAcquire(error: unknown, depth: number, seen: Set<object>): boolean {
+  if (typeof error !== "object" || error === null || depth > 8) return false;
+  if (seen.has(error)) return false;
+  seen.add(error);
+  if (error instanceof Error && error.message === POOL_ACQUIRE) return true;
+  for (const key of ["error", "sourceError", "cause"] as const) {
+    const next: unknown = Reflect.get(error, key);
+    if (next === undefined || next === error) continue;
+    if (sawPoolAcquire(next, depth + 1, seen)) return true;
+  }
+  return false;
 }
 
 /**

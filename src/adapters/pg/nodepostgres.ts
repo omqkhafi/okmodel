@@ -161,7 +161,7 @@ export function open(config: NodePostgresConfig): DriverPool {
     max,
     idleTimeoutMillis: idleMs(config.idleTimeoutMs),
     allowExitOnIdle: true,
-    connectionTimeoutMillis: 5_000,
+    connectionTimeoutMillis: acquireMs,
     application_name: "okmodel",
     types: WIRE,
     ...(config.ssl !== undefined ? { ssl: config.ssl } : {}),
