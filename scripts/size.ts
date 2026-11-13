@@ -708,9 +708,9 @@ const LAZY_STUB = "lazy-stub";
  *
  * A dynamic import of a module already in {@link startupKeep} stays. Stubbing
  * that edge lets the tree-shaker drop a static import the shared startup chunk
- * keeps. `DriverError` pulls `error.ts` onto every connect entry, and
- * `failure.ts` imports it again for `mapDriverError`, so the real chunk also
- * keeps `connection.ts`.
+ * keeps. `DriverError` pulls `error.ts` onto every connect entry, so a dynamic
+ * import of that same module stays. The failure mapper loads `connection.ts`
+ * from `lazy-errors.ts`, which is not on this graph, and that import is stubbed.
  *
  * @param keep - Real paths of modules in the unstubbed startup graph
  * @returns The plugin passed to `Bun.build`

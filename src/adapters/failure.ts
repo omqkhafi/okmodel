@@ -1,10 +1,10 @@
 /**
  * Driver-error constructors, loaded on the first failure.
  *
- * A successful `execute` does not import {@link import("./error.js")}.
+ * A successful `execute` does not import {@link import("./lazy-errors.js")}.
  */
 
-type ErrorModule = typeof import("./error.js");
+type ErrorModule = typeof import("./lazy-errors.js");
 
 let loading: Promise<ErrorModule> | undefined;
 
@@ -14,7 +14,7 @@ let loading: Promise<ErrorModule> | undefined;
  * @returns The error module
  */
 export function driverErrors(): Promise<ErrorModule> {
-  loading ??= import("./error.js");
+  loading ??= import("./lazy-errors.js");
   return loading;
 }
 

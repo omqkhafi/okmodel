@@ -9,7 +9,7 @@
 import { expect } from "bun:test";
 import type { Sql } from "postgres";
 
-import { mapDriverError } from "../src/adapters/error.js";
+import { mapDriverError } from "../src/adapters/lazy-errors.js";
 import { catalog } from "../src/contracts/catalog/build.js";
 import { deterministicName } from "../src/contracts/catalog/identifier.js";
 import type { Catalog, CatalogObject } from "../src/contracts/catalog/types.js";
