@@ -19,5 +19,8 @@ Sample on `d528978` (P101):
 | Connect `okmodel/pg/pg`, full build (reference) | 42,857 | 15,116 | 48.879 ms | not gated. Driver stubbed cold import 8.134 ms |
 | Connect `okmodel/pg/bun` startup | 39,822 | 13,861 | | 41,700 / 14,660. Dynamic imports stubbed. Node cold import skipped: Bun.sql runs only on Bun |
 | Connect Bun.sql, full build (reference) | 43,033 | 15,163 | | not gated. Driver stubbed cold import 7.601 ms |
+| Connect `okmodel/pg/neon` startup | | | | 42,030 / 14,770. Dynamic imports stubbed (D325) |
+
+The Neon row is the live gate. It is not part of the P101 sample. Measured on `690dec2`: 42,009 minified, 14,743 gzip.
 
 Earlier measurement dumps and the 2026-10-21 size audit live in git history.
