@@ -32,14 +32,16 @@ export { acquireTimeout, cancelled, DriverError, outcomeUnknown, timedOut };
 export { errorField };
 
 /**
- * OKM1120 for a positive `timeout` on Bun.sql or PGlite.
+ * OKM1120 for an option the driver cannot honour.
  *
- * Kind stays `invalid`. The message stays `timeout` (D224, D239).
+ * Kind stays `invalid`. The message stays `timeout` when omitted (D224, D239).
+ * Neon HTTP passes `searchPath`: one request cannot keep a session path.
  *
+ * @param message - Option name. Omitted means `timeout`
  * @returns A rejected promise
  */
-export function refused(): Promise<never> {
-  return Promise.reject(new OkmError("OKM1120", "timeout"));
+export function refused(message = "timeout"): Promise<never> {
+  return Promise.reject(new OkmError("OKM1120", message));
 }
 
 /**

@@ -14,6 +14,7 @@ import { open as openPg } from "../src/adapters/pg/nodepostgres.js";
 import { open as openJs } from "../src/adapters/pg/postgresjs.js";
 import { fragment, raw, schema, table, t } from "../src/dialects/pg/index.js";
 import { connect as connectBun } from "../src/runtime/pg/bun.js";
+import { connect as connectNeon } from "../src/runtime/pg/neon.js";
 import { connect as connectJs } from "../src/runtime/pg/postgresjs.js";
 import { connect as connectPg } from "../src/runtime/pg/pg.js";
 import { sessionSettings } from "../src/runtime/session/index.js";
@@ -64,6 +65,42 @@ test("node-postgres Pool receives idleTimeoutMillis from idleMs", () => {
     (pool as unknown as { options: { idleTimeoutMillis?: number } }).options.idleTimeoutMillis,
   ).toBe(30_000);
   void pool.end();
+});
+
+test("Neon HTTP open refuses searchPath with OKM1120", async () => {
+  const error = await openNeon({
+    url: "postgresql://user:pass@example.neon.tech/db",
+    mode: "http",
+    searchPath: "app",
+  }).then(
+    () => {
+      throw new Error("expected OKM1120");
+    },
+    (caught: unknown) => caught,
+  );
+  expect(error).toBeInstanceOf(OkmError);
+  if (!(error instanceof OkmError)) return;
+  expect(error.code).toBe("OKM1120");
+  expect(error.kind).toBe("invalid");
+  expect(error.retryable).toBe(false);
+  expect(error.message).toBe("searchPath");
+});
+
+test("Neon HTTP connect refuses searchPath with OKM1120", async () => {
+  const error = await connectNeon("postgresql://user:pass@example.neon.tech/db", {
+    schema: app,
+    mode: "http",
+    searchPath: "app",
+  }).then(
+    () => {
+      throw new Error("expected OKM1120");
+    },
+    (caught: unknown) => caught,
+  );
+  expect(error).toBeInstanceOf(OkmError);
+  if (!(error instanceof OkmError)) return;
+  expect(error.code).toBe("OKM1120");
+  expect(error.message).toBe("searchPath");
 });
 
 test("Neon HTTP open refuses an explicit idleTimeoutMs with OKM1120", async () => {

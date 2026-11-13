@@ -132,7 +132,7 @@ const names = new Map<string, string>();
  *
  * WebSocket mode connects once before returning, so a later short acquire
  * timeout measures the queue and not a cold start. HTTP mode does not open a
- * socket.
+ * socket. HTTP mode refuses `idleTimeoutMs` and `searchPath` with OKM1120.
  *
  * @param config - URL, mode, pool size, and acquire timeout
  * @returns The pool
@@ -141,6 +141,10 @@ export async function open(config: NeonConfig): Promise<DriverPool> {
   if (config.mode === "http") {
     if (config.idleTimeoutMs != null) {
       return import("../lazy-errors.js").then((mod) => mod.refused());
+    }
+    // HTTP is one request per statement. The driver also drops startup options.
+    if (config.searchPath !== undefined) {
+      return import("../lazy-errors.js").then((mod) => mod.refused("searchPath"));
     }
     return import("./neon-http.js").then((mod) => mod.openHttp(config));
   }

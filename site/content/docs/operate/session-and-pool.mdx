@@ -151,8 +151,10 @@ export const db = connect(process.env.DATABASE_URL!, {
 | `okmodel/pg/pg` | `options` is `-c search_path=` plus the string. |
 | `okmodel/pg/bun` | `connection.search_path` is the string. |
 | `okmodel/pg/pglite` | `searchPath` is not a field. |
+| `okmodel/pg/neon` WebSocket | `options` is `-c search_path=` plus the string. |
+| `okmodel/pg/neon` HTTP | Refused. OKM1120, message `searchPath`. |
 
-`okmodel/pg/postgresjs` sets `search_path` on the driver's `connection` object. `"app, public"` is that value. The comma and the space stay in the string. `okmodel/pg/pg` interpolates the string into the pool `options` field. The text is `-c search_path=` followed by the value. Interpolation adds no quotes, so `"app, public"` is `-c search_path=app, public`. `okmodel/pg/bun` sets `search_path` on the driver's `connection` object. The comma-separated string is passed through as written. PGlite does not take `searchPath`. `open` reads `dataDir` and `timeouts`. `connect` passes those fields and does not pass a search path.
+`okmodel/pg/postgresjs` sets `search_path` on the driver's `connection` object. `"app, public"` is that value. The comma and the space stay in the string. `okmodel/pg/pg` interpolates the string into the pool `options` field. The text is `-c search_path=` followed by the value. Interpolation adds no quotes, so `"app, public"` is `-c search_path=app, public`. `okmodel/pg/bun` sets `search_path` on the driver's `connection` object. The comma-separated string is passed through as written. PGlite does not take `searchPath`. `open` reads `dataDir` and `timeouts`. `connect` passes those fields and does not pass a search path. Neon WebSocket sets `options` to `-c search_path=` plus the string. Neon HTTP is one request per statement and cannot keep a search path. `open` and `connect` refuse `searchPath` with [OKM1120](/docs/reference/errors#okm1120). The message is `searchPath`. The kind is `invalid`. It is not retryable.
 
 ```ts title="db.ts"
 import { connect } from "okmodel/pg/postgresjs";
