@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { gzipSync } from "node:zlib";
 
@@ -100,8 +100,9 @@ export const APP_MAX_GZIP_BYTES = 30_850;
 /**
  * Public connect entries, driver left external (D142, D143, D156).
  *
- * The gate is the static startup graph with every relative dynamic import
- * stubbed (D248), so a new lazy chunk cannot spend short names here. The full
+ * The gate is the static startup graph with lazy dynamic imports stubbed
+ * (D248), so a new lazy chunk cannot spend short names here. A dynamic import
+ * of a module already on that graph stays, because a cold import loads it. The full
  * build is printed as a reference and is not gated. Cold import is that
  * reference, including a driver-stubbed sample, and is not gated. Bun.sql has
  * no Node cold import. Each ceiling is the measurement plus 3 percent, rounded
@@ -697,7 +698,7 @@ export type StubbedStartup = RuntimeSize & {
 const LAZY_STUB = "lazy-stub";
 
 /**
- * Empties every relative dynamic `import()` during a build.
+ * Empties relative dynamic `import()`s of modules a cold import does not load.
  *
  * One plugin covers every target. A stub file per target would need a list of
  * those targets first. `bun build` has no plugin flag, so the gated build uses
@@ -705,14 +706,23 @@ const LAZY_STUB = "lazy-stub";
  * is not implemented, and the specifier alone would merge `./batch.js` from two
  * directories into one chunk.
  *
+ * A dynamic import of a module already in {@link startupKeep} stays. Stubbing
+ * that edge lets the tree-shaker drop a static import the shared startup chunk
+ * keeps. `DriverError` pulls `error.ts` onto every connect entry, and
+ * `failure.ts` imports it again for `mapDriverError`, so the real chunk also
+ * keeps `connection.ts`.
+ *
+ * @param keep - Real paths of modules in the unstubbed startup graph
  * @returns The plugin passed to `Bun.build`
  */
-function stubDynamicPlugin(): Bun.BunPlugin {
+function stubDynamicPlugin(keep: ReadonlySet<string>): Bun.BunPlugin {
   return {
     name: "stub-dynamic-imports",
     setup(build) {
       build.onResolve({ filter: /^\.\.?\// }, (args) => {
         if (args.kind !== "dynamic-import" || args.namespace === LAZY_STUB) return;
+        const resolved = resolveStartupModule(args.importer, args.path);
+        if (resolved !== undefined && keep.has(resolved)) return;
         return { path: `${args.importer}\0${args.path}`, namespace: LAZY_STUB };
       });
       build.onLoad({ filter: /.*/, namespace: LAZY_STUB }, () => ({
@@ -721,6 +731,79 @@ function stubDynamicPlugin(): Bun.BunPlugin {
       }));
     },
   };
+}
+
+/**
+ * Resolves a relative specifier to a source file.
+ *
+ * Published imports use `.js`. The file on disk is the TypeScript source.
+ * A missing file is left for the bundler to report.
+ *
+ * @param importer - File that contains the import
+ * @param specifier - Relative specifier
+ * @returns Absolute real path, or `undefined` when nothing is there
+ */
+function resolveStartupModule(importer: string, specifier: string): string | undefined {
+  const base = resolve(dirname(importer), specifier);
+  const noExt = base.replace(/\.(js|ts|tsx)$/, "");
+  const candidates = [base, `${noExt}.ts`, `${noExt}.tsx`, join(noExt, "index.ts")];
+  for (const candidate of candidates) {
+    try {
+      return realpathSync(candidate);
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Real paths of the modules a cold import loads.
+ *
+ * @param root - Repository root
+ * @param entry - Source entry, relative to `root`
+ * @param file - Built entry filename
+ * @param external - Packages left outside the bundle
+ * @returns Absolute paths from the unstubbed startup graph
+ */
+async function startupKeep(
+  root: string,
+  entry: string,
+  file: string,
+  external: readonly string[],
+): Promise<ReadonlySet<string>> {
+  const sources = await startupGraphSources(root, entry, file, external, false);
+  const keep = new Set<string>();
+  for (const source of sources) {
+    const candidate = isAbsolute(source) ? source : join(root, source);
+    try {
+      keep.add(realpathSync(candidate));
+    } catch {
+      continue;
+    }
+  }
+  return keep;
+}
+
+/**
+ * The dynamic-import stub for one startup entry.
+ *
+ * Same plugin as {@link measureStubbedStartup}. The attribution build must
+ * call this so its bytes stay the gated bytes.
+ *
+ * @param root - Repository root
+ * @param entry - Source entry, relative to `root`
+ * @param file - Built entry filename
+ * @param external - Packages left outside the bundle
+ * @returns The plugin passed to `Bun.build`
+ */
+export async function startupStubPlugin(
+  root: string,
+  entry: string,
+  file: string,
+  external: readonly string[] = [],
+): Promise<Bun.BunPlugin> {
+  return stubDynamicPlugin(await startupKeep(root, entry, file, external));
 }
 
 /** One bundler metafile, the fields this script reads. */
@@ -787,11 +870,12 @@ function sourcesInStartup(
 }
 
 /**
- * Minifies the static startup graph with every relative dynamic import stubbed.
+ * Minifies the static startup graph with lazy dynamic imports stubbed.
  *
- * The modules are the ones a cold start loads. The bytes are one file: empty
- * lazy targets share nothing, so the shared startup chunk is inlined. Adding
- * or removing a lazy chunk does not move the number (D248). The runtime entry
+ * The modules are the ones a cold start loads. A dynamic import of a module
+ * already in that set is not stubbed ({@link startupStubPlugin}). Empty lazy
+ * targets share nothing, so the shared startup chunk is inlined. Adding or
+ * removing a lazy chunk does not move the number (D248). The runtime entry
  * has no dynamic import, and an `onResolve` hook changes mangling even when it
  * stubs nothing, so that entry stays on {@link measureEntry}.
  *
@@ -818,7 +902,7 @@ export async function measureStubbedStartup(
       outdir: dir,
       external: [...external],
       metafile: true,
-      plugins: [stubDynamicPlugin()],
+      plugins: [await startupStubPlugin(root, entry, file, external)],
     });
     if (!result.success) {
       const message = result.logs.map((log) => log.message).join("\n");
@@ -837,7 +921,8 @@ export async function measureStubbedStartup(
  * Source files in the static startup graph, relative to `root`, sorted.
  *
  * The full build is the `bun build` the cold import loads. The stubbed build
- * is {@link measureStubbedStartup}. Dynamic import targets are omitted from both.
+ * is {@link measureStubbedStartup}. Dynamic imports of modules outside that
+ * graph are omitted from both.
  *
  * @param root - Repository root
  * @param entry - Source entry, relative to `root`

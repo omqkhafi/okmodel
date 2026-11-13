@@ -2,8 +2,8 @@
  * Attributes each gated graph from `scripts/size.ts` to source modules.
  *
  * The builds match that script: the runtime entry is `bun build --minify`
- * with no plugin, the app and each connect entry are `Bun.build` with the
- * same dynamic-import stub, and each adapter incremental is the minified
+ * with no plugin, the app and each connect entry are `Bun.build` with
+ * `startupStubPlugin`, and each adapter incremental is the minified
  * inputs that are not already in the runtime entry. A total that differs
  * from `size.ts` by more than a few bytes is a failure. The delta against
  * `tests/fixtures/size-attribution.json` is a report and does not fail.
@@ -50,6 +50,7 @@ import {
   measureEntry,
   measureStubbedStartup,
   startupChunkNames,
+  startupStubPlugin,
 } from "./size.js";
 
 /** How many modules the text report prints, largest first. */
@@ -68,8 +69,6 @@ export const ATTRIBUTION_BASELINE = "tests/fixtures/size-attribution.json";
 
 /** Bytes the sourcemap does not assign to a source file. */
 export const UNATTRIBUTED = "(unattributed)";
-
-const LAZY_STUB = "lazy-stub";
 
 /**
  * Content-hash chunk names, same pattern as `scripts/size.ts`.
@@ -464,33 +463,6 @@ export function writeAttributionBaseline(root: string, graphs: readonly GraphAtt
 }
 
 /**
- * Empties every relative dynamic `import()` during a build.
- *
- * Same plugin as `scripts/size.ts`. The stub key is the importer plus the
- * specifier, because `build.resolve` is not implemented and the specifier
- * alone would merge `./batch.js` from two directories. An `onResolve` hook
- * changes mangling even when it stubs nothing, so the runtime entry does
- * not use this plugin.
- *
- * @returns The plugin passed to `Bun.build`
- */
-function stubDynamicPlugin(): Bun.BunPlugin {
-  return {
-    name: "stub-dynamic-imports",
-    setup(build) {
-      build.onResolve({ filter: /^\.\.?\// }, (args) => {
-        if (args.kind !== "dynamic-import" || args.namespace === LAZY_STUB) return;
-        return { path: `${args.importer}\0${args.path}`, namespace: LAZY_STUB };
-      });
-      build.onLoad({ filter: /.*/, namespace: LAZY_STUB }, () => ({
-        contents: "",
-        loader: "js",
-      }));
-    },
-  };
-}
-
-/**
  * Replaces content-hash chunk ids with a fixed id of the same length.
  *
  * Copied from `scripts/size.ts`. Gzip of a startup graph uses this copy.
@@ -737,8 +709,9 @@ async function buildStubbed(root: string, spec: GraphSpec): Promise<BuiltGraph> 
   const dir = makeBuildDir(root, spec.external);
   const mappedDir = makeBuildDir(root, spec.external);
   try {
-    await compileStubbed(root, spec, dir, false);
-    await compileStubbed(root, spec, mappedDir, true);
+    const plugin = await startupStubPlugin(root, spec.entry, spec.file, spec.external);
+    await compileStubbed(root, spec, dir, false, plugin);
+    await compileStubbed(root, spec, mappedDir, true, plugin);
     const startup = startupChunkNames(dir, spec.file);
     const parts: Buffer[] = [];
     let minBytes = 0;
@@ -769,18 +742,20 @@ async function buildStubbed(root: string, spec: GraphSpec): Promise<BuiltGraph> 
  *
  * The plain build passes `metafile: true` because {@link measureStubbedStartup}
  * does. The flag does not change the JavaScript; keeping it makes this the
- * same call.
+ * same call. The plugin is {@link startupStubPlugin}.
  *
  * @param root - Repository root
  * @param spec - Startup spec
  * @param dir - Output directory
  * @param sourcemap - True to write an external sourcemap
+ * @param plugin - Stub from {@link startupStubPlugin}
  */
 async function compileStubbed(
   root: string,
   spec: GraphSpec,
   dir: string,
   sourcemap: boolean,
+  plugin: Bun.BunPlugin,
 ): Promise<void> {
   const result = await Bun.build({
     entrypoints: [join(root, spec.entry)],
@@ -791,7 +766,7 @@ async function compileStubbed(
     external: [...spec.external],
     metafile: true,
     ...(sourcemap ? { sourcemap: "external" as const } : {}),
-    plugins: [stubDynamicPlugin()],
+    plugins: [plugin],
   });
   if (!result.success) {
     const message = result.logs.map((log) => log.message).join("\n");
