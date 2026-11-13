@@ -10,32 +10,96 @@ import type { ReservedSQL, SQL } from "./bun-sql.js";
 import { isConnectionFailure } from "../../contracts/connection.js";
 import type { DriverConnection, WireValue } from "../../contracts/driver.js";
 import { DriverError } from "../error.js";
-import { rejectClosed } from "../failure.js";
+import { driverErrors, mapFailure, rejectClosed } from "../failure.js";
+import { closedSocketError, isBunClosedMessage } from "./bun-closed.js";
 import { runCall, type Watch } from "./call.js";
 import { retryableRead } from "./retryable-read.js";
 import { noTimeout } from "./no-inflight-timeout.js";
-import {
-  bunWrapperDead,
-  isBunClosedMessage,
-  releaseReserved,
-  reserve,
-  send,
-  type HeldPool,
-} from "./bunsql.js";
+import { send, type Counters, type HeldPool } from "./bunsql.js";
 import { refuseWhenLost, resetSession, type Lost } from "./reserved.js";
 import { cursorStream } from "./cursor.js";
 import { WireSession } from "./session.js";
 
 /**
- * Checks out one connection and clears it on release.
+ * Bun.sql's wrapper is gone.
  *
- * A connection that is gone is neither reset nor returned to the pool: Bun.sql
- * has already dropped it. A reset or release failure after the caller's work
- * finished destroys the handle and does not fail the call.
+ * The text carries no SQLSTATE. A closed socket (`Connection closed`) is not
+ * this: that one still dials on the same client.
  *
- * @param held - The pool and its counters
- * @returns A connection the caller must release
+ * @param error - A rejection from `Bun.SQL`
+ * @returns `true` when the client cannot serve another statement
  */
+export function bunWrapperDead(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (error.message === "connection must be a PostgresSQLConnection") return true;
+  return (
+    error.cause instanceof Error &&
+    error.cause.message === "connection must be a PostgresSQLConnection"
+  );
+}
+
+/**
+ * Checks out one connection for a reserve, batch, or stream.
+ *
+ * A timeout is OKM1846. A closed socket is stamped 08006 here so a reserve
+ * that fails before the reserved-handle guard still classifies as
+ * unavailable. Kept off the shared mapper so the postgres.js bundle does not
+ * carry Bun's text.
+ *
+ * @param sql - Pool client
+ * @param acquireMs - Wait ceiling, when one was set
+ * @param counters - Pool occupancy
+ * @param replaceDead - Builds a replacement after the wrapper dies
+ * @returns The reserved client
+ */
+export async function reserve(
+  sql: SQL,
+  acquireMs: number | undefined,
+  counters: Counters,
+  replaceDead?: (dead: SQL) => SQL | undefined,
+): Promise<ReservedSQL> {
+  counters.waiting += 1;
+  try {
+    try {
+      return await take(sql, acquireMs);
+    } catch (error) {
+      const next = bunWrapperDead(error) ? replaceDead?.(sql) : undefined;
+      if (next === undefined || next === sql) throw error;
+      return await take(next, acquireMs);
+    }
+  } catch (error) {
+    if (isAbort(error)) {
+      const errors = await driverErrors();
+      throw errors.acquireTimeout();
+    }
+    const closed = closedSocketError(error);
+    if (closed !== error) throw closed;
+    throw await mapFailure(error);
+  } finally {
+    counters.waiting = Math.max(0, counters.waiting - 1);
+  }
+}
+
+function take(sql: SQL, acquireMs: number | undefined): Promise<ReservedSQL> {
+  if (acquireMs === undefined) return sql.reserve();
+  return sql.reserve({ signal: AbortSignal.timeout(acquireMs) });
+}
+
+/**
+ * Returns a reserved handle to Bun's pool.
+ *
+ * @param reserved - The handle to release
+ */
+export function releaseReserved(reserved: ReservedSQL): Promise<void> {
+  const done: unknown = reserved.release();
+  return done instanceof Promise ? done.then(() => undefined) : Promise.resolve();
+}
+
+function isAbort(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.name === "AbortError" || error.name === "TimeoutError";
+}
+
 /**
  * Drops a dead pooled socket, then runs `again` once when that is safe.
  *
@@ -120,6 +184,16 @@ export async function listen(
   };
 }
 
+/**
+ * Checks out one connection and clears it on release.
+ *
+ * A connection that is gone is neither reset nor returned to the pool: Bun.sql
+ * has already dropped it. A reset or release failure after the caller's work
+ * finished destroys the handle and does not fail the call.
+ *
+ * @param held - The pool and its counters
+ * @returns A connection the caller must release
+ */
 export async function checkout(held: HeldPool): Promise<DriverConnection & { evict(): void }> {
   const { counters, isClosed } = held;
   if (isClosed()) return rejectClosed();
