@@ -202,6 +202,7 @@
     "dist/dialects/pg/casing.d.ts",
     "dist/dialects/pg/column.d.ts",
     "dist/dialects/pg/compile.d.ts",
+    "dist/dialects/pg/connect-failure.d.ts",
     "dist/dialects/pg/custom.d.ts",
     "dist/dialects/pg/ddl.d.ts",
     "dist/dialects/pg/decimal.d.ts",

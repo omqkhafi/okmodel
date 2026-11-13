@@ -44,13 +44,16 @@ const wire = {
   bun: (url: string) => connectBun(url, { schema: app, max: 1 }) as unknown as Db,
 };
 
-function assertUnavailable(error: unknown, detail: string | undefined): void {
+function assertUnavailable(error: unknown, detail: string | readonly string[] | undefined): void {
   expect(error).toBeInstanceOf(OkmError);
   if (!(error instanceof OkmError)) return;
   expect(error.kind).toBe("unavailable");
   expect(error.retryable).toBe(true);
   expect(error.cause).toBeTruthy();
-  if (detail !== undefined) expect(JSON.stringify(error.cause)).toContain(detail);
+  if (detail === undefined) return;
+  const text = JSON.stringify(error.cause);
+  const accepted = typeof detail === "string" ? [detail] : detail;
+  expect(accepted.some((item) => text.includes(item))).toBe(true);
 }
 
 async function caught(run: () => Promise<unknown>): Promise<unknown> {
@@ -255,7 +258,7 @@ postgresTest(
     try {
       assertUnavailable(
         await caught(() => neonDb("websocket", "postgres://okm:okm@neon.local/okm")),
-        "WebSocket connection to ",
+        ["ECONNREFUSED", "WebSocket connection to "],
       );
     } finally {
       restoreNeon();
@@ -300,7 +303,10 @@ postgresTest(
     pointNeon(1);
     const refused = await neonDb("http", "postgres://okm:okm@neon.local/okm");
     try {
-      assertUnavailable(await caught(() => refused.notes.find({ limit: 1 })), "ConnectionRefused");
+      assertUnavailable(await caught(() => refused.notes.find({ limit: 1 })), [
+        "ECONNREFUSED",
+        "ConnectionRefused",
+      ]);
     } finally {
       await refused.close().catch(() => undefined);
     }
