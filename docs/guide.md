@@ -1409,7 +1409,7 @@ The worked example is a project tracker: workspaces as tenants, archive, a funct
 
 ### Startup
 
-`connect()` compares the app with `okm_history`. A database that is ahead by expand migrations still opens. Ahead by a contract migration, or behind the app, is OKM1520 and names the migration. `okm migrate status` prints the same states, plus `failed at step N (resume with okm migrate apply)`, where N is the stored step index. Apply's own `failed at step N` counts from 1, the same number the linter prints.
+`connect()` compares the app with `okm_history`. A database that is ahead by expand migrations still opens. Ahead by a contract migration, or behind the app, is OKM1520 and names the migration. `okm migrate status` prints the same states, plus `resumes at step N; the last recorded step is M (resume with okm migrate apply)` when a migration is only partly in `okm_history`. N and M count from 1, the same numbering as apply's `failed at step N`.
 
 ### Protected targets
 

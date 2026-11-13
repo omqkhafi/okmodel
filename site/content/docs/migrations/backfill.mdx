@@ -53,7 +53,7 @@ The primary key is `(migration_id, step_index)`.
 
 After every committed batch the runner writes that row. The final batch also writes the normal `okm_history` row, in the same transaction, and sets `state` to `done`. A step already in `okm_history` is skipped. A rerun loads `last_key` and does not issue a finished batch again. `okm_history` is unchanged. There is no backfill row in `okm_steps`.
 
-Apply progress lines print a 1-based step index (`backfill <id> step 1 batch …`). [`okm migrate status`](/docs/reference/cli/migrate#migrate-status) keeps its target columns. Under them, an unfinished backfill prints the migration, the stored step index, the rows so far, the last key, and the state. A finished step is not listed there. Status `failed at step N` also uses that stored index. Apply's own `failed at step N` counts from 1. Those lines are on [migrate apply](/docs/reference/cli/migrate#migrate-apply).
+Apply progress lines print a 1-based step index (`backfill <id> step 1 batch …`). [`okm migrate status`](/docs/reference/cli/migrate#migrate-status) keeps its target columns. Under them, an unfinished backfill prints the migration, the stored step index, the rows so far, the last key, and the state. A finished step is not listed there. A partial migration prints `resumes at step N; the last recorded step is M`, and N and M count from 1, the same numbering as apply's `failed at step N`. Those lines are on [migrate apply](/docs/reference/cli/migrate#migrate-apply).
 
 A protected target refuses a backfill unless `--allow-protected`. That check runs before every batch, so a target that becomes protected between batches stops at the next one. The committed batches stay. Which classes the flag lifts are on [Database](/docs/reference/config-database).
 

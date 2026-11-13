@@ -3,9 +3,10 @@
  *
  * One row per target: version, catalog hash, state, and a separate protected
  * column. The state is current, behind by expand, behind by contract, ahead
- * by expand, ahead by contract, or failed at a step with a resume hint. An
- * unfinished backfill is a later section: migration, step, rows so far, last
- * key, and state.
+ * by expand, ahead by contract, or a partial migration: the first step not in
+ * history and the last recorded step, both counted from 1. An unfinished
+ * backfill is a later section: migration, step, rows so far, last key, and
+ * state.
  */
 
 import { open } from "../../adapters/pg/postgresjs.js";
@@ -17,7 +18,6 @@ import {
   BEHIND_CONTRACT,
   BEHIND_EXPAND,
   CURRENT,
-  failedAt,
 } from "../../runtime/compat-words.js";
 import type { MigrationClass } from "./plan.js";
 import type { StoredMigration } from "./files.js";
@@ -95,11 +95,14 @@ export type StatusHistory = {
 /**
  * Decides the status state from files and history.
  *
- * A partial migration is `failed at step` plus the resume hint. History the
- * files do not contain is ahead by expand, or ahead by contract when a stored
- * class is not expand. Pending files are behind by expand, or by contract
- * when any pending step is not expand. The class is the one stored on the
- * file or in `okm_history`.
+ * A partial migration names the first step that has no history row and the
+ * last step that does. Both numbers count from 1, the same numbering as
+ * apply's `failed at step N`. History does not record a step that rolled
+ * back with its group, so the line does not guess which statement threw.
+ * History the files do not contain is ahead by expand, or ahead by contract
+ * when a stored class is not expand. Pending files are behind by expand, or
+ * by contract when any pending step is not expand. The class is the one
+ * stored on the file or in `okm_history`.
  *
  * @param migrations - Files in apply order
  * @param history - Checkpoint rows
@@ -126,15 +129,18 @@ export function describeStatus(
   for (const migration of migrations) {
     let have = 0;
     let missing = -1;
+    let lastRecorded = -1;
     for (let index = 0; index < migration.steps.length; index += 1) {
-      if (done.has(`${migration.id}:${String(index)}`)) have += 1;
-      else if (missing < 0) missing = index;
+      if (done.has(`${migration.id}:${String(index)}`)) {
+        have += 1;
+        lastRecorded = index;
+      } else if (missing < 0) missing = index;
     }
     if (have > 0 && missing >= 0) {
       return {
         version: migration.id,
         catalogHash: recorded?.hash ?? "-",
-        state: failedAt(missing),
+        state: partialMigrationState(missing, lastRecorded),
         pending: pendingIds,
       };
     }
@@ -187,7 +193,12 @@ export function compatibilityOf(state: string): CompatibilityState {
   if (state === CURRENT) return "up to date";
   if (state === AHEAD_EXPAND) return "ahead by expand";
   if (state === AHEAD_CONTRACT) return "diverged";
-  if (state === BEHIND_EXPAND || state === BEHIND_CONTRACT || state.startsWith("failed at step")) {
+  if (
+    state === BEHIND_EXPAND ||
+    state === BEHIND_CONTRACT ||
+    state.startsWith("failed at step") ||
+    state.startsWith("resumes at step ")
+  ) {
     return "pending";
   }
   return "diverged";
@@ -348,6 +359,20 @@ export function formatStatus(rows: readonly TargetStatus[]): string {
     }
   }
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * Status text when some steps of one migration are in history and some are not.
+ *
+ * `missing` and `lastRecorded` are 0-based indexes. The printed numbers count
+ * from 1, matching apply's `failed at step N` and the resume hint.
+ *
+ * @param missing - First step index with no history row
+ * @param lastRecorded - Highest step index that has a history row
+ * @returns The state, including the resume hint
+ */
+function partialMigrationState(missing: number, lastRecorded: number): string {
+  return `resumes at step ${String(missing + 1)}; the last recorded step is ${String(lastRecorded + 1)} (resume with okm migrate apply)`;
 }
 
 function chosen(

@@ -376,10 +376,12 @@ postgresTest(
           ]),
         ],
       });
-      expect(status.state).toContain("failed at step");
+      expect(status.state).toBe(
+        "resumes at step 1; the last recorded step is 2 (resume with okm migrate apply)",
+      );
       expect(status.steps.length).toBeGreaterThan(0);
       const text = formatStatus([status]);
-      expect(text).toContain("failed at step");
+      expect(text).toContain("resumes at step 1");
       expect(text).toContain("resume with okm migrate apply");
       expect(text).toContain("steps");
       expect(text).toContain("0001_init:0");
