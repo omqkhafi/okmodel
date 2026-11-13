@@ -373,6 +373,23 @@ test("mapPostgresError reads SQLSTATE, constraint names, and batchIndex", () => 
   expect(mapPostgresError(new DriverError("timeout", { sqlstate: "57014" })).kind).toBe("timeout");
   expect(mapPostgresError(new DriverError("closed", {})).kind).toBe("driver");
   expect(mapPostgresError(new DriverError("The pool is closed.")).kind).toBe("driver");
+  expect(mapPostgresError(new DriverError("timeout exceeded when trying to connect")).kind).toBe(
+    "driver",
+  );
+  const terminatedRaw = new Error("Connection terminated unexpectedly");
+  const terminated = mapPostgresError(
+    new DriverError(terminatedRaw.message, { cause: terminatedRaw }),
+  );
+  expect(terminated.kind).toBe("unavailable");
+  expect(terminated.retryable).toBe(true);
+  expect(terminated.cause).toMatchObject({ message: "Connection terminated unexpectedly" });
+  const timedRaw = new Error("Connection terminated due to connection timeout");
+  const timedConnect = mapPostgresError(new DriverError(timedRaw.message, { cause: timedRaw }));
+  expect(timedConnect.kind).toBe("unavailable");
+  expect(timedConnect.retryable).toBe(true);
+  expect(timedConnect.cause).toMatchObject({
+    message: "Connection terminated due to connection timeout",
+  });
   expect(
     mapPostgresError(
       Object.assign(new DriverError("The pool is closed."), { code: "CONNECTION_CLOSED" }),
@@ -399,6 +416,62 @@ test("mapPostgresError reads SQLSTATE, constraint names, and batchIndex", () => 
     ).kind,
   ).toBe("check");
   expect(mapPostgresError(unique)).toBe(unique);
+});
+
+test("a refused or reset connect is unavailable and a SQLSTATE still wins", () => {
+  const refused = mapPostgresError(
+    new DriverError("Failed to connect", {
+      cause: Object.assign(new Error("Failed to connect"), {
+        code: "ERR_POSTGRES_CONNECTION_REFUSED",
+      }),
+    }),
+  );
+  expect(refused.kind).toBe("unavailable");
+  expect(refused.retryable).toBe(true);
+  expect(refused.cause).toMatchObject({ code: "ERR_POSTGRES_CONNECTION_REFUSED" });
+
+  const source = Object.assign(new TypeError("Unable to connect"), { code: "ConnectionRefused" });
+  const http = mapPostgresError(
+    new DriverError("Error connecting to database", {
+      cause: Object.assign(new Error("Error connecting to database"), { sourceError: source }),
+    }),
+  );
+  expect(http.kind).toBe("unavailable");
+  expect(http.cause).toMatchObject({ code: "ConnectionRefused" });
+
+  const reset = Object.assign(new TypeError("socket closed"), { code: "ECONNRESET" });
+  expect(
+    mapPostgresError(
+      new DriverError("Error connecting to database", {
+        cause: Object.assign(new Error("Error connecting to database"), { sourceError: reset }),
+      }),
+    ).kind,
+  ).toBe("unavailable");
+
+  class ErrorEvent {
+    readonly error: Error;
+    constructor(inner: Error) {
+      this.error = inner;
+    }
+  }
+  const socket = new Error(
+    "WebSocket connection to 'ws://127.0.0.1:1/v2' failed: Failed to connect",
+  );
+  const websocket = mapPostgresError(
+    new DriverError("driver error", { cause: new ErrorEvent(socket) }),
+  );
+  expect(websocket.kind).toBe("unavailable");
+  expect(websocket.retryable).toBe(true);
+  expect(websocket.cause).toMatchObject({ message: socket.message });
+
+  const unique = mapPostgresError(
+    new DriverError("duplicate", {
+      sqlstate: "23505",
+      cause: Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }),
+    }),
+  );
+  expect(unique.kind).toBe("unique");
+  expect(mapPostgresError(new DriverError("driver bug", {})).kind).toBe("driver");
 });
 
 test("the error registry lists every spec 21 code and stays off the runtime entry", () => {
