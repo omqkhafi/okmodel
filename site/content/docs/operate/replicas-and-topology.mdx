@@ -93,6 +93,8 @@ Omitted is `"1s"`, 1000 milliseconds. A positive number is milliseconds. A strin
 
 The first probe runs at connect. Later probes wait for that interval. A failed probe or a connection failure adds one. A successful probe clears the count. Two open the circuit, and that replica is left out until a probe succeeds. While the circuit is open the next probe waits longer, up to 30 seconds.
 
+A replica that misses that first probe is left out at once. The endpoint stays, and its circuit starts open. A later probe that succeeds closes the circuit, and reads can use the replica again. The primary is not left out this way. A WebSocket open that fails still rejects `connect()`. A write to a primary that is down still fails.
+
 The primary insert position is read on that interval when replicas are configured, consistency is `session` or `maxLag` is set, and that endpoint can read it.
 
 <Callout type="error" title="OKM1120">
@@ -202,7 +204,7 @@ export function titles() {
 }
 ```
 
-A connection failure tries one other eligible replica. When none is eligible, the primary runs the read unless fallback is `error`.
+A connection failure tries one other eligible replica. When that try also fails and fallback is `primary`, the primary runs the read and the reason is `fallback:unhealthy`. No further replica is tried. When no replica is eligible, the primary runs the read unless fallback is `error`. Two replicas that are both down follow the same rule: the read is served by the primary, or it throws when fallback is `error`. `route: "replica"` does not use the primary.
 
 `no-replicas` means none are configured. `unhealthy` means no replica with a closed circuit can take the read. `behind` means none passed the watermark and `maxLag`. `saturated` means each remaining replica is full. `position-unknown` means session could not read the insert position.
 
@@ -230,7 +232,7 @@ export function titles() {
 }
 ```
 
-A connection failure can try another eligible replica. The retry stays on a replica.
+A connection failure can try another eligible replica. The retry stays on a replica. It does not use the primary.
 
 <Callout type="error" title="OKM1843">
 `No replica is eligible. This call does not read the primary.`

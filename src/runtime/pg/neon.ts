@@ -8,7 +8,7 @@
 
 import type { DriverPool } from "../../contracts/driver.js";
 import type { QuerySchema } from "../../dialects/pg/model.js";
-import { open, rejectAfterClose, type NeonConfig } from "../../adapters/pg/neon.js";
+import { open, openReplica, rejectAfterClose, type NeonConfig } from "../../adapters/pg/neon.js";
 import { createClient } from "../client.js";
 import type { RoutedClient, TopologyInput, TopologyOptions } from "../topology.js";
 import type { SessionContext } from "../session/index.js";
@@ -78,8 +78,10 @@ export function connect<
 ): Promise<Connected<S, C> | RoutedClient<S, C>> {
   if (typeof target === "object" && !isPool(target)) {
     return import("../topology.js").then((mod) =>
-      mod.default(target, options, ((config: NeonConfig) =>
-        open({
+      mod.default(target, options, ((
+        config: NeonConfig & { readonly role?: "primary" | "replica" },
+      ) => {
+        const fields = {
           url: config.url,
           mode: options.mode,
           max: config.max,
@@ -87,7 +89,11 @@ export function connect<
           timeouts: config.timeouts,
           prepared: config.prepared,
           searchPath: config.searchPath,
-        } as NeonConfig).catch(mapOpenFailure)) as never),
+        } as NeonConfig;
+        // A replica that cannot be warmed stays a pool. The primary still rejects.
+        if (config.role === "replica") return openReplica(fields);
+        return open(fields).catch(mapOpenFailure);
+      }) as never),
     );
   }
   if (typeof target === "string" && boundsStartup(options)) {
@@ -113,14 +119,6 @@ export function connect<
 }
 
 /**
- * A WebSocket `open` failure is an {@link OkmError}, as a query failure is.
- *
- * The adapter throws a `DriverError`. The kind is decided with the other drivers.
- *
- * @param error - Rejection from {@link open}
- * @returns A rejected promise
- */
-/**
  * Reports whether `connect` must race the startup check.
  *
  * A positive `timeout` or any `signal` loads that path. `timeout: 0` stays on
@@ -136,6 +134,14 @@ function boundsStartup(options: {
   return options.signal !== undefined || (options.timeout ?? 0) > 0;
 }
 
+/**
+ * A WebSocket `open` failure is an {@link OkmError}, as a query failure is.
+ *
+ * The adapter throws a `DriverError`. The kind is decided with the other drivers.
+ *
+ * @param error - Rejection from {@link open}
+ * @returns A rejected promise
+ */
 function mapOpenFailure(error: unknown): Promise<never> {
   return import("../../dialects/pg/errors.js").then((mod) =>
     Promise.reject(mod.mapPostgresError(error)),

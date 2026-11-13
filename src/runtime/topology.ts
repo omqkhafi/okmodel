@@ -237,6 +237,8 @@ type EndpointConfig = {
   readonly prepared?: "named" | "unnamed";
   readonly searchPath?: string;
   readonly ssl?: unknown;
+  /** Which endpoint this pool serves. A replica may skip a connect-time warm-up. */
+  readonly role: "primary" | "replica";
 };
 
 /** Opens one endpoint. postgres.js reads `url`. PGlite reads `dataDir`. */
@@ -414,6 +416,12 @@ export async function connectTopology<
       samplePrimary(handle),
     ]);
     for (const endpoint of replicaEndpoints) {
+      // One miss at connect leaves the replica out. Later probes still use
+      // two failures to open a circuit that has closed again.
+      if (endpoint.failures > 0) {
+        if (endpoint.failures < CIRCUIT_AT) endpoint.failures = CIRCUIT_AT;
+        endpoint.circuit = "open";
+      }
       endpoint.nextDelayMs = delayFor(probeMs, endpoint);
       schedule(handle, endpoint);
     }
@@ -915,6 +923,7 @@ async function openEndpoint(
   const pool = await open({
     url,
     dataDir: url,
+    role,
     ...(max !== undefined ? { max } : {}),
     ...(defaults.idleTimeoutMs !== undefined ? { idleTimeoutMs: defaults.idleTimeoutMs } : {}),
     ...(defaults.timeouts !== undefined ? { timeouts: defaults.timeouts } : {}),
@@ -960,6 +969,9 @@ async function sample(handle: Handle, endpoint: Endpoint): Promise<void> {
     endpoint.circuit = "closed";
     if (reopened) endpoint.generation += 1;
     applySample(endpoint, sampled);
+    // A replica that was down at connect never learned this. The next probe
+    // that answers reads it once, so a session watermark can use it again.
+    if (!endpoint.position) await detectPosition(endpoint);
   } catch {
     endpoint.failures += 1;
     if (endpoint.failures >= CIRCUIT_AT) endpoint.circuit = "open";
@@ -1503,7 +1515,8 @@ async function* readStream(
 
 /**
  * Runs a read once, then once more on another eligible replica after a
- * connection failure. A replica constraint does not continue to the primary.
+ * connection failure. When that try also fails, an automatic read uses the
+ * primary if fallback allows it. A replica constraint does not.
  *
  * @param handle - Notified of the choice
  * @param choice - Endpoint and reason
@@ -1525,8 +1538,20 @@ async function attempt(
     const next = await retryOf(handle, choice);
     if (next === undefined) throw error;
     tell(handle, { op: "read", endpoint: next.endpoint.name, reason: next.reason });
-    if (choice.skipGuard !== true) await callGuard(next.endpoint);
-    return tracked(next.endpoint, true, () => run(next.endpoint));
+    try {
+      if (choice.skipGuard !== true) await callGuard(next.endpoint);
+      return await tracked(next.endpoint, true, () => run(next.endpoint));
+    } catch (retryError) {
+      if (!isUnreachable(retryError) || next.endpoint.role !== "replica") throw retryError;
+      next.endpoint.generation += 1;
+      noteFailure(next.endpoint);
+      if (next.reason.startsWith("constraint:") || handle.fallback === "error") throw retryError;
+      const primary = handle.endpoints[0];
+      if (primary === undefined) throw retryError;
+      tell(handle, { op: "read", endpoint: primary.name, reason: "fallback:unhealthy" });
+      if (choice.skipGuard !== true) await callGuard(primary);
+      return tracked(primary, false, () => run(primary));
+    }
   }
 }
 
@@ -1561,11 +1586,12 @@ const CHAIN_DEPTH = 8;
 /**
  * Reports whether a read failed because its endpoint refused or dropped the connection (QA-M1).
  *
- * Looks through `cause`, through each entry of an `AggregateError`'s `errors`
+ * Looks through `cause`, through a Neon HTTP `sourceError`, through an
+ * `ErrorEvent`'s `error`, through each entry of an `AggregateError`'s `errors`
  * (one per address on a failed connect), and through nested `code` and `errno`.
- * Bun.sql sends only its own `ERR_POSTGRES_CONNECTION_*` code. A cycle or a chain
- * past {@link CHAIN_DEPTH} stops the walk. Lives here so the startup graph keeps
- * the shallow check.
+ * Bun.sql sends only its own `ERR_POSTGRES_CONNECTION_*` code. `ConnectionRefused`
+ * is Bun's fetch code. A cycle or a chain past {@link CHAIN_DEPTH} stops the walk.
+ * Lives here so the startup graph keeps the shallow check.
  *
  * @param error - Caught value
  * @returns True when the next endpoint should be tried
@@ -1578,6 +1604,8 @@ function isUnreachable(error: unknown): boolean {
     seen.add(value);
     if (unreachableNode(value)) return true;
     if (visit(Reflect.get(value, "cause"), depth + 1)) return true;
+    if (visit(Reflect.get(value, "sourceError"), depth + 1)) return true;
+    if (visit(Reflect.get(value, "error"), depth + 1)) return true;
     const errors: unknown = Reflect.get(value, "errors");
     return Array.isArray(errors) && errors.some((item) => visit(item, depth + 1));
   };
@@ -1596,6 +1624,7 @@ function unreachableNode(node: object): boolean {
     if (typeof code !== "string" || code.length === 0) continue;
     if (isConnectionSqlstate(code) || isConnectionErrno(code)) return true;
     if (code.startsWith("ERR_POSTGRES_CONNECTION_")) return true;
+    if (code === "ConnectionRefused") return true;
     if (code === "ERR_POSTGRES_IDLE_TIMEOUT" || code === "ERR_POSTGRES_LIFETIME_TIMEOUT") {
       return true;
     }

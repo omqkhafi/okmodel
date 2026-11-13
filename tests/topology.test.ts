@@ -127,12 +127,9 @@ test("replica probes open a circuit, back off, recover, and stop on close", asyn
   try {
     await db.connected;
     const started = replicaOf(db);
-    expect(started.failures).toBe(1);
-    expect(started.circuit).toBe("closed");
-    await waitFor(() => replicaOf(db).circuit === "open");
-    const open = replicaOf(db);
-    expect(open.failures).toBeGreaterThanOrEqual(2);
-    expect(open.nextDelayMs).toBe(probeMs * 2);
+    expect(started.circuit).toBe("open");
+    expect(started.failures).toBeGreaterThanOrEqual(2);
+    expect(started.nextDelayMs).toBe(probeMs * 2);
     fail = false;
     await waitFor(
       () => replicaOf(db).circuit === "closed" && replicaOf(db).replayLsn === "0/16B3748",

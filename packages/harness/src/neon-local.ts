@@ -64,14 +64,23 @@ const ERROR_FIELDS = [
 export function startNeonLocal(postgresUrl: string): NeonLocal {
   const target = new URL(postgresUrl);
   const pool = new pg.Pool({ connectionString: postgresUrl, max: 4 });
+  // The stub types only `connect`. An idle client error must not escape the test server.
+  (pool as unknown as { on(event: "error", listener: () => void): void }).on(
+    "error",
+    () => undefined,
+  );
   const server = Bun.serve<SocketData>({
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request, bun) {
-      if (new URL(request.url).pathname === "/sql") return sql(pool, request);
-      return bun.upgrade(request, { data: {} })
-        ? undefined
-        : new Response("websocket", { status: 426 });
+      try {
+        if (new URL(request.url).pathname === "/sql") return await sql(pool, request);
+        return bun.upgrade(request, { data: {} })
+          ? undefined
+          : new Response("websocket", { status: 426 });
+      } catch (error) {
+        return Response.json(errorBody(error), { status: 400 });
+      }
     },
     websocket: {
       open(ws) {
@@ -108,7 +117,12 @@ export function startNeonLocal(postgresUrl: string): NeonLocal {
 
 async function sql(pool: InstanceType<typeof pg.Pool>, request: Request): Promise<Response> {
   const body = (await request.json()) as Statement | { queries: readonly Statement[] };
-  const client = await pool.connect();
+  let client: PoolClient;
+  try {
+    client = await pool.connect();
+  } catch (error) {
+    return Response.json(errorBody(error), { status: 400 });
+  }
   try {
     if (!("queries" in body)) return Response.json(await run(client, body));
     await client.query("begin");

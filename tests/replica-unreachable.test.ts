@@ -94,6 +94,15 @@ test.each([
     () => Object.assign(new Error("connection lost"), { code: "08006" }),
   ],
   ["a depth of 3 wrappers", () => wrapped(refused(), 3)],
+  [
+    "a Neon HTTP sourceError",
+    () =>
+      Object.assign(new Error("Error connecting to database"), {
+        sourceError: Object.assign(new TypeError("Unable to connect"), {
+          code: "ConnectionRefused",
+        }),
+      }),
+  ],
 ])("a replica read that fails on %s falls back to the primary", async (_name, error) => {
   const { events, rows } = await fallbackCase(error);
   expect(rows).toEqual([]);
@@ -102,6 +111,56 @@ test.each([
     endpoint: "primary",
     reason: "fallback:unhealthy",
   });
+});
+
+test("a read whose replica and its retry both fail uses the primary", async () => {
+  const events: RouteEvent[] = [];
+  const db = await connectTopology(
+    {
+      primary: "postgres://primary/db",
+      replicas: ["postgres://replica/a", "postgres://replica/b"],
+    },
+    {
+      schema: app,
+      routing: { probe: 60_000, fallback: "primary" },
+      onRoute: (event) => events.push(event),
+    },
+    (config) => poolFor(config.url, refused),
+  );
+  try {
+    await db.connected;
+    events.length = 0;
+    const rows = await db.notes.find({ limit: 1 });
+    expect(rows).toEqual([]);
+    const reads = events.filter((event) => event.op === "read");
+    expect(reads).toHaveLength(3);
+    expect(reads[2]).toEqual({ op: "read", endpoint: "primary", reason: "fallback:unhealthy" });
+  } finally {
+    await db.close();
+  }
+});
+
+test("fallback error still throws when the retry fails", async () => {
+  const db = await connectTopology(
+    {
+      primary: "postgres://primary/db",
+      replicas: ["postgres://replica/a", "postgres://replica/b"],
+    },
+    { schema: app, routing: { probe: 60_000, fallback: "error" } },
+    (config) => poolFor(config.url, refused),
+  );
+  try {
+    await db.connected;
+    let thrown = false;
+    try {
+      await db.notes.find({ limit: 1 });
+    } catch {
+      thrown = true;
+    }
+    expect(thrown).toBe(true);
+  } finally {
+    await db.close();
+  }
 });
 
 test("a cycle with no connection code is not a fallback and reaches the caller", async () => {
