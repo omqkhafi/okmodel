@@ -101,31 +101,39 @@ async function ensureReplicas(): Promise<void> {
 
 async function stopImmediate(replica: ReplicaName): Promise<void> {
   const container = replica === "a" ? "okmodel-replica-a-1" : "okmodel-replica-b-1";
-  const proc = Bun.spawn(
-    [
-      "docker",
-      "exec",
-      "-u",
-      "postgres",
-      container,
-      "pg_ctl",
-      "stop",
-      "-m",
-      "immediate",
-      "-D",
-      "/var/lib/postgresql/data",
-    ],
-    { stdout: "ignore", stderr: "pipe" },
-  );
-  await new Response(proc.stderr).text();
-  await proc.exited;
+  const located = await execIn(container, ["printenv", "PGDATA"]);
+  const dataDir = located.stdout.trim();
+  if (located.code !== 0 || dataDir.length === 0) {
+    throw new Error(`replica ${replica} did not report PGDATA`);
+  }
+  const stopped = await execIn(container, ["pg_ctl", "stop", "-m", "immediate", "-D", dataDir]);
   const url = replicaUrl(replica);
+  if (!(await postgresReachable(url))) return;
+  // 137 is `docker exec` dying with PID 1. Any other failure leaves the server up.
+  if (stopped.code !== 0 && stopped.code !== 137) {
+    const detail = stopped.stderr.trim().length > 0 ? stopped.stderr.trim() : stopped.stdout.trim();
+    throw new Error(`replica ${replica} pg_ctl stop failed: ${detail}`);
+  }
   const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
     if (!(await postgresReachable(url))) return;
     await Bun.sleep(50);
   }
   throw new Error(`replica ${replica} did not stop`);
+}
+
+/** One `docker exec` as the postgres user. */
+async function execIn(
+  container: string,
+  args: readonly string[],
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  const proc = Bun.spawn(["docker", "exec", "-u", "postgres", container, ...args], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const stdout = await new Response(proc.stdout).text();
+  const stderr = await new Response(proc.stderr).text();
+  return { code: await proc.exited, stdout, stderr };
 }
 
 async function seed(): Promise<{ drop(): Promise<void> }> {
