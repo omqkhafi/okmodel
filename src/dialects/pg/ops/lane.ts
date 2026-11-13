@@ -44,6 +44,7 @@ type LaneSession = {
   readonly scope?: TenantCall;
   readonly connected: Promise<void>;
   readonly pool: Pick<DriverPool, "execute">;
+  readonly timeouts?: { readonly statement?: number };
   readonly logger?: {
     error?(event: { readonly code: string; readonly summary: string }): void;
   };
@@ -239,10 +240,18 @@ async function rawClass<C extends new () => object>(
   const params = guard === undefined ? compiled.params : [...compiled.params, ...guard.params];
   await lane.session.connected;
   try {
+    const timeout = lane.session.timeouts?.statement;
+    const write = kind === WRITE;
     const result = await lane.session.pool.execute(
       text,
       params,
-      kind === WRITE ? { route: "primary" } : undefined,
+      timeout === undefined
+        ? write
+          ? { route: "primary" }
+          : undefined
+        : write
+          ? { route: "primary", timeout }
+          : { timeout },
     );
     return decodeRows(cls, result.rows, indexed) as InstanceType<C>[];
   } catch (error) {

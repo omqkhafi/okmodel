@@ -99,6 +99,7 @@ jobs:
             tests/error-suite.test.ts \
             tests/tx-suite.test.ts \
             tests/postgresjs-write-count-pg.test.ts \
+            tests/acquire-timeout-pg.test.ts \
             -t "postgres\\.js"
         env:
           REQUIRE_DOCKER: "1"

@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { repoRoot } from "../scripts/root.js";
-import { DriverError, outcomeUnknown, timedOut } from "../src/adapters/error.js";
+import { acquireTimeout, DriverError, outcomeUnknown, timedOut } from "../src/adapters/error.js";
 import { OkmError, safe } from "../src/contracts/index.js";
 import { nearestName, throwNamed } from "../src/contracts/internal.js";
 import { mapPostgresError } from "../src/dialects/pg/errors.js";
@@ -373,9 +373,12 @@ test("mapPostgresError reads SQLSTATE, constraint names, and batchIndex", () => 
   expect(mapPostgresError(new DriverError("timeout", { sqlstate: "57014" })).kind).toBe("timeout");
   expect(mapPostgresError(new DriverError("closed", {})).kind).toBe("driver");
   expect(mapPostgresError(new DriverError("The pool is closed.")).kind).toBe("driver");
-  expect(mapPostgresError(new DriverError("timeout exceeded when trying to connect")).kind).toBe(
-    "driver",
-  );
+  const poolWait = mapPostgresError(new DriverError("timeout exceeded when trying to connect"));
+  const acquire = acquireTimeout();
+  expect(poolWait.code).toBe(acquire.code);
+  expect(poolWait.kind).toBe("timeout");
+  expect(poolWait.retryable).toBe(true);
+  expect(poolWait.message).toBe(acquire.message);
   const terminatedRaw = new Error("Connection terminated unexpectedly");
   const terminated = mapPostgresError(
     new DriverError(terminatedRaw.message, { cause: terminatedRaw }),

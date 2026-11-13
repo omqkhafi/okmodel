@@ -1,7 +1,7 @@
 /**
  * Pool operations a read does not use: checkout, describe, and stream.
  *
- * Loaded on the first reserve, batch, describe, or stream.
+ * Loaded on the first reserve, batch, describe, stream, or queued acquire.
  */
 
 import type { Sql } from "postgres";
@@ -456,6 +456,7 @@ export async function holdListener(
  * @param watch - Abort signal and the reason it fired
  * @param onAbort - Listener the caller attached
  * @param ctx - Notice slice and the session counters the plain path also uses
+ * @param acquireMs - Queue deadline, when the call may still be waiting for a connection
  * @returns The wire result, or a rejected driver error
  */
 export function watchQuery(
@@ -470,13 +471,14 @@ export function watchQuery(
     note(text: string): void;
     untrack(pending: Canceller): void;
   },
+  acquireMs?: number,
 ): Promise<ExecuteResult> {
   const done = (): void => {
     ctx.leave();
     ctx.untrack(pending);
     watch.signal.removeEventListener("abort", onAbort);
   };
-  return pending.then(
+  const result = pending.then(
     (value) => {
       done();
       const why = watch.reason();
@@ -486,9 +488,109 @@ export function watchQuery(
     },
     (error: unknown) => {
       done();
+      if (acquireMarked.has(pending)) return acquireFailure();
       return classify(error, watch);
     },
   );
+  if (acquireMs !== undefined) armAcquire(pending, acquireMs);
+  return result;
+}
+
+const acquireMarked = new WeakSet<object>();
+
+/**
+ * Runs a query that may still be waiting behind a reserved connection.
+ *
+ * The deadline cancels the query only when postgres.js has not handed it to a
+ * connection. The caller maps that cancel to OKM1846.
+ *
+ * @param pending - The driver query
+ * @param ms - `timeouts.acquire`, or the 10 second default
+ * @param ok - Builds the result after a successful query
+ * @returns The wire result, or a rejected error
+ */
+export function bound(
+  pending: Canceller & Promise<unknown>,
+  ms: number,
+  ok: (value: unknown) => ExecuteResult,
+): Promise<ExecuteResult> {
+  const result = pending.then(ok, (error: unknown) => {
+    if (acquireMarked.has(pending)) return acquireFailure();
+    return mapFailure(error).then((mapped) => {
+      throw mapped;
+    });
+  });
+  armAcquire(pending, ms);
+  return result;
+}
+
+type LivePool = { on: boolean; sql: Sql; m(): Sql };
+
+/**
+ * Damage control for a postgres.js null-socket write (B-02).
+ *
+ * The pool module registers the listener. This body stays off the startup
+ * graph. A closed pipe exits. A null-socket `TypeError` rebuilds open pools.
+ *
+ * @param error - The uncaught exception
+ * @param pools - Pools this process opened
+ */
+export function onUncaught(error: unknown, pools: readonly LivePool[]): void {
+  if (closedPipe(error)) {
+    process.exit(process.exitCode ?? 1);
+  }
+  if (error instanceof TypeError && /socket\.write|reading 'write'/.test(error.message)) {
+    for (const pool of pools) {
+      if (!pool.on) continue;
+      const prev = pool.sql;
+      pool.m();
+      void prev.end({ timeout: 0 }).catch(() => undefined);
+    }
+    return;
+  }
+  console.error(error);
+  process.exitCode = 1;
+}
+
+function closedPipe(error: unknown): boolean {
+  const code =
+    typeof error === "object" && error !== null ? (error as { code?: unknown }).code : undefined;
+  return code === "EPIPE" || code === "ERR_STREAM_DESTROYED";
+}
+
+/**
+ * Cancels a postgres.js query that is still queued when `ms` elapses.
+ *
+ * Called after the query is submitted. One microtask later, a query that
+ * already has a connection is left alone. 3.4.9 sets `state` before it writes.
+ * 4.1.1 sets `connection` before it sends. Either means the statement was sent.
+ *
+ * @param pending - The driver query
+ * @param ms - `timeouts.acquire`, or the 10 second default
+ */
+export function armAcquire(pending: Canceller & Promise<unknown>, ms: number): void {
+  queueMicrotask(() => {
+    if (queryStarted(pending)) return;
+    const timer = setTimeout(() => {
+      if (queryStarted(pending)) return;
+      acquireMarked.add(pending);
+      void (pending.cancel() as unknown as null | Promise<void>)?.catch(() => undefined);
+    }, ms);
+    timer.unref();
+    const stop = (): void => {
+      clearTimeout(timer);
+    };
+    void pending.then(stop, stop);
+  });
+}
+
+function queryStarted(query: object): boolean {
+  const queued = query as { state?: unknown; connection?: unknown };
+  return queued.state != null || queued.connection != null;
+}
+
+function acquireFailure(): Promise<never> {
+  return driverErrors().then((mod) => Promise.reject(mod.acquireTimeout()));
 }
 
 async function classify(error: unknown, watch: Watch): Promise<never> {

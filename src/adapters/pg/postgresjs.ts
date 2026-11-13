@@ -198,27 +198,11 @@ const lives: Live[] = [];
 // refusals keep stderr and fail. A closed stderr (EPIPE from `okm … 2>&1 |
 // head`) must not be printed: that write is another EPIPE and Node never
 // leaves the handler.
-process.on("uncaughtException", (e: unknown) => {
-  if (closedPipe(e)) {
-    process.exit(typeof process.exitCode === "number" ? process.exitCode : 1);
-  }
-  if (e instanceof TypeError && /socket\.write|reading 'write'/.test(e.message)) {
-    for (const x of lives) {
-      if (!x.on) continue;
-      const prev = x.sql;
-      x.m();
-      void prev.end({ timeout: 0 }).catch(() => {});
-    }
-    return;
-  }
-  console.error(e);
-  process.exitCode = 1;
+process.on("uncaughtException", (error: unknown) => {
+  void import("./postgres-extra.js").then((mod) => {
+    mod.onUncaught(error, lives);
+  });
 });
-
-function closedPipe(error: unknown): boolean {
-  if (typeof error !== "object" || error === null || !("code" in error)) return false;
-  return error.code === "EPIPE" || error.code === "ERR_STREAM_DESTROYED";
-}
 
 /**
  * Opens a postgres.js pool for one endpoint.
@@ -255,6 +239,7 @@ export function open(config: PostgresJsConfig): DriverPool {
     undefined,
     notices,
     named,
+    acquireMs,
   );
   const held = {
     on: true,
@@ -350,6 +335,8 @@ export class PgSession implements BatchSession {
   private readonly shared: Set<Canceller> | undefined;
   private readonly notices: NoticeBuffer;
   private readonly named: boolean;
+  /** Pool acquire deadline. Absent on a reserved connection, which already has one. */
+  private readonly acquireMs: number | undefined;
 
   /**
    * @param sql - Root client or a reserved connection
@@ -359,6 +346,7 @@ export class PgSession implements BatchSession {
    * @param isClosed - Pool closed flag
    * @param shared - Pool-wide in-flight set for a reserved connection
    * @param notices - Notice buffer shared by the pool
+   * @param acquireMs - Queue deadline for a pool session. Omitted on a reserved connection
    */
   constructor(
     sql: Sql,
@@ -369,6 +357,7 @@ export class PgSession implements BatchSession {
     shared: Set<Canceller> | undefined,
     notices: NoticeBuffer,
     named: boolean,
+    acquireMs?: number,
   ) {
     this.sql = sql;
     this.counters = counters;
@@ -378,6 +367,7 @@ export class PgSession implements BatchSession {
     this.shared = shared;
     this.notices = notices;
     this.named = named;
+    this.acquireMs = acquireMs;
   }
 
   /** @inheritdoc */
@@ -390,20 +380,23 @@ export class PgSession implements BatchSession {
     const start = this.notices.start();
     this.enter();
     const pending = send(this.sql, text, params, this.named);
+    const queuedMs =
+      this.acquireMs !== undefined && this.counters.reserved !== 0 ? this.acquireMs : undefined;
     if (watch === undefined) {
-      return pending.then(
-        (result) => {
-          this.leave();
-          this.note(text);
-          return resultFrom(result, this.notices.since(start));
-        },
-        (error: unknown) => {
-          this.leave();
-          return mapFailure(error).then((mapped) => {
-            throw mapped;
-          });
-        },
-      );
+      const finish = (rows: unknown): ExecuteResult => {
+        this.leave();
+        this.note(text);
+        return resultFrom(rows, this.notices.since(start));
+      };
+      if (queuedMs !== undefined) {
+        return import("./postgres-extra.js").then((mod) => mod.bound(pending, queuedMs, finish));
+      }
+      return pending.then(finish, (error: unknown) => {
+        this.leave();
+        return mapFailure(error).then((mapped) => {
+          throw mapped;
+        });
+      });
     }
     this.local.add(pending);
     this.shared?.add(pending);
@@ -414,21 +407,27 @@ export class PgSession implements BatchSession {
     else watch.signal.addEventListener("abort", onAbort, { once: true });
     return import("./postgres-extra.js").then(
       (mod) =>
-        mod.watchQuery(pending, watch, onAbort, {
-          start,
-          text,
-          notices: this.notices,
-          leave: () => {
-            this.leave();
+        mod.watchQuery(
+          pending,
+          watch,
+          onAbort,
+          {
+            start,
+            text,
+            notices: this.notices,
+            leave: () => {
+              this.leave();
+            },
+            note: (sqlText) => {
+              this.note(sqlText);
+            },
+            untrack: (item) => {
+              this.local.delete(item);
+              this.shared?.delete(item);
+            },
           },
-          note: (sqlText) => {
-            this.note(sqlText);
-          },
-          untrack: (item) => {
-            this.local.delete(item);
-            this.shared?.delete(item);
-          },
-        }),
+          queuedMs,
+        ),
       (error: unknown) => {
         this.leave();
         this.local.delete(pending);

@@ -173,7 +173,7 @@ export const db = connect(process.env.DATABASE_URL!, {
 
 ### Timeouts
 
-Each key is milliseconds. Each one is optional. `connect({ timeouts })` sets the ceilings. With a key omitted, that wait has no deadline. The adapter reads `acquire`. The other keys belong to the runtime.
+Each key is milliseconds. Each one is optional. `connect({ timeouts })` sets the ceilings. postgres.js and node-postgres use 10 seconds for `acquire` when that key is omitted. `statement`, `transaction`, and `idleInTransaction` have no deadline when omitted. The adapter reads `acquire`. The other keys belong to the runtime.
 
 | Key | What it bounds |
 | --- | --- |
@@ -208,7 +208,15 @@ export const db = connect(process.env.DATABASE_URL!, {
 
 #### acquire
 
-The pool waits for a connection up to `timeouts.acquire`. With the key omitted, it waits with no deadline.
+The pool waits for a connection up to `timeouts.acquire`. postgres.js and node-postgres use 10 seconds when the key is omitted.
+
+node-postgres sets the pool's connection timeout to that number. The wait fails as OKM1846. There is no separate 5 second cap.
+
+postgres.js applies `acquire` to a call that is still queued and has not been handed to a connection. That covers `find`, `insert`, `count`, `tx`, and the other calls on the pool. A statement the driver has already written to a socket is a statement wait. Opening a new socket still uses the driver's connect timeout of 5 seconds.
+
+Bun.sql applies `acquire` to `reserve` and `tx`. A query on the outer client waits in the driver's queue without that deadline. PGlite applies `acquire` to every call that takes its one slot, and waits with no deadline when the key is omitted.
+
+A call that fails with OKM1846 has not sent its statement. A write that fails this way is not in the table. The kind is `timeout` and the error is retryable.
 
 <Callout type="error" title="OKM1846">
 `Timed out waiting for a connection. This pool did not hand one out within timeouts.acquire.`
@@ -216,7 +224,7 @@ The pool waits for a connection up to `timeouts.acquire`. With the key omitted, 
 
 #### statement
 
-A call that sets `timeout` uses that number. A call that sets none takes `timeouts.statement`. `batch()` does the same. The code on the error is `timeout`. The message is `The call timed out`.
+A call that sets `timeout` uses that number. A call that sets none takes `timeouts.statement`. `batch()` does the same. Class-form `raw(handle, Class, "read" | "write", fragment)` does the same, on the client and inside `tx()`. The code on the error is `timeout`. The message is `The call timed out`. A call that passes `timeout` uses that number instead of `timeouts.statement`.
 
 #### transaction
 
@@ -236,7 +244,7 @@ A later call sets its own `timeout`, or takes `timeouts.statement`. On Bun.sql a
 
 #### drivers
 
-A positive `timeout` on a call, on `tx()`, or on `batch()` is refused on Bun.sql and PGlite. Those drivers cannot cancel a statement that is already running. `timeouts.statement` is that number when the call sets none, so a positive `statement` is refused when the call runs. Connect still accepts the object.
+A positive `timeout` on a call, on `tx()`, on `batch()`, or on class-form `raw` is refused on Bun.sql, PGlite, and Neon. Those drivers cannot cancel a statement that is already running. `timeouts.statement` is that number when the call sets none, so a positive `statement` is refused when the call runs. Connect still accepts the object. Neon WebSocket has the same acquire gap as Bun.sql: `tx` honours `acquire`, and `find`, `insert`, and `count` wait in the driver queue.
 
 postgres.js and node-postgres accept a positive timeout. `timeouts.transaction` and `timeouts.idleInTransaction` stay kind `timeout`, including on Bun.sql and PGlite.
 
