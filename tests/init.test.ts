@@ -705,7 +705,7 @@ function assertPackage(cwd: string, name: "bun" | "npm" | "pnpm" | "drizzle"): v
   if (name === "pnpm") expect(parsed.dependencies?.postgres).toBe(peerBare("postgres"));
   if (name === "drizzle") {
     expect(parsed.dependencies?.["drizzle-orm"]).toBe("^0.36.0");
-    expect(parsed.dependencies?.postgres).toBe("^3.4.9");
+    expect(parsed.dependencies?.postgres).toBe(`^${peerBare("postgres")}`);
   }
   expect(text).not.toContain("devDependencies");
 }
@@ -776,7 +776,13 @@ function normalize(text: string): string {
   };
   for (const spec of Object.values(pkg.peerDependencies)) {
     const bare = spec.replace(/^[\^~]/, "");
+    // The whole union first (`3.4.9 || ^4.0.0` -> PEER), then each alternative,
+    // so a fixture that still names 3.4.9 masks the same way.
     if (bare.length > 0) out = out.split(bare).join("PEER");
+    for (const part of spec.split("||")) {
+      const one = part.trim().replace(/^[\^~]/, "");
+      if (one.length > 0) out = out.split(one).join("PEER");
+    }
   }
   return out.replace(/[0-9a-f]{64}/g, "HASH");
 }

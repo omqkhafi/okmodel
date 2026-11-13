@@ -236,7 +236,7 @@
     "@electric-sql/pglite": "^0.5.8",
     "@neondatabase/serverless": "^1.2.0",
     "pg": "^8.16.0",
-    "postgres": "^3.4.9"
+    "postgres": "^3.4.9 || ^4.0.0"
   },
   "peerDependenciesMeta": {
     "@electric-sql/pglite": {

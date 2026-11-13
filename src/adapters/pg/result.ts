@@ -67,36 +67,43 @@ function rowList(value: unknown): readonly unknown[] {
 }
 
 function rowCells(row: unknown): WireValue[] {
-  if (Array.isArray(row)) {
-    const cells = Array.from<WireValue>({ length: row.length });
-    for (let index = 0; index < row.length; index += 1) cells[index] = cell(row[index]);
-    return cells;
-  }
-  if (typeof row === "object" && row !== null) {
-    const values = Object.values(row);
-    const cells = Array.from<WireValue>({ length: values.length });
-    for (let index = 0; index < values.length; index += 1) cells[index] = cell(values[index]);
-    return cells;
-  }
-  return [cell(row)];
+  const list = Array.isArray(row)
+    ? row
+    : typeof row === "object" && row !== null
+      ? Object.values(row)
+      : [row];
+  const cells = Array.from<WireValue>({ length: list.length });
+  for (let index = 0; index < list.length; index += 1) cells[index] = cell(list[index]);
+  return cells;
 }
 
 /**
- * Command-tag count from the first own field a driver uses.
+ * Command-tag count from the first field a driver uses.
  *
  * Order is `count` (postgres.js, Bun.sql), `rowCount` (pg, Neon, PGlite),
- * then `affectedRows` (PGlite, only when `rowCount` is absent). An own field
- * that is not a finite number means the driver reported nothing: later fields
- * are not a fallback. PGlite's `affectedRows` is cumulative across statements
- * in one query; its `rowCount` is the per-statement tag.
+ * then `affectedRows` (PGlite, only when `rowCount` is absent). `count` may
+ * sit on an array subclass. `rowCount` and `affectedRows` are own fields.
+ * A plain object is not a result class. A field that is not a finite number
+ * means the driver reported nothing: later fields are not a fallback.
+ * PGlite's `affectedRows` is cumulative across statements in one query; its
+ * `rowCount` is the per-statement tag.
  *
  * @param value - A driver result
  * @returns The tag count, or null when the driver gave none
  */
 function reportedFrom(value: unknown): number | null {
   if (typeof value !== "object" || value === null) return null;
+  const proto = Object.getPrototypeOf(value);
   for (const name of ["count", "rowCount", "affectedRows"] as const) {
-    if (!Object.hasOwn(value, name)) continue;
+    if (
+      !Object.hasOwn(value, name) &&
+      (name !== "count" ||
+        proto === null ||
+        proto === Object.prototype ||
+        !Object.hasOwn(proto, name))
+    ) {
+      continue;
+    }
     const found: unknown = Reflect.get(value, name);
     if (typeof found === "number" && Number.isFinite(found)) return found;
     return null;

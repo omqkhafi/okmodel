@@ -342,6 +342,24 @@ test("command-tag fields each driver exposes", () => {
   const postgres = Object.defineProperty([["1"]], "count", { value: 1 });
   expect(resultFrom(postgres, []).reported).toBe(1);
 
+  class Result extends Array {
+    #count: number | null = 0;
+    get count(): number | null {
+      return this.#count;
+    }
+    set count(value: number | null) {
+      this.#count = value;
+    }
+  }
+  const postgres4 = new Result();
+  postgres4.count = 2;
+  expect(Object.hasOwn(postgres4, "count")).toBe(false);
+  expect(resultFrom(postgres4, []).reported).toBe(2);
+  expect(resultFrom(postgres4, []).count).toBe(2);
+  postgres4.count = null;
+  expect(resultFrom(postgres4, []).reported).toBeNull();
+  expect(resultFrom(postgres4, []).count).toBe(0);
+
   const unset = Object.defineProperty([["1"]], "count", { value: null });
   expect(resultFrom(unset, []).reported).toBeNull();
   expect(resultFrom(unset, []).count).toBe(1);
