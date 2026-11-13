@@ -83,6 +83,27 @@ jobs:
           POSTGRES_VERSION: ${{ matrix.version }}
           OKM_TEST_TIMINGS: ${{ runner.temp }}/timings.json
 
+      - name: postgres.js 4
+        # One shard. The lockfile installs 3.4.9. This step runs the adapter
+        # cases again on 4.1.1, which keeps `count` on the result class.
+        if: matrix.shard == 'selection'
+        run: |
+          set -euo pipefail
+          scratch="$(mktemp -d)"
+          printf '%s\n' '{"name":"okm-postgres4","private":true}' > "$scratch/package.json"
+          bun add --cwd "$scratch" postgres@4.1.1
+          rm -f node_modules/postgres
+          ln -s "$scratch/node_modules/postgres" node_modules/postgres
+          bun test \
+            tests/driver-suite.test.ts \
+            tests/error-suite.test.ts \
+            tests/tx-suite.test.ts \
+            tests/postgresjs-write-count-pg.test.ts \
+            -t "postgres\\.js"
+        env:
+          REQUIRE_DOCKER: "1"
+          POSTGRES_VERSION: ${{ matrix.version }}
+
       - name: Slowest files
         if: always()
         continue-on-error: true
