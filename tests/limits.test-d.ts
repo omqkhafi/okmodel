@@ -31,6 +31,14 @@ const order = { orderBy: { id: "asc" } } as const;
 
 expectTypeOf(plain.notes.find(order)).not.toHaveProperty("then");
 expectTypeOf(plain.notes.find(order)).toHaveProperty("all");
+// No `limits`. The unbounded filter overload accepts these. Awaiting them is OKM1101.
+expectTypeOf(plain.notes.find({ where: { title: "a" } })).toHaveProperty("all");
+expectTypeOf(plain.notes.find({ where: { title: "a" } })).not.toHaveProperty("then");
+expectTypeOf(plain.notes.find({})).toHaveProperty("all");
+expectTypeOf(plain.notes.find({})).not.toHaveProperty("then");
+expectTypeOf(plain.notes.find({ where: { title: "a" }, limit: 1 })).toHaveProperty("then");
+expectTypeOf(plain.notes.find({ where: { title: "a" } }).all("export")).toHaveProperty("then");
+expectTypeOf(findOnly.notes.find({ where: { title: "a" } })).toHaveProperty("then");
 expectTypeOf(all.notes.find(order)).toHaveProperty("then");
 expectTypeOf(findOnly.notes.find(order)).toHaveProperty("then");
 expectTypeOf(maxOnly.notes.find(order)).not.toHaveProperty("then");

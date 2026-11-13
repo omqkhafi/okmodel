@@ -1409,7 +1409,12 @@ export type Write<T> = Promise<T> & {
   describe(): Promise<WriteDescription>;
   /** `{ ok, value }` or `{ ok, error }`. */
   safe(): Promise<SafeResult<T>>;
-  /** Throws `not_found` when the changed-row count is not `count`. */
+  /**
+   * Throws `not_found` when the changed-row count is not `count`.
+   *
+   * The write is already committed when this throws. Inside `tx()`, the throw
+   * rolls the transaction back, so the count is a condition of the write.
+   */
   expect(count: number): Write<T>;
   /** Allows `update` or `delete` without `where`. */
   all(reason: string): Write<T>;
