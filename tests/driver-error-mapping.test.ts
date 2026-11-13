@@ -8,7 +8,7 @@
 
 import { expect, test } from "bun:test";
 
-import { mapDriverError } from "../src/adapters/error.js";
+import { mapDriverError } from "../src/adapters/lazy-errors.js";
 import { mapPostgresError } from "../src/dialects/pg/errors.js";
 
 function sqlError(message: string, code: string): Error {

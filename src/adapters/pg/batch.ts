@@ -8,7 +8,8 @@
 
 import { isConnectionLost } from "../../contracts/connection.js";
 import type { ExecuteResult, Statement, WireValue } from "../../contracts/driver.js";
-import { DriverError, mapDriverError, outcomeUnknown } from "../error.js";
+import { DriverError, outcomeUnknown } from "../error.js";
+import { mapDriverError } from "../lazy-errors.js";
 import type { Watch } from "./call.js";
 
 /** A connection that can run the batch protocol. */

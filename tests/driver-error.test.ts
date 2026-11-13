@@ -4,7 +4,8 @@
 
 import { expect, test } from "bun:test";
 
-import { DriverError, mapDriverError } from "../src/adapters/error.js";
+import { DriverError } from "../src/adapters/error.js";
+import { mapDriverError } from "../src/adapters/lazy-errors.js";
 import { mapPostgresError } from "../src/dialects/pg/errors.js";
 
 test("node-postgres code is the sqlstate", () => {
