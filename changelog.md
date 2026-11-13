@@ -14,6 +14,26 @@ needed). Large groups add `####` area headings (`contracts`, `dialects`,
 
 ## Unreleased
 
+## v0.10.6 — 2026-11-13
+
+The catalog hash does not change, and migration SQL does not change. A keyset `page()` or `stream()` on a non-null column, including the primary-key tie-break, compares with `>` or `<` alone so Postgres can start at that key in the index; a nullable column and a left join keep the previous SQL, and cursor values and row order stay the same. Known limit: on postgres.js, Bun.sql, and Neon, `timeouts.acquire` bounds only `tx()` and `reserve()`, not an ordinary call.
+
+### 🐛 Fixed
+
+- On postgres.js 4, `update` and `delete` report how many rows changed instead of zero after the write committed, and `postgres` 4 is an accepted peer.
+- On postgres.js and node-postgres, `timeout` and `timeouts.statement` bound a call, and `timeouts.acquire` bounds the wait for a connection as OKM1846 (kind `timeout`) before the statement is sent.
+- A refused, reset, or dropped connection is kind `unavailable` and retryable on node-postgres, Bun.sql, and Neon, including when the server is down.
+- A replica that cannot be reached no longer fails `connect()` or a read: the primary still serves writes, a read falls back to the primary when fallback is `primary`, and a primary that cannot be reached still fails `connect()`.
+- Neon `connect({ timeout, signal })` bounds the startup check (kind `timeout` or `cancelled`), a later call can still pass `signal`, and an abort after the statement is sent keeps that statement's result so a committed write is not reported as cancelled.
+- Neon HTTP `connect` and `open` refuse `searchPath` with OKM1120 (kind `invalid`) instead of ignoring it.
+- After a migration group rolls back, `okm migrate status` names the step `okm migrate apply` will resume, using the same step numbers as apply.
+
+### ♻️ Changed
+
+- `page()` and `stream()` on a large table stay on the primary-key index when the sort key cannot be null.
+- Importing any driver loads less code before the first query.
+- Internal: the size gates moved to fit postgres.js 4 row counts and the Neon connect entry, and the lifecycle check treats a small share of known skips as sampling noise.
+
 ## v0.10.5 — 2026-11-05
 
 Nothing changes in the catalog hash, the generated SQL, or the public API.
