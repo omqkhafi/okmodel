@@ -93,8 +93,9 @@ export const APP_MAX_MIN_BYTES = 94_680;
  * P67 measured 30,007 and set the gate to that plus 20, rounded up (D210).
  * Was 29,210 (P24).
  * 30,830: date and time modes measured 30,810, plus 20 (D322).
+ * 30,850: postgres.js 4 class `count` in the shared reader, measured 30,832 (D324).
  */
-export const APP_MAX_GZIP_BYTES = 30_830;
+export const APP_MAX_GZIP_BYTES = 30_850;
 
 /**
  * Public connect entries, driver left external (D142, D143, D156).
@@ -119,7 +120,8 @@ export const CONNECT_ENTRIES = [
     file: "pglite.js",
     external: ["@electric-sql/pglite"],
     maxMinBytes: 40_450,
-    maxGzipBytes: 14_290,
+    // 14,310: postgres.js 4 class count in the shared reader, measured 14,300 (D324).
+    maxGzipBytes: 14_310,
   },
   {
     entry: "src/runtime/pg/pg.ts",
@@ -134,7 +136,8 @@ export const CONNECT_ENTRIES = [
     external: ["bun"],
     nodeColdImport: false,
     maxMinBytes: 41_700,
-    maxGzipBytes: 14_630,
+    // 14,660: postgres.js 4 class count in the shared reader, measured 14,648 (D324).
+    maxGzipBytes: 14_660,
   },
   {
     entry: "src/runtime/pg/neon.ts",

@@ -13,11 +13,11 @@ Sample on `d528978` (P101):
 | App startup, full build (reference) | 92,526 | 30,822 | 36.341 ms | not gated. Driver stubbed cold import 17.925 ms |
 | Connect `okmodel/pg/postgresjs` startup | 40,236 | 14,028 | | 42,450 / 14,920. Dynamic imports stubbed |
 | Connect postgres.js, full build (reference) | 42,940 | 15,178 | 23.631 ms | not gated. Driver stubbed cold import 6.808 ms |
-| Connect `okmodel/pg/pglite` startup | 38,650 | 13,433 | | 40,450 / 14,290. Dynamic imports stubbed |
+| Connect `okmodel/pg/pglite` startup | 38,650 | 13,433 | | 40,450 / 14,310. Dynamic imports stubbed |
 | Connect PGlite, full build (reference) | 41,245 | 14,568 | 29.431 ms | not gated. Driver stubbed cold import 8.615 ms |
 | Connect `okmodel/pg/pg` startup | 40,195 | 13,984 | | 42,850 / 15,070. Dynamic imports stubbed |
 | Connect `okmodel/pg/pg`, full build (reference) | 42,857 | 15,116 | 48.879 ms | not gated. Driver stubbed cold import 8.134 ms |
-| Connect `okmodel/pg/bun` startup | 39,822 | 13,861 | | 41,700 / 14,630. Dynamic imports stubbed. Node cold import skipped: Bun.sql runs only on Bun |
+| Connect `okmodel/pg/bun` startup | 39,822 | 13,861 | | 41,700 / 14,660. Dynamic imports stubbed. Node cold import skipped: Bun.sql runs only on Bun |
 | Connect Bun.sql, full build (reference) | 43,033 | 15,163 | | not gated. Driver stubbed cold import 7.601 ms |
 
 Earlier measurement dumps and the 2026-10-21 size audit live in git history.
