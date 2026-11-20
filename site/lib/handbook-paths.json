@@ -41,6 +41,7 @@
   "/docs/operate/testing",
   "/docs/operate/using-okmodel-safely",
   "/docs/queries",
+  "/docs/queries/computed",
   "/docs/queries/presets",
   "/docs/queries/read-rows",
   "/docs/queries/request-filters",

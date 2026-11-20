@@ -58,7 +58,7 @@ A second Postgres schema is listed the same way. Import it on its own and set `n
 | `select count(distinct col)` | `(u) => u.posts.count({ distinct: "authorId" })` |
 | `select exists (...)` | `(u) => u.posts.exists({ where: { published: true } })` |
 | `select sum(col)`, `avg(col)`, `min(col)`, `max(col)` | `(u) => u.posts.sum("views")` and the same for `avg`, `min`, `max` |
-| a sum over an expression such as `views * 2` | `(u) => u.posts.sum(fragment`${ident("views")} * 2`)` |
+| a sum over an expression such as `views * 2` | `sum` with a `fragment` over the related row's fields, for example `views * 2` |
 | an arithmetic combination of two subqueries | one `fragment` that interpolates both aggregates |
 | `where` on an `extras` value, or an order by it | the computed name in `where` and `orderBy` |
 
