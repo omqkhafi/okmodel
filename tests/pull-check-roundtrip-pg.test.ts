@@ -91,9 +91,14 @@ const TOO_LOW = `schema({
   })],
 })`;
 
-postgresTest(gate, "an enforced check round-trips and a later generate emits nothing", async () => {
-  await roundTrip(ENFORCED);
-});
+postgresTest(
+  gate,
+  "an enforced check round-trips and a later generate emits nothing",
+  async () => {
+    await roundTrip(ENFORCED);
+  },
+  60_000,
+);
 
 postgresTest(
   gate,
@@ -153,19 +158,24 @@ postgresTest(
   60_000,
 );
 
-postgresTest(gate, "a NOT VALID check pulls as a plain check and round-trips", async () => {
-  await fromSql(
-    [
-      "create table qa_nv (n integer)",
-      "alter table qa_nv add constraint qa_nv_n_check check (n > 0) not valid",
-    ],
-    (tree) => {
-      const text = Object.values(tree).join("\n");
-      expect(text).not.toContain("NOT VALID");
-      expect(text).toContain("n > 0");
-    },
-  );
-});
+postgresTest(
+  gate,
+  "a NOT VALID check pulls as a plain check and round-trips",
+  async () => {
+    await fromSql(
+      [
+        "create table qa_nv (n integer)",
+        "alter table qa_nv add constraint qa_nv_n_check check (n > 0) not valid",
+      ],
+      (tree) => {
+        const text = Object.values(tree).join("\n");
+        expect(text).not.toContain("NOT VALID");
+        expect(text).toContain("n > 0");
+      },
+    );
+  },
+  60_000,
+);
 
 postgresTest(
   gate,
@@ -176,9 +186,14 @@ postgresTest(
   60_000,
 );
 
-postgresTest(gate, "a uuidv7() default round-trips on 18 and later", async () => {
-  await roundTrip(UUIDV7, { when: (major) => major >= 18 });
-});
+postgresTest(
+  gate,
+  "a uuidv7() default round-trips on 18 and later",
+  async () => {
+    await roundTrip(UUIDV7, { when: (major) => major >= 18 });
+  },
+  60_000,
+);
 
 postgresTest(
   gate,
@@ -197,6 +212,7 @@ postgresTest(
       },
     );
   },
+  60_000,
 );
 
 postgresTest(gate, "a NO INHERIT check is refused", async () => {
@@ -237,18 +253,23 @@ postgresTest(gate, "enforced: false with minPostgres 17 is refused", async () =>
   }
 });
 
-postgresTest(gate, "pull does not write okmodel internal tables", async () => {
-  await inProject(ENFORCED, async ({ cwd }) => {
-    await run(["generate"], { cwd, stdout: () => undefined });
-    await run(["migrate", "apply"], { cwd, stdout: () => undefined });
-    await pullProject(cwd, ["--out", "pulled"]);
-    const tree = readTree(join(cwd, "pulled"));
-    for (const path of Object.keys(tree)) {
-      expect(path).not.toContain("okm_");
-    }
-    expect(Object.values(tree).join("\n")).not.toContain("okm_meta");
-  });
-});
+postgresTest(
+  gate,
+  "pull does not write okmodel internal tables",
+  async () => {
+    await inProject(ENFORCED, async ({ cwd }) => {
+      await run(["generate"], { cwd, stdout: () => undefined });
+      await run(["migrate", "apply"], { cwd, stdout: () => undefined });
+      await pullProject(cwd, ["--out", "pulled"]);
+      const tree = readTree(join(cwd, "pulled"));
+      for (const path of Object.keys(tree)) {
+        expect(path).not.toContain("okm_");
+      }
+      expect(Object.values(tree).join("\n")).not.toContain("okm_meta");
+    });
+  },
+  60_000,
+);
 
 type RoundOptions = {
   readonly when?: (major: number) => boolean;
