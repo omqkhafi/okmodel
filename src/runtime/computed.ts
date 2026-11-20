@@ -129,7 +129,7 @@ type Computed = {
   readonly orders: ReadonlyMap<string, Item>;
   /** True when every parent needs a value, so no page CTE is used. */
   readonly full: boolean;
-  /** Related tables and the columns that link them, for the foreign-key index warning. */
+  /** Related tables (by name) and the SQL columns that link them, for the foreign-key index warning (OKM2012). */
   readonly keys: readonly {
     readonly table: string;
     readonly relation: string;
@@ -202,7 +202,7 @@ export async function attach(schema: QuerySchema, call: ReadCall): Promise<ReadC
       group.relation.through === undefined
         ? [
             {
-              table: group.child.model.sql,
+              table: group.child.model.name,
               relation: group.relation.name,
               columns: group.relation.remote,
             },
@@ -770,7 +770,9 @@ function pageKeyset(
   return (sink, alias) => {
     let wrote = false;
     if (after !== undefined) {
+      sink.text("(");
       after(sink, alias);
+      sink.text(")");
       wrote = true;
     }
     for (const cond of info.conds) {
@@ -815,7 +817,9 @@ function joined(
   return (sink, alias) => {
     let wrote = false;
     if (after !== undefined) {
+      sink.text("(");
       after(sink, alias);
+      sink.text(")");
       wrote = true;
     }
     for (const cond of info.conds) {

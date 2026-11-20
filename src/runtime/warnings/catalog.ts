@@ -168,6 +168,22 @@ export const WARNING_RULES: readonly WarningRule[] = [
     escapeHatches: [hatch("OKM2011")],
   },
   {
+    code: "OKM2012",
+    rule: "unindexed-computed-key",
+    title: "Computed key without an index",
+    summary:
+      "A computed aggregate groups the related table by its foreign key, and no declared index starts with that key, so each read scans the related table.",
+    fix: "Declare an index that starts with the foreign key columns.",
+    defaultLevel: "hint",
+    severity: "low",
+    phase: "dev-runtime",
+    evidence: "static",
+    safeAlternatives: [
+      alt("OKM2012", "Declare an index that starts with the foreign key columns."),
+    ],
+    escapeHatches: [hatch("OKM2012")],
+  },
+  {
     code: "OKM2101",
     rule: "unindexed-foreign-key",
     title: "Foreign key without an index",
