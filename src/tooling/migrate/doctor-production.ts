@@ -13,7 +13,7 @@
 import { open } from "../../adapters/pg/postgresjs.js";
 import type { DriverConnection, ExecuteResult } from "../../contracts/driver.js";
 import { OkmError } from "../../contracts/error.js";
-import { POSTGRES_FLOOR, POSTGRES_MAJORS } from "../../dialects/pg/floor.js";
+import { POSTGRES_FLOOR } from "../../dialects/pg/floor.js";
 import { assertRoleHealth } from "../../dialects/pg/role/check.js";
 import { tagOutcome } from "../cli/outcome.js";
 import { DEFAULT_LOCK_MS, DEFAULT_STATEMENT_MS } from "./apply.js";
@@ -343,6 +343,9 @@ export function timeoutFindings(
   return [lock, statement];
 }
 
+/** Newest major the suite has run. Matches the harness tested list. A newer server is accepted. */
+const TESTED_NEWEST = 19;
+
 /**
  * Finding for the server major.
  *
@@ -352,14 +355,13 @@ export function timeoutFindings(
  */
 export function serverFinding(major: number, minimum: Refusal | undefined): ProductionFinding {
   const id = "server-version";
-  const newest = POSTGRES_MAJORS[POSTGRES_MAJORS.length - 1] ?? POSTGRES_FLOOR;
-  const window = `${String(POSTGRES_FLOOR)}-${String(newest)}`;
+  const window = `${String(POSTGRES_FLOOR)}-${String(TESTED_NEWEST)}`;
   if (minimum !== undefined) {
     return {
       id,
       severity: "fail",
       code: minimum.code,
-      summary: `${minimum.message} Supported majors are ${window}.`,
+      summary: `${minimum.message} PostgreSQL ${String(POSTGRES_FLOOR)} and later is accepted.`,
       fix: minimum.fix,
     };
   }
@@ -372,12 +374,12 @@ export function serverFinding(major: number, minimum: Refusal | undefined): Prod
       fix: `Upgrade to PostgreSQL ${String(POSTGRES_FLOOR)} or higher.`,
     };
   }
-  if (major > newest) {
+  if (major > TESTED_NEWEST) {
     return {
       id,
-      severity: "warn",
-      summary: `The server is PostgreSQL ${String(major)}, newer than the supported window ${window}.`,
-      fix: `Run the supported majors (${window}) until a release lists ${String(major)}.`,
+      severity: "ok",
+      summary: `The server is PostgreSQL ${String(major)}, newer than the tested range ${String(POSTGRES_FLOOR)} to ${String(TESTED_NEWEST)}; accepted.`,
+      fix: OK_FIX,
     };
   }
   return {

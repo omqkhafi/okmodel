@@ -288,6 +288,37 @@ const PACKS: readonly Pack[] = [
 ];
 
 /**
+ * Lookup appended to the generated version module.
+ *
+ * A major above the highest recorded one uses that version and prints one line.
+ */
+const PACK_VERSION_FN = `
+/**
+ * Default version of one pack on a server major.
+ *
+ * A major above the highest recorded one uses that version and prints one line.
+ *
+ * @param pack - Generated pack
+ * @param major - Server major
+ * @returns The version to compare
+ */
+export function packVersion(pack: ExtPackRecord, major: number): string {
+  const table = pack.versions as Readonly<Record<number, string | undefined>>;
+  const found = table[major];
+  if (found !== undefined) return found;
+  const newest = Math.max(...Object.keys(table).map(Number));
+  const version = table[newest];
+  if (version !== undefined && major > newest) {
+    console.error(
+      \`PostgreSQL \${String(major)} is newer than the tested range; using the \${String(newest)} pack for \${pack.name}.\`,
+    );
+    return version;
+  }
+  throw new Error(\`Postgres \${String(major)} is outside \${String(newest)}.\`);
+}
+`;
+
+/**
  * Versions and drift signatures, written next to the packs.
  *
  * The postgres test imports this module. The packs do not, so a subpath does
@@ -341,7 +372,7 @@ export type ExtPackRecord = {
 export const EXT_PACKS: readonly ExtPackRecord[] = [
 ${body}
 ];
-`;
+${PACK_VERSION_FN}`;
 }
 
 function packModule(pack: Pack): string {
