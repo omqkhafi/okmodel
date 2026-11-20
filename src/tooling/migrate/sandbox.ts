@@ -19,10 +19,9 @@ import { introspectSchema } from "../../dialects/pg/introspect.js";
 import { roleExists } from "../../dialects/pg/role/check.js";
 import { changesRole, createdRoleName, createRoleOnce } from "../../dialects/pg/role/sql.js";
 import { migrationJournalGrants } from "./managed.js";
-import { sealViews } from "../../dialects/pg/view/scratch.js";
 import { ensureMigrationTables } from "./apply.js";
 import type { MigrateConfig } from "./config.js";
-import { catalogQuery, managedRoleOptions, sealStoredChecks, sealTriggerWhens } from "./drift.js";
+import { catalogQuery, managedRoleOptions, sealAuthored, sealStoredChecks } from "./drift.js";
 import { assertUuidV7Available } from "./engine.js";
 import {
   ensureExtensionSchemaSql,
@@ -124,6 +123,8 @@ export async function replayCheckHistory(
     const connection = driverOf(sql);
     await assertUuidV7Available(connection, history);
     const session = newSession();
+    const version = await sql<{ v: string }[]>`select current_setting('server_version_num') as v`;
+    const postgres = Math.floor(Number(version[0]?.v ?? "0") / 10_000);
     for (let index = 0; index < history.length; index += 1) {
       const migration = history[index];
       if (migration === undefined) continue;
@@ -138,14 +139,12 @@ export async function replayCheckHistory(
       // stores them so a non-canonical author spelling is not OKM1547 when
       // generate is empty (B-37, D128). The live catalog is sealed too: author
       // SQL stores the first printer pass, and that pass is not always stable.
-      const sealed = await sealTriggerWhens(
-        runner,
-        await sealStoredChecks(runner, await sealViews(runner, migration.catalog)),
-      );
+      const sealed = await sealAuthored(runner, migration.catalog);
       const back = planMigration({
         before: await sealStoredChecks(runner, live),
         after: sealed,
         name: migration.id,
+        postgres,
       });
       if (back.steps.length === 0) continue;
       const extensions = extensionVersionDrift(live, sealed, back);

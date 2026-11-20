@@ -8,9 +8,12 @@
  * entry.
  */
 
+import { OkmError } from "../../contracts/error.js";
 import type { Catalog, CatalogObject } from "../../contracts/catalog/types.js";
 import {
   isPostgresMajor,
+  notEnforcedNeedsPostgres,
+  NOT_ENFORCED_POSTGRES,
   parsePostgresFloor,
   POSTGRES_FLOOR,
   UUIDV7_POSTGRES,
@@ -54,7 +57,16 @@ export function declaredFloor(requires: { readonly postgres?: string } | undefin
 export function schemaMinPostgres(catalog: Catalog, declared: PostgresMajor): PostgresMajor {
   let floor = declared;
   if (usesUuidV7(catalog) && floor < UUIDV7_POSTGRES) floor = UUIDV7_POSTGRES;
+  if (usesNotEnforced(catalog) && floor < NOT_ENFORCED_POSTGRES) floor = NOT_ENFORCED_POSTGRES;
   return floor;
+}
+
+/** OKM1812 when a declared floor is below 18 and a check is `enforced: false`. */
+export function assertNotEnforcedDeclared(catalog: Catalog, postgres: string | undefined): void {
+  const declared = parsePostgresFloor(postgres);
+  if (!usesNotEnforced(catalog) || !(declared > 0) || declared >= NOT_ENFORCED_POSTGRES) return;
+  const sentence = notEnforcedNeedsPostgres();
+  throw new OkmError("OKM1812", sentence, { fix: { summary: sentence } });
 }
 
 /**
@@ -93,6 +105,15 @@ export function requiredExtensions(catalog: Catalog): readonly RequiredExtension
   return [...reasons.entries()]
     .sort((left, right) => (left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0))
     .map(([name, uses]) => ({ name, reason: unique(uses).join("; ") }));
+}
+
+function usesNotEnforced(catalog: Catalog): boolean {
+  return catalog.objects.some(
+    (object) =>
+      object.kind === "constraint" &&
+      object.definition.constraintKind === "check" &&
+      object.definition.enforced === false,
+  );
 }
 
 function usesUuidV7(catalog: Catalog): boolean {

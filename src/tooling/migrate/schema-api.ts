@@ -9,7 +9,7 @@
 
 import { catalogError } from "../../contracts/error.js";
 import { canonicalJson, type Json } from "../../contracts/catalog/json.js";
-import { parseCatalog, serializeCatalog } from "../../contracts/catalog/document.js";
+import { parseCatalog, serializeCatalog, settleChecks } from "../../contracts/catalog/document.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
 import {
   isPostgresMajor,
@@ -22,6 +22,7 @@ import type { EmulatedNote } from "../capabilities/types.js";
 import { featuresUsed } from "../capabilities/used.js";
 import { LOGICAL_FORMAT, type LogicalIdentity } from "./export.js";
 import {
+  assertNotEnforcedDeclared,
   declaredFloor,
   requiredExtensions,
   schemaMinPostgres,
@@ -93,6 +94,7 @@ export function describe(schema: {
   readonly requirements?: { readonly features?: readonly string[] } | undefined;
 }): SchemaDescription {
   const source = schemaCatalog(schema);
+  assertNotEnforcedDeclared(source, schema.requires?.postgres);
   const document = JSON.parse(serializeCatalog(source)) as Json;
   const computed = schemaMinPostgres(source, declaredFloor(schema.requires));
   const carried = schema.minPostgres;
@@ -182,5 +184,5 @@ function schemaCatalog(schema: { readonly catalog: Catalog }): Catalog {
   if (typeof catalog !== "object" || catalog === null || !("objects" in catalog)) {
     catalogError("OKM1020", "describe() needs the schema() result.");
   }
-  return catalog as Catalog;
+  return settleChecks(catalog as Catalog);
 }

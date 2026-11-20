@@ -3,8 +3,8 @@
  *
  * Copied partition primary keys and inherited indexes are not objects: a
  * relation that is a child in `pg_inherits` is skipped, and so is an index
- * that is itself inherited (M0-06). Expressions come back from `pg_get_expr`
- * and `pg_get_constraintdef`, which is the database's normalised text (D128).
+ * that is itself inherited (M0-06). A table check is `pg_get_expr` plus
+ * enforcement flags. Other expressions use `pg_get_expr` (D128).
  */
 
 import { catalog } from "../../contracts/catalog/build.js";
@@ -334,7 +334,13 @@ export async function introspectSchema(
     const kind = constraintKind(text(row, "contype"));
     const columns = list(text(row, "columns"));
     const name = text(row, "name");
-    const expression = kind === "check" ? checkExpression(text(row, "definition")) : "";
+    if (kind === "check" && flag(row, "no_inherit")) {
+      catalogError(
+        "OKM1020",
+        `Check ${parentName}.${name} is NO INHERIT. okmodel cannot represent that clause.`,
+      );
+    }
+    const expression = kind === "check" ? readCheckExpression(row) : "";
     const refTable = text(row, "ref_table");
     const refColumns = list(text(row, "ref_columns"));
     const definition = text(row, "definition");
@@ -350,33 +356,35 @@ export async function introspectSchema(
     ) {
       continue;
     }
-    objects.push(
-      constraint({
-        parent,
-        constraintKind: kind,
-        name,
-        nameKey: constraintNameKey(kind, parentName, name, columns),
-        columns,
-        provenance,
-        deferrable: flag(row, "deferrable"),
-        initially: flag(row, "deferred") ? "deferred" : "immediate",
-        nullsNotDistinct: /nulls not distinct/i.test(definition),
-        ...(expression.length > 0 ? { expression } : {}),
-        ...(refTable.length > 0
-          ? {
-              references: {
-                parent: {
-                  namespace: referencedNamespace(text(row, "ref_schema"), concrete, namespace),
-                  name: refTable,
-                },
-                columns: refColumns,
-                ...(onDelete !== undefined ? { onDelete } : {}),
-                ...(onUpdate !== undefined ? { onUpdate } : {}),
+    const made = constraint({
+      parent,
+      constraintKind: kind,
+      name,
+      nameKey: constraintNameKey(kind, parentName, name, columns),
+      columns,
+      provenance,
+      deferrable: flag(row, "deferrable"),
+      initially: flag(row, "deferred") ? "deferred" : "immediate",
+      nullsNotDistinct: /nulls not distinct/i.test(definition),
+      ...(expression.length > 0 ? { expression } : {}),
+      ...(refTable.length > 0
+        ? {
+            references: {
+              parent: {
+                namespace: referencedNamespace(text(row, "ref_schema"), concrete, namespace),
+                name: refTable,
               },
-            }
-          : {}),
-      }),
-    );
+              columns: refColumns,
+              ...(onDelete !== undefined ? { onDelete } : {}),
+              ...(onUpdate !== undefined ? { onUpdate } : {}),
+            },
+          }
+        : {}),
+    });
+    if (kind === "check" && !flag(row, "enforced")) {
+      (made.definition as { enforced?: false }).enforced = false;
+    }
+    objects.push(made);
   }
   const matviewNames = new Set(
     views.filter((row) => text(row, "kind") === "m").map((row) => text(row, "name")),
@@ -1070,7 +1078,7 @@ async function reprintCheckOnce(
       `alter table pg_temp.${table} add constraint okm_expr_check check (${expression})`,
     );
     const rows = await runner.query(
-      `select pg_get_constraintdef(oid) as definition
+      `select pg_get_expr(conbin, conrelid) as definition
        from pg_constraint
        where conrelid = $1::regclass and conname = 'okm_expr_check'`,
       [`pg_temp.${table}`],
@@ -1867,6 +1875,10 @@ const CONSTRAINTS = `
   select rel.relname as parent, con.conname as name, con.contype as contype,
     con.condeferrable as deferrable, con.condeferred as deferred,
     pg_get_constraintdef(con.oid) as definition,
+    pg_get_expr(con.conbin, con.conrelid) as check_expr,
+    coalesce((to_jsonb(con) ->> 'conenforced'), 'true') as enforced,
+    con.convalidated as validated,
+    con.connoinherit as no_inherit,
     (
       select coalesce(string_agg(a.attname, ',' order by cols.ord), '')
       from unnest(con.conkey) with ordinality as cols(attnum, ord)
@@ -2193,8 +2205,16 @@ function constraintNameKey(
   ) {
     return name.slice(prefix.length, -suffix.length);
   }
+  if (kind === "check") return name;
   if (columns.length > 0) return columns.join("_");
   return tag;
+}
+
+function readCheckExpression(row: Record<string, unknown>): string {
+  const expression = checkExpression(`(${text(row, "check_expr")})`);
+  if (!flag(row, "enforced")) return expression;
+  if (!flag(row, "validated")) return `${expression} NOT VALID`;
+  return expression;
 }
 
 function constraintKind(value: string): "primaryKey" | "unique" | "foreignKey" | "check" {

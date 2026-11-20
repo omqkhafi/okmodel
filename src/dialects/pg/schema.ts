@@ -369,7 +369,14 @@ type StoredOptions = {
   readonly primaryKey?: readonly string[];
   readonly indexes?: (columns: Readonly<Record<string, ColumnHandle>>) => readonly IndexCall[];
   readonly checks?: Readonly<
-    Record<string, (columns: Readonly<Record<string, ColumnHandle>>) => SqlText>
+    Record<
+      string,
+      | ((columns: Readonly<Record<string, ColumnHandle>>) => SqlText)
+      | {
+          readonly expression: (columns: Readonly<Record<string, ColumnHandle>>) => SqlText;
+          readonly enforced: false;
+        }
+    >
   >;
 };
 
@@ -1323,6 +1330,8 @@ function compileIndexes(
   }
 }
 
+type CheckBuild = (columns: Readonly<Record<string, ColumnHandle>>) => SqlText;
+
 function compileChecks(
   tableName: string,
   options: StoredOptions | undefined,
@@ -1337,8 +1346,11 @@ function compileChecks(
     return;
   }
   for (const [name, build] of Object.entries(checks)) {
+    const fn: CheckBuild =
+      (build as { readonly expression?: CheckBuild }).expression ?? (build as CheckBuild);
     const used: string[] = [];
-    const value = build(track(handles, used));
+    let made: CatalogObject | undefined;
+    const value = fn(track(handles, used));
     const text = readCheck(tableName, name, value);
     const columns: string[] = [];
     for (const field of used) {
@@ -1347,15 +1359,20 @@ function compileChecks(
         columns.push(column.sqlName);
       }
     }
-    stage(jobs, () =>
-      constraint({
-        parent,
-        constraintKind: "check",
-        columns,
-        nameKey: name,
-        expression: text,
-        provenance,
-      }),
+    stage(
+      jobs,
+      () => (
+        (made = constraint({
+          parent,
+          constraintKind: "check",
+          columns,
+          nameKey: name,
+          expression: text,
+          provenance,
+        })),
+        fn !== build && ((made as { enforced?: false }).enforced = false),
+        made
+      ),
     );
   }
 }

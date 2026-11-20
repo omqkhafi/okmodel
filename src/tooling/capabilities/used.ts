@@ -52,6 +52,13 @@ function note(used: Set<string>, object: CatalogObject): void {
     }
     if (definition.generated !== undefined) used.add("column.generated");
   }
+  if (
+    object.kind === "constraint" &&
+    object.definition.constraintKind === "check" &&
+    object.definition.enforced === false
+  ) {
+    used.add("check.notEnforced");
+  }
   if (object.kind === "index") {
     if (object.definition.predicate !== undefined) used.add("index.partial");
     if (object.definition.expression !== undefined) used.add("index.expression");

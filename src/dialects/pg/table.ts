@@ -165,7 +165,12 @@ export type SqlValue = string | number | boolean | null | ColumnHandle | SqlText
 export type TableOptions<TColumns> = {
   readonly indexes?: (columns: Handles<TColumns>) => readonly IndexCall[];
   readonly checks?: {
-    readonly [name: string]: (columns: Handles<TColumns>) => SqlText;
+    readonly [name: string]:
+      | ((columns: Handles<TColumns>) => SqlText)
+      | {
+          readonly expression: (columns: Handles<TColumns>) => SqlText;
+          readonly enforced: false;
+        };
   };
   readonly unique?: {
     readonly [name: string]: readonly (keyof TColumns & string)[];

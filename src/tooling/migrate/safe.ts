@@ -16,6 +16,7 @@ import type {
   ColumnObject,
   ConstraintObject,
 } from "../../contracts/catalog/types.js";
+import { ddlStep } from "../../dialects/ddl-step.js";
 import { columnType, createObjectSql, qualify, quoteIdent } from "../../dialects/pg/ddl.js";
 import { notNullSteps } from "../../dialects/pg/table-safe.js";
 import { keyRangePredicate, primaryKeyColumns, type BackfillSpec } from "./backfill.js";
@@ -135,6 +136,11 @@ function constraintSteps(object: ConstraintObject, schema: string): readonly Saf
 function notValidSteps(object: ConstraintObject, schema: string): readonly SafeStep[] {
   const plain = createObjectSql(object, schema);
   if (plain === undefined) return [];
+  if (object.definition.enforced === false) {
+    return [
+      { sql: plain, kind: "add-constraint", action: "ddl", lock: ACCESS, transactional: true },
+    ];
+  }
   const table = qualify(schema, object.identity.parent.name);
   const name = quoteIdent(object.identity.name);
   const referenced = object.definition.references;
@@ -304,4 +310,70 @@ function functionCalls(expression: string): readonly string[] {
     index += 1;
   }
   return names;
+}
+
+/** Drops a trailing ` NOT VALID` marker the introspector appends. */
+export function bareCheck(expression: string | undefined): string {
+  if (expression === undefined) return "";
+  const marker = " NOT VALID";
+  return expression.endsWith(marker) ? expression.slice(0, -marker.length) : expression;
+}
+/** `ALTER CONSTRAINT` on 19. Older servers drop the check and add it again. */
+export function enforcementSteps(
+  changes: readonly { readonly after: ConstraintObject }[],
+  schema: string,
+  postgres: number | undefined,
+) {
+  const steps: ReturnType<typeof ddlStep>[] = [];
+  const major = postgres ?? 0;
+  for (const change of changes) {
+    const table = qualify(schema, change.after.identity.parent.name);
+    const name = quoteIdent(change.after.identity.name);
+    const off = change.after.definition.enforced === false;
+    if (major >= 19) {
+      steps.push(
+        ddlStep(
+          `alter table ${table} alter constraint ${name} ${off ? "not enforced" : "enforced"}`,
+          "add-constraint",
+          "ddl",
+          ACCESS,
+          true,
+        ),
+      );
+      continue;
+    }
+    const expression = bareCheck(change.after.definition.expression);
+    const note =
+      "-- PostgreSQL 18 cannot ALTER CONSTRAINT enforcement, so this drops the check and adds it again.\n";
+    steps.push(
+      ddlStep(
+        `${note}alter table ${table} drop constraint ${name}`,
+        "drop-constraint",
+        "ddl",
+        ACCESS,
+        true,
+      ),
+    );
+    steps.push(
+      ddlStep(
+        `alter table ${table} add constraint ${name} check (${expression})${off ? " not enforced" : " not valid"}`,
+        "add-constraint",
+        "ddl",
+        ACCESS,
+        true,
+      ),
+    );
+    if (!off) {
+      steps.push(
+        ddlStep(
+          `alter table ${table} validate constraint ${name}`,
+          "validate-constraint",
+          "ddl",
+          SHARE_UPDATE,
+          true,
+        ),
+      );
+    }
+  }
+  return steps;
 }
