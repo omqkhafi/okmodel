@@ -1016,6 +1016,8 @@ export type ReprintType = {
  * `IN` list becomes `ARRAY[...]::text[]`, and applying that text prints a
  * per-element cast instead. This repeats until the text stops changing, so
  * the result can be written into DDL and read back as the same string.
+ * `pg_get_expr` drops the outer parentheses `pg_get_constraintdef` keeps, so
+ * the result puts them back. Introspection does the same.
  *
  * The table is a temporary table with a random name, and so is each stand-in
  * for a type in `types` that a column names. Nothing is created in the
@@ -1083,7 +1085,7 @@ async function reprintCheckOnce(
        where conrelid = $1::regclass and conname = 'okm_expr_check'`,
       [`pg_temp.${table}`],
     );
-    return checkExpression(text(rows[0] ?? {}, "definition"));
+    return storedCheckExpression(text(rows[0] ?? {}, "definition"));
   } catch (error) {
     throw readOnlyReprint(error) ?? error;
   } finally {
@@ -2211,7 +2213,7 @@ function constraintNameKey(
 }
 
 function readCheckExpression(row: Record<string, unknown>): string {
-  const expression = checkExpression(`(${text(row, "check_expr")})`);
+  const expression = storedCheckExpression(text(row, "check_expr"));
   if (!flag(row, "enforced")) return expression;
   if (!flag(row, "validated")) return `${expression} NOT VALID`;
   return expression;
@@ -2228,6 +2230,20 @@ function sequenceType(value: string): "smallint" | "integer" | "bigint" {
   if (value === "smallint") return "smallint";
   if (value === "integer") return "integer";
   return "bigint";
+}
+
+/**
+ * Check text shared by introspection and {@link reprintCheck}.
+ *
+ * `pg_get_expr` prints `(n > 0)`. `pg_get_constraintdef` prints
+ * `CHECK ((n > 0))`. Catalogs keep the second spelling, without the
+ * `CHECK` keyword, so a sealed predicate matches the live constraint.
+ *
+ * @param expression - `pg_get_expr` text
+ * @returns The expression stored on the constraint
+ */
+function storedCheckExpression(expression: string): string {
+  return checkExpression(`(${expression})`);
 }
 
 function checkExpression(definition: string): string {
