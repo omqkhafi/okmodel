@@ -1709,6 +1709,28 @@
     ]
   },
   {
+    "code": "OKM2012",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A computed aggregate groups the related table by its foreign key, and no declared index starts with that key, so each read scans the related table.",
+    "fix": "Declare an index that starts with the foreign key columns.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Declare an index that starts with the foreign key columns.",
+        "docs": "docs/errors/OKM2012.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2012.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2012.md#escape"
+      }
+    ]
+  },
+  {
     "code": "OKM2101",
     "kind": "invalid",
     "category": "input",

@@ -170,13 +170,18 @@ test("timeouts: apply's own lock_timeout is the one reported, and zero warns", (
   expect(zero[1]).toMatchObject({ severity: "warn", code: "OKM2201" });
 });
 
-test("server: the supported window is 15 to 19", () => {
+test("server: 15 to 19 is tested, and a newer major is accepted", () => {
   expect(serverFinding(17, undefined).severity).toBe("ok");
   expect(serverFinding(15, undefined).severity).toBe("ok");
   expect(serverFinding(18, undefined).severity).toBe("ok");
   expect(serverFinding(19, undefined).severity).toBe("ok");
   expect(serverFinding(14, undefined)).toMatchObject({ severity: "fail", code: "OKM1803" });
-  expect(serverFinding(20, undefined)).toMatchObject({ severity: "warn" });
+  expect(serverFinding(14, undefined).summary).toContain("below the supported window 15-19");
+  for (const major of [20, 25]) {
+    const finding = serverFinding(major, undefined);
+    expect(finding.severity).toBe("ok");
+    expect(finding.summary).toContain(`newer than the tested range 15 to 19; accepted`);
+  }
   const floor = serverFinding(15, {
     code: "OKM1802",
     message: "The server is PostgreSQL 15.",

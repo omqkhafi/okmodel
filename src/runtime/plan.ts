@@ -84,6 +84,8 @@ export type ReadCall = {
   /** Rows to skip. An integer from 0 up. It is a parameter, marked `off:`. */
   readonly offset?: unknown;
   readonly include?: unknown;
+  /** Name to callback. The computed chunk replaces it with what it parsed. */
+  readonly computed?: unknown;
   /** Call-site warning ignore. It never enters the plan or its key. */
   readonly ignore?: unknown;
   /** `find` and `count`. Rewritten to `matches` and `relevance` before SQL. */
@@ -339,6 +341,7 @@ export type Sink = {
 // `let` so the minifier keeps one copy of each name. Four lists share them.
 let ignoreKey = "ignore";
 let includeKey = "include";
+let computedKey = "computed";
 let orderKey = "orderBy";
 let searchKey = "search";
 let selectKey = "select";
@@ -347,6 +350,7 @@ let signalKey = "signal";
 let timeoutKey = "timeout";
 let whereKey = "where";
 const FIND_OPTIONS = [
+  computedKey,
   ignoreKey,
   includeKey,
   "limit",
@@ -360,6 +364,7 @@ const FIND_OPTIONS = [
   whereKey,
 ] as const;
 const ONE_OPTIONS = [
+  computedKey,
   ignoreKey,
   includeKey,
   orderKey,
@@ -369,8 +374,16 @@ const ONE_OPTIONS = [
   timeoutKey,
   whereKey,
 ] as const;
-const COUNT_OPTIONS = [ignoreKey, routeKey, searchKey, signalKey, timeoutKey, whereKey] as const;
-const FILTER_OPTIONS = [ignoreKey, routeKey, signalKey, timeoutKey, whereKey] as const;
+const COUNT_OPTIONS = [
+  computedKey,
+  ignoreKey,
+  routeKey,
+  searchKey,
+  signalKey,
+  timeoutKey,
+  whereKey,
+] as const;
+const FILTER_OPTIONS = [computedKey, ignoreKey, routeKey, signalKey, timeoutKey, whereKey] as const;
 
 /**
  * Caller fields `readCall` copies onto the logical read.
@@ -385,6 +398,7 @@ export const copiedReadKeys = [
   "offset",
   includeKey,
   ignoreKey,
+  computedKey,
 ] as const;
 
 /**
@@ -965,8 +979,9 @@ export function emitWhere(
   depth: number,
   appended = false,
   extra?: Keyset,
+  bare = false,
 ): void {
-  let started = emitVisibility(schema, table, sink, alias, appended);
+  let started = bare ? appended : emitVisibility(schema, table, sink, alias, appended);
   if (extra !== undefined) {
     sink.text(started ? " and (" : " where (");
     extra(sink, alias);

@@ -45,7 +45,7 @@ test("the base schema is a default-exported schema", () => {
 
 test("the contract cells repeat claims the README makes", () => {
   const readme = readFileSync(join(repoRoot(), "README.md"), "utf8");
-  expect(HERO_CONTRACT).toContain("PostgreSQL 15–19");
-  expect(readme).toContain("PostgreSQL 15 to 19");
+  expect(HERO_CONTRACT).toContain("PostgreSQL 15 and later");
+  expect(readme).toContain("PostgreSQL 15 and later; tested on 15 to 19");
   expect(readme).toContain("Apache-2.0");
 });

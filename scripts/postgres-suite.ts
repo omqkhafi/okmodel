@@ -67,7 +67,7 @@ export const POSTGRES_KNOWN_FAILURES: readonly PostgresKnownFailure[] = [];
 
 /** Which files the suite runs, skips, and expects to fail. */
 export type PostgresSuitePlan = {
-  readonly version: PostgresVersion;
+  readonly version: string;
   /** Discovered files that must pass. */
   readonly run: readonly string[];
   /** Files named in {@link POSTGRES_EXCLUSIONS}. */
@@ -98,9 +98,11 @@ export function discoverTestFiles(root: string): readonly string[] {
  * @param version - Major the topology is running
  * @returns The plan for that major
  */
-export function postgresSuitePlan(root: string, version: PostgresVersion): PostgresSuitePlan {
+export function postgresSuitePlan(root: string, version: string): PostgresSuitePlan {
   const excluded = new Set(POSTGRES_EXCLUSIONS.map((item) => item.file));
-  const known = POSTGRES_KNOWN_FAILURES.filter((item) => item.versions.includes(version));
+  const known = POSTGRES_KNOWN_FAILURES.filter((item) =>
+    (item.versions as readonly string[]).includes(version),
+  );
   const knownFiles = new Set(known.map((item) => item.file));
   const run: string[] = [];
   for (const file of discoverTestFiles(root)) {

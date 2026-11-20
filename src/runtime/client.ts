@@ -692,8 +692,8 @@ export function readHandle(
     if ((mark & 1) !== 0 || hooks?.needsOperator(session.schema, call)) {
       await loadOperatorSql();
     }
-    if (call.build === undefined && selectHasWindow(call.select)) {
-      call = (await import("./window.js")).attach(session.schema, call);
+    if (call.build === undefined && lazyBuild(call)) {
+      call = await (await import("./window.js")).attach(session.schema, call);
     }
     if (call.limits !== undefined) {
       const limits = await import("./limits.js");
@@ -722,7 +722,7 @@ export function readHandle(
     call.limits === undefined &&
     call.include === undefined &&
     mods.uses === undefined &&
-    !selectHasWindow(call.select);
+    !lazyBuild(call);
   const run = async (): Promise<unknown> => {
     await session.connected;
     try {
@@ -914,9 +914,11 @@ function loadOperatorSql(): Promise<void> {
   return operatorSql;
 }
 
-/** A non-string `select` entry is a window helper. Field names stay on the plain path. */
-function selectHasWindow(select: unknown): boolean {
-  return Array.isArray(select) && select.some((item) => typeof item !== "string");
+/** `computed`, or a non-string `select` entry (a window helper), writes its own statement. */
+function lazyBuild({ computed, select }: ReadCall): boolean {
+  return (
+    computed !== undefined || (Array.isArray(select) && select.some((i) => typeof i !== "string"))
+  );
 }
 
 function hooksFor(call: ReadCall): Promise<IncludeHooks | undefined> {

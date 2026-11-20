@@ -23,8 +23,8 @@ const description = describe(app);
 
 expectTypeOf(description).toEqualTypeOf<SchemaDescription>();
 expectTypeOf(description.logical).toEqualTypeOf<LogicalIdentity>();
-expectTypeOf(description.minPostgres).toEqualTypeOf<15 | 16 | 17 | 18 | 19>();
+expectTypeOf(description.minPostgres).toEqualTypeOf<number>();
 expectTypeOf(description.extensions).toEqualTypeOf<readonly RequiredExtension[]>();
 expectTypeOf(description.requirements).toEqualTypeOf<SchemaRequirements>();
-expectTypeOf(description.requirements.minVersion.postgres).toEqualTypeOf<15 | 16 | 17 | 18 | 19>();
+expectTypeOf(description.requirements.minVersion.postgres).toEqualTypeOf<number>();
 expectTypeOf(buildCatalog(description)).toEqualTypeOf(app.catalog);

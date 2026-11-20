@@ -1,41 +1,38 @@
 /**
- * Postgres majors a schema may name, and the features that read them.
+ * Postgres floor a schema may name, and the features that read it.
  *
- * 15–19 are the majors okmodel runs. A major outside that range is refused
- * when `schema()` runs. Messages read these numbers. They do not repeat them.
+ * 15 is the oldest major. Any later integer is accepted. A value below 15,
+ * or one that is not an integer, is refused when `schema()` runs.
  */
 
-/** Majors `minPostgres` and `requires.postgres` accept, oldest first. */
-export const POSTGRES_MAJORS = [15, 16, 17, 18, 19] as const;
-
-/** A major {@link POSTGRES_MAJORS} allows. */
-export type PostgresMajor = (typeof POSTGRES_MAJORS)[number];
+/** An integer major of {@link POSTGRES_FLOOR} or later. */
+export type PostgresMajor = number;
 
 /**
  * Oldest major connect accepts when the schema names no floor.
  *
  * A server below this is OKM1803.
  */
-export const POSTGRES_FLOOR = 15 satisfies PostgresMajor;
+export const POSTGRES_FLOOR = 15;
 
 /**
  * `uuidv7()` database default.
  *
  * Add the next feature constant beside this one, and name it on the minPostgres page.
  */
-export const UUIDV7_POSTGRES = 18 satisfies PostgresMajor;
+export const UUIDV7_POSTGRES = 18;
 
 /** `NOT ENFORCED` checks. Creating one needs PostgreSQL 18. Altering one needs 19. */
 export const NOT_ENFORCED_POSTGRES = 18 satisfies PostgresMajor;
 
 /**
- * Accepts a major from {@link POSTGRES_MAJORS}.
+ * Accepts an integer major of {@link POSTGRES_FLOOR} or later.
  *
  * @param value - Candidate from schema input
- * @returns Whether `value` is one of {@link POSTGRES_MAJORS}
+ * @returns Whether `value` is an integer the floor allows
  */
 export function isPostgresMajor(value: unknown): value is PostgresMajor {
-  return (POSTGRES_MAJORS as readonly unknown[]).includes(value);
+  return typeof value === "number" && Number.isInteger(value) && value >= POSTGRES_FLOOR;
 }
 
 /** `>=` and digits, the stored floor. */
@@ -64,14 +61,12 @@ export function formatPostgresFloor(major: number): string {
 }
 
 /**
- * Definition error for a floor outside {@link POSTGRES_MAJORS}.
+ * Definition error for a floor below {@link POSTGRES_FLOOR}, or not an integer.
  *
  * @returns OKM1060 message
  */
 export function minPostgresDefinition(): string {
-  const oldest = POSTGRES_MAJORS[0];
-  const newest = POSTGRES_MAJORS[POSTGRES_MAJORS.length - 1];
-  return `minPostgres: ${String(oldest)}-${String(newest)}.`;
+  return `minPostgres: ${String(POSTGRES_FLOOR)} or later.`;
 }
 
 /**

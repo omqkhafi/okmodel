@@ -28,9 +28,13 @@ test("minPostgres and the string form store the same floor and the same catalog"
   expect(schema({ tables: [notes] }).requires).toBeUndefined();
 });
 
-test("a floor that is not an allowed major is OKM1060 and names minPostgres", () => {
+test("a floor that is not an integer of 15 or later is OKM1060 and names minPostgres", () => {
+  expect(schema({ minPostgres: 20, tables: [notes] }).requires).toEqual({ postgres: ">=20" });
+  expect(schema({ minPostgres: 25, tables: [notes] }).requires).toEqual({ postgres: ">=25" });
+  expect(schema({ requires: { postgres: ">=20" }, tables: [notes] }).requires).toEqual({
+    postgres: ">=20",
+  });
   const bad = [
-    { minPostgres: 20 },
     { minPostgres: 14 },
     { minPostgres: 13 },
     { minPostgres: 17.2 },
@@ -41,14 +45,13 @@ test("a floor that is not an allowed major is OKM1060 and names minPostgres", ()
     { requires: { postgres: "17" } },
     { requires: { postgres: ">=17.2" } },
     { requires: { postgres: "" } },
-    { requires: { postgres: ">=20" } },
     { requires: { postgres: ">=9" } },
     { requires: ">=17" },
   ];
   for (const input of bad) {
     const error = capture(() => build(input));
     expect(error.code).toBe("OKM1060");
-    expect(error.message).toBe("minPostgres: 15-19.");
+    expect(error.message).toBe("minPostgres: 15 or later.");
   }
   const both = capture(() =>
     schema({ minPostgres: 17, requires: { postgres: ">=17" }, tables: [notes] }),
@@ -68,6 +71,7 @@ test("an explicit uuidv7 below 18 is refused for both forms", () => {
   }
   expect(() => schema({ minPostgres: 18, tables: [sessions] })).not.toThrow();
   expect(() => schema({ minPostgres: 19, tables: [notes] })).not.toThrow();
+  expect(() => schema({ minPostgres: 25, tables: [sessions] })).not.toThrow();
   expect(() => schema({ requires: { postgres: ">=19" }, tables: [notes] })).not.toThrow();
   expect(() => schema({ requires: { postgres: ">=18" }, tables: [sessions] })).not.toThrow();
   expect(() => schema({ tables: [sessions] })).not.toThrow();

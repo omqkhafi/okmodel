@@ -376,6 +376,7 @@ Codes are in numeric order. Ranges are schema `OKM1000`, queries and capabilitie
 | <a id="okm2007" />[`OKM2007`](#okm2007) | `invalid` | A value list longer than 500 elements sends one parameter per element. | `docs/errors/OKM2007.md` |
 | <a id="okm2008" />[`OKM2008`](#okm2008) | `invalid` | An include multiplies the parent limit by nested limits past 10,000 rows. | `docs/errors/OKM2008.md` |
 | <a id="okm2011" />[`OKM2011`](#okm2011) | `invalid` | A read that used a default limit from connect returned exactly that many rows, so more rows may exist. | `docs/errors/OKM2011.md` |
+| <a id="okm2012" />[`OKM2012`](#okm2012) | `invalid` | A computed aggregate groups the related table by its foreign key, and no declared index starts with that key, so each read scans the related table. | `docs/errors/OKM2012.md` |
 | <a id="okm2101" />[`OKM2101`](#okm2101) | `invalid` | No index starts with the columns of this foreign key, so a parent delete or key change scans the child table. | `docs/errors/OKM2101.md` |
 | <a id="okm2102" />[`OKM2102`](#okm2102) | `invalid` | A table with no primary key has no stable row identity for updates and deletes. | `docs/errors/OKM2102.md` |
 | <a id="okm2103" />[`OKM2103`](#okm2103) | `invalid` | Callers can filter or sort by this column and no index starts with it, so each read scans the table. | `docs/errors/OKM2103.md` |

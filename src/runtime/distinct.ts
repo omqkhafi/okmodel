@@ -76,6 +76,13 @@ function plan(
   if (distinct !== undefined && distinctOn !== undefined) {
     fail("OKM1120", "Pass distinct or distinctOn, not both.");
   }
+  if (rest.computed !== undefined) {
+    fail(
+      "OKM1120",
+      "computed does not combine with distinct or distinctOn.",
+      "Read the computed values in a separate call, or drop the other option.",
+    );
+  }
   if (rest.include !== undefined || rest.search !== undefined) {
     fail("OKM1120", "distinct and distinctOn do not take include or search.");
   }

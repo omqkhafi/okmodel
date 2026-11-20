@@ -7,6 +7,7 @@
 
 import { isOperator, operatorName, operatorValue } from "../../dialects/pg/operators.js";
 import type { QuerySchema, RelationModel, TableModel } from "../../dialects/pg/model.js";
+import type { Catalog } from "../../contracts/catalog/types.js";
 import type { CallScope, IncludeOut, ReadDone } from "../plan.js";
 import {
   FANOUT_LIMIT,
@@ -27,6 +28,8 @@ export type WarningCall = {
   readonly include?: unknown;
   readonly ignore?: unknown;
   readonly build?: unknown;
+  /** Set when the read has `computed`. Read structurally by OKM2012. */
+  readonly computed?: unknown;
   /** Key and value of the root default `connect({ limits })` applied. */
   readonly dl?: readonly [key: string, value: number];
   /** Tenant scope of the call. Absent on a client that has none. */
@@ -67,6 +70,7 @@ export function ruleFires(
   if (rule.code === "OKM2005") return unorderedLimit(schema, call);
   if (rule.code === "OKM2007") return largeList(call);
   if (rule.code === "OKM2008") return wideFanOut(schema, call);
+  if (rule.code === "OKM2012") return unindexedComputed(schema, call);
   return false;
 }
 
@@ -279,4 +283,78 @@ function relationOf(table: TableModel, name: string): RelationModel | undefined 
 function whole(value: unknown): number | undefined {
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0) return undefined;
   return value;
+}
+
+type ComputedKey = {
+  readonly table: string;
+  readonly relation: string;
+  readonly columns: readonly string[];
+};
+
+/**
+ * Names the related tables a `computed` read groups by a key no declared index starts with.
+ *
+ * A primary key, a unique constraint, and an index whose first columns are the
+ * key all count, and so does an index that puts the tenant key first.
+ * An expression index makes the columns undecidable, so the rule stays silent.
+ */
+function unindexedComputed(schema: QuerySchema, call: WarningCall): false | string {
+  const keys = isWarningRecord(call.computed) ? call.computed.keys : undefined;
+  const catalog = (schema as { readonly catalog?: Catalog }).catalog;
+  if (!Array.isArray(keys) || catalog === undefined) return false;
+  const found: string[] = [];
+  for (const key of keys as readonly ComputedKey[]) {
+    const model = schema.model[key.table];
+    if (model === undefined || key.columns.length === 0) continue;
+    const lists = indexLists(catalog, model.sql);
+    if (lists === undefined || covered(lists, key.columns, tenantColumns(schema, model))) continue;
+    const fields = key.columns.map((column) => model.columns.find((c) => c.sql === column)?.field);
+    if (fields.includes(undefined)) continue;
+    const args = fields.map((field) => `columns.${String(field)}`).join(", ");
+    found.push(`${key.table} indexes: (columns) => [index(${args})]`);
+  }
+  return found.length === 0 ? false : found.join("; ");
+}
+
+function indexLists(catalog: Catalog, table: string): readonly (readonly string[])[] | undefined {
+  const lists: (readonly string[])[] = [];
+  for (const object of catalog.objects) {
+    if (object.kind === "index") {
+      if (object.identity.parent.name !== table) continue;
+      if (object.definition.expression !== undefined) return undefined;
+      lists.push(object.definition.columns);
+    } else if (object.kind === "constraint") {
+      if (object.identity.parent.name !== table) continue;
+      const { constraintKind, columns } = object.definition;
+      if (constraintKind === "primaryKey" || constraintKind === "unique") lists.push(columns);
+    }
+  }
+  return lists;
+}
+
+function tenantColumns(schema: QuerySchema, model: TableModel): readonly string[] {
+  const tenancy = schema.tenancy;
+  if (tenancy === undefined) return [];
+  const keys = tenancy.keys !== undefined && tenancy.keys.length > 0 ? tenancy.keys : [tenancy.key];
+  const out: string[] = [];
+  for (const column of model.columns) if (keys.includes(column.field)) out.push(column.sql);
+  return out;
+}
+
+function covered(
+  lists: readonly (readonly string[])[],
+  columns: readonly string[],
+  tenant: readonly string[],
+): boolean {
+  for (const list of lists) {
+    if (startsWith(list, columns)) return true;
+    let skip = 0;
+    while (skip < list.length && tenant.includes(list[skip] as string)) skip += 1;
+    if (skip > 0 && startsWith(list.slice(skip), columns)) return true;
+  }
+  return false;
+}
+
+function startsWith(list: readonly string[], columns: readonly string[]): boolean {
+  return list.length >= columns.length && sameSet(list.slice(0, columns.length), columns);
 }

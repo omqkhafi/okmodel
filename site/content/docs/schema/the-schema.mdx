@@ -134,7 +134,7 @@ A server below 18 with no `uuidv7()` function is `Column notes.id has a uuidv7()
 
 ### floor
 
-`minPostgres: 18` asks for 18 or newer. A server below that major is refused. The majors are 15, 16, 17, 18, and 19.
+`minPostgres: 18` asks for 18 or newer. A server below that major is refused. Any integer 15 or later is valid. PostgreSQL 15 and later; tested on 15 to 19.
 
 ```ts title="schema.ts"
 import { schema, table, t } from "okmodel/pg";
@@ -209,10 +209,10 @@ export default schema({
 
 ### string
 
-`requires: { postgres: ">=17" }` is the same floor as `minPostgres: 17`. The string form is deprecated. Passing both is an error that names both keys. `">= 17"`, `"17"`, `">=17.2"`, and a major outside 15 through 19 are errors. The error names `minPostgres` and those majors.
+`requires: { postgres: ">=17" }` is the same floor as `minPostgres: 17`. The string form is deprecated. Passing both is an error that names both keys. `">= 17"`, `"17"`, `">=17.2"`, and a value below 15 or not an integer are errors. The error names `minPostgres`.
 
 <Callout type="warning" title="OKM1060">
-A major outside the list is `minPostgres: 15-19.` Passing both keys is `minPostgres or requires.postgres, not both.`
+A value below 15 or not an integer is `minPostgres: 15 or later.` Passing both keys is `minPostgres or requires.postgres, not both.`
 </Callout>
 
 | Next | You use it for |

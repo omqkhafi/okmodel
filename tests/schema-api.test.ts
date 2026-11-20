@@ -392,9 +392,12 @@ test("describe() reports tenancy.column and refuses an unsupported carried floor
     "tenancy.column",
   );
   expect(catalogHash(buildCatalog(description))).toBe(catalogHash(app.catalog));
-  expect(() => describe({ catalog: app.catalog, minPostgres: 14 })).toThrow(/minPostgres: 15-19/);
-  expect(() => describe({ catalog: app.catalog, minPostgres: 20 })).toThrow(/minPostgres: 15-19/);
+  expect(() => describe({ catalog: app.catalog, minPostgres: 14 })).toThrow(
+    /minPostgres: 15 or later/,
+  );
   expect(describe({ catalog: app.catalog, minPostgres: 19 }).minPostgres).toBe(19);
+  expect(describe({ catalog: app.catalog, minPostgres: 20 }).minPostgres).toBe(20);
+  expect(describe({ catalog: app.catalog, minPostgres: 25 }).minPostgres).toBe(25);
 });
 
 test("the handbook example round-trips", async () => {

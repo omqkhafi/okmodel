@@ -88,6 +88,33 @@ postgresTest(
 
 postgresTest(
   gate,
+  "Computed prints the output of each example",
+  async () => {
+    const page = readFileSync(join(docs, "queries/computed.mdx"), "utf8");
+    const seed = `insert into users (name) values ('Ada'), ('Grace'), ('Linus');
+      insert into posts (title, "authorId", views) values
+        ('a1', 1, 10), ('a2', 1, 30), ('a3', 1, 30), ('g1', 2, null)`;
+    const runs: readonly (readonly [string, string, string])[] = [
+      ["computed.ts", "counts", "computed.out"],
+      ["computed-verbs.ts", "stats", "computed-verbs.out"],
+      ["computed-where.ts", "active", "computed-where.out"],
+    ];
+    for (const [file, name, out] of runs) {
+      const example = await load(page, file);
+      await apply(example, seed, async (url) => {
+        const value = await call(example, name, url);
+        expect(`${Bun.inspect(value)}\n`, file).toBe(body(page, "text", out));
+      });
+    }
+    const indexed = await load(page, "computed-index.ts");
+    if (indexed.app === undefined) throw new Error("computed-index.ts exports no app");
+    expect(ddl(indexed.app.catalog)).toContain('create index "posts_authorId_idx"');
+  },
+  120_000,
+);
+
+postgresTest(
+  gate,
   "Tenancy prints the scoped SQL and the tables it creates",
   async () => {
     const page = readFileSync(join(docs, "schema/tenancy.mdx"), "utf8");

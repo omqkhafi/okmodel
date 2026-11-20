@@ -22,6 +22,8 @@ export type WarningNotice = {
   readonly location?: { readonly file: string; readonly line: number };
   /** The default limit the read reached, such as `limits.find = 100`. Set on OKM2011. */
   readonly limit?: string;
+  /** What the rule found, such as the `index(...)` line to declare. Set on OKM2012. */
+  readonly detail?: string;
   readonly level: Exclude<WarningLevel, "off" | "error">;
   readonly severity: WarningSeverity;
   readonly rule: string;
@@ -48,7 +50,7 @@ export function throwWarning(rule: WarningRule): never {
  * @param level - `hint` or `warn`
  * @param onWarning - Replaces the console when set
  * @param stack - Stack captured where the read was written
- * @param limit - What the read reached, when the rule names it
+ * @param limit - What the read reached, or what the rule found, when the rule names it
  */
 export function reportWarning(
   rule: WarningRule,
@@ -86,7 +88,7 @@ function noticeOf(
     safeAlternatives: rule.safeAlternatives,
     escapeHatches: rule.escapeHatches,
     ...(location !== undefined ? { location } : {}),
-    ...(limit !== undefined ? { limit } : {}),
+    ...(limit !== undefined ? { [rule.code === "OKM2011" ? "limit" : "detail"]: limit } : {}),
     level,
     severity: rule.severity,
     rule: rule.rule,
@@ -99,6 +101,7 @@ function formatNotice(notice: WarningNotice): string {
     lines.push(`  at ${notice.location.file}:${String(notice.location.line)}`);
   if (notice.limit !== undefined)
     lines.push(`  Limit: ${notice.limit}. Or call .all(reason) when every row is needed.`);
+  if (notice.detail !== undefined) lines.push(`  Declare: ${notice.detail}`);
   lines.push(`  Fix: ${notice.fix.summary}`, `  ${notice.docs}`);
   return lines.join("\n");
 }

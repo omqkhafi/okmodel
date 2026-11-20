@@ -1,5 +1,5 @@
 /**
- * Pull, generate, and check agree, including `NOT ENFORCED` (D326).
+ * Pull, generate, and check agree, including `NOT ENFORCED` (D327).
  *
  * A check expression is the catalog expression, not a slice of
  * `pg_get_constraintdef`. Generate seals through the same reprint as check,

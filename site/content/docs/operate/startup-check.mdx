@@ -4,7 +4,7 @@ description: "The first connection checks the server, the catalog hash, and the 
 ---
 `schema` is required. The [schema](/docs/schema/the-schema) types the client. `db.connected` resolves when the check finishes. A query waits for it. A transaction and a batch wait too.
 
-[minPostgres](/docs/schema/the-schema#minimum-postgres) is the floor `connect` reads. With no floor, the minimum is 15. A named floor is 15, 16, 17, 18, or 19. A server below that major is refused. A major below 15 is refused when `schema()` runs. The floor runs after the hash check.
+[minPostgres](/docs/schema/the-schema#minimum-postgres) is the floor `connect` reads. With no floor, the minimum is 15. A named floor is any integer 15 or later. A server below that major is refused. A major below 15 is refused when `schema()` runs. The floor runs after the hash check. PostgreSQL 15 and later; tested on 15 to 19.
 
 `signal` and `timeout` on this check are [Timeouts](/docs/operate/session-and-pool#timeouts). A preset name that is a client method or reserved is checked before the first query. The names are on [Presets](/docs/queries/presets).
 

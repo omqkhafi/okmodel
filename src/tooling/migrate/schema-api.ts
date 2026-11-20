@@ -83,7 +83,7 @@ export type { RequiredExtension };
  *   `describe(describe(schema))` keeps a declared floor. `describe({ catalog })`
  *   does not: a floor no feature implies falls back to the project floor.
  *   `uuidv7()` is in the catalog, so that call still reports 18.
- *   A carried `minPostgres` outside 15–19 is OKM1020. An omitted floor still falls back.
+ *   A carried `minPostgres` below 15, or not an integer, is OKM1020. An omitted floor still falls back.
  * @returns A description `JSON.stringify` can store
  */
 export function describe(schema: {
