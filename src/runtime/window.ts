@@ -66,16 +66,20 @@ export type Spec = {
 };
 
 /**
- * Plans a read whose `select` contains a window helper.
+ * Plans a read whose `select` contains a window helper, or that sets `computed`.
  *
- * The returned call writes the statement. Includes, tenancy, and presets stay
+ * A `computed` read loads its own statement writer, so this chunk is the one
+ * lazy hook for both. The returned call writes the statement. Includes, tenancy, and presets stay
  * on the planner the plain read uses.
  *
  * @param schema - Connected schema
- * @param call - The read, with a window in `select`
+ * @param call - The read, with a window in `select` or `computed`
  * @returns The same read, with its statement builder set
  */
-export function attach(schema: QuerySchema, call: ReadCall): ReadCall {
+export function attach(schema: QuerySchema, call: ReadCall): ReadCall | Promise<ReadCall> {
+  if (call.computed !== undefined) {
+    return import("./computed.js").then((mod) => mod.attach(schema, call));
+  }
   const table = indexesOf(schema, call.table);
   return { ...call, build: statement(readSpec(table, call.select)) };
 }

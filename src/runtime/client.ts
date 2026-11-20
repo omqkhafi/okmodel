@@ -693,10 +693,7 @@ export function readHandle(
       await loadOperatorSql();
     }
     if (call.build === undefined && lazyBuild(call)) {
-      call =
-        call.computed === undefined
-          ? (await import("./window.js")).attach(session.schema, call)
-          : await (await import("./computed.js")).attach(session.schema, call);
+      call = await (await import("./window.js")).attach(session.schema, call);
     }
     if (call.limits !== undefined) {
       const limits = await import("./limits.js");
