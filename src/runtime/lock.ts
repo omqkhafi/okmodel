@@ -61,6 +61,13 @@ function plan(
       },
     });
   }
+  if (rest.computed !== undefined) {
+    fail(
+      "OKM1120",
+      "computed does not combine with a row lock.",
+      "Read the computed values in a separate call, or drop the lock.",
+    );
+  }
   if (lock === "skip") {
     fail(
       "OKM1120",

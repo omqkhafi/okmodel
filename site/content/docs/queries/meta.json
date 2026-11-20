@@ -5,6 +5,7 @@
     "read-rows",
     "write-rows",
     "shape-results",
+    "computed",
     "search-and-trees",
     "where-operators",
     "transactions",

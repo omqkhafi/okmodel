@@ -38,14 +38,16 @@ export function emitSqlValue(table: Indexed, ref: string, value: unknown, sink: 
  * @param parts - Parts the template stored
  * @param sink - Statement builder
  * @param alias - Table alias, `t` on a root read
+ * @param named - Writes a name that is not a field, such as a computed aggregate. Returns false to leave the name to the table
  */
 export function emitSqlSelect(
   table: Indexed,
   parts: readonly FragmentPart[],
   sink: Sink,
   alias: string,
+  named?: NameHook,
 ): void {
-  writeFragment(parts, sink, alias, undefined, table, "select");
+  writeFragment(parts, sink, alias, undefined, table, "select", named);
 }
 
 /**
@@ -75,6 +77,9 @@ function requireParts(value: unknown): readonly FragmentPart[] {
   return value;
 }
 
+/** Writes the SQL for a name an `ident` part holds. */
+export type NameHook = (name: string, sink: Sink) => boolean;
+
 function writeFragment(
   parts: readonly FragmentPart[],
   sink: Sink,
@@ -82,10 +87,11 @@ function writeFragment(
   ref: string | undefined,
   table: Indexed,
   place: "where" | "select",
+  named?: NameHook,
 ): void {
   sink.mark(":g");
   sink.text("(");
-  for (const part of parts) writePart(part, sink, alias, ref, table, place);
+  for (const part of parts) writePart(part, sink, alias, ref, table, place, named);
   sink.mark(":g");
   sink.text(")");
 }
@@ -97,6 +103,7 @@ function writePart(
   ref: string | undefined,
   table: Indexed,
   place: "where" | "select",
+  named?: NameHook,
 ): void {
   if (part.k === "t") {
     sink.mark(`:t:${String(part.s.length)}:${part.s}`);
@@ -114,7 +121,7 @@ function writePart(
     return;
   }
   if (part.k === "i") {
-    writeIdent(part.n, table, sink, alias, place);
+    if (named?.(part.n, sink) !== true) writeIdent(part.n, table, sink, alias, place);
     return;
   }
   if (part.k === "c") {
@@ -127,7 +134,7 @@ function writePart(
     sink.text(ref);
     return;
   }
-  writeFragment(part.parts, sink, alias, ref, table, place);
+  writeFragment(part.parts, sink, alias, ref, table, place, named);
 }
 
 /**

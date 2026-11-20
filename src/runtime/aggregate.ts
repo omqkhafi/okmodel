@@ -28,6 +28,7 @@ import {
   type Session,
 } from "./client.js";
 import type { BucketChunk, BucketGroup } from "./bucket-group.js";
+import { NUMERIC, UNORDERED, numberText, readsAs } from "./numeric-type.js";
 import { refusePrototypeKey } from "./result-name.js";
 import { isOperator, operatorName, operatorValue } from "../dialects/pg/operators.js";
 import {
@@ -87,9 +88,6 @@ const OPTIONS = [
   "timeout",
 ];
 
-/** Column types `sum` and `avg` take. */
-const NUMERIC = /^(smallint|integer|bigint|real|double precision|numeric|decimal)\b/;
-
 const AS_NUMBER = (wire: string): unknown => Number(wire);
 const GROUPS: Readonly<Record<string, string>> = {
   "d:": "countDistinct",
@@ -98,9 +96,6 @@ const GROUPS: Readonly<Record<string, string>> = {
   "n:": "min",
 };
 const AS_TEXT = (wire: string): unknown => wire;
-
-/** Column types with no order, so `min` and `max` refuse them. */
-const UNORDERED = /^(json|jsonb|bytea|point|line|tsvector)\b|\[\]$/;
 
 /** `countDistinct`, `sum`, `avg`, `min`, and `max` in the order the statement writes them. */
 const FUNCTIONS = [
@@ -304,13 +299,6 @@ function parse(table: Indexed, record: Record<string, unknown>, buckets?: Bucket
     count,
     calls,
   };
-}
-
-/** Compares with a number or a numeric string, which is how a count, sum, or avg reads back. */
-function numberText(value: unknown): string {
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  if (typeof value === "string" && /^-?\d+(\.\d+)?$/.test(value)) return value;
-  return fail("OKM1121", "A count, sum, or avg compares with a number or a numeric string.");
 }
 
 /**
@@ -531,7 +519,7 @@ function named(
  * column with another codec has no honest total, so it is refused.
  */
 function sumDecode(column: ColumnModel): (wire: string) => unknown {
-  const kind = typeof (column.decode?.("0") ?? "");
+  const kind = readsAs(column);
   if (kind === "string") return AS_TEXT;
   if (kind === "number") return AS_NUMBER;
   return fail(

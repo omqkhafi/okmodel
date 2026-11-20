@@ -1,0 +1,252 @@
+---
+title: "Computed"
+description: "Count, sum, and other aggregates of a related table, read with the parent rows in one statement."
+---
+
+`computed` adds values to each parent row that come from its related rows: how many posts a user has, the largest view count, whether any post is a draft. Postgres counts them in the same statement that reads the parents, so there is no second round trip and no loop over the parents.
+
+It works on `find`, `one`, `.stream()`, `count`, `exists`, and `page`. A computed value is a new key on the row, typed from the verb. The examples run a `users` table with three rows, `Ada` (id `1`), `Grace` (id `2`), and `Linus` (id `3`), and a `posts` table with four rows: three for Ada and one for Grace.
+
+## Read
+
+`computed` is an object of name to callback. The callback takes the parent row and returns one aggregate of one `many` or `manyThrough` relation.
+
+```ts title="computed.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { many, schema, table, t } from "okmodel/pg";
+
+const users = table(
+  "users",
+  { id: t.identity(), name: t.text() },
+  { relations: { posts: many("posts", "authorId") } },
+);
+const posts = table("posts", {
+  id: t.identity(),
+  authorId: t.bigint().references("users"),
+  title: t.text(),
+  views: t.integer().nullable(),
+});
+export const app = schema({ tables: [users, posts] });
+
+export async function counts(url: string) {
+  await using db = connect(url, { schema: app });
+  return await db.users.find({
+    orderBy: { id: "asc" },
+    limit: 10,
+    computed: { postCount: (u) => u.posts.count() }, // [!code focus]
+  });
+}
+```
+
+```text title="computed.out"
+[
+  {
+    id: "1",
+    name: "Ada",
+    postCount: 3,
+  }, {
+    id: "2",
+    name: "Grace",
+    postCount: 1,
+  }, {
+    id: "3",
+    name: "Linus",
+    postCount: 0,
+  }
+]
+```
+
+A parent with no related rows gets `0` from `count`, `false` from `exists`, and `null` from `sum`, `avg`, `min`, and `max`. The name must not be a field, a relation, or another computed name.
+
+## Verbs
+
+The callback calls a verb on a `many` or `manyThrough` relation. A verb that is not in this table is refused.
+
+| Verb | Result |
+| --- | --- |
+| `count()` | Related rows, as a number. |
+| `count({ where })` | Related rows that match `where`. |
+| `count({ distinct: "field" })` | Distinct non-null values of `field`. |
+| `exists({ where })` | `true` when one related row matches. |
+| `sum(arg, { where })` | Total of a numeric field, or `null`. |
+| `avg(arg, { where })` | Average of a numeric field, or `null`. |
+| `min(arg, { where })`, `max(arg, { where })` | Smallest or largest value of an ordered field, or `null`. |
+
+`arg` is a field name of the related table, or a [`fragment`](/docs/queries/where-operators) over its fields. `where` is the same filter a read takes. Tenancy and the archive filter apply to the related rows, the same as they do to the parents. A hidden field is refused in every verb.
+
+### filtered
+
+`where` narrows the related rows of that one value, so one read can hold several counts of the same relation.
+
+```ts title="computed-verbs.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { fragment, gte, ident, many, schema, table, t } from "okmodel/pg";
+
+const users = table(
+  "users",
+  { id: t.identity(), name: t.text() },
+  { relations: { posts: many("posts", "authorId") } },
+);
+const posts = table("posts", {
+  id: t.identity(),
+  authorId: t.bigint().references("users"),
+  title: t.text(),
+  views: t.integer().nullable(),
+});
+export const app = schema({ tables: [users, posts] });
+
+export async function stats(url: string) {
+  await using db = connect(url, { schema: app });
+  return await db.users.find({
+    orderBy: { id: "asc" },
+    limit: 10,
+    computed: {
+      total: (u) => u.posts.count(),
+      popular: (u) => u.posts.count({ where: { views: gte(20) } }), // [!code focus]
+      distinctViews: (u) => u.posts.count({ distinct: "views" }), // [!code focus]
+      hasDraft: (u) => u.posts.exists({ where: { views: null } }), // [!code focus]
+      topViews: (u) => u.posts.max("views"), // [!code focus]
+      doubled: (u) => u.posts.sum(fragment`${ident("views")} * 2`), // [!code focus]
+    },
+  });
+}
+```
+
+```text title="computed-verbs.out"
+[
+  {
+    id: "1",
+    name: "Ada",
+    total: 3,
+    popular: 2,
+    distinctViews: 2,
+    hasDraft: false,
+    topViews: 30,
+    doubled: 140,
+  }, {
+    id: "2",
+    name: "Grace",
+    total: 1,
+    popular: 0,
+    distinctViews: 0,
+    hasDraft: true,
+    topViews: null,
+    doubled: null,
+  }, {
+    id: "3",
+    name: "Linus",
+    total: 0,
+    popular: 0,
+    distinctViews: 0,
+    hasDraft: false,
+    topViews: null,
+    doubled: null,
+  }
+]
+```
+
+A fragment can also compose several aggregates into one value. Use it for a ratio, then read the result as a number.
+
+## Filter and order
+
+A computed name works in `where` at the top level and in `orderBy`. A comparison against a count or an `exists` is the cheap form: Postgres stops reading a parent's related rows as soon as the threshold is decided. Other comparisons, and any order by a computed value, read every related row of the parents on the page.
+
+```ts title="computed-where.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { gte, many, schema, table, t } from "okmodel/pg";
+
+const users = table(
+  "users",
+  { id: t.identity(), name: t.text() },
+  { relations: { posts: many("posts", "authorId") } },
+);
+const posts = table("posts", {
+  id: t.identity(),
+  authorId: t.bigint().references("users"),
+  title: t.text(),
+  views: t.integer().nullable(),
+});
+export const app = schema({ tables: [users, posts] });
+
+export async function active(url: string) {
+  await using db = connect(url, { schema: app });
+  return await db.users.find({
+    where: { postCount: gte(1) }, // [!code focus]
+    orderBy: { postCount: "desc", id: "asc" }, // [!code focus]
+    limit: 10,
+    computed: { postCount: (u) => u.posts.count() },
+  });
+}
+```
+
+```text title="computed-where.out"
+[
+  {
+    id: "1",
+    name: "Ada",
+    postCount: 3,
+  }, {
+    id: "2",
+    name: "Grace",
+    postCount: 1,
+  }
+]
+```
+
+`count` and `exists` accept `computed` too, so a name can appear in their `where`. `page` returns the values and keeps its cursor on a field, so `page` cannot be ordered by a computed value. Ordering a page by a computed value is OKM1120. `one` and `.stream()` take the same `computed` as `find`.
+
+## How it runs
+
+The whole read is one statement. Postgres reads the parent page into a materialized CTE, then joins one grouped subquery per related table. Four aggregates of one relation share a single subquery, a `where` on a verb becomes a `filter (where ...)` inside it, and the subquery only reads the related rows of the parents on the page. A computed value is never a correlated subquery per parent.
+
+A `.stream()` with `computed` reads its batches in one snapshot, so a write that lands between two batches does not change the counts of the later ones. It needs a driver with interactive transactions.
+
+## Index
+
+The grouped subquery finds a page's related rows by the foreign key. With an index that starts with the key, it reads only those rows. Without one, it scans the related table on every read, which is slow on a large table. The development warning [OKM2012](/docs/reference/errors#okm2012) names the `index(...)` line to add, and never blocks the read.
+
+```ts title="computed-index.ts"
+import { index, many, schema, table, t } from "okmodel/pg";
+
+const users = table(
+  "users",
+  { id: t.identity(), name: t.text() },
+  { relations: { posts: many("posts", "authorId") } },
+);
+const posts = table(
+  "posts",
+  {
+    id: t.identity(),
+    authorId: t.bigint().references("users"),
+    title: t.text(),
+  },
+  { indexes: (columns) => [index(columns.authorId)] }, // [!code focus]
+);
+export const app = schema({ tables: [users, posts] });
+```
+
+## Refusals
+
+Each refusal names the problem and a fix. None adds an error kind.
+
+| Call | Result |
+| --- | --- |
+| A name that is a field, a relation, or another computed name | OKM1120. |
+| An aggregate of a `one` or a morph relation, or a verb outside the table | OKM1120. |
+| A hidden field in any verb or `where` | OKM1120. |
+| An `async` callback, or a result that is not an aggregate or a fragment | OKM1125. |
+| `sum` or `avg` of a field that is not numeric, `min` or `max` of an unordered type | OKM1124. |
+| `page` ordered by a computed value | OKM1120. |
+| `computed` inside an `include` | OKM1120. |
+| `computed` with a row lock, `distinct`, `distinctOn`, or a window helper in `select` | OKM1120. |
+
+## Limits
+
+- Only `many` and `manyThrough` relations. A `one` relation is already a field of the row, through `include`.
+- Only the verbs in the table. There is no verb that returns a list of related rows. Use `include` for rows.
+- A callback takes the parent row. A free table, one with no relation to the parent, has no handle.
+- `computed` does not go inside an `include`.
+- Nothing is stored. Every read counts again, so a value is always current. For a count that is read far more often than the rows change, keep a column and update it with the writes.
+- `page()` cannot be ordered by a computed value.
+- A hot parent with tens of thousands of related rows costs about one pass over those rows. Use a `where` that narrows them, or a stored count.
+- Migrating from Drizzle: a column built with `extras` and a `sql` subquery becomes a `computed` entry. See [From Drizzle](/docs/migrations/from-drizzle#extras).

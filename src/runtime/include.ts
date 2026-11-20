@@ -397,6 +397,13 @@ function parseInclude(
   if (!isRecord(value)) {
     fail("OKM1120", `Include ${name} must be true or an object.`);
   }
+  if ("computed" in value) {
+    fail(
+      "OKM1120",
+      `Include ${name} does not take computed.`,
+      "Pass computed on the parent read, or read the aggregate with aggregate() on the related table.",
+    );
+  }
   rejectKeys(value, INCLUDE_OPTIONS, `include ${name}`);
   const reason = typeof value.all === "string" ? value.all : all;
   let limit: number | undefined;

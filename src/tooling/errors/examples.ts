@@ -1970,12 +1970,16 @@ thrown(
   },
 );
 
-function warnDb(rule: string) {
-  const comments = table("comments", {
-    id: id({ default: "none" }),
-    noteId: uuid().references("notes"),
-    body: text(),
-  });
+function warnDb(rule: string, indexed = false) {
+  const comments = table(
+    "comments",
+    {
+      id: id({ default: "none" }),
+      noteId: uuid().references("notes"),
+      body: text(),
+    },
+    indexed ? { indexes: (columns) => [index(columns.noteId)] } : {},
+  );
   const notes = table(
     "notes",
     { id: id({ default: "none" }), title: text() },
@@ -2236,6 +2240,24 @@ thrown(
   },
   async () => {
     await limitedDb().notes.find({ orderBy: { id: "asc" }, limit: 1 });
+  },
+);
+
+thrown(
+  "OKM2012",
+  async () => {
+    await warnDb("unindexed-computed-key").notes.find({
+      limit: 1,
+      orderBy: { id: "asc" },
+      computed: { replies: (note) => note.comments.count() },
+    });
+  },
+  async () => {
+    await warnDb("unindexed-computed-key", true).notes.find({
+      limit: 1,
+      orderBy: { id: "asc" },
+      computed: { replies: (note) => note.comments.count() },
+    });
   },
 );
 

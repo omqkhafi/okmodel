@@ -28,14 +28,12 @@ import {
   type ReadCall,
   type Sink,
 } from "./plan.js";
+import { NUMERIC, readsAs } from "./numeric-type.js";
 import { refusePrototypeKey } from "./result-name.js";
 import { decodeSqlNumber, emitSqlSelect } from "./sql-fragment.js";
 
 const AS_NUMBER = (wire: string): number => Number(wire);
 const AS_TEXT = (wire: string): string => wire;
-
-/** Column types `runningTotal` takes. The same set as `sum`. */
-const NUMERIC = /^(smallint|integer|bigint|real|double precision|numeric|decimal)\b/;
 
 const OPTION_KEYS = ["as", "orderBy", "partitionBy"] as const;
 
@@ -68,16 +66,20 @@ export type Spec = {
 };
 
 /**
- * Plans a read whose `select` contains a window helper.
+ * Plans a read whose `select` contains a window helper, or that sets `computed`.
  *
- * The returned call writes the statement. Includes, tenancy, and presets stay
+ * A `computed` read loads its own statement writer, so this chunk is the one
+ * lazy hook for both. The returned call writes the statement. Includes, tenancy, and presets stay
  * on the planner the plain read uses.
  *
  * @param schema - Connected schema
- * @param call - The read, with a window in `select`
+ * @param call - The read, with a window in `select` or `computed`
  * @returns The same read, with its statement builder set
  */
-export function attach(schema: QuerySchema, call: ReadCall): ReadCall {
+export function attach(schema: QuerySchema, call: ReadCall): ReadCall | Promise<ReadCall> {
+  if (call.computed !== undefined) {
+    return import("./computed.js").then((mod) => mod.attach(schema, call));
+  }
   const table = indexesOf(schema, call.table);
   return { ...call, build: statement(readSpec(table, call.select)) };
 }
@@ -399,7 +401,7 @@ function readAs(value: unknown, label: string): string {
  * @returns The decoder for one wire value
  */
 function totalDecode(column: ColumnModel): (wire: string) => unknown {
-  const kind = typeof (column.decode?.("0") ?? "");
+  const kind = readsAs(column);
   if (kind === "string") return AS_TEXT;
   if (kind === "number") return AS_NUMBER;
   return fail(

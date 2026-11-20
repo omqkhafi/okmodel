@@ -168,6 +168,7 @@ const SPEC_CODES = [
   "OKM2007",
   "OKM2008",
   "OKM2011",
+  "OKM2012",
   "OKM2101",
   "OKM2102",
   "OKM2103",

@@ -59,6 +59,7 @@ registerFailFix(
 );
 
 const OPTIONS = [
+  "computed",
   "where",
   "select",
   "orderBy",
@@ -117,6 +118,7 @@ function plan(
     );
   }
   rejectKeys(record, OPTIONS, "page");
+  refuseComputedOrder(record);
   const indexed = indexes(session.schema).get(table);
   if (indexed === undefined) fail("OKM1120", `Table ${table} is not in the schema.`);
   // `stream()` plans its batches here with a pin. It keeps its own rules.
@@ -185,6 +187,7 @@ function plan(
         orderBy: parsed === undefined ? orderBy : record.orderBy,
         limit: size + 1,
         include: record.include,
+        ...(record.computed !== undefined ? { computed: record.computed } : {}),
         ...(record.ignore !== undefined ? { ignore: record.ignore } : {}),
         signal: record.signal,
         timeout: record.timeout,
@@ -261,6 +264,20 @@ function plan(
     }
     return { items: kept, next };
   });
+}
+
+/** A cursor holds sort values of fields. A computed value has none, so it cannot order a page. */
+function refuseComputedOrder(record: Record<string, unknown>): void {
+  const { computed, orderBy } = record;
+  if (!isRecord(computed) || !isRecord(orderBy)) return;
+  for (const key of Object.keys(orderBy)) {
+    if (!Object.hasOwn(computed, key)) continue;
+    fail(
+      "OKM1120",
+      `page() cannot order by computed value ${key}.`,
+      "A page cursor holds the sort values of fields. Order by a field, or read one list with find.",
+    );
+  }
 }
 
 function keyLabel(key: Key): string {

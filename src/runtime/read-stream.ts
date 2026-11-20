@@ -5,10 +5,14 @@
  * does not load it. Each batch is one finished `page` query: fetch, yield,
  * then fetch the next. A `break` does not hold a connection. A server cursor
  * is not used, so the driver `stream` flag is not read.
+ *
+ * A stream with `computed` reads every batch in one `REPEATABLE READ`
+ * snapshot on a reserved connection, so a count cannot move between batches.
+ * The connection is held until the stream ends or the caller breaks.
  */
 
 import { OkmError } from "../contracts/error.js";
-import { attachHttp, type Mods, type Session } from "./client.js";
+import { attachHttp, decodeRows, readHandle, type Mods, type Session } from "./client.js";
 import { build as pageOf } from "./page.js";
 import {
   fail,
@@ -102,36 +106,85 @@ export async function* streamRows(
   const statement = session.timeouts?.statement;
   // One object for every batch. The router writes the first endpoint into it.
   const pin: { name?: string } = {};
+  const byValue = call.computed !== undefined && namesComputed(call);
   let after: string | undefined;
+  let offset = 0;
   let left = total;
   let pending: Promise<unknown> | undefined;
-  try {
-    while (left === undefined || left > 0) {
-      if (signal?.aborted === true) {
-        stop(new OkmError("cancelled", "The stream was cancelled.", { kind: "cancelled" }));
-      }
-      const remaining = timeLeft(deadline);
-      const size = left === undefined ? batch : Math.min(batch, left);
-      const handle = pageOf(
-        session,
+  const sizeOf = (): number => (left === undefined ? batch : Math.min(batch, left));
+  const read = async (at: Session, size: number): Promise<Batch> => {
+    if (signal?.aborted === true) {
+      stop(new OkmError("cancelled", "The stream was cancelled.", { kind: "cancelled" }));
+    }
+    const timeout = batchTimeout(timeLeft(deadline), cancel, statement);
+    if (byValue) {
+      const rows = (await readHandle(
+        at,
         call.table,
-        pageFields(call, size, after, signal, batchTimeout(remaining, cancel, statement)),
+        {
+          ...call,
+          limit: size,
+          offset,
+          ...(signal === undefined ? {} : { signal }),
+          ...(timeout === undefined ? {} : { timeout }),
+        },
         mods,
-        view,
-        pin,
-      );
-      pending = handle;
-      const value = asPage(await handle);
-      pending = undefined;
-      for (const row of value.items) {
+        (plan, wire) => decodeRows(plan, wire, call.table),
+      )) as readonly unknown[];
+      offset += rows.length;
+      return { rows, more: rows.length === size };
+    }
+    const handle = pageOf(
+      at,
+      call.table,
+      pageFields(call, size, after, signal, timeout),
+      mods,
+      view,
+      pin,
+    );
+    pending = handle;
+    const value = asPage(await handle);
+    pending = undefined;
+    after = value.next ?? undefined;
+    return { rows: value.items, more: value.next !== null && value.items.length >= size };
+  };
+  try {
+    if (call.computed !== undefined && session.tx === undefined) {
+      if (
+        session.pool.reserve === undefined ||
+        session.pool.capabilities.transactions !== "interactive"
+      ) {
+        stop(
+          new OkmError(
+            "OKM1111",
+            `stream() with computed reads one snapshot, which needs a driver with transactions: "interactive". This driver has "${session.pool.capabilities.transactions}".`,
+            {
+              fix: {
+                summary:
+                  "Read with find and computed, or use a driver with interactive transactions.",
+              },
+            },
+          ),
+        );
+      }
+      const { snapshot } = await import("./transaction.js");
+      yield* snapshotRows(session, snapshot, read, sizeOf, (rows) => {
+        left = left === undefined ? undefined : left - rows;
+        return left === undefined || left > 0;
+      });
+      return;
+    }
+    while (left === undefined || left > 0) {
+      const size = sizeOf();
+      const { rows, more } = await read(session, size);
+      for (const row of rows) {
         yield row;
         if (left !== undefined) {
           left -= 1;
           if (left === 0) return;
         }
       }
-      if (value.next === null || value.items.length < size) return;
-      after = value.next;
+      if (!more) return;
     }
   } catch (error) {
     if (
@@ -149,6 +202,80 @@ export async function* streamRows(
         () => undefined,
       );
     }
+  }
+}
+
+/** One fetched batch, and whether another may follow. */
+type Batch = { readonly rows: readonly unknown[]; readonly more: boolean };
+
+/** `true` when `orderBy` names a computed value, which a keyset cursor cannot hold. */
+function namesComputed(call: ReadCall): boolean {
+  const { computed, orderBy } = call;
+  if (!isRecord(computed) || !isRecord(orderBy)) return false;
+  return Object.keys(orderBy).some((key) => Object.hasOwn(computed, key));
+}
+
+/** A one-shot signal between the snapshot and the iterator. */
+function mailbox<T>(): { readonly promise: Promise<T>; readonly send: (value: T) => void } {
+  let send: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((resolve) => {
+    send = resolve;
+  });
+  return { promise, send };
+}
+
+/**
+ * Reads the batches inside one snapshot and hands each to the iterator.
+ *
+ * The snapshot runs beside the iterator. It reads a batch, passes it over, and
+ * waits until the iterator has yielded every row and asks for the next. A
+ * `break` tells it to stop, and the connection goes back to the pool.
+ *
+ * @param session - Session whose pool reserves the connection
+ * @param snapshot - Runs a function in the snapshot
+ * @param read - Reads one batch on the held session
+ * @param sizeOf - Rows the next batch asks for
+ * @param took - Records the rows a batch gave. Returns false when the stream total is reached
+ * @returns One row at a time
+ */
+async function* snapshotRows(
+  session: Session,
+  snapshot: typeof import("./transaction.js").snapshot,
+  read: (at: Session, size: number) => Promise<Batch>,
+  sizeOf: () => number,
+  took: (rows: number) => boolean,
+): AsyncIterable<unknown> {
+  type Mail = { readonly batch: Batch } | { readonly error: unknown };
+  const chan = { toIterator: mailbox<Mail>(), toSnapshot: mailbox<boolean>() };
+  const running = snapshot(session, async (held) => {
+    for (;;) {
+      const size = sizeOf();
+      const got = await read(held, size);
+      const rows = got.rows.slice(0, size);
+      const more = got.more && took(rows.length);
+      const proceed = chan.toSnapshot;
+      chan.toIterator.send({ batch: { rows, more } });
+      if (!more || !(await proceed.promise)) return;
+    }
+  });
+  running.catch((error: unknown) => chan.toIterator.send({ error }));
+  let finished = false;
+  try {
+    for (;;) {
+      const mail = await chan.toIterator.promise;
+      if ("error" in mail) throw mail.error;
+      yield* mail.batch.rows;
+      if (!mail.batch.more) break;
+      const proceed = chan.toSnapshot;
+      chan.toIterator = mailbox();
+      chan.toSnapshot = mailbox();
+      proceed.send(true);
+    }
+    finished = true;
+  } finally {
+    chan.toSnapshot.send(false);
+    if (finished) await running;
+    else await running.catch(() => undefined);
   }
 }
 
@@ -192,6 +319,7 @@ function pageFields(
   if (call.select !== undefined) out.select = call.select;
   if (call.orderBy !== undefined) out.orderBy = call.orderBy;
   if (call.include !== undefined) out.include = call.include;
+  if (call.computed !== undefined) out.computed = call.computed;
   if (call.route !== undefined) out.route = call.route;
   if (after !== undefined) out.after = after;
   if (signal !== undefined) out.signal = signal;

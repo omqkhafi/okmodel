@@ -165,6 +165,25 @@ export async function tx(session: Session, args: readonly unknown[]): Promise<un
   }
 }
 
+/**
+ * Runs `fn` on one reserved connection in a `REPEATABLE READ` transaction.
+ *
+ * `stream()` with `computed` reads every batch from the one snapshot. `fn`
+ * gets the session whose pool is that connection, not a client.
+ *
+ * @param session - Client session
+ * @param fn - Reads with the held session
+ * @returns What `fn` returned
+ */
+export function snapshot<T>(session: Session, fn: (held: Session) => Promise<T>): Promise<T> {
+  return outer(
+    session,
+    fn as (t: unknown) => Promise<unknown>,
+    { isolation: "repeatable read" },
+    true,
+  ) as Promise<T>;
+}
+
 /** Maps a driver error. An error the caller threw, or one already mapped, goes out unchanged. */
 function failWith(session: Session, error: unknown): Promise<never> {
   if (error instanceof OkmError || !(error instanceof Error) || error.name !== "DriverError") {
@@ -191,6 +210,7 @@ async function outer(
   session: Session,
   fn: (t: unknown) => Promise<unknown>,
   options: TxOptions,
+  raw?: true,
 ): Promise<unknown> {
   const pool = session.pool;
   if (pool.reserve === undefined || pool.capabilities.transactions !== "interactive") {
@@ -209,7 +229,7 @@ async function outer(
   const retries = options.retry ?? 0;
   for (let attempt = 0; ; attempt += 1) {
     try {
-      return await once(session, fn, options, deadline);
+      return await once(session, fn, options, deadline, raw);
     } catch (error) {
       const kind = error instanceof OkmError ? error.kind : undefined;
       if (attempt >= retries || (kind !== "serialization" && kind !== "deadlock")) throw error;
@@ -240,6 +260,7 @@ async function once(
   fn: (t: unknown) => Promise<unknown>,
   options: TxOptions,
   deadline: number | undefined,
+  raw?: true,
 ): Promise<unknown> {
   const signal = options.signal;
   if (signal?.aborted === true) throw cancelled();
@@ -278,8 +299,8 @@ async function once(
     if (emit !== undefined) emit.emitPhase(host, "start", 0);
     else hear?.phase(session.hookm, "start", 0);
     frame.arm();
-    const t = openClient(held(session, frame, after, 0));
-    const value = await Promise.race([fn(t), frame.halt]);
+    const inner = held(session, frame, after, 0);
+    const value = await Promise.race([fn(raw === true ? inner : openClient(inner)), frame.halt]);
     frame.check();
     if (frame.failed !== undefined) throw frame.failed;
     frame.rest();
