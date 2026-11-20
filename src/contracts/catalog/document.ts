@@ -160,6 +160,7 @@ const serializedText = new WeakMap<Catalog, string>();
 const serializedHash = new WeakMap<Catalog, string>();
 
 export function serializeCatalog(source: Catalog): string {
+  settleChecks(source);
   const cached = serializedText.get(source);
   if (cached !== undefined) return cached;
   const indexed = source.objects.map((object) => ({
@@ -233,6 +234,23 @@ export function startupCatalog(source: Catalog): Catalog {
  */
 export function startupHash(source: Catalog): string {
   return catalogHash(startupCatalog(source));
+}
+
+/** Copies a startup `enforced` flag onto `definition.enforced`. */
+export function settleChecks(source: Catalog): Catalog {
+  for (const object of source.objects) {
+    if (object.kind !== "constraint") continue;
+    if ((object as { enforced?: boolean }).enforced !== false) continue;
+    (object.definition as { enforced?: false }).enforced = false;
+  }
+  return source;
+}
+
+function markEnforced<T extends CatalogObject>(object: T, enforced: boolean | undefined): T {
+  if (object.kind === "constraint" && enforced === false) {
+    (object.definition as { enforced?: false }).enforced = false;
+  }
+  return object;
 }
 
 function isPrivilege(object: CatalogObject): boolean {
@@ -564,7 +582,7 @@ function rewriteConstraint(
           ...(references.onUpdate !== undefined ? { onUpdate: references.onUpdate } : {}),
         }
       : references;
-  return constraint({
+  const rewritten = constraint({
     parent: object.identity.parent,
     constraintKind: definition.constraintKind,
     name: object.identity.name,
@@ -583,6 +601,7 @@ function rewriteConstraint(
       : {}),
     ...(referenced !== undefined ? { references: referenced } : {}),
   });
+  return markEnforced(rewritten, definition.enforced);
 }
 
 function rewriteView(
@@ -730,7 +749,7 @@ function rewriteTableName(
             ...(references.onDelete !== undefined ? { onDelete: references.onDelete } : {}),
             ...(references.onUpdate !== undefined ? { onUpdate: references.onUpdate } : {}),
           };
-    return constraint({
+    const moved = constraint({
       parent,
       constraintKind: object.definition.constraintKind,
       name: object.identity.name,
@@ -753,6 +772,7 @@ function rewriteTableName(
         : {}),
       ...(referenced !== undefined ? { references: referenced } : {}),
     });
+    return markEnforced(moved, object.definition.enforced);
   }
   if (object.kind === "sequence") return rewriteSequence(object, dependencies);
   if (object.kind === "type") return rewriteType(object, dependencies);
@@ -1045,6 +1065,7 @@ function definitionToJson(object: CatalogObject): Json {
         initially: definition.initially,
         nameKey: definition.nameKey,
         nullsNotDistinct: definition.nullsNotDistinct,
+        ...(definition.enforced === false ? { enforced: false } : {}),
         ...(definition.expression !== undefined ? { expression: definition.expression } : {}),
         ...(references !== undefined
           ? {
@@ -1327,6 +1348,7 @@ function parseConstraint(
       "deferrable",
       "expression",
       "initially",
+      "enforced",
       "nameKey",
       "nullsNotDistinct",
       "references",
@@ -1350,7 +1372,7 @@ function parseConstraint(
     catalogError("OKM1020", `Constraint initially ${initially} must be immediate or deferred.`);
   }
   const references = definition.references;
-  return constraint({
+  const parsed = constraint({
     parent: identity.parent,
     constraintKind,
     name: identity.name,
@@ -1367,6 +1389,13 @@ function parseConstraint(
       : { expression: requireString(definition.expression, "expression") }),
     ...(references === undefined ? {} : { references: parseReferences(references) }),
   });
+  return markEnforced(parsed, readEnforced(definition.enforced)?.enforced);
+}
+
+function readEnforced(value: unknown): { readonly enforced: false } | undefined {
+  if (value === undefined) return undefined;
+  if (value === false) return { enforced: false };
+  catalogError("OKM1020", "Constraint enforced must be false when it is set.");
 }
 
 function parseSequence(

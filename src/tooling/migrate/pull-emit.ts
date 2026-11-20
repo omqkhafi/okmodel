@@ -581,9 +581,14 @@ function planTable(
         .map((name) => `void columns.${fields.get(name) ?? name}`)
         .join("; ");
       const touch = touches.length > 0 ? `${touches}; ` : "";
-      checks.push(
-        `      ${jsKey(constraint.definition.nameKey)}: (columns) => { ${touch}return ${sqlTemplate(constraint.definition.expression)}; },`,
-      );
+      const off = constraint.definition.enforced === false;
+      const expression = off
+        ? constraint.definition.expression
+        : stripNotValid(constraint.definition.expression);
+      const body = off
+        ? `{ expression: (columns) => { ${touch}return ${sqlTemplate(expression)}; }, enforced: false }`
+        : `(columns) => { ${touch}return ${sqlTemplate(expression)}; }`;
+      checks.push(`      ${jsKey(constraint.definition.nameKey)}: ${body},`);
       continue;
     }
     if (kind === "foreignKey") {
@@ -1532,6 +1537,11 @@ function jsKey(name: string): string {
   if (name === "__proto__") return '["__proto__"]';
   if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) && !RESERVED.has(name)) return name;
   return JSON.stringify(name);
+}
+
+function stripNotValid(expression: string): string {
+  const marker = " NOT VALID";
+  return expression.endsWith(marker) ? expression.slice(0, -marker.length) : expression;
 }
 
 function sqlTemplate(expression: string): string {

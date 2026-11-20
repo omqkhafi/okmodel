@@ -61,7 +61,7 @@ export function renderCompatibility(cells: readonly CompatibilityCell[]): string
     "",
     supportSentence(),
     "",
-    "Postgres: native. Since 18. Proof passes (`proof:type.uuidv7`).",
+    "Postgres: native. Since 18. Proof passes (`proof:type.uuidv7`). A check with `enforced: false` is `NOT ENFORCED`, native since 18 (`proof:check.notEnforced`). `ALTER CONSTRAINT` enforcement needs 19; 18 drops the check and adds it again.",
     "",
     "PGlite runs in the check job. The in-process wire server runs in the check job. postgres.js, node-postgres, and Bun.sql run in the postgres job (`REQUIRE_DOCKER=1`). Bun.sql runs only under Bun. A skip means the adapter did not declare the capability that case needs. node-postgres and Bun.sql do not describe a statement without running it. Bun.sql does not surface RAISE NOTICE and does not abort an in-flight statement. PGlite has no socket to cut, so COMMIT loss (`r2.commit-loss`, `r2.batch-commit-loss`) is `unsupported` in `okm driver test`, with that reason. It is not a silent skip.",
     "",

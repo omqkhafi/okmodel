@@ -19,7 +19,6 @@ import { OkmError } from "../../contracts/error.js";
 import { assertCreateRole, currentUser, roleExists } from "../../dialects/pg/role/check.js";
 import { changesRole } from "../../dialects/pg/role/sql.js";
 import { introspectSchema } from "../../dialects/pg/introspect.js";
-import { sealViews } from "../../dialects/pg/view/scratch.js";
 import { batchSizeField } from "./backfill.js";
 import {
   assumeRole,
@@ -57,8 +56,8 @@ import {
   catalogQuery,
   invalidIndexReport,
   liveIntrospectOptions,
+  sealAuthored,
   sealStoredChecks,
-  sealTriggerWhens,
 } from "./drift.js";
 import {
   assertDirectConnection,
@@ -686,8 +685,7 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
         await sql.unsafe(`create schema if not exists ${quoteIdent(schema)}`);
       }
       if (searchPath !== undefined) await sql.unsafe(`set search_path to ${searchPath}`);
-      const authorViews = await sealViews(runner, request.after);
-      const author = await sealTriggerWhens(runner, await sealStoredChecks(runner, authorViews));
+      const author = await sealAuthored(runner, request.after);
       const unpulled = unpulledKeys(request.unpulled);
       const live = await sealStoredChecks(
         runner,
@@ -705,14 +703,22 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
           },
         });
       }
-      const plan = planStatements({
+      const input = {
         before: live,
         after: author,
         renames: request.renames,
         name: pushId,
         ...(request.schema !== undefined ? { schema: request.schema } : {}),
         ...(request.batchSize !== undefined ? { batchSize: request.batchSize } : {}),
-      });
+      };
+      let plan = planStatements(input);
+      if (plan.steps.length > 0) {
+        const version = await sql<
+          { v: string }[]
+        >`select current_setting('server_version_num') as v`;
+        const postgres = Math.floor(Number(version[0]?.v ?? "0") / 10_000);
+        if (postgres >= 19) plan = planStatements({ ...input, postgres });
+      }
       const weakened = lintPlan(plan, live, author).filter((item) => item.code === "OKM1550");
       if (weakened.length > 0) throw lintRefusal(weakened, PUSH_RLS_FIX);
       refuseUnpulledDrops(unpulledDropLabels(plan.steps, live, request.unpulled, schema));

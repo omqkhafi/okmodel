@@ -58,7 +58,23 @@ export const tasks = table(
 );
 ```
 
-A new table adds the check with `alter table`. A table that already exists adds it `not valid`, then validates it.
+A new table adds the check with `alter table`. A table that already exists adds it `not valid`, then validates it. A check is enforced. `enforced: false` stores `NOT ENFORCED` and is never validated.
+
+```ts title="not-enforced.ts"
+import { sql, table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  { n: t.integer() },
+  {
+    checks: {
+      draft_ok: { expression: (columns) => sql`${columns.n} > 0`, enforced: false },
+    },
+  },
+);
+```
+
+Creating that check needs PostgreSQL 18. `minPostgres` below 18 is OKM1812. A server below 18 is OKM1802. Changing an existing check to or from `NOT ENFORCED` is `ALTER CONSTRAINT` on PostgreSQL 19. On 18 the migration drops the check and adds it again, and the file says so. `okm pull` writes `enforced: false` for a check the catalog stores as not enforced. A `NO INHERIT` check cannot be represented: pull refuses it with OKM1020. An enforced check that is `NOT VALID` stays a plain check in the file; check still plans `VALIDATE`.
 
 A row that fails the check is `Check violation on notes (title_present)`. The kind is `check`. `constraint` is `notes_title_present_check`.
 

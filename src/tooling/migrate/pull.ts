@@ -30,6 +30,7 @@ import type {
   ObjectIdentity,
 } from "../../contracts/catalog/types.js";
 import { driverUrl } from "./driver-url.js";
+import { omitManagedObjects } from "./managed.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { asProject, projectPath, type ProjectContext } from "./paths.js";
 import { assertTargetPolicy, listTargets, selectTarget } from "./policy.js";
@@ -249,7 +250,7 @@ async function readCatalog(
     }
     const merged = mergePulledSchemas(parts);
     return {
-      catalog: merged.catalog,
+      catalog: omitManagedObjects(merged.catalog),
       schemas: chosen,
       outside: [...merged.outside, ...reserved.map((item) => ({ ...item, sql: "" }))],
     };

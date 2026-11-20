@@ -156,6 +156,49 @@ test("proof:type.uuidv7", () => {
   ).toThrow(OkmError);
 });
 
+test("proof:check.notEnforced", () => {
+  const built = schema({
+    minPostgres: 18,
+    tables: [
+      table(
+        "notes",
+        {
+          n: t.integer(),
+        },
+        {
+          checks: {
+            positive: { expression: (columns) => sql`${columns.n} > 0`, enforced: false },
+          },
+        },
+      ),
+    ],
+  });
+  const description = describe(built);
+  expect(description.minPostgres).toBe(18);
+  expect(description.requirements.minVersion.postgres).toBe(18);
+  expect(description.requirements.features).toContain("check.notEnforced");
+  expect(() =>
+    describe(
+      schema({
+        minPostgres: 17,
+        tables: [
+          table(
+            "notes",
+            {
+              n: t.integer(),
+            },
+            {
+              checks: {
+                positive: { expression: (columns) => sql`${columns.n} > 0`, enforced: false },
+              },
+            },
+          ),
+        ],
+      }),
+    ),
+  ).toThrow(OkmError);
+});
+
 test("proof:type.jsonb", () => {
   const built = schema({ tables: [table("docs", { meta: t.jsonb() })] });
   expect(featuresUsed(built.catalog)).toContain("type.jsonb");

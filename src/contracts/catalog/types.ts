@@ -332,6 +332,12 @@ export type ConstraintDefinition = {
   readonly deferrable: boolean;
   readonly initially: "immediate" | "deferred";
   readonly nullsNotDistinct: boolean;
+  /**
+   * `false` when the check is `NOT ENFORCED`.
+   *
+   * Absent means enforced. PostgreSQL 18 stores that state.
+   */
+  readonly enforced?: boolean;
   readonly expression?: string;
   readonly references?: {
     readonly parent: ObjectRef;

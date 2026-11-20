@@ -330,6 +330,7 @@ test("refusal:schema.core", () => refuse("schema.core"));
 test("refusal:schema.identity", () => refuse("schema.identity"));
 test("refusal:type.uuid", () => refuse("type.uuid"));
 test("refusal:type.uuidv7", () => refuse("type.uuidv7"));
+test("refusal:check.notEnforced", () => refuse("check.notEnforced"));
 test("refusal:type.jsonb", () => refuse("type.jsonb"));
 test("refusal:type.array", () => refuse("type.array"));
 test("refusal:type.range", () => refuse("type.range"));

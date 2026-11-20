@@ -872,7 +872,10 @@ function blockingIndex(input: StepInput): boolean {
 }
 
 function checkWithoutNotValid(input: StepInput): boolean {
-  return addedConstraint(input, "check") && !/\bnot valid\b/.test(normalizedSql(input.step.sql));
+  const text = normalizedSql(input.step.sql);
+  return (
+    addedConstraint(input, "check") && !/\bnot valid\b/.test(text) && !/\bnot enforced\b/.test(text)
+  );
 }
 
 function foreignKeyWithoutNotValid(input: StepInput): boolean {

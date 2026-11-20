@@ -2,8 +2,8 @@
  * Tables OKModel owns: `okm_meta`, `okm_history`, `okm_backfill`, and `okm_steps`.
  *
  * Apply creates them. They are not part of the author schema. Plan, push,
- * check, and doctor omit them on both sides, so a diff neither drops them
- * nor creates them. `okm_steps` holds a committed step only while it is in
+ * check, doctor, and pull omit them, so a diff neither drops them nor
+ * creates them and pull does not write them. `okm_steps` holds a committed step only while it is in
  * flight or broken.
  */
 

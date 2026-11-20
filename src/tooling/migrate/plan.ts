@@ -12,7 +12,12 @@
 
 import { OkmError } from "../../contracts/error.js";
 import { prepareMigrationText } from "./text.js";
-import { creationOrder, renameColumn, renameTable } from "../../contracts/catalog/document.js";
+import {
+  creationOrder,
+  renameColumn,
+  renameTable,
+  settleChecks,
+} from "../../contracts/catalog/document.js";
 import { isDomain, sameEnumLabels } from "../../contracts/catalog/enum.js";
 import { identitySequenceName } from "../../contracts/catalog/identifier.js";
 import { identityKey, identityLabel, staticNamespace } from "../../contracts/catalog/identity.js";
@@ -45,7 +50,7 @@ import {
 import { isStepKind, strictestClass, type MigrationClass, type StepKind } from "./classify.js";
 import { extensionAlterSteps } from "./extensions.js";
 import { omitManagedObjects } from "./managed.js";
-import { stepsForExistingTable, type SafeStep } from "./safe.js";
+import { bareCheck, enforcementSteps, stepsForExistingTable, type SafeStep } from "./safe.js";
 import { sqlQuoteOpen } from "./sql-lex.js";
 import { canonicalTypeName } from "./type-name.js";
 import {
@@ -167,6 +172,13 @@ export type PlanRequest = {
    * from the file, which overrides `defineConfig({ backfill })`.
    */
   readonly batchSize?: number;
+  /**
+   * Server major, when the plan was sealed on a live connection.
+   *
+   * 19 changes check enforcement with `ALTER CONSTRAINT`. Older servers, and
+   * a plan with no connection, drop the check and add it again.
+   */
+  readonly postgres?: number;
 };
 
 type Indexed = {
@@ -224,6 +236,8 @@ export function planMigration(
   dialect: DdlDialect = postgresDialect,
 ): MigrationPlan {
   requireDialect(dialect);
+  settleChecks(input.before);
+  settleChecks(input.after);
   const request: PlanRequest = {
     ...input,
     before: omitManagedObjects(input.before),
@@ -250,6 +264,7 @@ export function planMigration(
     | { readonly kind: "view"; readonly before: ViewObject; readonly after: ViewObject }
   )[] = [];
   const alters: { readonly before: ColumnObject; readonly after: ColumnObject }[] = [];
+  const enforcement: { readonly before: ConstraintObject; readonly after: ConstraintObject }[] = [];
   for (const item of beforeList) {
     if (!afterBy.has(item.key)) {
       if (item.object.kind === "role") continue;
@@ -296,6 +311,14 @@ export function planMigration(
       alters.push({ before: previous, after: item.object });
       continue;
     }
+    if (
+      previous.kind === "constraint" &&
+      item.object.kind === "constraint" &&
+      enforcementOnly(previous, item.object)
+    ) {
+      enforcement.push({ before: previous, after: item.object });
+      continue;
+    }
     dropKeys.add(item.key);
     createKeys.add(item.key);
   }
@@ -335,6 +358,7 @@ export function planMigration(
   steps.push(...keptNames.map((item) => renameShapeStep(item, schema, dialect)));
   steps.push(...enumAddSteps(enums, schema, dialect));
   steps.push(...domainCheckSteps(beforeBy, afterBy, schema, dialect));
+  steps.push(...enforcementSteps(enforcement, schema, request.postgres));
   steps.push(
     ...expandBackfills(
       picklists,
@@ -2217,6 +2241,28 @@ function hasColumn(source: Catalog, table: string, name: string): boolean {
 
 function index(source: Catalog): Indexed[] {
   return source.objects.map((object) => ({ key: identityKey(object.identity), object }));
+}
+
+function enforcementOnly(before: CatalogObject, after: CatalogObject): boolean {
+  if (before.kind !== "constraint" || after.kind !== "constraint") return false;
+  if (before.definition.constraintKind !== "check" || after.definition.constraintKind !== "check") {
+    return false;
+  }
+  if ((before.definition.enforced === false) === (after.definition.enforced === false))
+    return false;
+  const left = {
+    ...before.definition,
+    columns: undefined,
+    enforced: undefined,
+    expression: bareCheck(before.definition.expression),
+  };
+  const right = {
+    ...after.definition,
+    columns: undefined,
+    enforced: undefined,
+    expression: bareCheck(after.definition.expression),
+  };
+  return stable(left) === stable(right);
 }
 
 function pushSafe(steps: PlanStep[], safe: readonly SafeStep[]): void {

@@ -23,9 +23,11 @@ import {
   catalogHash,
   parseCatalog,
   serializeCatalog,
+  settleChecks,
   startupCatalog,
 } from "../../contracts/catalog/document.js";
 import { sha256 } from "../../contracts/sha256.js";
+import { isConnectionFailure } from "../../contracts/connection.js";
 import { OkmError } from "../../contracts/error.js";
 import { assertProjectWarnings } from "../../runtime/warnings/config.js";
 import { tagOutcome } from "../cli/outcome.js";
@@ -42,6 +44,7 @@ import { attachRoles, type RolesInput, type TableExposure } from "../../dialects
 import type { BuiltSchema } from "../../dialects/pg/schema.js";
 import type { AnyTable } from "../../dialects/pg/table.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
+import { assertNotEnforcedDeclared } from "./requirements.js";
 import { batchSizeField } from "./backfill.js";
 import { type MigrateConfig } from "./config.js";
 import {
@@ -68,7 +71,6 @@ import { readUnpulled, unpulledKeys } from "./unpulled.js";
 import { formatPlanJson } from "./plan-json.js";
 import {
   formatPlan,
-  planMigration,
   planStatements,
   staleRenames,
   type MigrationPlan,
@@ -430,21 +432,17 @@ async function prepare(
   readonly after: Catalog;
 }> {
   const opened = await openProject(project);
-  const plan = planStatements({
-    before: opened.previous,
-    after: opened.built.catalog,
-    renames: opened.renames,
-    replacements: flags.map((flag) => parseReplace(flag)),
+  const compared = await comparedPlan(
+    opened,
     name,
-    ...placedSchema(opened.config),
-    ...batchSizeField(opened.config.backfill?.batchSize),
-  });
+    flags.map((flag) => parseReplace(flag)),
+  );
   return {
     config: opened.config,
     built: opened.built,
-    plan,
-    before: opened.previous,
-    after: opened.built.catalog,
+    plan: compared.plan,
+    before: compared.before,
+    after: compared.after,
   };
 }
 
@@ -508,30 +506,107 @@ export async function offlineFindings(opened: {
 }): Promise<readonly Finding[]> {
   const { rawOfflineFindings } = await import("../describe/command.js");
   return [
-    ...lintOpened(opened),
+    ...(await lintOpened(opened)),
     ...couplingFindings(opened.built.catalog),
     ...(await rawOfflineFindings(opened.cwd, opened.config)),
   ];
 }
 
-function lintOpened(opened: {
+async function lintOpened(opened: {
   readonly built: Built;
   readonly previous: Catalog;
   readonly renames: readonly DeclaredRename[];
   readonly config: MigrateConfig;
-}): readonly Finding[] {
-  const plan = planMigration({
+}): Promise<readonly Finding[]> {
+  const compared = await comparedPlan(opened, "check");
+  return [
+    ...lintPlan(compared.plan, compared.before, compared.after),
+    ...lintCatalog(opened.built.catalog),
+  ];
+}
+
+/**
+ * Plans `previous` against the schema.
+ *
+ * An empty plan does not connect. One target with steps reprints both catalogs
+ * and plans again, so server normalisation is not a migration. A connection
+ * failure keeps the unsealed plan.
+ */
+async function comparedPlan(
+  opened: {
+    readonly built: Built;
+    readonly previous: Catalog;
+    readonly renames: readonly DeclaredRename[];
+    readonly config: MigrateConfig;
+  },
+  name: string,
+  replacements: ReturnType<typeof parseReplace>[] = [],
+): Promise<{ readonly plan: MigrationPlan; readonly before: Catalog; readonly after: Catalog }> {
+  const input = {
     before: opened.previous,
     after: opened.built.catalog,
     renames: opened.renames,
-    name: "check",
+    replacements,
+    name,
     ...placedSchema(opened.config),
     ...batchSizeField(opened.config.backfill?.batchSize),
+  };
+  const draft = planStatements(input);
+  const plain = {
+    plan: draft,
+    before: opened.previous,
+    after: opened.built.catalog,
+  };
+  if (draft.steps.length === 0) return plain;
+  const targets = listTargets(opened.config);
+  const target = targets.length === 1 ? targets[0] : undefined;
+  if (target === undefined) return plain;
+  const sealed = await sealCatalogs(target.url, opened.previous, opened.built.catalog);
+  if (sealed === undefined) return plain;
+  return {
+    plan: planStatements({
+      ...input,
+      before: sealed.before,
+      after: sealed.after,
+      postgres: sealed.postgres,
+    }),
+    before: sealed.before,
+    after: sealed.after,
+  };
+}
+
+async function sealCatalogs(
+  url: string,
+  before: Catalog,
+  after: Catalog,
+): Promise<
+  { readonly before: Catalog; readonly after: Catalog; readonly postgres: number } | undefined
+> {
+  const [{ catalogQuery, sealAuthored }, { driverUrl }, postgres] = await Promise.all([
+    import("./drift.js"),
+    import("./driver-url.js"),
+    import("postgres"),
+  ]);
+  const sql = postgres.default(driverUrl(url), {
+    max: 1,
+    connect_timeout: 5,
+    idle_timeout: 1,
+    onnotice: () => {},
   });
-  return [
-    ...lintPlan(plan, opened.previous, opened.built.catalog),
-    ...lintCatalog(opened.built.catalog),
-  ];
+  try {
+    const version = await sql<{ v: string }[]>`select current_setting('server_version_num') as v`;
+    const runner = catalogQuery(sql);
+    return {
+      before: await sealAuthored(runner, before),
+      after: await sealAuthored(runner, after),
+      postgres: Math.floor(Number(version[0]?.v ?? "0") / 10_000),
+    };
+  } catch (error) {
+    if (error instanceof OkmError || !isConnectionFailure(error)) throw error;
+    return undefined;
+  } finally {
+    await sql.end({ timeout: 5 }).catch(() => undefined);
+  }
 }
 
 /**
@@ -552,6 +627,7 @@ export async function openProject(project: string | ProjectContext): Promise<{
   const { cwd } = asProject(project);
   const config = await loadConfig(project);
   const built = await loadBuiltSchema(cwd, config);
+  assertNotEnforcedDeclared(built.catalog, built.requires?.postgres);
   const declarations = schemaDeclarations(built);
   const previous = readPrevious(projectPath(cwd, config.migrations ?? "migrations"));
   const stale = staleRenames(previous?.catalog, declarations.renames);
@@ -820,6 +896,7 @@ export async function loadSchema(cwd: string, spec: string): Promise<Built> {
   for (const value of Object.values(record)) {
     if (!isBuilt(value)) continue;
     void value.catalog;
+    settleChecks(value.catalog);
     return value;
   }
   throw new OkmError("invalid", `${spec} must export a schema().`);

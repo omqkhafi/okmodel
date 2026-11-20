@@ -617,8 +617,10 @@ function constraintBody(object: ConstraintObject, schema: string): string {
       const nulls = definition.nullsNotDistinct ? " nulls not distinct" : "";
       return `unique${nulls} (${columns})${deferClause(definition)}`;
     }
-    case "check":
-      return `check (${definition.expression ?? "true"})${deferClause(definition)}`;
+    case "check": {
+      const enforced = definition.enforced === false ? " not enforced" : "";
+      return `check (${definition.expression ?? "true"})${enforced}${deferClause(definition)}`;
+    }
     case "foreignKey": {
       const references = definition.references;
       const target =

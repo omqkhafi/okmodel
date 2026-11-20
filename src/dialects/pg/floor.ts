@@ -22,6 +22,9 @@ export const POSTGRES_FLOOR = 15;
  */
 export const UUIDV7_POSTGRES = 18;
 
+/** `NOT ENFORCED` checks. Creating one needs PostgreSQL 18. Altering one needs 19. */
+export const NOT_ENFORCED_POSTGRES = 18 satisfies PostgresMajor;
+
 /**
  * Accepts an integer major of {@link POSTGRES_FLOOR} or later.
  *
@@ -74,6 +77,12 @@ export function minPostgresDefinition(): string {
 export function uuidv7NeedsPostgres(): string {
   const need = UUIDV7_POSTGRES;
   return `uuidv7() needs PostgreSQL ${need} or higher. minPostgres: ${need}.`;
+}
+
+/** OKM1812 sentence when `enforced: false` is declared below PostgreSQL 18. */
+export function notEnforcedNeedsPostgres(): string {
+  const need = NOT_ENFORCED_POSTGRES;
+  return `A check with enforced: false needs PostgreSQL ${need} or higher. minPostgres: ${need}.`;
 }
 
 /**

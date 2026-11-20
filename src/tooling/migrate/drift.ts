@@ -97,10 +97,7 @@ export async function assertAuthorDrift(
       await introspectSchema(runner, schema, schema, introspectOptions);
       return;
     }
-    const authorOnServer = await sealTriggerWhens(
-      runner,
-      await sealStoredChecks(runner, await sealViews(runner, author)),
-    );
+    const authorOnServer = await sealAuthored(runner, author);
     const live = await sealStoredChecks(
       runner,
       await introspectSchema(runner, schema, schema, introspectOptions),
@@ -110,12 +107,18 @@ export async function assertAuthorDrift(
     // exists, so a full plan would drop that security. A schema with no
     // policy leaves the live policies in place. rlsTenancy declares policies
     // and still drifts when they differ.
-    const plan = planMigration({
+    const compared = {
       before: withoutUnpulled(withoutUnmanagedPolicies(live, authorOnServer), unpulled),
       after: authorOnServer,
       name: "check",
       schema,
-    });
+    };
+    let plan = planMigration(compared);
+    if (plan.steps.length > 0) {
+      const version = await sql<{ v: string }[]>`select current_setting('server_version_num') as v`;
+      const postgres = Math.floor(Number(version[0]?.v ?? "0") / 10_000);
+      if (postgres >= 19) plan = planMigration({ ...compared, postgres });
+    }
     if (invalid.length === 0 && plan.steps.length === 0) return;
     const weaker = unvalidatedNotNull(live, authorOnServer);
     const sqlText = plan.steps.map((step) => step.sql).join("\n");
@@ -448,6 +451,20 @@ export async function sealGeneratedColumns(
  * @param source - Catalog whose table checks may still be author SQL
  * @returns A catalog whose table-check expressions carry the server reprint
  */
+/**
+ * Reprints views, checks, and trigger `WHEN` clauses the way this server stores them.
+ *
+ * Generate, check, and migrate check all call this, so none of them can
+ * compare author text with a reprint the others skipped.
+ *
+ * @param runner - Database connection
+ * @param source - Catalog whose stored text may still be author SQL
+ * @returns A catalog whose comparison text is the server reprint
+ */
+export async function sealAuthored(runner: CatalogQuery, source: Catalog): Promise<Catalog> {
+  return sealTriggerWhens(runner, await sealStoredChecks(runner, await sealViews(runner, source)));
+}
+
 export async function sealTableChecks(runner: CatalogQuery, source: Catalog): Promise<Catalog> {
   const columnsByTable = tableColumns(source);
   const types = reprintTypes(source);
@@ -458,7 +475,8 @@ export async function sealTableChecks(runner: CatalogQuery, source: Catalog): Pr
     if (
       object.kind !== "constraint" ||
       object.definition.constraintKind !== "check" ||
-      object.definition.expression === undefined
+      object.definition.expression === undefined ||
+      object.definition.expression.endsWith(" NOT VALID")
     ) {
       objects.push(object);
       continue;
