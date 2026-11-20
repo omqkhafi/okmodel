@@ -19,6 +19,7 @@ import {
   morph,
   morphMany,
   or,
+  rowNumber,
   schema,
   table,
   text,
@@ -293,6 +294,31 @@ test("page() cannot order by a computed value, and an include does not take comp
     () => db.users.find({ limit: 1, computed: {} }),
     "OKM1120",
     "computed must be an object",
+  );
+});
+
+test("computed does not combine with a row lock, distinct, or a window helper", async () => {
+  const loose = client() as unknown as Loose;
+  const computed = { n: () => fragment`1` };
+  await refused(
+    () => loose.users.find({ limit: 1, computed, lock: "update" }),
+    "OKM1120",
+    "does not combine with a row lock",
+  );
+  await refused(
+    () => loose.users.find({ limit: 1, computed, distinct: true }),
+    "OKM1120",
+    "does not combine with distinct",
+  );
+  await refused(
+    () =>
+      loose.users.find({
+        limit: 1,
+        computed,
+        select: ["id", rowNumber({ orderBy: { id: "asc" }, as: "rn" })],
+      }),
+    "OKM1120",
+    "does not combine with a window helper",
   );
 });
 

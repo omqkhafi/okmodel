@@ -30,10 +30,10 @@ import { isFragmentParts, sqlExpression, type FragmentPart } from "../dialects/p
 import { isOperator, operatorName, operatorValue, tag } from "../dialects/pg/operators.js";
 import { NUMERIC, UNORDERED, numberText, readsAs } from "./numeric-type.js";
 import {
-  emitConditions,
   emitLimit,
   emitOperand,
   emitOrder,
+  parseOrder,
   emitRelationFrom,
   emitVisibility,
   emitWhere,
@@ -220,8 +220,8 @@ export async function attach(schema: QuerySchema, call: ReadCall): Promise<ReadC
 
 function refuseCombination(call: ReadCall): void {
   const clash =
-    call.build !== undefined
-      ? "a window helper in select, distinct, or distinctOn"
+    Array.isArray(call.select) && call.select.some((item) => typeof item !== "string")
+      ? "a window helper in select"
       : call.rel !== undefined
         ? "an order by a relation"
         : call.keyCursor !== undefined
@@ -797,10 +797,9 @@ function emitThreshold(schema: QuerySchema, cond: Cond, sink: Sink, alias: strin
   sink.mark(`th:${relation.name}:${threshold.negate ? "none" : "some"}:${agg.distinct ? "d" : ""}`);
   sink.text(threshold.negate ? "not exists (select 1 from " : "exists (select 1 from ");
   emitRelationFrom(schema, relation, child, sink, alias, "a", 1);
-  emitVisibility(schema, child, sink, "a", true);
+  emitWhere(schema, child, agg.where, sink, "a", 1, true);
   const distinct = agg.distinct ? agg.column : undefined;
   if (distinct !== undefined) sink.text(` and a.${quote(distinct.sql)} is not null`);
-  if (agg.where !== undefined) emitConditions(schema, child, agg.where, sink, "a", 1, true);
   if (distinct !== undefined) sink.text(` group by a.${quote(distinct.sql)}`);
   emitSkipOne(sink, threshold.skip);
   sink.text(")");
@@ -860,6 +859,40 @@ function writers(
   return found;
 }
 
+/** `emitOrder` for the plain fields, and the computed expression where `orderBy` names one. */
+function emitKeys(
+  table: Indexed,
+  orderBy: unknown,
+  sink: Sink,
+  alias: string,
+  computed?: ReadonlyMap<string, (sink: Sink) => void>,
+): void {
+  if (computed === undefined || !isRecord(orderBy)) {
+    emitOrder(table, orderBy, sink, alias);
+    return;
+  }
+  sink.text(" order by ");
+  const plain: Sink = {
+    text: (value) => {
+      if (value !== " order by ") sink.text(value);
+    },
+    param: (value) => sink.param(value),
+    mark: (value) => sink.mark(value),
+  };
+  Object.keys(orderBy).forEach((key, index) => {
+    if (index > 0) sink.text(", ");
+    const write = computed.get(key);
+    if (write === undefined) {
+      emitOrder(table, { [key]: orderBy[key] }, plain, alias);
+      return;
+    }
+    const { dir, nulls } = parseOrder(key, orderBy[key]);
+    write(sink);
+    sink.text(` ${dir} nulls ${nulls}`);
+    sink.mark(`o:${key}:${dir}:${nulls}`);
+  });
+}
+
 function emitOrdered(
   table: Indexed,
   orderBy: unknown,
@@ -867,7 +900,7 @@ function emitOrdered(
   alias: string,
   computed?: ReadonlyMap<string, (sink: Sink) => void>,
 ): void {
-  emitOrder(table, orderBy, sink, alias, computed);
+  emitKeys(table, orderBy, sink, alias, computed);
   const given = isRecord(orderBy) ? Object.keys(orderBy) : [];
   let first = given.length === 0;
   for (const field of table.model.primary) {
@@ -979,6 +1012,8 @@ function emitAggregate(schema: QuerySchema, sink: Sink, agg: Agg): void {
     sink.text(")");
   }
   if (agg.where !== undefined) {
-    emitFilter(sink, () => emitConditions(schema, child, agg.where, sink, "a", 1, false));
+    emitFilter(sink, () =>
+      emitWhere(schema, child, agg.where, sink, "a", 1, false, undefined, true),
+    );
   }
 }

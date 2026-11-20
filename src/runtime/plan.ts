@@ -979,35 +979,9 @@ export function emitWhere(
   depth: number,
   appended = false,
   extra?: Keyset,
+  bare = false,
 ): void {
-  emitConditions(
-    schema,
-    table,
-    where,
-    sink,
-    alias,
-    depth,
-    emitVisibility(schema, table, sink, alias, appended),
-    extra,
-  );
-}
-
-/**
- * Writes the caller's `where` and one more keyset condition, without the tenant
- * and active-set predicates. {@link emitWhere} writes those first.
- *
- * @param started - True when a `where` is already open
- */
-export function emitConditions(
-  schema: QuerySchema,
-  table: Indexed,
-  where: unknown,
-  sink: Sink,
-  alias: string,
-  depth: number,
-  started: boolean,
-  extra?: Keyset,
-): void {
+  let started = bare ? appended : emitVisibility(schema, table, sink, alias, appended);
   if (extra !== undefined) {
     sink.text(started ? " and (" : " where (");
     extra(sink, alias);
@@ -1310,13 +1284,7 @@ function emitRelationFilter(
   sink.text(")");
 }
 
-export function emitOrder(
-  table: Indexed,
-  orderBy: unknown,
-  sink: Sink,
-  alias: string,
-  computed?: ReadonlyMap<string, (sink: Sink) => void>,
-): void {
+export function emitOrder(table: Indexed, orderBy: unknown, sink: Sink, alias: string): void {
   if (orderBy === undefined) return;
   if (!isRecord(orderBy)) {
     fail("OKM1120", "orderBy must be an object of fields.");
@@ -1328,14 +1296,11 @@ export function emitOrder(
     const key = keys[index];
     if (key === undefined) continue;
     const column = table.columns.get(key);
-    const write = computed?.get(key);
-    if (write === undefined) {
-      if (column === undefined) unknownField(table, key);
-      refuseHidden(column);
-    }
+    if (column === undefined) unknownField(table, key);
+    refuseHidden(column);
     const value = orderBy[key];
     if (index > 0) sink.text(", ");
-    if (column !== undefined && isOperator(value) && operatorName(value) === "relevance") {
+    if (isOperator(value) && operatorName(value) === "relevance") {
       emitLazy(
         table,
         column,
@@ -1348,8 +1313,9 @@ export function emitOrder(
       continue;
     }
     const parsed = parseOrder(key, value);
-    if (write === undefined) sink.text(`${alias}.${quote(column?.sql ?? "")}`);
-    else write(sink);
+    sink.text(alias);
+    sink.text(".");
+    sink.text(quote(column.sql));
     sink.text(parsed.dir === "asc" ? " asc" : " desc");
     sink.text(parsed.nulls === "first" ? " nulls first" : " nulls last");
     sink.mark(`o:${key}:${parsed.dir}:${parsed.nulls}`);
