@@ -46,3 +46,20 @@ These are printed under `not imported`, with the table and the reason, and they 
 - The sequence behind `serial`, `smallserial`, or `bigserial`. The column is written as `integer`, `smallint`, or `bigint` and not null.
 
 A second Postgres schema is listed the same way. Import it on its own and set `namespace`.
+
+## Extras
+
+`extras` in a Drizzle relational query adds a computed value to each row, usually a scalar subquery over a related table. `okm import drizzle` reads the schema only, so it does not carry a query over. Rewrite each one as a [`computed`](/docs/queries/computed) entry on the same read, after the `many` relation exists in the okmodel table file.
+
+| Drizzle `extras` | okmodel `computed` |
+| --- | --- |
+| `select count(*)` over the related table | `(u) => u.posts.count()` |
+| the same count with a `where` | `(u) => u.posts.count({ where: { published: true } })` |
+| `select count(distinct col)` | `(u) => u.posts.count({ distinct: "authorId" })` |
+| `select exists (...)` | `(u) => u.posts.exists({ where: { published: true } })` |
+| `select sum(col)`, `avg(col)`, `min(col)`, `max(col)` | `(u) => u.posts.sum("views")` and the same for `avg`, `min`, `max` |
+| a sum over an expression such as `views * 2` | `(u) => u.posts.sum(fragment`${ident("views")} * 2`)` |
+| an arithmetic combination of two subqueries | one `fragment` that interpolates both aggregates |
+| `where` on an `extras` value, or an order by it | the computed name in `where` and `orderBy` |
+
+The result is a key on the row with the type the verb gives, not a `sql<number>` you wrote. A count is a number. A subquery over a table with no relation to the row has no `computed` form: declare the relation, or read it in a second call. A value Drizzle stores in a column stays a column.
