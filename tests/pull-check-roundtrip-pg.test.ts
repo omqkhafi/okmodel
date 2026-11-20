@@ -30,6 +30,7 @@ import { repoRoot } from "../scripts/root.js";
 const gate = await loadPostgresGate();
 const root = repoRoot();
 const pg = JSON.stringify(join(root, "src/dialects/pg/index.ts"));
+const ext = JSON.stringify(join(root, "src/dialects/pg/ext/index.ts"));
 const migrate = JSON.stringify(join(root, "src/tooling/migrate/index.ts"));
 
 const ENFORCED = `schema({
@@ -445,10 +446,18 @@ function copyTree(from: string, to: string): void {
       const src = join(dir, entry.name);
       const next = join(dest, entry.name);
       if (entry.isDirectory()) visit(src, next);
+      else if (entry.name.endsWith(".ts")) writeFileSync(next, sourceImports(src));
       else copyFileSync(src, next);
     }
   };
   visit(from, to);
+}
+
+/** A pulled file imports the package by name. CI has no `node_modules/okmodel`, so point it at the source. */
+function sourceImports(file: string): string {
+  return readFileSync(file, "utf8")
+    .replaceAll('from "okmodel/pg"', `from ${pg}`)
+    .replaceAll('from "okmodel/ext"', `from ${ext}`);
 }
 
 async function refusal(operation: Promise<unknown>): Promise<OkmError> {
