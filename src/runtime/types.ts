@@ -10,6 +10,7 @@ import type { SafeResult } from "../contracts/error.js";
 import type { OptionalInsert, RequiredInsert } from "../contracts/rows.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
 import type { Bucket } from "../dialects/pg/ops/bucket.js";
+import type { Fragment } from "../dialects/pg/ops/fragment.js";
 import type { Window } from "../dialects/pg/ops/window.js";
 import type { IsTimeText } from "../dialects/pg/time.js";
 import type { Inc } from "../dialects/pg/ops/inc.js";
@@ -440,6 +441,9 @@ type OneKey =
   | "wait"
   | "where";
 
+/** `count` and `exists` option names. */
+type CountKey = "route" | "signal" | "timeout" | "where";
+
 /** `unknown` when `O` stays inside `Keys`. Otherwise the extra keys are `never`. */
 type Top<O, Keys extends PropertyKey> = [ExtraKeys<O, Keys>] extends [never]
   ? unknown
@@ -730,6 +734,151 @@ export type ResultRow<S extends QuerySchema, K extends keyof S["~byName"], O> = 
     IncludeRows<S, K, O extends { readonly include: infer Inc } ? Inc : undefined>
 >;
 
+/**
+ * What a `computed` callback returns for one aggregate: the value's type, carried in the type only.
+ *
+ * @typeParam T - What the aggregate reads as
+ */
+export type Computation<T> = { readonly "~computed": T };
+
+/** The aggregates of one `many` or `manyThrough` relation. */
+type ComputedHandle<S extends QuerySchema, T extends keyof S["~byName"]> = {
+  /** Rows of the relation, or the distinct values of `distinct`. */
+  count(options?: {
+    readonly where?: WhereOf<S, T>;
+    readonly distinct?: keyof RowOf<S, T> & string;
+  }): Computation<number>;
+  /** True when one row matches. */
+  exists(options?: { readonly where?: WhereOf<S, T> }): Computation<boolean>;
+  /** Total of a numeric field, or of a fragment over the related row's fields. `null` when no row matches. */
+  sum<const C extends NumericKeys<RowOf<S, T>>>(
+    column: C,
+    options?: { readonly where?: WhereOf<S, T> },
+  ): Computation<NonNullable<RowOf<S, T>[C]> | null>;
+  sum(column: Fragment, options?: { readonly where?: WhereOf<S, T> }): Computation<number | null>;
+  /** Average of a numeric field, or of a fragment. `null` when no row matches. */
+  avg<const C extends NumericKeys<RowOf<S, T>>>(
+    column: C,
+    options?: { readonly where?: WhereOf<S, T> },
+  ): Computation<NonNullable<RowOf<S, T>[C]> | null>;
+  avg(column: Fragment, options?: { readonly where?: WhereOf<S, T> }): Computation<number | null>;
+  /** Smallest value of a field, or of a fragment. `null` when no row matches. */
+  min<const C extends keyof RowOf<S, T> & string>(
+    column: C,
+    options?: { readonly where?: WhereOf<S, T> },
+  ): Computation<NonNullable<RowOf<S, T>[C]> | null>;
+  min(column: Fragment, options?: { readonly where?: WhereOf<S, T> }): Computation<number | null>;
+  /** Largest value of a field, or of a fragment. `null` when no row matches. */
+  max<const C extends keyof RowOf<S, T> & string>(
+    column: C,
+    options?: { readonly where?: WhereOf<S, T> },
+  ): Computation<NonNullable<RowOf<S, T>[C]> | null>;
+  max(column: Fragment, options?: { readonly where?: WhereOf<S, T> }): Computation<number | null>;
+};
+
+/** The related table of a `many` or `manyThrough` relation. A one or morph relation gives `never`. */
+type ManyTable<S extends QuerySchema, Rel> = Rel extends {
+  readonly morph: { readonly targets: readonly string[] };
+}
+  ? never
+  : Rel extends { readonly kind: "many"; readonly table: infer T extends keyof S["~byName"] }
+    ? T
+    : never;
+
+/** The row a `computed` callback receives. Each `many` relation holds its aggregates. */
+export type ComputedRow<S extends QuerySchema, K extends keyof S["~byName"]> = {
+  readonly [
+    R in RelationKeys<RelationsOf<S, K>> as [ManyTable<S, RelationsOf<S, K>[R]>] extends [never]
+      ? never
+      : R
+  ]: ComputedHandle<S, ManyTable<S, RelationsOf<S, K>[R]>>;
+};
+
+/** `computed`: result name to a callback of the row. */
+type ComputedOption<S extends QuerySchema, K extends keyof S["~byName"]> = {
+  readonly computed: {
+    readonly [name: string]: (row: ComputedRow<S, K>) => Computation<unknown> | Fragment;
+  };
+};
+
+/** What a callback's result reads as. A bare fragment is a number, or `null` when it divides by nothing. */
+type ComputedValue<R> = R extends Computation<infer T> ? T : number | null;
+
+/** The values `computed` adds to a row. */
+type ComputedCols<O> = O extends { readonly computed: infer C }
+  ? {
+      readonly [N in keyof C]: C[N] extends (row: never) => infer R ? ComputedValue<R> : never;
+    }
+  : unknown;
+
+/** A row with the values `computed` adds. */
+export type ComputedResult<S extends QuerySchema, K extends keyof S["~byName"], O> = Show<
+  ResultRow<S, K, O> & ComputedCols<O>
+>;
+
+/** `where` and `orderBy` of a call with `computed`. Their keys are sealed by {@link ComputedSeal}. */
+type ComputedFilter = { readonly where?: object; readonly orderBy?: object };
+
+/** `find` options with `computed`. */
+type ComputedFind<S extends QuerySchema, K extends keyof S["~byName"], L> = Omit<
+  FindOptions<S, K>,
+  "where" | "orderBy"
+> &
+  L &
+  ComputedOption<S, K> &
+  ComputedFilter;
+
+/** `one` options with `computed`. */
+type ComputedOne<S extends QuerySchema, K extends keyof S["~byName"]> = Omit<
+  ReadOptions<S, K>,
+  "where" | "orderBy"
+> &
+  ComputedOption<S, K> &
+  ComputedFilter;
+
+/** `page` options with `computed`. The order stays on fields: a cursor holds no computed value. */
+type ComputedPage<S extends QuerySchema, K extends keyof S["~byName"]> = Omit<
+  PageOptions<S, K>,
+  "where"
+> &
+  ComputedOption<S, K> & { readonly where?: object };
+
+/** `count` and `exists` options with `computed`. */
+type ComputedCount<S extends QuerySchema, K extends keyof S["~byName"]> = CallOptions &
+  ComputedOption<S, K> & { readonly where?: object };
+
+/**
+ * Seals `where` and `orderBy` on a call with `computed`: this table's fields, and the computed names.
+ *
+ * Each computed name takes the filters its value type takes.
+ */
+type ComputedSeal<
+  S extends QuerySchema,
+  K extends keyof S["~byName"],
+  O,
+  Ordered extends boolean = true,
+> = ComputedWhereField<S, K, O> &
+  (Ordered extends true ? ComputedOrderField<S, K, O> : OrderField<S, K, O, false>) &
+  IncludeField<S, K, O, false>;
+
+type ComputedWhereField<S extends QuerySchema, K extends keyof S["~byName"], O> =
+  WhereOfTarget<O> extends infer W
+    ? [W] extends [undefined]
+      ? unknown
+      : SealField<WhereSeal<W, WhereKeys<S, K, false> | keyof ComputedCols<O>>, "where"> & {
+          readonly where?: WhereOf<S, K> & FieldWhere<ComputedCols<O>>;
+        }
+    : unknown;
+
+type ComputedOrderField<S extends QuerySchema, K extends keyof S["~byName"], O> =
+  OrderOfTarget<O> extends infer B
+    ? [B] extends [undefined]
+      ? unknown
+      : SealField<OrderSeal<B, OrderKeys<S, K, false> | keyof ComputedCols<O>>, "orderBy"> & {
+          readonly orderBy?: OrderBy<RowOf<S, K> & ComputedCols<O>>;
+        }
+    : unknown;
+
 /** Per-call cancellation and deadline (spec §15). */
 export type CallOptions = {
   /** Aborts the call. The statement is cancelled where the driver can, and the call fails as `cancelled`. */
@@ -756,6 +905,8 @@ export type ReadOptions<S extends QuerySchema, K extends keyof S["~byName"]> = C
   readonly include?: IncludeOf<S, K>;
   /** Suppress a warning rule. Absent when every firing rule should report. */
   readonly ignore?: CallIgnore;
+  /** Aggregates of a `many` relation, in the same statement. */
+  readonly computed?: ComputedOption<S, K>["computed"];
 };
 
 /**
@@ -1733,6 +1884,11 @@ export interface TableExtras<S extends QuerySchema, K extends keyof S["~byName"]
 
 /** Methods on one table. */
 export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & string, L = unknown> = {
+  /**
+   * Reads with `computed`: aggregates of a `many` or `manyThrough` relation,
+   * in the same statement. Each name is a new key on the row, and `where`
+   * and `orderBy` may name it.
+   */
   find<const O extends FindOptions<S, K> & L & { readonly limit: number }>(
     options: O & ReadSeal<S, K, O, false> & Top<O, FindKey>,
   ): Read<readonly ResultRow<S, K, O>[]>;
@@ -1767,6 +1923,17 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   ): Defaults<S, "find"> extends true
     ? Read<readonly ResultRow<S, K, Record<string, never>>[]>
     : never;
+  /**
+   * Reads with `computed`: aggregates of a `many` or `manyThrough` relation,
+   * in the same statement. Each name is a new key on the row, and `where`
+   * and `orderBy` may name it.
+   */
+  find<const O extends ComputedFind<S, K, L> & { readonly limit: number }>(
+    options: O & ComputedSeal<S, K, O> & Top<O, FindKey | "computed">,
+  ): Read<readonly ComputedResult<S, K, O>[]>;
+  find<const O extends ComputedFind<S, K, L>>(
+    options: O & ComputedSeal<S, K, O> & Top<O, FindKey | "computed">,
+  ): Unbounded<S, "find", Read<readonly ComputedResult<S, K, O>[]>>;
   find<const O extends RelationFind<S, K, true, L>>(
     options: O & RelationSeal<S, K, O, true> & Top<O, FindKey>,
   ): Unbounded<S, "find", Read<readonly ResultRow<S, K, O>[]>>;
@@ -1779,6 +1946,9 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   one<const O extends ReadFilterOptions<S, K>>(
     options?: O & ReadSeal<S, K, O, true> & Top<O, OneKey>,
   ): Read<ResultRow<S, K, O> | null>;
+  one<const O extends ComputedOne<S, K>>(
+    options: O & ComputedSeal<S, K, O> & Top<O, OneKey | "computed">,
+  ): Read<ComputedResult<S, K, O> | null>;
   one<const O extends RelationOne<S, K, true>>(
     options?: O & RelationSeal<S, K, O, true> & Top<O, OneKey>,
   ): Read<ResultRow<S, K, O> | null>;
@@ -1821,6 +1991,9 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   page(
     ...args: BareArgs<S, "page">
   ): Defaults<S, "page"> extends true ? Query<Page<ResultRow<S, K, Record<string, never>>>> : never;
+  page<const O extends ComputedPage<S, K>>(
+    options: O & ComputedSeal<S, K, O, false> & Top<O, PageKey | "computed">,
+  ): Query<Page<ComputedResult<S, K, O>>>;
   page<const O extends RelationDefaultPage<S, K, true>>(
     options: O & NoRank<O> & PageTop<O> & RelationSeal<S, K, O, true>,
   ): Query<Page<ResultRow<S, K, O>>>;
@@ -1911,10 +2084,16 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
       readonly search?: TextSearch<RowOf<S, K>>;
     },
   ): Read<number>;
+  count<const O extends ComputedCount<S, K>>(
+    options: O & ComputedSeal<S, K, O, false> & Top<O, CountKey | "computed">,
+  ): Read<number>;
   count<const O extends ExactConstraint<O, CountFilterTarget<S, K, WhereOfTarget<O>>>>(
     options?: O,
   ): Read<number>;
   exists(options?: CallOptions & { readonly where?: Untagged<FiltersOf<S, K>> }): Read<boolean>;
+  exists<const O extends ComputedCount<S, K>>(
+    options: O & ComputedSeal<S, K, O, false> & Top<O, CountKey | "computed">,
+  ): Read<boolean>;
   exists<const O extends ExactConstraint<O, ExistsFilterTarget<S, K, WhereOfTarget<O>>>>(
     options?: O,
   ): Read<boolean>;

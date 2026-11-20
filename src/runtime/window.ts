@@ -28,14 +28,12 @@ import {
   type ReadCall,
   type Sink,
 } from "./plan.js";
+import { NUMERIC, readsAs } from "./numeric-type.js";
 import { refusePrototypeKey } from "./result-name.js";
 import { decodeSqlNumber, emitSqlSelect } from "./sql-fragment.js";
 
 const AS_NUMBER = (wire: string): number => Number(wire);
 const AS_TEXT = (wire: string): string => wire;
-
-/** Column types `runningTotal` takes. The same set as `sum`. */
-const NUMERIC = /^(smallint|integer|bigint|real|double precision|numeric|decimal)\b/;
 
 const OPTION_KEYS = ["as", "orderBy", "partitionBy"] as const;
 
@@ -399,7 +397,7 @@ function readAs(value: unknown, label: string): string {
  * @returns The decoder for one wire value
  */
 function totalDecode(column: ColumnModel): (wire: string) => unknown {
-  const kind = typeof (column.decode?.("0") ?? "");
+  const kind = readsAs(column);
   if (kind === "string") return AS_TEXT;
   if (kind === "number") return AS_NUMBER;
   return fail(

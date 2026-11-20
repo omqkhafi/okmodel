@@ -84,6 +84,8 @@ export type ReadCall = {
   /** Rows to skip. An integer from 0 up. It is a parameter, marked `off:`. */
   readonly offset?: unknown;
   readonly include?: unknown;
+  /** Name to callback. The computed chunk replaces it with what it parsed. */
+  readonly computed?: unknown;
   /** Call-site warning ignore. It never enters the plan or its key. */
   readonly ignore?: unknown;
   /** `find` and `count`. Rewritten to `matches` and `relevance` before SQL. */
@@ -339,6 +341,7 @@ export type Sink = {
 // `let` so the minifier keeps one copy of each name. Four lists share them.
 let ignoreKey = "ignore";
 let includeKey = "include";
+let computedKey = "computed";
 let orderKey = "orderBy";
 let searchKey = "search";
 let selectKey = "select";
@@ -347,6 +350,7 @@ let signalKey = "signal";
 let timeoutKey = "timeout";
 let whereKey = "where";
 const FIND_OPTIONS = [
+  computedKey,
   ignoreKey,
   includeKey,
   "limit",
@@ -360,6 +364,7 @@ const FIND_OPTIONS = [
   whereKey,
 ] as const;
 const ONE_OPTIONS = [
+  computedKey,
   ignoreKey,
   includeKey,
   orderKey,
@@ -369,8 +374,16 @@ const ONE_OPTIONS = [
   timeoutKey,
   whereKey,
 ] as const;
-const COUNT_OPTIONS = [ignoreKey, routeKey, searchKey, signalKey, timeoutKey, whereKey] as const;
-const FILTER_OPTIONS = [ignoreKey, routeKey, signalKey, timeoutKey, whereKey] as const;
+const COUNT_OPTIONS = [
+  computedKey,
+  ignoreKey,
+  routeKey,
+  searchKey,
+  signalKey,
+  timeoutKey,
+  whereKey,
+] as const;
+const FILTER_OPTIONS = [computedKey, ignoreKey, routeKey, signalKey, timeoutKey, whereKey] as const;
 
 /**
  * Caller fields `readCall` copies onto the logical read.
@@ -385,6 +398,7 @@ export const copiedReadKeys = [
   "offset",
   includeKey,
   ignoreKey,
+  computedKey,
 ] as const;
 
 /**
@@ -966,7 +980,34 @@ export function emitWhere(
   appended = false,
   extra?: Keyset,
 ): void {
-  let started = emitVisibility(schema, table, sink, alias, appended);
+  emitConditions(
+    schema,
+    table,
+    where,
+    sink,
+    alias,
+    depth,
+    emitVisibility(schema, table, sink, alias, appended),
+    extra,
+  );
+}
+
+/**
+ * Writes the caller's `where` and one more keyset condition, without the tenant
+ * and active-set predicates. {@link emitWhere} writes those first.
+ *
+ * @param started - True when a `where` is already open
+ */
+export function emitConditions(
+  schema: QuerySchema,
+  table: Indexed,
+  where: unknown,
+  sink: Sink,
+  alias: string,
+  depth: number,
+  started: boolean,
+  extra?: Keyset,
+): void {
   if (extra !== undefined) {
     sink.text(started ? " and (" : " where (");
     extra(sink, alias);
@@ -1269,7 +1310,13 @@ function emitRelationFilter(
   sink.text(")");
 }
 
-export function emitOrder(table: Indexed, orderBy: unknown, sink: Sink, alias: string): void {
+export function emitOrder(
+  table: Indexed,
+  orderBy: unknown,
+  sink: Sink,
+  alias: string,
+  computed?: ReadonlyMap<string, (sink: Sink) => void>,
+): void {
   if (orderBy === undefined) return;
   if (!isRecord(orderBy)) {
     fail("OKM1120", "orderBy must be an object of fields.");
@@ -1281,11 +1328,14 @@ export function emitOrder(table: Indexed, orderBy: unknown, sink: Sink, alias: s
     const key = keys[index];
     if (key === undefined) continue;
     const column = table.columns.get(key);
-    if (column === undefined) unknownField(table, key);
-    refuseHidden(column);
+    const write = computed?.get(key);
+    if (write === undefined) {
+      if (column === undefined) unknownField(table, key);
+      refuseHidden(column);
+    }
     const value = orderBy[key];
     if (index > 0) sink.text(", ");
-    if (isOperator(value) && operatorName(value) === "relevance") {
+    if (column !== undefined && isOperator(value) && operatorName(value) === "relevance") {
       emitLazy(
         table,
         column,
@@ -1298,9 +1348,8 @@ export function emitOrder(table: Indexed, orderBy: unknown, sink: Sink, alias: s
       continue;
     }
     const parsed = parseOrder(key, value);
-    sink.text(alias);
-    sink.text(".");
-    sink.text(quote(column.sql));
+    if (write === undefined) sink.text(`${alias}.${quote(column?.sql ?? "")}`);
+    else write(sink);
     sink.text(parsed.dir === "asc" ? " asc" : " desc");
     sink.text(parsed.nulls === "first" ? " nulls first" : " nulls last");
     sink.mark(`o:${key}:${parsed.dir}:${parsed.nulls}`);

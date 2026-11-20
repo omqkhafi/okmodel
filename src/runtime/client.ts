@@ -695,6 +695,9 @@ export function readHandle(
     if (call.build === undefined && selectHasWindow(call.select)) {
       call = (await import("./window.js")).attach(session.schema, call);
     }
+    if (call.computed !== undefined) {
+      call = await (await import("./computed.js")).attach(session.schema, call);
+    }
     if (call.limits !== undefined) {
       const limits = await import("./limits.js");
       call = limits.limit(session, call);
@@ -722,6 +725,7 @@ export function readHandle(
     call.limits === undefined &&
     call.include === undefined &&
     mods.uses === undefined &&
+    call.computed === undefined &&
     !selectHasWindow(call.select);
   const run = async (): Promise<unknown> => {
     await session.connected;
