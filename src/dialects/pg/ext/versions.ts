@@ -24,6 +24,7 @@ export type ExtPackRecord = {
     readonly 16: string;
     readonly 17: string;
     readonly 18: string;
+    readonly 19: string;
   };
   /** Oldest major the base methods exist on. */
   readonly minPostgres: 15;
@@ -34,13 +35,13 @@ export type ExtPackRecord = {
 export const EXT_PACKS: readonly ExtPackRecord[] = [
   {
     name: "unaccent",
-    versions: { 15: "1.1", 16: "1.1", 17: "1.1", 18: "1.1" },
+    versions: { 15: "1.1", 16: "1.1", 17: "1.1", 18: "1.1", 19: "1.1" },
     minPostgres: 15,
     signatures: [{ kind: "function", name: "unaccent", args: "text" }],
   },
   {
     name: "hstore",
-    versions: { 15: "1.8", 16: "1.8", 17: "1.8", 18: "1.8" },
+    versions: { 15: "1.8", 16: "1.8", 17: "1.8", 18: "1.8", 19: "1.8" },
     minPostgres: 15,
     signatures: [
       { kind: "operator", name: "?", left: "hstore", right: "text" },
@@ -51,7 +52,7 @@ export const EXT_PACKS: readonly ExtPackRecord[] = [
   },
   {
     name: "ltree",
-    versions: { 15: "1.2", 16: "1.2", 17: "1.3", 18: "1.3" },
+    versions: { 15: "1.2", 16: "1.2", 17: "1.3", 18: "1.3", 19: "1.3" },
     minPostgres: 15,
     signatures: [
       { kind: "operator", name: "@>", left: "ltree", right: "ltree" },
@@ -61,25 +62,25 @@ export const EXT_PACKS: readonly ExtPackRecord[] = [
   },
   {
     name: "btree_gist",
-    versions: { 15: "1.7", 16: "1.7", 17: "1.7", 18: "1.8" },
+    versions: { 15: "1.7", 16: "1.7", 17: "1.7", 18: "1.8", 19: "1.9" },
     minPostgres: 15,
     signatures: [{ kind: "opclass", name: "gist_int4_ops", method: "gist" }],
   },
   {
     name: "btree_gin",
-    versions: { 15: "1.3", 16: "1.3", 17: "1.3", 18: "1.3" },
+    versions: { 15: "1.3", 16: "1.3", 17: "1.3", 18: "1.3", 19: "1.4" },
     minPostgres: 15,
     signatures: [{ kind: "opclass", name: "int4_ops", method: "gin" }],
   },
   {
     name: "fuzzystrmatch",
-    versions: { 15: "1.1", 16: "1.2", 17: "1.2", 18: "1.2" },
+    versions: { 15: "1.1", 16: "1.2", 17: "1.2", 18: "1.2", 19: "1.2" },
     minPostgres: 15,
     signatures: [{ kind: "function", name: "levenshtein", args: "text, text" }],
   },
   {
     name: "pgcrypto",
-    versions: { 15: "1.3", 16: "1.3", 17: "1.3", 18: "1.4" },
+    versions: { 15: "1.3", 16: "1.3", 17: "1.3", 18: "1.4", 19: "1.4" },
     minPostgres: 15,
     signatures: [{ kind: "function", name: "digest", args: "text, text" }],
   },

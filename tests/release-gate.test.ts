@@ -81,7 +81,7 @@ test("the postgres suite runs every test file except the named omissions", () =>
 test("compatibility names the supported majors", () => {
   ensurePackedDocs(root);
   const sentence = supportSentence();
-  expect(sentence).toContain("Supported majors are Postgres 15, 16, 17, and 18.");
+  expect(sentence).toContain("Supported majors are Postgres 15, 16, 17, 18, and 19.");
   expect(sentence).toContain(
     "The floor is 15: Postgres 13 is past end of life, 14 ends in November 2026, and 15 gives us features we can use later.",
   );
@@ -91,7 +91,7 @@ test("compatibility names the supported majors", () => {
   const committed = readFileSync(join(root, "docs/compatibility.md"), "utf8");
   expect(committed).toContain(sentence);
   expect(renderCompatibility([])).toContain(sentence);
-  expect([...POSTGRES_VERSIONS]).toEqual(["15", "16", "17", "18"]);
+  expect([...POSTGRES_VERSIONS]).toEqual(["15", "16", "17", "18", "19"]);
 });
 
 test("changelog release notes are the version section", () => {

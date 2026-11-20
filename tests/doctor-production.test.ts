@@ -170,12 +170,13 @@ test("timeouts: apply's own lock_timeout is the one reported, and zero warns", (
   expect(zero[1]).toMatchObject({ severity: "warn", code: "OKM2201" });
 });
 
-test("server: the supported window is 15 to 18", () => {
+test("server: the supported window is 15 to 19", () => {
   expect(serverFinding(17, undefined).severity).toBe("ok");
   expect(serverFinding(15, undefined).severity).toBe("ok");
   expect(serverFinding(18, undefined).severity).toBe("ok");
+  expect(serverFinding(19, undefined).severity).toBe("ok");
   expect(serverFinding(14, undefined)).toMatchObject({ severity: "fail", code: "OKM1803" });
-  expect(serverFinding(19, undefined)).toMatchObject({ severity: "warn" });
+  expect(serverFinding(20, undefined)).toMatchObject({ severity: "warn" });
   const floor = serverFinding(15, {
     code: "OKM1802",
     message: "The server is PostgreSQL 15.",

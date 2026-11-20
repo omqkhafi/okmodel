@@ -479,6 +479,6 @@ export function shownScenarios(): ReadonlyArray<HeroScenario> {
 
 /** Package contract cells for the foot rail. The version is appended by the caller. */
 export const HERO_CONTRACT: ReadonlyArray<string> = [
-  "PostgreSQL 15–18",
+  "PostgreSQL 15–19",
   "Apache-2.0",
 ];

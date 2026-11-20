@@ -5,7 +5,6 @@
 import { expect, test } from "bun:test";
 
 import { catalogHash } from "../src/contracts/catalog/document.js";
-import { OkmError } from "../src/contracts/error.js";
 import { citext } from "../src/dialects/pg/ext/citext.js";
 import { extension } from "../src/dialects/pg/ext/index.js";
 import { pgTrgm } from "../src/dialects/pg/ext/pg-trgm.js";
@@ -393,8 +392,9 @@ test("describe() reports tenancy.column and refuses an unsupported carried floor
     "tenancy.column",
   );
   expect(catalogHash(buildCatalog(description))).toBe(catalogHash(app.catalog));
-  expect(() => describe({ catalog: app.catalog, minPostgres: 14 })).toThrow(/minPostgres: 15-18/);
-  expect(() => describe({ catalog: app.catalog, minPostgres: 19 })).toThrow(OkmError);
+  expect(() => describe({ catalog: app.catalog, minPostgres: 14 })).toThrow(/minPostgres: 15-19/);
+  expect(() => describe({ catalog: app.catalog, minPostgres: 20 })).toThrow(/minPostgres: 15-19/);
+  expect(describe({ catalog: app.catalog, minPostgres: 19 }).minPostgres).toBe(19);
 });
 
 test("the handbook example round-trips", async () => {

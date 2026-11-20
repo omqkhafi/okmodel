@@ -239,7 +239,14 @@ function unique(values: readonly string[]): readonly string[] {
 export function supportSentence(): string {
   const majors = englishList(POSTGRES_VERSIONS);
   const floor = POSTGRES_VERSIONS[0] ?? "";
-  return `Supported majors are Postgres ${majors}. The floor is ${floor}: Postgres 13 is past end of life, 14 ends in November 2026, and 15 gives us features we can use later. \`connect()\` refuses an older server with OKM1803. \`minPostgres\` is 15, 16, 17, or 18. \`requires: { postgres: ">=17" }\` is the same floor and is deprecated. Identity columns need Postgres 10. A bare \`t.id()\` stores \`gen_random_uuid()\`, which is built in from Postgres 13. An explicit \`uuidv7()\` needs Postgres 18. A pull request runs Postgres 18 when the diff touches dialects, migrate, or runtime. \`bun run verify\` runs the suite on this machine. A push to main, the nightly run, and a release cover each supported major. A failure on an older major in this list stays in the run.`;
+  const named = orList(POSTGRES_VERSIONS);
+  return `Supported majors are Postgres ${majors}. The floor is ${floor}: Postgres 13 is past end of life, 14 ends in November 2026, and 15 gives us features we can use later. \`connect()\` refuses an older server with OKM1803. \`minPostgres\` is ${named}. \`requires: { postgres: ">=17" }\` is the same floor and is deprecated. Identity columns need Postgres 10. A bare \`t.id()\` stores \`gen_random_uuid()\`, which is built in from Postgres 13. An explicit \`uuidv7()\` needs Postgres 18. A pull request runs Postgres 18 when the diff touches dialects, migrate, or runtime. \`bun run verify\` runs the suite on this machine. A push to main, the nightly run, and a release cover each supported major. A failure on an older major in this list stays in the run.`;
+}
+
+function orList(values: readonly string[]): string {
+  if (values.length <= 1) return values[0] ?? "";
+  const last = values[values.length - 1] ?? "";
+  return `${values.slice(0, -1).join(", ")}, or ${last}`;
 }
 
 function englishList(values: readonly string[]): string {

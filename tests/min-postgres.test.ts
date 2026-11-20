@@ -30,7 +30,7 @@ test("minPostgres and the string form store the same floor and the same catalog"
 
 test("a floor that is not an allowed major is OKM1060 and names minPostgres", () => {
   const bad = [
-    { minPostgres: 19 },
+    { minPostgres: 20 },
     { minPostgres: 14 },
     { minPostgres: 13 },
     { minPostgres: 17.2 },
@@ -41,14 +41,14 @@ test("a floor that is not an allowed major is OKM1060 and names minPostgres", ()
     { requires: { postgres: "17" } },
     { requires: { postgres: ">=17.2" } },
     { requires: { postgres: "" } },
-    { requires: { postgres: ">=19" } },
+    { requires: { postgres: ">=20" } },
     { requires: { postgres: ">=9" } },
     { requires: ">=17" },
   ];
   for (const input of bad) {
     const error = capture(() => build(input));
     expect(error.code).toBe("OKM1060");
-    expect(error.message).toBe("minPostgres: 15-18.");
+    expect(error.message).toBe("minPostgres: 15-19.");
   }
   const both = capture(() =>
     schema({ minPostgres: 17, requires: { postgres: ">=17" }, tables: [notes] }),
@@ -67,6 +67,8 @@ test("an explicit uuidv7 below 18 is refused for both forms", () => {
     expect(error.fix?.summary).toContain("minPostgres: 18");
   }
   expect(() => schema({ minPostgres: 18, tables: [sessions] })).not.toThrow();
+  expect(() => schema({ minPostgres: 19, tables: [notes] })).not.toThrow();
+  expect(() => schema({ requires: { postgres: ">=19" }, tables: [notes] })).not.toThrow();
   expect(() => schema({ requires: { postgres: ">=18" }, tables: [sessions] })).not.toThrow();
   expect(() => schema({ tables: [sessions] })).not.toThrow();
   expect(() => schema({ minPostgres: 17, tables: [bare] })).not.toThrow();

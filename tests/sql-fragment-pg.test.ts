@@ -181,9 +181,23 @@ postgresTest(gate, "a backslash cannot desync the fragment guard (B-01)", async 
       expectBackslash(() => fragment`${ident("title")} = E'\\'' ) or ( title = $$x$$`);
       expectBackslash(() => fragment`${ident("title")} = '\\x27'`);
 
-      await sql.unsafe("set standard_conforming_strings to off");
-      expectBackslash(() => fragment`${ident("title")} = '\\''`);
-      await sql.unsafe("set standard_conforming_strings to on");
+      const version = await sql<{ n: string }[]>`select current_setting('server_version_num') as n`;
+      const major = Math.floor(Number(version[0]?.n ?? "0") / 10_000);
+      if (major >= 19) {
+        let refused = false;
+        try {
+          await sql.unsafe("set standard_conforming_strings to off");
+        } catch (error) {
+          refused = true;
+          const message = error instanceof Error ? error.message : String(error);
+          expect(message).toContain("non-standard string literals are not supported");
+        }
+        expect(refused).toBe(true);
+      } else {
+        await sql.unsafe("set standard_conforming_strings to off");
+        expectBackslash(() => fragment`${ident("title")} = '\\''`);
+        await sql.unsafe("set standard_conforming_strings to on");
+      }
 
       const doubled = await a.notes.find({
         where: { title: fragment`${ident("title")} = 'hel''lo'` },

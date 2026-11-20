@@ -22,7 +22,7 @@ A push to `main` and the nightly run (03:00 UTC) run the rest: type cost, the ed
 
 `bun run check` is the full local suite. It is not how a pull request finishes.
 
-`bun run db:up` starts the Postgres topology (one primary and two streaming replicas). Set `POSTGRES_VERSION` to 15, 16, 17, or 18. `bun run db:down` stops it and removes its data. Tests that need Postgres skip when Docker is not running, and fail when `REQUIRE_DOCKER=1`. `bun run test:postgres` runs every test file on that topology. A file that cannot run there is named, with the reason, in `scripts/postgres-suite.ts`. `bun run verify` runs that suite here, one version by default and every supported version with `--all`. CI remains the authority for a release.
+`bun run db:up` starts the Postgres topology (one primary and two streaming replicas). Set `POSTGRES_VERSION` to 15, 16, 17, 18, or 19. `bun run db:down` stops it and removes its data. Tests that need Postgres skip when Docker is not running, and fail when `REQUIRE_DOCKER=1`. `bun run test:postgres` runs every test file on that topology. A file that cannot run there is named, with the reason, in `scripts/postgres-suite.ts`. `bun run verify` runs that suite here, one version by default and every supported version with `--all`. CI remains the authority for a release.
 
 `bun run format` rewrites formatting. `bun run format:check` only reports it.
 

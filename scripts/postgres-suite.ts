@@ -43,7 +43,7 @@ export const POSTGRES_EXCLUSIONS: readonly PostgresExclusion[] = [
   {
     file: "tests/composition/composition-pg.test.ts",
     reason:
-      "Pairwise composition; dedicated OKM_COMPOSITION job on PR (Postgres 18) and nightly (15–18)",
+      "Pairwise composition; dedicated OKM_COMPOSITION job on PR (Postgres 18) and nightly (15–19)",
   },
 ];
 
