@@ -27,7 +27,7 @@ A terminal is friction, not proof of a human. A program that can open a terminal
 
 An agent that can log in should not use the role that owns the schema. Privileges are grants.
 
-PostgreSQL 15, 16, 17, and 18 all provide `pg_read_all_data`. Use it for read-only inspection. Give `okm migrate apply` a different role that has `CREATE` on the schema. Do not set `default_transaction_read_only`. A session can run `SET default_transaction_read_only = off` and the grant is unchanged.
+PostgreSQL 15, 16, 17, 18, and 19 all provide `pg_read_all_data`. Use it for read-only inspection. Give `okm migrate apply` a different role that has `CREATE` on the schema. Do not set `default_transaction_read_only`. A session can run `SET default_transaction_read_only = off` and the grant is unchanged.
 
 ### Read-only inspection
 

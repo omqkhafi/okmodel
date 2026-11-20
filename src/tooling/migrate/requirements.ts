@@ -10,6 +10,7 @@
 
 import type { Catalog, CatalogObject } from "../../contracts/catalog/types.js";
 import {
+  isPostgresMajor,
   parsePostgresFloor,
   POSTGRES_FLOOR,
   UUIDV7_POSTGRES,
@@ -36,7 +37,7 @@ export type RequiredExtension = {
  */
 export function declaredFloor(requires: { readonly postgres?: string } | undefined): PostgresMajor {
   const parsed = parsePostgresFloor(requires?.postgres);
-  if (parsed === 15 || parsed === 16 || parsed === 17 || parsed === 18) return parsed;
+  if (isPostgresMajor(parsed)) return parsed;
   return POSTGRES_FLOOR;
 }
 
@@ -48,7 +49,7 @@ export function declaredFloor(requires: { readonly postgres?: string } | undefin
  *
  * @param catalog - Catalog `schema()` built
  * @param declared - Floor `schema({ minPostgres })` stored, or the project floor
- * @returns 15, 16, 17, or 18
+ * @returns A major from {@link POSTGRES_MAJORS}
  */
 export function schemaMinPostgres(catalog: Catalog, declared: PostgresMajor): PostgresMajor {
   let floor = declared;

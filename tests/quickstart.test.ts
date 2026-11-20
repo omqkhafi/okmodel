@@ -243,7 +243,7 @@ async function runReadme(
   const path = join(root, "docs/guide.md");
   const markdown = readFileSync(path, "utf8");
   expect(markdown).toContain('t.identity({ as: "number" })');
-  expect(markdown).toContain("PostgreSQL 15 to 18");
+  expect(markdown).toContain("PostgreSQL 15 to 19");
   expect(markdown).toContain("await using");
   expect(markdown).toContain("pick one per database");
   if (markdown.includes("db.connected")) {

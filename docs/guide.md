@@ -6,7 +6,7 @@ codes: [OKM1020, OKM1101, OKM1102, OKM1105, OKM1120, OKM1121, OKM1123, OKM1130, 
 ---
 # OKModel guide
 
-okmodel is a catalog-first TypeScript ORM, PostgreSQL first. Other SQL databases are the direction. CI runs PostgreSQL 15 to 18. The schema is the single source. Migrations and queries come from it.
+okmodel is a catalog-first TypeScript ORM, PostgreSQL first. Other SQL databases are the direction. CI runs PostgreSQL 15 to 19. The schema is the single source. Migrations and queries come from it.
 
 Apache-2.0. The published version is [okmodel on npm](https://www.npmjs.com/package/okmodel).
 
@@ -129,7 +129,7 @@ export default defineConfig({
 
 `authors` has a unique name. `notes` stores a title and points at an author. `t.identity()` is the primary key. An insert omits the id, and the row that comes back carries it. Identity ids come back as strings by default. `t.identity({ as: "number" })` returns numbers. Push and reviewed migrations are two ways to do the same job: pick one per database.
 
-Tested on PostgreSQL 15 to 18.
+Tested on PostgreSQL 15 to 19.
 
 `schema.ts`:
 

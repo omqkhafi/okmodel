@@ -155,7 +155,7 @@ await connect({ primary: url, replicas: [r1, r2] }, { schema: appSchema }); // t
 connect(url, { schema: appSchema, tenancy: { registry } });                  // tenant registry, section 9.1 (M5)
 ```
 
-- On connect: the server is PostgreSQL 15 or newer (OKM1803). `minPostgres` is 15, 16, 17, or 18, and the server must satisfy that major (OKM1802). Omitted means 15. `requires: { postgres: ">=17" }` is the same floor and is deprecated. Dialect match is OKM1801.
+- On connect: the server is PostgreSQL 15 or newer (OKM1803). `minPostgres` is 15, 16, 17, 18, or 19, and the server must satisfy that major (OKM1802). Omitted means 15. `requires: { postgres: ">=17" }` is the same floor and is deprecated. Dialect match is OKM1801.
 - There is no user-facing schema or edition version. The package version is the contract: features exist or not by release, and default changes ship with `okm upgrade` codemods. The catalog format version is internal and lives in `okm.lock.json`.
 - Each `connect()` returns a client typed by its own schema, independent of `Register`.
 

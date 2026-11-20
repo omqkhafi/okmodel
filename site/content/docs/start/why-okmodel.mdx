@@ -43,7 +43,7 @@ OkmError: find() needs a limit.
 
 | It will not | Why, and what you do instead |
 | --- | --- |
-| Support a database other than PostgreSQL | The schema and the runtime use PostgreSQL features directly, such as row-level security, `distinct on`, and transaction settings, and every release is tested on PostgreSQL 15 to 18. A dialect, the SQL one database speaks, is written only for PostgreSQL. ([Compatibility](/docs/reference/compatibility)) |
+| Support a database other than PostgreSQL | The schema and the runtime use PostgreSQL features directly, such as row-level security, `distinct on`, and transaction settings, and every release is tested on PostgreSQL 15 to 19. A dialect, the SQL one database speaks, is written only for PostgreSQL. ([Compatibility](/docs/reference/compatibility)) |
 | Run on Deno | The test suites run on Node.js and Bun only, so no claim is made for Deno. Use Node.js 22.18+ or Bun 1.4+. ([Installation](/docs/start/installation)) |
 | Set a default read limit by itself | Without `limits`, a `find` with no `limit` is refused. Pass `limits` to `connect` to choose the defaults. ([Query limits](/docs/operate/query-limits)) |
 | Ship a driver inside the package | The package has no runtime dependencies, so installing it adds nothing besides the driver you choose. Install the peer your runtime already uses. ([Drivers](/docs/operate/drivers)) |
@@ -52,7 +52,7 @@ OkmError: find() needs a limit.
 
 | Fact | Detail |
 | --- | --- |
-| PostgreSQL | Majors 15, 16, 17, and 18 ([Minimum Postgres](/docs/schema/the-schema#minimum-postgres)) |
+| PostgreSQL | Majors 15, 16, 17, 18, and 19 ([Minimum Postgres](/docs/schema/the-schema#minimum-postgres)) |
 | Runtimes | Node.js 22.18 or newer; Bun 1.4 or newer ([CLI](/docs/reference/cli), [Drivers](/docs/operate/drivers)) |
 | Drivers in the conformance table | postgres.js, node-postgres, Bun.sql, and PGlite ([Compatibility](/docs/reference/compatibility)) |
 | Neon | Supported as `okmodel/pg/neon`; not a column in that table ([Drivers](/docs/operate/drivers)) |

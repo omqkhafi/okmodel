@@ -157,6 +157,20 @@ postgresTest(gate, "QA-S2: apply refuses standard_conforming_strings off", async
   const sql = openPostgres(database.url);
   const name = new URL(database.url).pathname.slice(1);
   try {
+    const version = await sql<{ n: string }[]>`select current_setting('server_version_num') as n`;
+    const major = Math.floor(Number(version[0]?.n ?? "0") / 10_000);
+    if (major >= 19) {
+      let refused = false;
+      try {
+        await sql.unsafe(`alter database ${name} set standard_conforming_strings = off`);
+      } catch (error) {
+        refused = true;
+        const message = error instanceof Error ? error.message : String(error);
+        expect(message).toContain("non-standard string literals are not supported");
+      }
+      expect(refused).toBe(true);
+      return;
+    }
     await sql.unsafe(`alter database ${name} set standard_conforming_strings = off`);
     const failed = await applyTarget({
       url: database.url,

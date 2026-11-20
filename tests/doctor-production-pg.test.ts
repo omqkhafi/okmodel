@@ -504,7 +504,7 @@ postgresTest(
     );
     const server = find(run.report, "server-version");
     expect(server.severity).toBe("ok");
-    expect(server.summary).toMatch(/PostgreSQL 1[5-8], inside the supported window 15-18/);
+    expect(server.summary).toMatch(/PostgreSQL 1[5-9], inside the supported window 15-19/);
   },
   120_000,
 );

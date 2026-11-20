@@ -16,7 +16,7 @@ jobs:
       actions: read
     uses: ./.github/workflows/postgres-suite.yml
     with:
-      versions: '["15", "16", "17", "18"]'
+      versions: '["15", "16", "17", "18", "19"]'
 
   tarball:
     name: tarball
@@ -25,4 +25,4 @@ jobs:
       actions: read
     uses: ./.github/workflows/postgres-tarball.yml
     with:
-      versions: '["15", "16", "17", "18"]'
+      versions: '["15", "16", "17", "18", "19"]'

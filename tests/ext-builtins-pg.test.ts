@@ -403,11 +403,13 @@ async function serverMajor(sql: Sql): Promise<number> {
 }
 
 function versionOf(pack: ExtPackRecord, major: number): string {
-  if (major === 15) return pack.versions[15];
-  if (major === 16) return pack.versions[16];
-  if (major === 17) return pack.versions[17];
-  if (major === 18) return pack.versions[18];
-  throw new Error(`Postgres ${String(major)} is outside 15–18`);
+  const versions: Readonly<Record<number, string>> = pack.versions;
+  const found = versions[major];
+  if (found !== undefined) return found;
+  const listed = Object.keys(pack.versions);
+  const oldest = listed[0];
+  const newest = listed[listed.length - 1];
+  throw new Error(`Postgres ${String(major)} is outside ${oldest}–${newest}`);
 }
 
 async function signatureExists(

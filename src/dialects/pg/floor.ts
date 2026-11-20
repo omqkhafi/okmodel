@@ -1,12 +1,12 @@
 /**
  * Postgres majors a schema may name, and the features that read them.
  *
- * 15–18 are the majors okmodel runs. A major outside that range is refused
+ * 15–19 are the majors okmodel runs. A major outside that range is refused
  * when `schema()` runs. Messages read these numbers. They do not repeat them.
  */
 
 /** Majors `minPostgres` and `requires.postgres` accept, oldest first. */
-export const POSTGRES_MAJORS = [15, 16, 17, 18] as const;
+export const POSTGRES_MAJORS = [15, 16, 17, 18, 19] as const;
 
 /** A major {@link POSTGRES_MAJORS} allows. */
 export type PostgresMajor = (typeof POSTGRES_MAJORS)[number];
@@ -29,11 +29,10 @@ export const UUIDV7_POSTGRES = 18 satisfies PostgresMajor;
  * Accepts a major from {@link POSTGRES_MAJORS}.
  *
  * @param value - Candidate from schema input
- * @returns Whether `value` is 15, 16, 17, or 18
+ * @returns Whether `value` is one of {@link POSTGRES_MAJORS}
  */
 export function isPostgresMajor(value: unknown): value is PostgresMajor {
-  // 15 is {@link POSTGRES_FLOOR}. 18 is the newest major okmodel runs.
-  return typeof value === "number" && (value | 0) === value && value >= 15 && value <= 18;
+  return (POSTGRES_MAJORS as readonly unknown[]).includes(value);
 }
 
 /** `>=` and digits, the stored floor. */
@@ -62,12 +61,14 @@ export function formatPostgresFloor(major: number): string {
 }
 
 /**
- * Definition error for a floor outside 15–18.
+ * Definition error for a floor outside {@link POSTGRES_MAJORS}.
  *
  * @returns OKM1060 message
  */
 export function minPostgresDefinition(): string {
-  return "minPostgres: 15-18.";
+  const oldest = POSTGRES_MAJORS[0];
+  const newest = POSTGRES_MAJORS[POSTGRES_MAJORS.length - 1];
+  return `minPostgres: ${String(oldest)}-${String(newest)}.`;
 }
 
 /**

@@ -15,14 +15,14 @@ import {
   postgresVersionFromEnv,
 } from "../packages/harness/src/version.js";
 
-test("postgres versions 15 through 18 are accepted", () => {
-  expect([...POSTGRES_VERSIONS]).toEqual(["15", "16", "17", "18"]);
+test("postgres versions 15 through 19 are accepted", () => {
+  expect([...POSTGRES_VERSIONS]).toEqual(["15", "16", "17", "18", "19"]);
   for (const version of POSTGRES_VERSIONS) {
     expect(assertPostgresVersion(version)).toBe(version);
   }
   expect(postgresVersionFromEnv({})).toBe("17");
-  expect(() => assertPostgresVersion("14")).toThrow(/outside 15/);
-  expect(() => assertPostgresVersion("19")).toThrow(/outside 15/);
+  expect(() => assertPostgresVersion("14")).toThrow(/outside 15–19/);
+  expect(() => assertPostgresVersion("20")).toThrow(/outside 15–19/);
 });
 
 test("topology keeps 55432 when those ports are free", async () => {

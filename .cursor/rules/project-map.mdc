@@ -46,7 +46,7 @@ contracts → dialects → adapters → runtime → tooling. Adapters import con
 - Postgres: `bun run db:up` (`POSTGRES_VERSION=15|16|17|18`, default 17), then `REQUIRE_DOCKER=1 bun test tests/<name>-pg.test.ts`; `bun run db:down` after.
 - Worker tests: run the parent test (e.g. `bun test tests/connection-lost-pg.test.ts`); it spawns `bun tests/<name>.worker.ts`. A Node run of a worker needs a bundle first: `bun build <worker> --target node --outfile <out>` (keep `pg`/`postgres` external), then `node <out>`.
 - Types: `bun run typecheck`; type cost: `bun run type-cost`; size: `bun run size`.
-- Full: `bun run check`; all files on Postgres: `bun run test:postgres`; tarball: `bun run test:tarball`; Docker locally: `bun run verify` (`--all` for 15–18).
+- Full: `bun run check`; all files on Postgres: `bun run test:postgres`; tarball: `bun run test:tarball`; Docker locally: `bun run verify` (`--all` for 15–19).
 
 ## Working order
 1. Core work with a focused test per item, then commit locally.
