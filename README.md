@@ -6,13 +6,13 @@
 </p>
 
 <p align="center">
-  <em>okmodel is a TypeScript ORM for PostgreSQL 15 to 19 with no runtime dependencies. It is built around one schema, safe queries, and reviewed migrations.</em>
+  <em>okmodel is a TypeScript ORM for PostgreSQL 15 and later; tested on 15 to 19 with no runtime dependencies. It is built around one schema, safe queries, and reviewed migrations.</em>
 </p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/okmodel"><img alt="npm" src="https://img.shields.io/npm/v/okmodel?style=flat-square" /></a>
   <a href="https://www.apache.org/licenses/LICENSE-2.0"><img alt="Apache-2.0" src="https://img.shields.io/npm/l/okmodel?style=flat-square" /></a>
-  <a href="https://www.postgresql.org"><img alt="PostgreSQL 15–19" src="https://img.shields.io/badge/PostgreSQL-15%E2%80%9319-336791?style=flat-square&logo=postgresql&logoColor=white" /></a>
+  <a href="https://www.postgresql.org"><img alt="PostgreSQL 15 and later" src="https://img.shields.io/badge/PostgreSQL-15%20and%20later-336791?style=flat-square&logo=postgresql&logoColor=white" /></a>
   <a href="https://github.com/omqkhafi/okmodel/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/omqkhafi/okmodel/ci.yml?branch=main&label=CI&style=flat-square" /></a>
 </p>
 
@@ -22,7 +22,7 @@
   <a href="https://www.npmjs.com/package/okmodel"><strong>npm</strong></a>
 </p>
 
-OKModel provides a typed data layer for PostgreSQL 15–19 with no runtime dependencies. One schema drives your queries, migrations, and database checks.
+OKModel provides a typed data layer for PostgreSQL 15 and later; tested on 15 to 19 with no runtime dependencies. One schema drives your queries, migrations, and database checks.
 
 ## Why OKModel
 

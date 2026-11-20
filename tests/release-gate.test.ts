@@ -81,7 +81,10 @@ test("the postgres suite runs every test file except the named omissions", () =>
 test("compatibility names the supported majors", () => {
   ensurePackedDocs(root);
   const sentence = supportSentence();
-  expect(sentence).toContain("Supported majors are Postgres 15, 16, 17, 18, and 19.");
+  expect(sentence).toContain("PostgreSQL 15 and later; tested on 15 to 19.");
+  expect(sentence).toContain(
+    "A newer major is accepted and is untested until it appears in the tested list.",
+  );
   expect(sentence).toContain(
     "The floor is 15: Postgres 13 is past end of life, 14 ends in November 2026, and 15 gives us features we can use later.",
   );
@@ -540,7 +543,18 @@ test("verify runs one version unless --all", () => {
   expect(verifyVersions(["--all"], { POSTGRES_VERSION: "16" })).toEqual([...POSTGRES_VERSIONS]);
   expect(verifyVersions(["--", "--all"], {})).toEqual([...POSTGRES_VERSIONS]);
   expect(() => verifyVersions(["--nope"], {})).toThrow(/Usage/);
-  expect(() => verifyVersions([], { POSTGRES_VERSION: "14" })).toThrow(/outside 15/);
+  expect(() => verifyVersions([], { POSTGRES_VERSION: "nope" })).toThrow(/outside 15/);
+  const lines: string[] = [];
+  const write = console.error;
+  console.error = (...args: unknown[]) => {
+    lines.push(args.map((part) => String(part)).join(" "));
+  };
+  try {
+    expect(verifyVersions([], { POSTGRES_VERSION: "20" })).toEqual(["20"]);
+  } finally {
+    console.error = write;
+  }
+  expect(lines).toEqual(["Postgres 20 is outside the tested range 15 to 19; running it."]);
 });
 
 /**

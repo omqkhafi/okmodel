@@ -75,9 +75,9 @@ Migrate commands read the config and the flags. The target, protection, and the 
 
 | Variable | Read by | Accepted | Default | Unset |
 | --- | --- | --- | --- | --- |
-| `POSTGRES_VERSION` | `db:up`, `db:down`, `verify`, `test:postgres` | `15`, `16`, `17`, `18`, `19` | `17` | `17`. The image is `postgres:17`. |
+| `POSTGRES_VERSION` | `db:up`, `db:down`, `verify`, `test:postgres` | an integer major. `15` to `19` are tested | `17` | `17`. The image is `postgres:17`. |
 
-Any other string, including `""`, throws `Postgres version '<value>' is outside 15–19.` `bun run db:up` and `bun run db:down` print that after `[db]` and exit 1.
+An integer major outside the tested list runs, and the command prints one line: `Postgres <major> is outside the tested range 15 to 19; running it.` A value that is not an integer major, including `""`, throws `Postgres version '<value>' is outside 15–19.` `bun run db:up` and `bun run db:down` print that after `[db]` and exit 1. `bun run verify --all` still names the tested majors.
 
 `bun run verify` uses this major. `bun run verify --all` runs 15, 16, 17, 18, and 19, and sets `POSTGRES_VERSION` to the major it is starting. `bun run test:postgres` uses the major for the suite plan. It does not start Docker.
 

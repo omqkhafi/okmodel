@@ -14,7 +14,7 @@ description: "connect() opens the client. The first argument is the target. sche
   </AnatomyPart>
 </Anatomy>
 
-Import `connect` from the [driver](/docs/operate/drivers) you installed. The process keeps one client. Use a TCP URL such as `postgres://localhost:5432/app`. A Windows named pipe is not a URL this version opens.
+Import `connect` from the [driver](/docs/operate/drivers) you installed. The process keeps one client. Use a TCP URL such as `postgres://localhost:5432/app`. A Windows named pipe is not a URL this version opens. PostgreSQL 15 and later; tested on 15 to 19. A newer major is accepted and is untested until it appears in the tested list.
 
 <Callout type="info" title="The schema">
 The client is typed by the schema you pass. A `Register` augmentation, which `okm init` writes, feeds the `Row`, `Insert`, and `Update` helper types when no schema is passed.

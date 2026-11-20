@@ -23,7 +23,7 @@ import { ltree as ltreePack } from "../src/dialects/pg/ext/ltree.js";
 import { pgcrypto } from "../src/dialects/pg/ext/pgcrypto.js";
 import { unaccent } from "../src/dialects/pg/ext/unaccent.js";
 import type { ExtPackRecord } from "../src/dialects/pg/ext/versions.js";
-import { EXT_PACKS } from "../src/dialects/pg/ext/versions.js";
+import { EXT_PACKS, packVersion } from "../src/dialects/pg/ext/versions.js";
 import { custom, schema, t, table } from "../src/dialects/pg/index.js";
 import type { Catalog } from "../src/contracts/catalog/types.js";
 import type { QuerySchema } from "../src/dialects/pg/model.js";
@@ -403,13 +403,7 @@ async function serverMajor(sql: Sql): Promise<number> {
 }
 
 function versionOf(pack: ExtPackRecord, major: number): string {
-  const versions: Readonly<Record<number, string>> = pack.versions;
-  const found = versions[major];
-  if (found !== undefined) return found;
-  const listed = Object.keys(pack.versions);
-  const oldest = listed[0];
-  const newest = listed[listed.length - 1];
-  throw new Error(`Postgres ${String(major)} is outside ${oldest}–${newest}`);
+  return packVersion(pack, major);
 }
 
 async function signatureExists(

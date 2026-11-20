@@ -49,7 +49,7 @@ export function declaredFloor(requires: { readonly postgres?: string } | undefin
  *
  * @param catalog - Catalog `schema()` built
  * @param declared - Floor `schema({ minPostgres })` stored, or the project floor
- * @returns A major from {@link POSTGRES_MAJORS}
+ * @returns An integer major of {@link POSTGRES_FLOOR} or later
  */
 export function schemaMinPostgres(catalog: Catalog, declared: PostgresMajor): PostgresMajor {
   let floor = declared;

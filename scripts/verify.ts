@@ -9,11 +9,7 @@
  *   bun ./scripts/verify.ts --all
  */
 
-import {
-  POSTGRES_VERSIONS,
-  postgresVersionFromEnv,
-  type PostgresVersion,
-} from "../packages/harness/src/version.js";
+import { POSTGRES_VERSIONS, postgresVersionFromEnv } from "../packages/harness/src/version.js";
 import { repoRoot } from "./root.js";
 
 /**
@@ -29,7 +25,7 @@ import { repoRoot } from "./root.js";
 export function verifyVersions(
   args: readonly string[],
   env: Readonly<Record<string, string | undefined>> = process.env,
-): readonly PostgresVersion[] {
+): readonly string[] {
   const extra = args.filter((arg) => arg !== "--all" && arg !== "--");
   if (extra.length > 0) {
     throw new Error("Usage: bun run verify [--all]");
@@ -56,7 +52,7 @@ async function run(
 
 async function withTopology(
   root: string,
-  version: PostgresVersion,
+  version: string,
   body: () => Promise<number>,
 ): Promise<number> {
   const env = { ...process.env, POSTGRES_VERSION: version };
