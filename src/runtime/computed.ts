@@ -979,9 +979,13 @@ function emitGroup(
       ? (into, childAlias) => {
           const columns = relation.remote.map((name) => `${childAlias}.${quote(name)}`);
           const pages = relation.local.map((name) => `${PAGE}.${quote(name)}`);
-          const wrap = (parts: readonly string[]): string =>
-            parts.length === 1 ? (parts[0] ?? "") : `(${parts.join(", ")})`;
-          into.text(`${wrap(columns)} in (select ${pages.join(", ")} from ${PAGE})`);
+          // One key reads as `= any (array(...))`, so Postgres makes one index scan for all the
+          // page's parents. A semi-join with the page makes one scan per parent instead.
+          into.text(
+            columns.length === 1
+              ? `${columns[0] ?? ""} = any (array(select ${pages[0] ?? ""} from ${PAGE}))`
+              : `(${columns.join(", ")}) in (select ${pages.join(", ")} from ${PAGE})`,
+          );
         }
       : undefined;
     emitWhere(schema, child, undefined, sink, "a", 1, false, inPage);
