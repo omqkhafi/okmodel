@@ -180,7 +180,7 @@ bunx okm migrate plan add-body
 -- class: contract
 -- kind: add-column-required
 -- action: ddl
--- lock: ACCESS EXCLUSIVE on notes, rows unknown (table not analyzed)
+-- lock: ACCESS EXCLUSIVE on notes, rows unknown (table not analyzed); 1 rows have no value
 alter table "public"."notes" add column "body" text not null;
 error OKM1525 step 1: adds NOT NULL without a default -- fix: Add the column nullable, backfill, then set it NOT NULL.
 ```
@@ -192,7 +192,7 @@ Change the statement to the safe form the finding names. A person acknowledges a
 Details: okm help OKM1510
 ```
 
-The finding is [OKM1525](/docs/reference/errors#okm1525). The fix it prints is `Add the column nullable, backfill, then set it NOT NULL.` This page adds the column nullable. That is the statement plan accepts. [`okm generate`](/docs/reference/cli/migrate#generate) of the rejected plan still writes the file and exits 1. stderr says apply will refuse until it is fixed.
+The finding is [OKM1525](/docs/reference/errors#okm1525). The fix it prints is `Add the column nullable, backfill, then set it NOT NULL.` This page adds the column nullable. That is the statement plan accepts. [`okm generate`](/docs/reference/cli/migrate#generate) of this plan sees the row with no value, writes nothing, and exits 1 with OKM1525. The message names `--fill`.
 
 </Step>
 

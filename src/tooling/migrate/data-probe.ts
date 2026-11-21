@@ -281,9 +281,16 @@ async function readHits(
         await query("release savepoint okm_probe");
         hits.push({ ...request, count: parseCount(rows[0]?.[0] ?? null) });
       } catch (error) {
-        if (!isTimeout(error)) throw error;
         await query("rollback to savepoint okm_probe").catch(() => undefined);
-        hits.push({ ...request, count: { kind: "unknown" } });
+        if (isTimeout(error)) {
+          hits.push({ ...request, count: { kind: "unknown" } });
+          continue;
+        }
+        if (isMissingRelation(error)) {
+          hits.push({ ...request, count: { kind: "exact", n: 0 } });
+          continue;
+        }
+        throw error;
       }
     }
     await query("commit");
@@ -410,6 +417,11 @@ function pgArray(text: string | null): string[] {
   }
   values.push(current);
   return values;
+}
+
+function isMissingRelation(error: unknown): boolean {
+  const text = error instanceof Error ? error.message : String(error);
+  return text.includes("42P01") || text.includes("42703") || text.includes("does not exist");
 }
 
 function isTimeout(error: unknown): boolean {

@@ -256,7 +256,8 @@ async function shapePlan(
     },
   );
   const live = compared.unreachable ? undefined : url;
-  const changes = requiredChanges(opened.previous, opened.built.catalog, choice.extra);
+  const renames = [...opened.renames, ...choice.extra];
+  const changes = requiredChanges(opened.previous, opened.built.catalog, renames);
   let decided: {
     fills: readonly Fill[];
     lines: readonly string[];
@@ -273,7 +274,7 @@ async function shapePlan(
       mode,
       terminal: data?.terminal === true && mode === "generate",
       fillFlags: data?.fills ?? [],
-      renames: choice.extra,
+      renames,
       ...(data?.ask === undefined ? {} : { ask: data.ask }),
       ...(data?.write === undefined ? {} : { write: data.write }),
     });

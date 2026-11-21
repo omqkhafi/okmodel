@@ -476,6 +476,7 @@ postgresTest(
       await sql.unsafe(`insert into ${q(schemaName)}.notes (id, title) values (1, null)`);
       const file = migration("0003_v3", "hash-v3", [
         step(`drop index concurrently ${q(schemaName)}.notes_title_idx`, false),
+        step(`update ${q(schemaName)}.notes set "title" = "title" where "title" is null`),
         step(
           `alter table ${q(schemaName)}.notes add constraint notes_title_notnull check (title is not null) not valid`,
         ),
@@ -485,7 +486,7 @@ postgresTest(
       ]);
       const failed = await catchError(() => applyTo(schemaName, [file]));
       expect(messageOf(failed)).toContain(
-        'Migration 0003_v3 failed at step 3: check constraint "notes_title_notnull" of relation "notes" is violated by some row',
+        'Migration 0003_v3 failed at step 4: check constraint "notes_title_notnull" of relation "notes" is violated by some row',
       );
       const history = await sql<{ step_index: number }[]>`
         select step_index from okm_history where migration_id = '0003_v3' order by step_index
@@ -516,7 +517,7 @@ postgresTest(
       const done = await sql<{ step_index: number }[]>`
         select step_index from okm_history where migration_id = '0003_v3' order by step_index
       `;
-      expect(done.map((row) => row.step_index)).toEqual([0, 1, 2, 3, 4]);
+      expect(done.map((row) => row.step_index)).toEqual([0, 1, 2, 3, 4, 5]);
     });
   },
   20_000,

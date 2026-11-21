@@ -1050,7 +1050,7 @@ async function refuseEmptyRequired(
   connection: DriverConnection,
   request: ApplyRequest,
 ): Promise<void> {
-  const schema = request.schema ?? "public";
+  const schema = concreteSchema(request);
   const pending = await pendingMigrationIds(connection, request.migrations);
   const interesting = request.migrations.some(
     (migration) =>
