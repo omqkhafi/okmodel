@@ -166,6 +166,32 @@ export function primaryKeyColumns(
  * @param columns - Primary key in order
  * @returns SQL fragment with no leading `and`
  */
+/**
+ * Idempotent `UPDATE` that fills nulls in one key range (D195).
+ *
+ * The volatile-default fill and a required-column fill both use this
+ * statement. Only rows where the column is null change.
+ *
+ * @param table - Quoted schema-qualified table
+ * @param column - Quoted column
+ * @param expression - SQL expression assigned to the column
+ * @param columns - Primary key, for the range predicate
+ * @param batch - Rows per batch, written into the header
+ * @returns The statement and the `-- backfill` spec
+ */
+export function nullFillUpdate(
+  table: string,
+  column: string,
+  expression: string,
+  columns: readonly BackfillColumn[],
+  batch: number,
+): { readonly sql: string; readonly backfill: BackfillSpec } {
+  return {
+    sql: `update ${table} set ${column} = ${expression} where ${column} is null and ${keyRangePredicate(columns)}`,
+    backfill: { table, key: columns.map((item) => item.quoted), batch },
+  };
+}
+
 export function keyRangePredicate(columns: readonly BackfillColumn[]): string {
   for (const column of columns) assertCastType(column.dataType);
   const lower = compareKey(columns, "$1", ">");

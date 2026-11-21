@@ -1240,6 +1240,72 @@ export function columnSwaps(
   return { clear, blocked };
 }
 
+/** A nullable column made required, or a new required column with no default. */
+export type RequiredChange = {
+  readonly table: string;
+  readonly column: string;
+  /** `add` when the column is new. `set` when it was nullable. */
+  readonly kind: "add" | "set";
+  readonly dataType: string;
+  readonly defaultExpression?: string;
+};
+
+/**
+ * Columns that become required on a table that already exists.
+ *
+ * A table created in this plan is exempt. A new column with a default is the
+ * volatile-default fill, not this case.
+ *
+ * @param before - Previous catalog
+ * @param after - Schema catalog
+ * @returns One entry per column, in catalog order
+ */
+export function requiredChanges(
+  before: Catalog,
+  after: Catalog,
+  renames: readonly DeclaredRename[] = [],
+): readonly RequiredChange[] {
+  const source = applyRenames(before, renames);
+  const tables = new Set(
+    source.objects
+      .filter((object) => object.kind === "table")
+      .map((object) => object.identity.name),
+  );
+  const previous = new Map<string, ColumnObject>();
+  for (const object of source.objects) {
+    if (object.kind !== "column") continue;
+    previous.set(`${object.identity.parent.name}.${object.identity.name}`, object);
+  }
+  const changes: RequiredChange[] = [];
+  for (const object of after.objects) {
+    if (object.kind !== "column" || object.definition.nullable) continue;
+    if (object.definition.identity !== undefined || object.definition.generated !== undefined)
+      continue;
+    const table = object.identity.parent.name;
+    if (!tables.has(table)) continue;
+    const prior = previous.get(`${table}.${object.identity.name}`);
+    if (prior === undefined) {
+      if (object.definition.defaultExpression !== undefined) continue;
+      changes.push(requiredOf(object, "add"));
+      continue;
+    }
+    if (prior.definition.nullable) changes.push(requiredOf(object, "set"));
+  }
+  return changes;
+}
+
+function requiredOf(column: ColumnObject, kind: "add" | "set"): RequiredChange {
+  return {
+    table: column.identity.parent.name,
+    column: column.identity.name,
+    kind,
+    dataType: column.definition.dataType,
+    ...(column.definition.defaultExpression === undefined
+      ? {}
+      : { defaultExpression: column.definition.defaultExpression }),
+  };
+}
+
 function assertUnambiguous(
   beforeBy: ReadonlyMap<string, CatalogObject>,
   afterBy: ReadonlyMap<string, CatalogObject>,
@@ -1274,7 +1340,10 @@ function acceptedSwap(
 function nameGroups(
   beforeBy: ReadonlyMap<string, CatalogObject>,
   afterBy: ReadonlyMap<string, CatalogObject>,
-): { readonly dropped: ReadonlyMap<string, string[]>; readonly added: ReadonlyMap<string, string[]> } {
+): {
+  readonly dropped: ReadonlyMap<string, string[]>;
+  readonly added: ReadonlyMap<string, string[]>;
+} {
   const dropped = new Map<string, string[]>();
   const added = new Map<string, string[]>();
   for (const [key, object] of beforeBy) {

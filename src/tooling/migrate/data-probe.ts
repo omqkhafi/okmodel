@@ -11,6 +11,104 @@ import { qualify, quoteIdent } from "../../dialects/pg/ddl.js";
 import { driverUrl } from "./driver-url.js";
 import { OPTIONAL_CONNECT_SECONDS } from "./optional-read.js";
 import { missingPostgres } from "../cli/outcome.js";
+import type { PlanStep } from "./plan.js";
+
+/** One `--fill table.column=expression` value. */
+export type Fill = {
+  readonly table: string;
+  readonly column: string;
+  readonly expression: string;
+};
+
+/** `--json` object on an OKM1525 refusal that needs `--fill`. */
+export type FillNeeds = {
+  readonly flag: "--fill";
+  readonly target: string;
+  readonly emptyRows: number | string;
+  readonly suggest: readonly string[];
+};
+
+/**
+ * Lock-line phrase for one column.
+ *
+ * @param count - Empty rows
+ * @param fill - Expression, when the plan fills them
+ * @returns The phrase after the lock
+ */
+/**
+ * Sentence for the drop question, including the trailing space.
+ *
+ * @param column - Column name
+ * @param count - Non-null rows, when the target answered
+ * @returns `""` when there is no count
+ */
+export function dropHolds(column: string, count: ProbeCount | undefined): string {
+  if (count === undefined) return "";
+  if (count.kind === "unknown") return `I could not count ${column} in 2 s. `;
+  return `${column} holds ${countPhrase(count)} values. `;
+}
+
+export function lockPhrase(count: ProbeCount, fill?: string): string {
+  const rows =
+    count.kind === "exact"
+      ? `${countPhrase(count)} rows have no value`
+      : count.kind === "least"
+        ? "10,000 or more rows have no value"
+        : "I could not count in 2 s";
+  return fill === undefined ? rows : `${rows}, filled with ${fill}`;
+}
+
+/**
+ * Appends {@link lockPhrase} when `step` is about a probed column.
+ *
+ * @param step - Plan step
+ * @param base - Lock text without the probe
+ * @param empty - Empty-row counts keyed `table.column`
+ * @param fills - Fills in the plan
+ * @returns The lock text
+ */
+export function annotateProbe(
+  step: PlanStep,
+  base: string,
+  empty: ReadonlyMap<string, ProbeCount>,
+  fills: readonly Fill[],
+): string {
+  for (const [key, count] of empty) {
+    const dot = key.indexOf(".");
+    const table = key.slice(0, dot);
+    const column = key.slice(dot + 1);
+    if (!step.sql.includes(quoteIdent(table)) || !step.sql.includes(quoteIdent(column))) continue;
+    const fill = fills.find((item) => item.table === table && item.column === column);
+    return `${base}; ${lockPhrase(count, fill?.expression)}`;
+  }
+  return base;
+}
+
+/**
+ * JSON `data` for one probed step. Absent when the step has no probe.
+ *
+ * @param step - Plan step
+ * @param empty - Empty-row counts
+ * @param fills - Fills in the plan
+ * @returns The additive field, or `undefined`
+ */
+export function stepData(
+  step: PlanStep,
+  empty: ReadonlyMap<string, ProbeCount>,
+  fills: readonly Fill[],
+): { readonly emptyRows: number | string; readonly fill?: string } | undefined {
+  for (const [key, count] of empty) {
+    const dot = key.indexOf(".");
+    const table = key.slice(0, dot);
+    const column = key.slice(dot + 1);
+    if (!step.sql.includes(quoteIdent(table)) || !step.sql.includes(quoteIdent(column))) continue;
+    const fill = fills.find((item) => item.table === table && item.column === column);
+    const emptyRows =
+      count.kind === "exact" ? count.n : count.kind === "least" ? "10,000 or more" : "unknown";
+    return fill === undefined ? { emptyRows } : { emptyRows, fill: fill.expression };
+  }
+  return undefined;
+}
 
 /** Rows the subquery reads before the count stops being exact. */
 export const PROBE_LIMIT = 10_000;
@@ -63,11 +161,32 @@ export async function probeTarget(
       idle_timeout: 1,
       onnotice: () => {},
     });
+    let aborted: ProbeHit[] | undefined;
     try {
-      return await readHits(async (text, params) => {
-        const rows = await sql.unsafe<{ c: string | null }[]>(text, [...(params ?? [])]);
-        return rows.map((row) => [row.c]);
-      }, schema, requests);
+      return await sql.begin("read only", async (tx) => {
+        await tx.unsafe(`set local statement_timeout = '${String(PROBE_STATEMENT_MS)}ms'`);
+        const hits: ProbeHit[] = [];
+        for (const request of requests) {
+          try {
+            const rows = await tx.unsafe<{ c: string | null }[]>(probeSql(schema, request));
+            hits.push({ ...request, count: parseCount(rows[0]?.c ?? null) });
+          } catch (error) {
+            if (!isTimeout(error)) throw error;
+            aborted = [
+              ...hits,
+              { ...request, count: { kind: "unknown" } },
+              ...requests
+                .slice(hits.length + 1)
+                .map((rest) => ({ ...rest, count: { kind: "unknown" as const } })),
+            ];
+            throw error;
+          }
+        }
+        return hits;
+      });
+    } catch (error) {
+      if (aborted !== undefined) return aborted;
+      throw error;
     } finally {
       await sql.end({ timeout: 5 }).catch(() => undefined);
     }
@@ -86,14 +205,21 @@ export async function probeTarget(
  * @returns One hit per request
  */
 export async function probeConnection(
-  execute: (text: string, params?: readonly string[]) => Promise<{ readonly rows: readonly (readonly (string | null)[])[] }>,
+  execute: (
+    text: string,
+    params?: readonly string[],
+  ) => Promise<{ readonly rows: readonly (readonly (string | null)[])[] }>,
   schema: string,
   requests: readonly ProbeRequest[],
 ): Promise<readonly ProbeHit[]> {
-  return readHits(async (text, params) => {
-    const result = await execute(text, params);
-    return result.rows.map((row) => [...row]);
-  }, schema, requests);
+  return readHits(
+    async (text, params) => {
+      const result = await execute(text, params);
+      return result.rows.map((row) => [...row]);
+    },
+    schema,
+    requests,
+  );
 }
 
 /**
@@ -212,20 +338,24 @@ export async function readCommonValues(
       onnotice: () => {},
     });
     try {
-      const rows = await sql.unsafe<{
-        tablename: string;
-        attname: string;
-        vals: string | null;
-        freqs: string | null;
-        n: string | null;
-      }[]>(
+      const rows = await sql.unsafe<
+        {
+          tablename: string;
+          attname: string;
+          vals: string | null;
+          freqs: string | null;
+          n: string | null;
+        }[]
+      >(
         `select tablename, attname, most_common_vals::text as vals, most_common_freqs::text as freqs, n_distinct::text as n
          from pg_stats where schemaname = $1 and tablename = any($2::text[])`,
         [schema, [...new Set(columns.map((item) => item.table))]],
       );
       const found: CommonValue[] = [];
       for (const column of columns) {
-        const row = rows.find((item) => item.tablename === column.table && item.attname === column.column);
+        const row = rows.find(
+          (item) => item.tablename === column.table && item.attname === column.column,
+        );
         if (row === undefined) continue;
         const values = pgArray(row.vals);
         const freqs = pgArray(row.freqs).map(Number);
@@ -246,7 +376,11 @@ export async function readCommonValues(
   }
 }
 
-function commonOk(values: readonly string[], freqs: readonly number[], distinct: number | undefined): boolean {
+function commonOk(
+  values: readonly string[],
+  freqs: readonly number[],
+  distinct: number | undefined,
+): boolean {
   if (values.length === 0 || values.length > 20) return false;
   if (distinct !== undefined && distinct > 20) return false;
   if (distinct !== undefined && distinct > 0) return true;

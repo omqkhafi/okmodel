@@ -35,6 +35,7 @@ import { postgresStepJournal } from "./step-journal.js";
 import {
   isLockTimeout,
   resumeCommittedStep,
+  StepBoundaryStop,
   stepSqlHash,
   unitMode,
   type CommittedStep,
@@ -615,8 +616,10 @@ async function oneBatch(
         if (unit.finishes) await writeMeta(connection, unit);
       }
       await connection.execute("commit");
+      if (run.failAt === "after-ddl") throw new StepBoundaryStop("after-ddl");
       return { rows, batches, lastKey, final };
     } catch (error) {
+      if (error instanceof StepBoundaryStop) throw error;
       if (began) await connection.execute("rollback").catch(() => undefined);
       if (!isLockTimeout(error) || attempt === run.retries) throw failStep(unit, item.index, error);
       await delay(BACKOFF_MS * 2 ** attempt);

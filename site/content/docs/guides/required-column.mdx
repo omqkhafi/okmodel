@@ -240,6 +240,9 @@ Run the backfill, then `bunx okm migrate apply` again. It resumes at step 2. `ok
 | [OKM1525](/docs/reference/errors#okm1525) / [OKM1510](/docs/reference/errors#okm1510) | A required add with no default. | Add it nullable, backfill, then tighten. |
 | `error invalid: ... violated by some row` | The validate step finds a null. | Backfill, then apply again. |
 | [OKM1850](/docs/reference/errors#okm1850) | A contract apply on a protected target without `--allow-protected`. | Review the plan, then pass the flag. |
+| [OKM1525](/docs/reference/errors#okm1525) | Apply finds empty rows and the migration has no fill. | Nothing was changed. Regenerate with `--fill` if the migration has not run on a shared target. Otherwise add a data migration that fills the column before the constraint. Do not edit the committed file. |
+
+A committed migration that apply stops this way is a known limit. The command names both next steps and does not choose between them.
 
 | Next | You use it for |
 | --- | --- |

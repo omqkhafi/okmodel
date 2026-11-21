@@ -76,7 +76,7 @@ Two tables that store the same SQL name are refused. The message lists the table
 
 ### Previous name
 
-A migration plans `ALTER TABLE … RENAME TO` or `RENAME COLUMN`. Renaming an identity column also renames the sequence `{table}_{column}_seq`. A table rename does the same for each identity column. Dropping one name and adding another, with no `renamedFrom`, is refused and the fix names the line to add. A previous name that the last snapshot does not contain is refused. Remove `renamedFrom` once the migration that used it has been applied. With no snapshot, that check does not run.
+A migration plans `ALTER TABLE … RENAME TO` or `RENAME COLUMN`. Renaming an identity column also renames the sequence `{table}_{column}_seq`. A table rename does the same for each identity column. Dropping one column and adding one column, with no `renamedFrom`, is a question on a terminal: rename, or drop and add. The answer is written into the migration. The schema file is not edited. `--rename table.old=new` and `--drop-and-add` are the same answers without a terminal. Without them, OKM1530 exits 3 and names the flags. `.renamedFrom` still works. A casing pair stays OKM1530. A previous name that the last snapshot does not contain is refused. Remove `renamedFrom` once the migration that used it has been applied. With no snapshot, that check does not run.
 
 | Call | Result |
 | --- | --- |

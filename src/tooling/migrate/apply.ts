@@ -35,8 +35,6 @@ import { assertUuidV7Available } from "./engine.js";
 import { assertSchemaMajor } from "./server-requirements.js";
 import { assertSnapshots } from "./export.js";
 import { asProject, projectPath, type ProjectContext } from "./paths.js";
-import { hasRows, probeConnection } from "./data-probe.js";
-import { unfilledError, unfilledRequired } from "./data-aware.js";
 import { loadBuiltSchema, loadConfig, projectHead } from "./project.js";
 import { loadHeadSnapshot, loadMigrations } from "./files.js";
 import { readReference, referenceInserts, type ReferenceTable } from "./reference.js";
@@ -1054,6 +1052,13 @@ async function refuseEmptyRequired(
 ): Promise<void> {
   const schema = request.schema ?? "public";
   const pending = await pendingMigrationIds(connection, request.migrations);
+  const interesting = request.migrations.some(
+    (migration) =>
+      pending.has(migration.id) && migration.steps.some((step) => step.sql.includes("not null")),
+  );
+  if (!interesting) return;
+  const { unfilledError, unfilledRequired } = await import("./data-splice.js");
+  const { hasRows, probeConnection } = await import("./data-probe.js");
   for (const migration of request.migrations) {
     if (!pending.has(migration.id)) continue;
     const gaps = unfilledRequired(migration.steps);

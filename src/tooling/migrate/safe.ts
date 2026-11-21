@@ -19,7 +19,7 @@ import type {
 import { ddlStep } from "../../dialects/ddl-step.js";
 import { columnType, createObjectSql, qualify, quoteIdent } from "../../dialects/pg/ddl.js";
 import { notNullSteps } from "../../dialects/pg/table-safe.js";
-import { keyRangePredicate, primaryKeyColumns, type BackfillSpec } from "./backfill.js";
+import { nullFillUpdate, primaryKeyColumns, type BackfillSpec } from "./backfill.js";
 import type { StepKind } from "./classify.js";
 
 /** One statement the planner emits instead of the plain form. */
@@ -212,11 +212,8 @@ function volatileColumnSteps(
       : ` collate ${quoteIdent(column.definition.collation)}`;
   const expression = column.definition.defaultExpression ?? "";
   const key = primaryKeyColumns(catalogs, tableName);
-  const backfill: BackfillSpec = {
-    table,
-    key: key.map((item) => item.quoted),
-    batch: batchSize,
-  };
+  const filled = nullFillUpdate(table, name, expression, key, batchSize);
+  const backfill: BackfillSpec = filled.backfill;
   const steps: SafeStep[] = [
     {
       sql: `alter table ${table} add column ${name} ${columnType(column, schema)}${collate}`,
@@ -233,7 +230,7 @@ function volatileColumnSteps(
       transactional: true,
     },
     {
-      sql: `update ${table} set ${name} = ${expression} where ${name} is null and ${keyRangePredicate(key)}`,
+      sql: filled.sql,
       kind: "backfill-expand",
       action: "backfill",
       lock: ROW,

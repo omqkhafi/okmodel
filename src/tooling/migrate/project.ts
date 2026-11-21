@@ -70,24 +70,28 @@ import { refuseAmbiguousConfigs } from "./discover.js";
 import { asProject, CONFIG_FILE, projectPath, type ProjectContext } from "./paths.js";
 import { readUnpulled, unpulledKeys } from "./unpulled.js";
 import { formatPlanJson } from "./plan-json.js";
+import type { Fill, ProbeCount } from "./data-probe.js";
 import {
-  annotateProbe,
-  decideFills,
-  decideSwaps,
-  dropHolds,
-  spliceFills,
-  stepData,
-  type DataOptions,
-  type Fill,
-} from "./data-aware.js";
-import { probeTarget, type ProbeCount } from "./data-probe.js";
-import {
+  columnSwaps,
   formatPlan,
   planStatements,
+  requiredChanges,
   staleRenames,
+  type ColumnSwap,
   type MigrationPlan,
   type PlanStep,
 } from "./plan.js";
+
+/** Flags and the terminal shared by generate and plan. */
+type DataOptions = {
+  readonly renames?: readonly string[];
+  readonly dropAndAdd?: boolean;
+  readonly fills?: readonly string[];
+  readonly terminal?: boolean;
+  readonly ask?: (label: string) => Promise<string>;
+  readonly write?: (text: string) => void;
+  readonly url?: string;
+};
 import { allowFindings, listAllows, type AllowEntry } from "./allows.js";
 import { acknowledgeDrops, plannedDrops, type ConfirmDrops } from "./confirm-drop.js";
 import { projectFilterUses } from "./filter-scan.js";
@@ -153,7 +157,10 @@ export async function generateProject(
   flags: readonly string[],
   confirm?: ConfirmDrops,
   data?: DataOptions,
-): Promise<{ readonly path: string; readonly findings: readonly Finding[]; readonly preface?: string } | undefined> {
+): Promise<
+  | { readonly path: string; readonly findings: readonly Finding[]; readonly preface?: string }
+  | undefined
+> {
   const { cwd } = asProject(project);
   const opened = await openProject(project);
   const shaped = await shapePlan(opened, name, flags, data, "generate");
@@ -220,41 +227,68 @@ async function shapePlan(
 }> {
   const schema = catalogNamespace(opened.config);
   const url = data?.url ?? targetUrl(opened.config);
-  const choice = await decideSwaps({
-    before: opened.previous,
-    after: opened.built.catalog,
-    renames: opened.renames,
-    schema,
-    ...(url === undefined ? {} : { url }),
-    terminal: data?.terminal === true && mode === "generate",
-    renameFlags: data?.renames ?? [],
-    dropAndAdd: data?.dropAndAdd === true,
-    ...(data?.ask === undefined ? {} : { ask: data.ask }),
-    ...(data?.write === undefined ? {} : { write: data.write }),
-  });
-  const compared = await comparedPlan(opened, name, flags.map((flag) => parseReplace(flag)), {
-    extraRenames: choice.extra,
-    acceptSwaps: choice.accept,
-  });
-  const live = compared.unreachable ? undefined : url;
-  const decided = await decideFills({
-    before: opened.previous,
-    after: opened.built.catalog,
-    schema,
-    ...(live === undefined ? {} : { url: live }),
-    mode,
-    terminal: data?.terminal === true && mode === "generate",
-    fillFlags: data?.fills ?? [],
-    ...(data?.ask === undefined ? {} : { ask: data.ask }),
-    ...(data?.write === undefined ? {} : { write: data.write }),
-  });
-  const plan = spliceFills(
-    compared.plan,
-    decided.fills,
-    [opened.previous, opened.built.catalog, compared.before, compared.after],
-    schema,
-    opened.config.backfill?.batchSize,
+  const swaps = columnSwaps(opened.previous, opened.built.catalog, opened.renames);
+  const choice: { extra: DeclaredRename[]; accept: ColumnSwap[] } = { extra: [], accept: [] };
+  if (!swaps.blocked && swaps.clear.length > 0) {
+    const { decideSwaps } = await import("./data-questions.js");
+    const decidedSwaps = await decideSwaps({
+      before: opened.previous,
+      after: opened.built.catalog,
+      renames: opened.renames,
+      schema,
+      ...(url === undefined ? {} : { url }),
+      terminal: data?.terminal === true && mode === "generate",
+      renameFlags: data?.renames ?? [],
+      dropAndAdd: data?.dropAndAdd === true,
+      ...(data?.ask === undefined ? {} : { ask: data.ask }),
+      ...(data?.write === undefined ? {} : { write: data.write }),
+    });
+    choice.extra.push(...decidedSwaps.extra);
+    choice.accept.push(...decidedSwaps.accept);
+  }
+  const compared = await comparedPlan(
+    opened,
+    name,
+    flags.map((flag) => parseReplace(flag)),
+    {
+      extraRenames: choice.extra,
+      acceptSwaps: choice.accept,
+    },
   );
+  const live = compared.unreachable ? undefined : url;
+  const changes = requiredChanges(opened.previous, opened.built.catalog, choice.extra);
+  let decided: {
+    fills: readonly Fill[];
+    lines: readonly string[];
+    empty: ReadonlyMap<string, ProbeCount>;
+    note?: string;
+  } = { fills: [], lines: [], empty: new Map() };
+  if (changes.length > 0 || (data?.fills?.length ?? 0) > 0) {
+    const { decideFills } = await import("./data-questions.js");
+    decided = await decideFills({
+      before: opened.previous,
+      after: opened.built.catalog,
+      schema,
+      ...(live === undefined ? {} : { url: live }),
+      mode,
+      terminal: data?.terminal === true && mode === "generate",
+      fillFlags: data?.fills ?? [],
+      renames: choice.extra,
+      ...(data?.ask === undefined ? {} : { ask: data.ask }),
+      ...(data?.write === undefined ? {} : { write: data.write }),
+    });
+  }
+  let plan = compared.plan;
+  if (decided.fills.length > 0) {
+    const { spliceFills } = await import("./data-splice.js");
+    plan = spliceFills(
+      compared.plan,
+      decided.fills,
+      [opened.previous, opened.built.catalog, compared.before, compared.after],
+      schema,
+      opened.config.backfill?.batchSize,
+    );
+  }
   return {
     config: opened.config,
     built: opened.built,
@@ -284,7 +318,9 @@ async function notedDrops(
   shaped: { readonly url?: string; readonly schema: string },
 ): Promise<ReturnType<typeof plannedDrops>> {
   const drops = plannedDrops(plan, findings);
-  if (shaped.url === undefined) return drops;
+  if (shaped.url === undefined || !drops.some((drop) => drop.sql.includes("drop column")))
+    return drops;
+  const { dropHolds, probeTarget } = await import("./data-probe.js");
   const parsed = drops.map((drop) => ({ drop, column: columnOfDrop(drop.sql) }));
   const hits = await probeTarget(
     shaped.url,
@@ -299,14 +335,17 @@ async function notedDrops(
   return parsed.map(({ drop, column }) => {
     if (column === undefined) return drop;
     const count = hits.find(
-      (hit) => hit.table === column.table && hit.column === column.column && hit.which === "notNull",
+      (hit) =>
+        hit.table === column.table && hit.column === column.column && hit.which === "notNull",
     )?.count;
     const holds = dropHolds(column.column, count);
     return holds.length === 0 ? drop : { ...drop, holds };
   });
 }
 
-function columnOfDrop(sql: string): { readonly table: string; readonly column: string } | undefined {
+function columnOfDrop(
+  sql: string,
+): { readonly table: string; readonly column: string } | undefined {
   const match = /^alter table\s+(\S+)\s+drop column\s+(\S+)/.exec(sql);
   if (match === null) return undefined;
   const tableNames = [...(match[1] ?? "").matchAll(/"((?:[^"]|"")*)"/g)];
@@ -318,12 +357,18 @@ function columnOfDrop(sql: string): { readonly table: string; readonly column: s
 
 function prefaceOf(
   path: string,
-  shaped: { readonly lines: readonly string[]; readonly fills: readonly Fill[]; readonly renamed: boolean; readonly plan: MigrationPlan },
+  shaped: {
+    readonly lines: readonly string[];
+    readonly fills: readonly Fill[];
+    readonly renamed: boolean;
+    readonly plan: MigrationPlan;
+  },
 ): string | undefined {
   const lines = [...shaped.lines];
   const file = basename(path);
   if (shaped.fills.length > 0) {
-    const batch = shaped.plan.steps.find((step) => step.backfill !== undefined)?.backfill?.batch ?? 1000;
+    const batch =
+      shaped.plan.steps.find((step) => step.backfill !== undefined)?.backfill?.batch ?? 1000;
     lines.push(
       `I wrote ${file}: fill in batches of ${batch.toLocaleString("en-US")}, add the check not valid, fill again, validate, set not null.`,
     );
@@ -382,11 +427,18 @@ export async function planProject(
   const findings = lintPrepared(prepared);
   const locks = await planLockText(prepared.config, prepared.plan, invoke, prepared.unreachable);
   if (prepared.unreachable || locks.skipped) cliNote(SKIPPED_READ_NOTE);
-  const lockText = (step: PlanStep): string => {
-    const base = locks.annotate === undefined ? step.lock : locks.annotate(step);
-    return annotateProbe(step, base, prepared.empty, prepared.fills);
-  };
-  const show = prepared.empty.size === 0 ? locks.annotate : lockText;
+  let show = locks.annotate;
+  let rows:
+    | readonly ({ readonly emptyRows: number | string; readonly fill?: string } | undefined)[]
+    | undefined;
+  if (prepared.empty.size > 0) {
+    const { annotateProbe, stepData } = await import("./data-probe.js");
+    show = (step) => {
+      const base = locks.annotate === undefined ? step.lock : locks.annotate(step);
+      return annotateProbe(step, base, prepared.empty, prepared.fills);
+    };
+    rows = prepared.plan.steps.map((step) => stepData(step, prepared.empty, prepared.fills));
+  }
   return {
     plan: prepared.plan,
     findings,
@@ -400,7 +452,7 @@ export async function planProject(
         fromCatalogHash: catalogHash(prepared.before),
         toCatalogHash: catalogHash(prepared.after),
       },
-      prepared.plan.steps.map((step) => stepData(step, prepared.empty, prepared.fills)),
+      rows,
     ),
   };
 }
@@ -699,7 +751,14 @@ async function comparedPlan(
   },
   name: string,
   replacements: ReturnType<typeof parseReplace>[] = [],
-  choice?: { readonly extraRenames?: readonly DeclaredRename[]; readonly acceptSwaps?: readonly { readonly table: string; readonly from: string; readonly to: string }[] },
+  choice?: {
+    readonly extraRenames?: readonly DeclaredRename[];
+    readonly acceptSwaps?: readonly {
+      readonly table: string;
+      readonly from: string;
+      readonly to: string;
+    }[];
+  },
 ): Promise<{
   readonly plan: MigrationPlan;
   readonly before: Catalog;
