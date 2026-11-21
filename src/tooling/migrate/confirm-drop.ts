@@ -30,6 +30,12 @@ export type PlannedDrop = {
   readonly step: number;
   readonly code: string;
   readonly sql: string;
+  /**
+   * Count sentence, including the trailing space.
+   *
+   * Absent when the target was not read. The question stays `Drop it? [y/N]`.
+   */
+  readonly holds?: string;
 };
 
 /**
@@ -98,7 +104,11 @@ export function terminalConfirm(
     let text = "This migration drops data:\n";
     for (const drop of drops) text += `  step ${String(drop.step)} ${drop.code}: ${drop.sql}\n`;
     write(text);
-    const answer = (await ask("Drop it? [y/N] ")).toLowerCase();
+    const holds = drops
+      .map((drop) => drop.holds)
+      .filter((line): line is string => line !== undefined && line.length > 0)
+      .join("");
+    const answer = (await ask(`${holds}Drop it? [y/N] `)).toLowerCase();
     if (answer !== "y" && answer !== "yes") return undefined;
     const reason = (await ask(`Reason (Enter for "${DEFAULT_DROP_REASON}"): `)).trim();
     return reason.length === 0 ? DEFAULT_DROP_REASON : reason;

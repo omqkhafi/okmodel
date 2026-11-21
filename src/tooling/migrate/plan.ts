@@ -187,6 +187,20 @@ export type PlanRequest = {
    * against a live target backfills the same way the offline plan does.
    */
   readonly authored?: { readonly before: Catalog; readonly after: Catalog };
+  /**
+   * Drop-and-add pairs the caller accepted.
+   *
+   * `assertUnambiguous` skips a group that is exactly one of these column
+   * pairs. A declared rename is not one of these: it is applied first.
+   */
+  readonly acceptSwaps?: readonly ColumnSwap[];
+};
+
+/** One column removed and one column added on the same table. */
+export type ColumnSwap = {
+  readonly table: string;
+  readonly from: string;
+  readonly to: string;
 };
 
 type Indexed = {
@@ -263,7 +277,7 @@ export function planMigration(
   const afterList = index(request.after);
   const beforeBy = new Map(beforeList.map((item) => [item.key, item.object]));
   const afterBy = new Map(afterList.map((item) => [item.key, item.object]));
-  assertUnambiguous(beforeBy, afterBy, dialect);
+  assertUnambiguous(beforeBy, afterBy, dialect, request.acceptSwaps ?? []);
 
   const dropKeys = new Set<string>();
   const createKeys = new Set<string>();
@@ -1185,20 +1199,91 @@ function renameShapeStep(
   return planned;
 }
 
+/**
+ * Column drop-and-add pairs that are one name each and not a casing change.
+ *
+ * Any other drop beside an add (a table, two columns, or a casing pair) sets
+ * `blocked`. The caller then lets {@link planMigration} throw OKM1530.
+ *
+ * @param before - Previous catalog
+ * @param after - Schema catalog
+ * @param renames - Declared renames, applied before the diff
+ * @param dialect - Answers whether two names are one casing
+ * @returns Clear pairs, and whether an unexplained group still has to be refused
+ */
+export function columnSwaps(
+  before: Catalog,
+  after: Catalog,
+  renames: readonly DeclaredRename[] = [],
+  dialect: DdlDialect = postgresDialect,
+): { readonly clear: readonly ColumnSwap[]; readonly blocked: boolean } {
+  const groups = nameGroups(keyed(applyRenames(before, renames)), keyed(after));
+  const clear: ColumnSwap[] = [];
+  let blocked = false;
+  for (const [group, names] of groups.added) {
+    const gone = groups.dropped.get(group);
+    if (gone === undefined || gone.length === 0 || names.length === 0) continue;
+    const from = gone[0] ?? "";
+    const to = names[0] ?? "";
+    const table = group.startsWith("column:") ? group.slice("column:".length) : undefined;
+    if (
+      table !== undefined &&
+      gone.length === 1 &&
+      names.length === 1 &&
+      !casingPair(from, to, dialect)
+    ) {
+      clear.push({ table, from, to });
+      continue;
+    }
+    blocked = true;
+  }
+  return { clear, blocked };
+}
+
 function assertUnambiguous(
   beforeBy: ReadonlyMap<string, CatalogObject>,
   afterBy: ReadonlyMap<string, CatalogObject>,
   dialect: DdlDialect,
+  accepted: readonly ColumnSwap[],
 ): void {
+  const groups = nameGroups(beforeBy, afterBy);
+  for (const [group, names] of groups.added) {
+    const gone = groups.dropped.get(group);
+    if (gone === undefined || gone.length === 0 || names.length === 0) continue;
+    const from = gone[0] ?? "";
+    const to = names[0] ?? "";
+    if (gone.length === 1 && names.length === 1 && acceptedSwap(group, from, to, accepted)) {
+      continue;
+    }
+    const guard = renameGuard(group, from, to, dialect);
+    throw new OkmError("OKM1530", guard.message, { fix: { summary: guard.summary } });
+  }
+}
+
+function acceptedSwap(
+  group: string,
+  from: string,
+  to: string,
+  accepted: readonly ColumnSwap[],
+): boolean {
+  if (!group.startsWith("column:")) return false;
+  const table = group.slice("column:".length);
+  return accepted.some((item) => item.table === table && item.from === from && item.to === to);
+}
+
+function nameGroups(
+  beforeBy: ReadonlyMap<string, CatalogObject>,
+  afterBy: ReadonlyMap<string, CatalogObject>,
+): { readonly dropped: ReadonlyMap<string, string[]>; readonly added: ReadonlyMap<string, string[]> } {
   const dropped = new Map<string, string[]>();
   const added = new Map<string, string[]>();
   for (const [key, object] of beforeBy) {
     if (afterBy.has(key)) continue;
     const group = groupOf(object);
     if (group === undefined) continue;
-    const list = dropped.get(group) ?? [];
     const name = anchoredName(object);
     if (name === undefined) continue;
+    const list = dropped.get(group) ?? [];
     list.push(name);
     dropped.set(group, list);
   }
@@ -1206,20 +1291,13 @@ function assertUnambiguous(
     if (beforeBy.has(key)) continue;
     const group = groupOf(object);
     if (group === undefined) continue;
-    const list = added.get(group) ?? [];
     const name = anchoredName(object);
     if (name === undefined) continue;
+    const list = added.get(group) ?? [];
     list.push(name);
     added.set(group, list);
   }
-  for (const [group, names] of added) {
-    const gone = dropped.get(group);
-    if (gone === undefined || gone.length === 0 || names.length === 0) continue;
-    const from = gone[0] ?? "";
-    const to = names[0] ?? "";
-    const guard = renameGuard(group, from, to, dialect);
-    throw new OkmError("OKM1530", guard.message, { fix: { summary: guard.summary } });
-  }
+  return { dropped, added };
 }
 
 /**

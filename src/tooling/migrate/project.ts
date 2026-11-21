@@ -71,6 +71,17 @@ import { asProject, CONFIG_FILE, projectPath, type ProjectContext } from "./path
 import { readUnpulled, unpulledKeys } from "./unpulled.js";
 import { formatPlanJson } from "./plan-json.js";
 import {
+  annotateProbe,
+  decideFills,
+  decideSwaps,
+  dropHolds,
+  spliceFills,
+  stepData,
+  type DataOptions,
+  type Fill,
+} from "./data-aware.js";
+import { probeTarget, type ProbeCount } from "./data-probe.js";
+import {
   formatPlan,
   planStatements,
   staleRenames,
@@ -141,17 +152,20 @@ export async function generateProject(
   name: string,
   flags: readonly string[],
   confirm?: ConfirmDrops,
-): Promise<{ readonly path: string; readonly findings: readonly Finding[] } | undefined> {
+  data?: DataOptions,
+): Promise<{ readonly path: string; readonly findings: readonly Finding[]; readonly preface?: string } | undefined> {
   const { cwd } = asProject(project);
-  const prepared = await prepare(project, name, flags);
-  if (prepared.unreachable) cliNote(SKIPPED_READ_NOTE);
+  const opened = await openProject(project);
+  const shaped = await shapePlan(opened, name, flags, data, "generate");
+  if (shaped.unreachable) cliNote(SKIPPED_READ_NOTE);
+  if (shaped.note !== undefined) cliNote(shaped.note);
   if (name === "init") writeGitAttributes(cwd);
-  writeArtifact(cwd, prepared.config, prepared.built);
-  const directory = projectPath(cwd, prepared.config.migrations ?? "migrations");
-  if (prepared.plan.steps.length === 0) return pendingLint(directory);
-  let plan = prepared.plan;
-  let findings = lintPrepared(prepared);
-  const drops = confirm === undefined ? [] : plannedDrops(plan, findings);
+  writeArtifact(cwd, shaped.config, shaped.built);
+  const directory = projectPath(cwd, shaped.config.migrations ?? "migrations");
+  if (shaped.plan.steps.length === 0) return pendingLint(directory);
+  let plan = shaped.plan;
+  let findings = lintPrepared(shaped);
+  const drops = confirm === undefined ? [] : await notedDrops(plan, findings, shaped);
   if (confirm !== undefined && drops.length > 0) {
     const reason = await confirm(drops);
     if (reason === undefined) {
@@ -166,14 +180,15 @@ export async function generateProject(
       );
     }
     plan = acknowledgeDrops(plan, drops, reason);
-    findings = lintPrepared({ ...prepared, plan });
+    findings = lintPrepared({ ...shaped, plan });
   }
   mkdirSync(directory, { recursive: true });
   const base = `${nextNumber(directory)}_${safeName(name)}`;
   const sqlPath = join(directory, `${base}.sql`);
   writeFileSync(sqlPath, formatPlan(plan));
-  writeFileSync(join(directory, `${base}.catalog.json`), serializeCatalog(prepared.built.catalog));
-  return { path: sqlPath, findings };
+  writeFileSync(join(directory, `${base}.catalog.json`), serializeCatalog(shaped.built.catalog));
+  const preface = prefaceOf(sqlPath, shaped);
+  return { path: sqlPath, findings, ...(preface === undefined ? {} : { preface }) };
 }
 
 /**
@@ -182,6 +197,143 @@ export async function generateProject(
  * @param directory - Migrations directory
  * @returns That file and its findings, or `undefined` when none remain
  */
+async function shapePlan(
+  opened: Awaited<ReturnType<typeof openProject>>,
+  name: string,
+  flags: readonly string[],
+  data: DataOptions | undefined,
+  mode: "generate" | "plan",
+): Promise<{
+  readonly config: MigrateConfig;
+  readonly built: Built;
+  readonly plan: MigrationPlan;
+  readonly before: Catalog;
+  readonly after: Catalog;
+  readonly unreachable: boolean;
+  readonly empty: ReadonlyMap<string, ProbeCount>;
+  readonly fills: readonly Fill[];
+  readonly lines: readonly string[];
+  readonly note?: string;
+  readonly renamed: boolean;
+  readonly schema: string;
+  readonly url?: string;
+}> {
+  const schema = catalogNamespace(opened.config);
+  const url = data?.url ?? targetUrl(opened.config);
+  const choice = await decideSwaps({
+    before: opened.previous,
+    after: opened.built.catalog,
+    renames: opened.renames,
+    schema,
+    ...(url === undefined ? {} : { url }),
+    terminal: data?.terminal === true && mode === "generate",
+    renameFlags: data?.renames ?? [],
+    dropAndAdd: data?.dropAndAdd === true,
+    ...(data?.ask === undefined ? {} : { ask: data.ask }),
+    ...(data?.write === undefined ? {} : { write: data.write }),
+  });
+  const compared = await comparedPlan(opened, name, flags.map((flag) => parseReplace(flag)), {
+    extraRenames: choice.extra,
+    acceptSwaps: choice.accept,
+  });
+  const live = compared.unreachable ? undefined : url;
+  const decided = await decideFills({
+    before: opened.previous,
+    after: opened.built.catalog,
+    schema,
+    ...(live === undefined ? {} : { url: live }),
+    mode,
+    terminal: data?.terminal === true && mode === "generate",
+    fillFlags: data?.fills ?? [],
+    ...(data?.ask === undefined ? {} : { ask: data.ask }),
+    ...(data?.write === undefined ? {} : { write: data.write }),
+  });
+  const plan = spliceFills(
+    compared.plan,
+    decided.fills,
+    [opened.previous, opened.built.catalog, compared.before, compared.after],
+    schema,
+    opened.config.backfill?.batchSize,
+  );
+  return {
+    config: opened.config,
+    built: opened.built,
+    plan,
+    before: compared.before,
+    after: compared.after,
+    unreachable: compared.unreachable,
+    empty: decided.empty,
+    fills: decided.fills,
+    lines: decided.lines,
+    ...(decided.note === undefined ? {} : { note: decided.note }),
+    renamed: choice.extra.length > 0,
+    schema,
+    ...(live === undefined ? {} : { url: live }),
+  };
+}
+
+function targetUrl(config: MigrateConfig, invoke?: InvokeFlags): string | undefined {
+  const targets = listTargets(config);
+  if (invoke?.target !== undefined) return selectTarget(config, invoke.target).url;
+  return targets.length === 1 ? targets[0]?.url : undefined;
+}
+
+async function notedDrops(
+  plan: MigrationPlan,
+  findings: readonly Finding[],
+  shaped: { readonly url?: string; readonly schema: string },
+): Promise<ReturnType<typeof plannedDrops>> {
+  const drops = plannedDrops(plan, findings);
+  if (shaped.url === undefined) return drops;
+  const parsed = drops.map((drop) => ({ drop, column: columnOfDrop(drop.sql) }));
+  const hits = await probeTarget(
+    shaped.url,
+    shaped.schema,
+    parsed.flatMap((item) =>
+      item.column === undefined
+        ? []
+        : [{ table: item.column.table, column: item.column.column, which: "notNull" as const }],
+    ),
+  );
+  if (hits === "unreachable") return drops;
+  return parsed.map(({ drop, column }) => {
+    if (column === undefined) return drop;
+    const count = hits.find(
+      (hit) => hit.table === column.table && hit.column === column.column && hit.which === "notNull",
+    )?.count;
+    const holds = dropHolds(column.column, count);
+    return holds.length === 0 ? drop : { ...drop, holds };
+  });
+}
+
+function columnOfDrop(sql: string): { readonly table: string; readonly column: string } | undefined {
+  const match = /^alter table\s+(\S+)\s+drop column\s+(\S+)/.exec(sql);
+  if (match === null) return undefined;
+  const tableNames = [...(match[1] ?? "").matchAll(/"((?:[^"]|"")*)"/g)];
+  const table = tableNames.at(-1)?.[1]?.replaceAll('""', '"') ?? match[1] ?? "";
+  const quoted = /^"((?:[^"]|"")*)"$/.exec(match[2] ?? "");
+  const column = quoted === null ? (match[2] ?? "") : (quoted[1] ?? "").replaceAll('""', '"');
+  return { table, column };
+}
+
+function prefaceOf(
+  path: string,
+  shaped: { readonly lines: readonly string[]; readonly fills: readonly Fill[]; readonly renamed: boolean; readonly plan: MigrationPlan },
+): string | undefined {
+  const lines = [...shaped.lines];
+  const file = basename(path);
+  if (shaped.fills.length > 0) {
+    const batch = shaped.plan.steps.find((step) => step.backfill !== undefined)?.backfill?.batch ?? 1000;
+    lines.push(
+      `I wrote ${file}: fill in batches of ${batch.toLocaleString("en-US")}, add the check not valid, fill again, validate, set not null.`,
+    );
+  } else if (shaped.renamed) {
+    lines.push(`I wrote ${file}. Nothing runs until you apply it.`);
+  }
+  if (lines.length === 0) return undefined;
+  return `${lines.join("\n")}\n`;
+}
+
 function pendingLint(
   directory: string,
 ): { readonly path: string; readonly findings: readonly Finding[] } | undefined {
@@ -211,26 +363,45 @@ export async function planProject(
   name: string,
   flags: readonly string[],
   invoke?: InvokeFlags,
+  data?: DataOptions,
 ): Promise<{
   readonly plan: MigrationPlan;
   readonly findings: readonly Finding[];
   readonly text: string;
   readonly json: string;
 }> {
-  const prepared = await prepare(project, name, flags);
+  const opened = await openProject(project);
+  const url = data?.url ?? targetUrl(opened.config, invoke);
+  const prepared = await shapePlan(
+    opened,
+    name,
+    flags,
+    { ...data, ...(url === undefined ? {} : { url }) },
+    "plan",
+  );
   const findings = lintPrepared(prepared);
   const locks = await planLockText(prepared.config, prepared.plan, invoke, prepared.unreachable);
   if (prepared.unreachable || locks.skipped) cliNote(SKIPPED_READ_NOTE);
-  const lockText = locks.annotate;
+  const lockText = (step: PlanStep): string => {
+    const base = locks.annotate === undefined ? step.lock : locks.annotate(step);
+    return annotateProbe(step, base, prepared.empty, prepared.fills);
+  };
+  const show = prepared.empty.size === 0 ? locks.annotate : lockText;
   return {
     plan: prepared.plan,
     findings,
-    text: formatPlan(prepared.plan, lockText),
-    json: formatPlanJson(prepared.plan, findings, lockText, {
-      dialect: "postgres",
-      fromCatalogHash: catalogHash(prepared.before),
-      toCatalogHash: catalogHash(prepared.after),
-    }),
+    text: formatPlan(prepared.plan, show),
+    json: formatPlanJson(
+      prepared.plan,
+      findings,
+      show,
+      {
+        dialect: "postgres",
+        fromCatalogHash: catalogHash(prepared.before),
+        toCatalogHash: catalogHash(prepared.after),
+      },
+      prepared.plan.steps.map((step) => stepData(step, prepared.empty, prepared.fills)),
+    ),
   };
 }
 
@@ -424,34 +595,6 @@ export async function projectHead(project: string | ProjectContext): Promise<{
   return { previous: opened.previous, catalog: opened.built.catalog, renames: opened.renames };
 }
 
-async function prepare(
-  project: string | ProjectContext,
-  name: string,
-  flags: readonly string[],
-): Promise<{
-  readonly config: MigrateConfig;
-  readonly built: Built;
-  readonly plan: MigrationPlan;
-  readonly before: Catalog;
-  readonly after: Catalog;
-  readonly unreachable: boolean;
-}> {
-  const opened = await openProject(project);
-  const compared = await comparedPlan(
-    opened,
-    name,
-    flags.map((flag) => parseReplace(flag)),
-  );
-  return {
-    config: opened.config,
-    built: opened.built,
-    plan: compared.plan,
-    before: compared.before,
-    after: compared.after,
-    unreachable: compared.unreachable,
-  };
-}
-
 function lintPrepared(prepared: {
   readonly plan: MigrationPlan;
   readonly before: Catalog;
@@ -556,6 +699,7 @@ async function comparedPlan(
   },
   name: string,
   replacements: ReturnType<typeof parseReplace>[] = [],
+  choice?: { readonly extraRenames?: readonly DeclaredRename[]; readonly acceptSwaps?: readonly { readonly table: string; readonly from: string; readonly to: string }[] },
 ): Promise<{
   readonly plan: MigrationPlan;
   readonly before: Catalog;
@@ -565,8 +709,11 @@ async function comparedPlan(
   const input = {
     before: opened.previous,
     after: opened.built.catalog,
-    renames: opened.renames,
+    renames: [...opened.renames, ...(choice?.extraRenames ?? [])],
     replacements,
+    ...(choice?.acceptSwaps !== undefined && choice.acceptSwaps.length > 0
+      ? { acceptSwaps: choice.acceptSwaps }
+      : {}),
     name,
     ...placedSchema(opened.config),
     ...batchSizeField(opened.config.backfill?.batchSize),

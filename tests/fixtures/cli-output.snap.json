@@ -141,6 +141,6 @@
   },
   "generate.drop.terminal": {
     "exit": 1,
-    "output": "This migration drops data:\n  step 1 OKM1512: alter table \"public\".\"tasks\" drop column \"note\"\nDrop it? [y/N] n\n\u001b[31merror\u001b[0m \u001b[31mOKM1510\u001b[0m: I did not write this migration. It drops data and the drop was not confirmed.\nPut the object back in the schema, or run okm generate again and answer y.\n\u001b[2mDetails: okm help OKM1510\u001b[0m\n\u001b[2mconfig: <project>/okmodel.config.ts\u001b[0m\n"
+    "output": "This migration drops data:\n  step 1 OKM1512: alter table \"public\".\"tasks\" drop column \"note\"\nnote holds 0 values. Drop it? [y/N] n\n\u001b[31merror\u001b[0m \u001b[31mOKM1510\u001b[0m: I did not write this migration. It drops data and the drop was not confirmed.\nPut the object back in the schema, or run okm generate again and answer y.\n\u001b[2mDetails: okm help OKM1510\u001b[0m\n\u001b[2mconfig: <project>/okmodel.config.ts\u001b[0m\n"
   }
 }

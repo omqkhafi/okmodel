@@ -35,6 +35,8 @@ import { assertUuidV7Available } from "./engine.js";
 import { assertSchemaMajor } from "./server-requirements.js";
 import { assertSnapshots } from "./export.js";
 import { asProject, projectPath, type ProjectContext } from "./paths.js";
+import { hasRows, probeConnection } from "./data-probe.js";
+import { unfilledError, unfilledRequired } from "./data-aware.js";
 import { loadBuiltSchema, loadConfig, projectHead } from "./project.js";
 import { loadHeadSnapshot, loadMigrations } from "./files.js";
 import { readReference, referenceInserts, type ReferenceTable } from "./reference.js";
@@ -351,6 +353,7 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
     await lockTarget(connection, request.target);
     locked = true;
     request.onLocked?.();
+    await refuseEmptyRequired(connection, request);
     if (request.lintDirectory !== undefined) {
       await refusePendingLint(connection, request.lintDirectory, request.migrations);
     }
@@ -1045,6 +1048,37 @@ export function lockKey(target: string): string {
  * @param directory - Migrations directory, walked from the first file
  * @param migrations - Files apply loaded, in apply order
  */
+async function refuseEmptyRequired(
+  connection: DriverConnection,
+  request: ApplyRequest,
+): Promise<void> {
+  const schema = request.schema ?? "public";
+  const pending = await pendingMigrationIds(connection, request.migrations);
+  for (const migration of request.migrations) {
+    if (!pending.has(migration.id)) continue;
+    const gaps = unfilledRequired(migration.steps);
+    if (gaps.length === 0) continue;
+    const hits = await probeConnection(
+      (text, params) => connection.execute(text, params),
+      schema,
+      gaps.map((gap) =>
+        gap.added
+          ? { table: gap.table, which: "rows" as const }
+          : { table: gap.table, column: gap.column, which: "null" as const },
+      ),
+    );
+    for (const gap of gaps) {
+      const count = hits.find(
+        (hit) =>
+          hit.table === gap.table &&
+          hit.which === (gap.added ? "rows" : "null") &&
+          hit.column === (gap.added ? undefined : gap.column),
+      )?.count;
+      if (count !== undefined && hasRows(count)) throw unfilledError(gap.table, gap.column, count);
+    }
+  }
+}
+
 async function refusePendingLint(
   connection: DriverConnection,
   directory: string,

@@ -34,6 +34,12 @@ export type ParsedCli = {
   readonly dryRun: boolean;
   readonly provision: boolean;
   readonly replace: readonly string[];
+  /** `--rename table.old=new`, repeated. */
+  readonly renames: readonly string[];
+  /** `--drop-and-add`. */
+  readonly dropAndAdd: boolean;
+  /** `--fill table.column=<sql>`, repeated. */
+  readonly fills: readonly string[];
   readonly schemas: readonly string[];
   /** `okm pull --import-ext`. `ts` when the flag is absent. */
   readonly importExt: "ts" | "js" | "none";
@@ -241,6 +247,23 @@ export function parseCli(argv: readonly string[]): ParsedCli {
     throw usage("--out needs --json for this command.", "Pass --json --out <file>, or drop --out.");
   }
   if (!help && !version) refuseDoctorMix(spec, values, operands);
+  const renames = stringList(values.rename);
+  const fills = stringList(values.fill);
+  if (!help && !version) {
+    for (const flag of renames) {
+      if (!/^[A-Za-z_][\w$]*\.[A-Za-z_][\w$]*=[A-Za-z_][\w$]*$/.test(flag)) {
+        throw usage("--rename needs table.old=new.", "Pass --rename <table>.<old>=<new>.");
+      }
+    }
+    for (const flag of fills) {
+      if (!/^[A-Za-z_][\w$]*\.[A-Za-z_][\w$]*=\S[\s\S]*$/.test(flag)) {
+        throw usage(
+          "--fill needs table.column=<sql expression>.",
+          "Pass --fill <table>.<column>=<sql expression>.",
+        );
+      }
+    }
+  }
   return {
     command: spec?.id ?? null,
     spec,
@@ -257,6 +280,9 @@ export function parseCli(argv: readonly string[]): ParsedCli {
     dryRun: values["dry-run"] === true,
     provision: values.provision === true,
     replace: stringList(values.replace),
+    renames,
+    dropAndAdd: values["drop-and-add"] === true,
+    fills,
     schemas: schemasOf(values.schema),
     importExt: importExtOf(stringValue(values["import-ext"])),
     casing: casingOf(stringValue(values.casing)),
@@ -352,6 +378,9 @@ function blank(flags: { readonly help: boolean; readonly json: boolean }): Parse
     dryRun: false,
     provision: false,
     replace: [],
+    renames: [],
+    dropAndAdd: false,
+    fills: [],
     schemas: [],
     importExt: "ts",
     casing: undefined,
@@ -521,6 +550,15 @@ function missingValue(name: string): OkmError {
       "OKM1541",
       "--replace needs table.column.old=new.",
       "Pass --replace <table>.<column>.<old>=<new>.",
+    );
+  }
+  if (name === "rename") {
+    return usage("--rename needs table.old=new.", "Pass --rename <table>.<old>=<new>.");
+  }
+  if (name === "fill") {
+    return usage(
+      "--fill needs table.column=<sql expression>.",
+      "Pass --fill <table>.<column>=<sql expression>.",
     );
   }
   if (name === "config") {

@@ -116,6 +116,26 @@ const replace: FlagSpec = {
   hint: "<table>.<column>.<old>=<new>. No short form.",
 };
 
+const rename: FlagSpec = {
+  name: "rename",
+  type: "string",
+  multiple: true,
+  hint: "<table>.<old>=<new>. No short form.",
+};
+
+const dropAndAdd: FlagSpec = {
+  name: "drop-and-add",
+  type: "boolean",
+  hint: "Drop the removed column and add the new one. No short form.",
+};
+
+const fill: FlagSpec = {
+  name: "fill",
+  type: "string",
+  multiple: true,
+  hint: "<table>.<column>=<sql expression>. No short form.",
+};
+
 const yes: FlagSpec = {
   name: "yes",
   short: "y",
@@ -160,7 +180,7 @@ export const COMMANDS: readonly CommandSpec[] = [
     missing: "okm migrate plan needs a name.",
     usesDatabase: true,
     ownOut: false,
-    flags: [target, allowProtected, replace],
+    flags: [target, allowProtected, replace, rename, dropAndAdd, fill],
   }),
   spec({
     id: "migrate apply",
@@ -436,7 +456,7 @@ export const COMMANDS: readonly CommandSpec[] = [
     maxOperands: 1,
     usesDatabase: false,
     ownOut: false,
-    flags: [replace],
+    flags: [replace, rename, dropAndAdd, fill],
   }),
   spec({
     id: "push",
