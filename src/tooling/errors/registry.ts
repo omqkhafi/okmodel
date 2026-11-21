@@ -325,7 +325,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     title: "Unsafe migration",
     summary:
       "A migration has an unresolved lint error, or an override with an empty reason or a code no statement in the step triggered.",
-    fix: "Change the statement to the safe form the finding names. An acknowledged override is a -- okm-allow CODE: reason line that okm generate writes when you answer its question in a terminal. The code must be one a statement in the step triggered, and the reason must not be empty.",
+    fix: "Change the statement to the safe form the finding names. A person acknowledges an override when okm generate asks in a terminal, and okm generate writes the line. The code must be one a statement in the step triggered, and the reason must not be empty.",
     escapeHatches: [hatch("OKM1510", "-- okm-allow")],
   },
   {
