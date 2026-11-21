@@ -791,6 +791,7 @@ function failStep(unit: RunnableUnit, index: number, error: unknown): OkmError {
     {
       cause: error,
       fix: stepFailureFix(error, "apply"),
+      ...(isLockTimeout(error) ? { retryable: true } : {}),
     },
   );
 }
@@ -818,9 +819,11 @@ export function stepFailureFix(
   if (isLockTimeout(error)) {
     const command = again === "apply" ? "okm migrate apply" : "okm migrate check";
     const tail =
-      again === "apply" ? "Finished steps are not repeated." : "The step does not need a change.";
+      again === "apply"
+        ? "Finished steps are not repeated, so running it again is safe."
+        : "The step does not need a change, so running it again is safe.";
     return {
-      summary: `A lock timed out. Run ${command} again when that lock is free. ${tail}`,
+      summary: `I could not get a lock in time and stopped at this step. Run ${command} again when that lock is free. ${tail}`,
     };
   }
   return { summary: "Fix the step and run apply again. Finished steps are not repeated." };

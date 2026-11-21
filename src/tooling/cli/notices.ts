@@ -5,6 +5,8 @@
  * still writes the line.
  */
 
+import { writeErr } from "./output.js";
+
 /** One notice. */
 export type CliNotice = {
   readonly summary: string;
@@ -43,7 +45,7 @@ export function cliNotice(summary: string): void {
     current.push({ summary });
     return;
   }
-  process.stderr.write(`${summary}\n`);
+  writeErr(`${summary}\n`);
 }
 
 /**
@@ -55,5 +57,5 @@ export function cliNotice(summary: string): void {
  * @param text - One line, without a trailing newline
  */
 export function cliNote(text: string): void {
-  if (current === undefined) process.stderr.write(`${text}\n`);
+  if (current === undefined) writeErr(`${text}\n`);
 }

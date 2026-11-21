@@ -142,7 +142,7 @@ postgresTest(
       const offline = okm(dark, ["generate", "drop_draft", ...flag]);
       expect(offline.code, offline.stderr).toBe(0);
       expect(offline.stderr).toContain(
-        "note: target unreachable, so this plan has no row estimates and no live comparison",
+        "note: I could not reach the target, so this plan has no row estimates and no live comparison.",
       );
       expect(okm(live, ["generate", "drop_draft", ...flag]).code).toBe(0);
       expect(steps(dark)).toBe(steps(live));

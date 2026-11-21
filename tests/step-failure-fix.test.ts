@@ -11,10 +11,10 @@ test("a lock timeout names the command that should run again", () => {
     sqlstate: "55P03",
   });
   expect(stepFailureFix(error, "check").summary).toBe(
-    "A lock timed out. Run okm migrate check again when that lock is free. The step does not need a change.",
+    "I could not get a lock in time and stopped at this step. Run okm migrate check again when that lock is free. The step does not need a change, so running it again is safe.",
   );
   expect(stepFailureFix(error, "apply").summary).toBe(
-    "A lock timed out. Run okm migrate apply again when that lock is free. Finished steps are not repeated.",
+    "I could not get a lock in time and stopped at this step. Run okm migrate apply again when that lock is free. Finished steps are not repeated, so running it again is safe.",
   );
 });
 

@@ -10,6 +10,7 @@ import { OkmError, type ErrorCategory, type ErrorKind } from "../../contracts/er
 import { sessionFailure } from "../migrate/lost.js";
 import type { CliNoticeLevel, CliNoticeSeverity, CliWarningBody } from "../cli/outcome.js";
 import { untrustedText, type UntrustedText } from "../untrusted.js";
+import { knownFix } from "./known-fix.js";
 import { errorDoc, type ErrorDoc } from "./registry.js";
 import {
   errorDocsPath,
@@ -104,7 +105,7 @@ function databaseDetail(mapped: OkmError): UntrustedText | undefined {
 }
 
 function fixOf(mapped: OkmError, doc: ErrorDoc | undefined, leaked: boolean): string {
-  const thrown = mapped.fix.summary;
+  const thrown = knownFix(mapped) ?? mapped.fix.summary;
   if (!leaked) return thrown;
   const bits = [mapped.message, mapped.constraint, mapped.table].filter(
     (bit): bit is string => bit !== undefined && bit.length > 0,

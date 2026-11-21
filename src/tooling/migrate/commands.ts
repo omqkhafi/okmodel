@@ -28,12 +28,13 @@ import {
   CommandFinished,
   exitCodeFor,
   missingPostgres,
-  readConfigPath,
   readPartial,
   tagConfigPath,
   tagOutcome,
   type CliOutFile,
 } from "../cli/outcome.js";
+import { failureText } from "../cli/failure.js";
+import { writeErr, writeOut } from "../cli/output.js";
 import { argvHasJson, commandId, parseCli, type ParsedCli } from "../cli/parse.js";
 import { commandsTable, helpText } from "../cli/spec.js";
 import { schemaCommands, schemaFor, schemaText } from "../cli/schema.js";
@@ -49,7 +50,6 @@ import { ask } from "../prompt.js";
 import { terminalConfirm } from "./confirm-drop.js";
 import { formatFindings, generateRefusalFix, hasError, lintRefusal, type Finding } from "./lint.js";
 import { formatAdvice, type IgnoreReport } from "./schema-rules.js";
-import { sessionFailure } from "./lost.js";
 import { guardStoredDriverUrl } from "./policy.js";
 import { protectedStorePath } from "./protected-store.js";
 import { asProject, projectContext, projectPath, type ProjectContext } from "./paths.js";
@@ -83,19 +83,15 @@ type Produced = {
  *
  * @param error - Failure from a command
  * @param verbose - When true, append the stack
+ * @param columns - Where prose wraps. The default leaves it unwrapped
  * @returns The stderr text, including the trailing newline
  */
-export function formatFailure(error: unknown, verbose = false): string {
-  const mapped = sessionFailure(error) ?? OkmError.from(error);
-  let text = `error ${mapped.code}: ${mapped.message}\n${mapped.fix.summary}\n`;
-  if (typeof error === "object" && error !== null) {
-    const configPath = readConfigPath(error);
-    if (configPath !== undefined) text += `config: ${configPath}\n`;
-  }
-  if (verbose && error instanceof Error && error.stack !== undefined) {
-    text += `${error.stack}\n`;
-  }
-  return text;
+export function formatFailure(
+  error: unknown,
+  verbose = false,
+  columns = Number.POSITIVE_INFINITY,
+): string {
+  return failureText(error, verbose, columns);
 }
 
 /**
@@ -108,7 +104,7 @@ export function formatFailure(error: unknown, verbose = false): string {
  * @param io - Working directory and stdout. Defaults to the process
  */
 export async function run(argv: readonly string[], io?: CommandIo): Promise<void> {
-  const stdout = io?.stdout ?? ((text: string) => process.stdout.write(text));
+  const stdout = io?.stdout ?? writeOut;
   const cwd = io?.cwd ?? process.cwd();
   let parsed: ParsedCli;
   try {
@@ -258,7 +254,7 @@ async function dispatch(
   try {
     const produced = await route(spec.id, project, parsed, cwd, human, reportConfig);
     if (reportConfig && announce && project.ambiguous === undefined) {
-      process.stderr.write(`config: ${project.configPath}\n`);
+      writeErr(`config: ${project.configPath}\n`);
     }
     return produced;
   } catch (error) {
@@ -648,9 +644,7 @@ async function generate(
   terminal: boolean,
 ): Promise<Produced> {
   const confirm =
-    terminal && process.stdin.isTTY === true
-      ? terminalConfirm(ask, (text) => process.stderr.write(text))
-      : undefined;
+    terminal && process.stdin.isTTY === true ? terminalConfirm(ask, writeErr) : undefined;
   const written = await generateProject(
     project,
     parsed.operands[0] ?? "migration",

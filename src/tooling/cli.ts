@@ -2,6 +2,7 @@ import { OkmError } from "../contracts/error.js";
 import { envelope, errorBody, serializeEnvelope, terseStderr } from "./cli/envelope.js";
 import { argvHasJson } from "./cli/parse.js";
 import { CommandFinished, exitCodeFor, tagOutcome } from "./cli/outcome.js";
+import { outputMode, writeErr } from "./cli/output.js";
 import { readPackageVersion } from "./cli/version.js";
 import { formatFailure, run } from "./migrate/commands.js";
 import { nodeStartupMessage } from "./node-version.js";
@@ -36,9 +37,9 @@ if (nodeProblem !== undefined) {
       ),
     );
     const line = terseStderr(error, process.stderr.isTTY === true);
-    if (line.length > 0) process.stderr.write(line);
+    if (line.length > 0) writeErr(line);
   } else {
-    process.stderr.write(nodeProblem);
+    writeErr(nodeProblem);
   }
   process.exitCode = 2;
 } else {
@@ -46,11 +47,11 @@ if (nodeProblem !== undefined) {
     await run(process.argv.slice(2));
   } catch (error) {
     if (error instanceof CommandFinished) {
-      if (error.stderr.length > 0) process.stderr.write(error.stderr);
+      if (error.stderr.length > 0) writeErr(error.stderr);
       process.exitCode = error.exitCode;
     } else {
       const verbose = wantsVerbose(process.argv) || process.env.OKM_DEBUG === "1";
-      process.stderr.write(formatFailure(error, verbose));
+      writeErr(formatFailure(error, verbose, outputMode().columns));
       process.exitCode = exitCodeFor(error);
     }
   }
