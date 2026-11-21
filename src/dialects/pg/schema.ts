@@ -1777,37 +1777,23 @@ function resolveRelations(
       );
     }
     const field = call.field;
-    const matches =
-      call.kind === "one"
-        ? edges.filter(
-            (edge) =>
-              edge.fromTable === item.tsName &&
-              edge.toTable === call.table &&
-              (field === undefined || edge.fromField === field),
-          )
-        : edges.filter(
-            (edge) =>
-              edge.toTable === item.tsName &&
-              edge.fromTable === call.table &&
-              (field === undefined || edge.fromField === field),
-          );
-    if (matches.length !== 1) {
-      const hint = matches.map((edge) => edge.fromField).sort();
-      const which = hint.length === 0 ? "none" : hint.join(", ");
-      catalogError(
-        "OKM1021",
-        `Relation ${item.tsName}.${name} on ${call.table} is ambiguous. Accepted columns: ${which}.`,
-      );
-    }
+    const one = call.kind === "one";
+    const matches = edges.filter(
+      (edge) =>
+        (one ? edge.fromTable : edge.toTable) === item.tsName &&
+        (one ? edge.toTable : edge.fromTable) === call.table &&
+        (field === undefined || edge.fromField === field),
+    );
     const edge = matches[0];
-    if (edge === undefined) {
+    if (matches.length !== 1 || edge === undefined) {
+      const hint = matches.map((found) => found.fromField).sort();
       catalogError(
         "OKM1021",
-        `Relation ${item.tsName}.${name} on ${call.table} is ambiguous. Accepted columns: (none).`,
+        `Relation ${item.tsName}.${name} on ${call.table} is ambiguous. Accepted columns: ${hint.length === 0 ? "none" : hint.join(", ")}.`,
       );
     }
     resolved.push(
-      call.kind === "one"
+      one
         ? { name, kind: "one", table: call.table, local: edge.local, remote: edge.remote }
         : { name, kind: "many", table: call.table, local: edge.remote, remote: edge.local },
     );
