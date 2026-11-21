@@ -9,17 +9,26 @@ import type { DriverCapabilities, DriverTimeouts, Notice } from "../contracts/dr
 import type { SafeResult } from "../contracts/error.js";
 import type { OptionalInsert, RequiredInsert } from "../contracts/rows.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
+import type {
+  ComputedRow,
+  Computation,
+  FiltersOf,
+  NumericKeys,
+  RelFilter,
+  RelationKeys,
+  RelationsOf,
+  RowOf,
+  WhereOf,
+} from "../dialects/pg/computed-types.js";
 import type { Bucket } from "../dialects/pg/ops/bucket.js";
 import type { Fragment } from "../dialects/pg/ops/fragment.js";
 import type { Window } from "../dialects/pg/ops/window.js";
-import type { IsTimeText } from "../dialects/pg/time.js";
 import type { Inc } from "../dialects/pg/ops/inc.js";
 import type {
   ArrAppend,
   ArrRemove,
   JsonSet,
   Or,
-  RelationFilter,
   Relevance,
   SearchMatch,
   Untagged,
@@ -32,19 +41,14 @@ export type { Limits } from "./plan.js";
 import type { WarningIgnore } from "./warnings/catalog.js";
 
 export type { FieldWhere, WhereValue } from "../dialects/pg/where.js";
-
-/** One row of a table in `S`. */
-export type RowOf<S extends QuerySchema, K extends keyof S["~byName"]> = S["~byName"][K] extends {
-  readonly "~row": infer R;
-}
-  ? R
-  : never;
-
-/** Relations declared on a table. */
-export type RelationsOf<
-  S extends QuerySchema,
-  K extends keyof S["~byName"],
-> = S["~byName"][K] extends { readonly "~relations": infer R } ? R : Record<string, never>;
+export type {
+  ComputedRow,
+  Computation,
+  RelFilter,
+  RelationsOf,
+  RowOf,
+  WhereOf,
+} from "../dialects/pg/computed-types.js";
 
 /** Array and JSON writes the column value type can accept. */
 type WriteOp<V> = [unknown] extends [V]
@@ -67,22 +71,6 @@ type IncOf<V> = [unknown] extends [V]
     : [NonNullable<V>] extends [bigint]
       ? Inc<bigint>
       : never;
-
-/** `has`, `none`, and `every` against the related row. A morph include is not a filter. */
-export type RelFilter<S extends QuerySchema, Rel> = Rel extends {
-  readonly morph: { readonly targets: readonly string[] };
-}
-  ? never
-  : Rel extends {
-        readonly table: infer T extends string;
-      }
-    ? T extends keyof S["~byName"]
-      ? RelationFilter<"has" | "none" | "every", FieldWhere<RowOf<S, T>>>
-      : never
-    : never;
-
-/** Known relation names. A string index (no declared relations) adds none. */
-type RelationKeys<R> = string extends keyof R ? never : keyof R;
 
 /** The column when it is `hidden({ filterable: true })`, otherwise `never`. */
 type FilterBit<C> = C extends { "~flags": { "~filter": true } } ? C : never;
@@ -529,16 +517,6 @@ type DeleteFilterTarget<S extends QuerySchema, K extends keyof S["~byName"], W> 
   readonly where?: FilterWhereOf<S, K, W>;
 };
 
-/** Column and relation filters for one table. */
-type FiltersOf<S extends QuerySchema, K extends keyof S["~byName"]> = FieldWhere<RowOf<S, K>> & {
-  readonly [R in RelationKeys<RelationsOf<S, K>>]?: RelFilter<S, RelationsOf<S, K>[R]> | undefined;
-};
-
-/** `where` for one table. `or()` may be the whole filter. */
-export type WhereOf<S extends QuerySchema, K extends keyof S["~byName"]> =
-  | FiltersOf<S, K>
-  | Or<FiltersOf<S, K>>;
-
 /**
  * `orderBy`. `asc` is nulls last and `desc` is nulls first unless `nulls` is set.
  *
@@ -734,86 +712,39 @@ export type ResultRow<S extends QuerySchema, K extends keyof S["~byName"], O> = 
     IncludeRows<S, K, O extends { readonly include: infer Inc } ? Inc : undefined>
 >;
 
-/**
- * What a `computed` callback returns for one aggregate: the value's type, carried in the type only.
- *
- * @typeParam T - What the aggregate reads as
- */
-export type Computation<T> = { readonly "~computed": T };
-
-/** The aggregates of one `many` or `manyThrough` relation. */
-type ComputedHandle<S extends QuerySchema, T extends keyof S["~byName"]> = {
-  /** Rows of the relation, or the distinct values of `distinct`. */
-  count(options?: {
-    readonly where?: WhereOf<S, T>;
-    readonly distinct?: keyof RowOf<S, T> & string;
-  }): Computation<number>;
-  /** True when one row matches. */
-  exists(options?: { readonly where?: WhereOf<S, T> }): Computation<boolean>;
-  /** Total of a numeric field, or of a fragment over the related row's fields. `null` when no row matches. */
-  sum<const C extends NumericKeys<RowOf<S, T>>>(
-    column: C,
-    options?: { readonly where?: WhereOf<S, T> },
-  ): Computation<NonNullable<RowOf<S, T>[C]> | null>;
-  sum(column: Fragment, options?: { readonly where?: WhereOf<S, T> }): Computation<number | null>;
-  /** Average of a numeric field, or of a fragment. `null` when no row matches. */
-  avg<const C extends NumericKeys<RowOf<S, T>>>(
-    column: C,
-    options?: { readonly where?: WhereOf<S, T> },
-  ): Computation<NonNullable<RowOf<S, T>[C]> | null>;
-  avg(column: Fragment, options?: { readonly where?: WhereOf<S, T> }): Computation<number | null>;
-  /** Smallest value of a field, or of a fragment. `null` when no row matches. */
-  min<const C extends keyof RowOf<S, T> & string>(
-    column: C,
-    options?: { readonly where?: WhereOf<S, T> },
-  ): Computation<NonNullable<RowOf<S, T>[C]> | null>;
-  min(column: Fragment, options?: { readonly where?: WhereOf<S, T> }): Computation<number | null>;
-  /** Largest value of a field, or of a fragment. `null` when no row matches. */
-  max<const C extends keyof RowOf<S, T> & string>(
-    column: C,
-    options?: { readonly where?: WhereOf<S, T> },
-  ): Computation<NonNullable<RowOf<S, T>[C]> | null>;
-  max(column: Fragment, options?: { readonly where?: WhereOf<S, T> }): Computation<number | null>;
-};
-
-/** The related table of a `many` or `manyThrough` relation. A one or morph relation gives `never`. */
-type ManyTable<S extends QuerySchema, Rel> = Rel extends {
-  readonly morph: { readonly targets: readonly string[] };
-}
-  ? never
-  : Rel extends { readonly kind: "many"; readonly table: infer T extends keyof S["~byName"] }
-    ? T
-    : never;
-
-/** The row a `computed` callback receives. Each `many` relation holds its aggregates. */
-export type ComputedRow<S extends QuerySchema, K extends keyof S["~byName"]> = {
-  readonly [
-    R in RelationKeys<RelationsOf<S, K>> as [ManyTable<S, RelationsOf<S, K>[R]>] extends [never]
-      ? never
-      : R
-  ]: ComputedHandle<S, ManyTable<S, RelationsOf<S, K>[R]>>;
-};
-
-/** `computed`: result name to a callback of the row. */
+/** `computed`: result name to a callback of the row, or `true` for a name `schema({ computed })` declared. */
 type ComputedOption<S extends QuerySchema, K extends keyof S["~byName"]> = {
   readonly computed: {
-    readonly [name: string]: (row: ComputedRow<S, K>) => Computation<unknown> | Fragment;
+    readonly [name: string]: ((row: ComputedRow<S, K>) => Computation<unknown> | Fragment) | true;
   };
 };
 
 /** What a callback's result reads as. A bare fragment is a number, or `null` when it divides by nothing. */
 type ComputedValue<R> = R extends Computation<infer T> ? T : number | null;
 
+/** What the declared callback `N` of table `K` reads as. */
+type DeclaredValue<S, K, N> = S extends { readonly "~computed": infer D }
+  ? K extends keyof D
+    ? N extends keyof D[K]
+      ? D[K][N] extends (row: never) => infer R
+        ? ComputedValue<R>
+        : never
+      : never
+    : never
+  : never;
+
 /** The values `computed` adds to a row. */
-type ComputedCols<O> = O extends { readonly computed: infer C }
+type ComputedCols<S, K, O> = O extends { readonly computed: infer C }
   ? {
-      readonly [N in keyof C]: C[N] extends (row: never) => infer R ? ComputedValue<R> : never;
+      readonly [N in keyof C]: C[N] extends (row: never) => infer R
+        ? ComputedValue<R>
+        : DeclaredValue<S, K, N>;
     }
   : unknown;
 
 /** A row with the values `computed` adds. */
 export type ComputedResult<S extends QuerySchema, K extends keyof S["~byName"], O> = Show<
-  ResultRow<S, K, O> & ComputedCols<O>
+  ResultRow<S, K, O> & ComputedCols<S, K, O>
 >;
 
 /** `where` and `orderBy` of a call with `computed`. Their keys are sealed by {@link ComputedSeal}. */
@@ -865,8 +796,8 @@ type ComputedWhereField<S extends QuerySchema, K extends keyof S["~byName"], O> 
   WhereOfTarget<O> extends infer W
     ? [W] extends [undefined]
       ? unknown
-      : SealField<WhereSeal<W, WhereKeys<S, K, false> | keyof ComputedCols<O>>, "where"> & {
-          readonly where?: WhereOf<S, K> & FieldWhere<ComputedCols<O>>;
+      : SealField<WhereSeal<W, WhereKeys<S, K, false> | keyof ComputedCols<S, K, O>>, "where"> & {
+          readonly where?: WhereOf<S, K> & FieldWhere<ComputedCols<S, K, O>>;
         }
     : unknown;
 
@@ -874,8 +805,8 @@ type ComputedOrderField<S extends QuerySchema, K extends keyof S["~byName"], O> 
   OrderOfTarget<O> extends infer B
     ? [B] extends [undefined]
       ? unknown
-      : SealField<OrderSeal<B, OrderKeys<S, K, false> | keyof ComputedCols<O>>, "orderBy"> & {
-          readonly orderBy?: OrderBy<RowOf<S, K> & ComputedCols<O>>;
+      : SealField<OrderSeal<B, OrderKeys<S, K, false> | keyof ComputedCols<S, K, O>>, "orderBy"> & {
+          readonly orderBy?: OrderBy<RowOf<S, K> & ComputedCols<S, K, O>>;
         }
     : unknown;
 
@@ -1052,21 +983,6 @@ type NoRank<O> = [O] extends [{ readonly orderBy?: infer B }]
       ? never
       : O
   : O;
-
-/**
- * Fields `sum` and `avg` take: those typed `number` or `string`.
- *
- * A `numeric` column is a string by default. The types cannot tell it from a
- * `text` column, so `sum` over `text` is refused when the call runs (OKM1124).
- */
-type NumericKeys<Row> = {
-  readonly [F in keyof Row]-?: [NonNullable<Row[F]>] extends [number | string]
-    ? IsTimeText<Row[F]> extends true
-      ? never
-      : F
-    : never;
-}[keyof Row] &
-  string;
 
 /** One `orderBy` value. `asc` is nulls last and `desc` is nulls first unless `nulls` is set. */
 type SortDir = "asc" | "desc" | { readonly dir: "asc" | "desc"; readonly nulls?: "first" | "last" };

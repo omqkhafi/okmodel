@@ -404,13 +404,13 @@ const TABLE_KNOWN = new Set([
 ]);
 
 /**
- * Later table options, and the version that adds each one.
+ * Table options this version refuses, and what the error says about each.
  *
- * `later` names no version: the execution plan has no release for that option.
+ * Each value is the sentence that follows `is not available yet.`
  */
 const TABLE_LATER: Readonly<Record<string, string>> = {
-  computed: "later",
-  policies: "later",
+  computed: "Declare it in schema({ computed }).",
+  policies: "It arrives later.",
 };
 
 /**
@@ -710,11 +710,11 @@ export function emittedTypeName(name: string): string {
 }
 
 /**
- * Rejects options a later prompt owns, and unknown keys.
+ * Rejects options this version refuses, and unknown keys.
  *
  * @param options - Author object
- * @param known - Keys this prompt implements
- * @param later - Keys reserved for a named prompt
+ * @param known - Keys this version implements
+ * @param later - Keys it refuses, each with the rest of the sentence that names it
  * @param where - Table or schema name used in the message
  */
 export function rejectLater(
@@ -725,15 +725,12 @@ export function rejectLater(
 ): void {
   const record = options as Record<string, unknown>;
   for (const key of Object.keys(record)) {
-    const prompt = later[key];
-    if (prompt !== undefined) {
+    const hint = later[key];
+    if (hint !== undefined) {
       if (record[key] !== undefined) {
-        const when = prompt === "later" ? "later" : `in ${prompt}`;
-        unavailable(`${where} option ${key} is not available yet. It arrives ${when}.`);
+        unavailable(`${where} option ${key} is not available yet. ${hint}`);
       }
-      continue;
-    }
-    if (!known.has(key)) {
+    } else if (!known.has(key)) {
       const accepted = [...known].sort().join(", ");
       const candidates = [...known, ...Object.keys(later)];
       throwNamed(

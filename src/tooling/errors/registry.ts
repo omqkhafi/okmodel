@@ -157,7 +157,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1061",
     title: "Reserved option",
     summary: "The option exists in the types but this version does not implement it.",
-    fix: "Remove the option until the prompt or milestone named in the error adds it.",
+    fix: "Remove the option until the prompt or milestone named in the error adds it. A computed value on a table is declared in schema({ computed }), not in the table's options.",
   },
   {
     code: "OKM1101",

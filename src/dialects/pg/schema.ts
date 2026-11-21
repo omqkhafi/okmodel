@@ -4,6 +4,7 @@
  * Work happens here, not in `table()` and not at import.
  */
 
+import type { DeclaredComputed, KnownTables } from "./computed-types.js";
 import { OkmError, catalogError, throwNamed } from "../../contracts/error.js";
 import { withLocation } from "../../contracts/location.js";
 import { catalog } from "../../contracts/catalog/build.js";
@@ -339,6 +340,7 @@ type ApplySchemaTraits<TTable, TFields, TTraits> = TTable extends {
 const SCHEMA_KNOWN = new Set([
   "casing",
   "codecs",
+  "computed",
   "defaults",
   "extensions",
   "functions",
@@ -478,6 +480,7 @@ export function schema<
     readonly tenancy?: TTenancy;
     readonly validation?: TValidation;
     readonly views?: TViews;
+    readonly computed?: undefined;
   },
 ): ([TValidation] extends [undefined]
   ? TenancySchema<SchemaWithTraits<TTables, TTraits>, TTables, TTenancy>
@@ -495,6 +498,7 @@ export function schema<
     readonly tenancy?: TTenancy;
     readonly validation?: TValidation;
     readonly views?: TViews;
+    readonly computed?: undefined;
   },
 ): ([TValidation] extends [undefined]
   ? TenancySchema<BuiltSchema<TTables>, TTables, TTenancy>
@@ -516,6 +520,7 @@ export function schema<
     readonly tenancy?: TTenancy;
     readonly validation?: TValidation;
     readonly views?: TViews;
+    readonly computed?: undefined;
     readonly defaults: SchemaDefaults<TTime>;
   },
 ): TimedSchema<
@@ -527,8 +532,74 @@ export function schema<
     SchemaViews<TViews>,
   TTime
 >;
+/**
+ * Declares values read with the parent rows, as `schema({ computed })`.
+ *
+ * The callbacks are stored as given and never run here. A read selects one
+ * with `computed: { name: true }`.
+ *
+ * @typeParam TTables - Tables in declaration order
+ * @typeParam TComputed - Table name, then value name, to a callback of the row
+ * @param config - Tables, `computed`, and the other schema options
+ * @returns The schema and its catalog
+ */
+export function schema<
+  const TTables extends readonly AnyTable[],
+  const TComputed extends DeclaredComputed<
+    TenancySchema<SchemaWithTraits<TTables, TTraits>, TTables, TTenancy>,
+    TTables[number]["~name"]
+  >,
+  const TTraits extends readonly { readonly fields: Readonly<Record<string, object>> }[] =
+    readonly [],
+  const TTenancy extends ColumnTenancy | undefined = undefined,
+  const TValidation = undefined,
+  const TViews extends readonly unknown[] = readonly [],
+>(
+  config: Omit<SchemaInput<TTables>, "traits" | "tenancy" | "validation" | "views"> & {
+    readonly traits?: TTraits;
+    readonly tenancy?: TTenancy;
+    readonly validation?: TValidation;
+    readonly views?: TViews;
+    readonly computed: TComputed & KnownTables<TComputed, TTables[number]["~name"]>;
+  },
+): ([TValidation] extends [undefined]
+  ? TenancySchema<SchemaWithTraits<TTables, TTraits>, TTables, TTenancy>
+  : TenancySchema<SchemaWithTraits<TTables, TTraits>, TTables, TTenancy> & {
+      readonly "~validation": TValidation;
+    }) &
+  SchemaViews<TViews> & { readonly "~computed": TComputed };
+export function schema<
+  const TTables extends readonly AnyTable[],
+  const TComputed extends DeclaredComputed<
+    TimedSchema<TenancySchema<SchemaWithTraits<TTables, TTraits>, TTables, TTenancy>, TTime>,
+    TTables[number]["~name"]
+  >,
+  const TTime extends "date" | "temporal",
+  const TTraits extends readonly { readonly fields: Readonly<Record<string, object>> }[] =
+    readonly [],
+  const TTenancy extends ColumnTenancy | undefined = undefined,
+  const TValidation = undefined,
+  const TViews extends readonly unknown[] = readonly [],
+>(
+  config: Omit<SchemaInput<TTables>, "traits" | "tenancy" | "validation" | "views" | "defaults"> & {
+    readonly traits?: TTraits;
+    readonly tenancy?: TTenancy;
+    readonly validation?: TValidation;
+    readonly views?: TViews;
+    readonly defaults: SchemaDefaults<TTime>;
+    readonly computed: TComputed & KnownTables<TComputed, TTables[number]["~name"]>;
+  },
+): TimedSchema<
+  ([TValidation] extends [undefined]
+    ? TenancySchema<SchemaWithTraits<TTables, TTraits>, TTables, TTenancy>
+    : TenancySchema<SchemaWithTraits<TTables, TTraits>, TTables, TTenancy> & {
+        readonly "~validation": TValidation;
+      }) &
+    SchemaViews<TViews> & { readonly "~computed": TComputed },
+  TTime
+>;
 export function schema<const TTables extends readonly AnyTable[]>(
-  config: SchemaInput<TTables, TimeMode>,
+  config: SchemaInput<TTables, TimeMode> & { readonly computed?: unknown },
 ): BuiltSchema<TTables> {
   rejectLater(config, SCHEMA_KNOWN, SCHEMA_LATER, "schema()");
   const schemaTraits = openSchemaTraits(config.traits);
@@ -637,6 +708,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
     requires,
     tables: config.tables,
     model,
+    computed: config.computed,
     ...(schemaTraits !== undefined && schemaTraits.length > 0 ? { traits: schemaTraits } : {}),
     ...(tenancy !== undefined ? { tenancy } : {}),
     ...(clientHooks !== undefined ? { hooks: clientHooks } : {}),
