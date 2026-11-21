@@ -506,7 +506,8 @@ postgresTest(gate, "a concurrent writer is swept or rejected by the fill order",
     const rows = await writer.unsafe<{ label: string; note: string }[]>(
       "select label, note from tasks order by id",
     );
-    expect(rows).toEqual([
+    const seen = [...rows].map((row) => ({ label: row.label, note: row.note }));
+    expect(seen).toEqual([
       { label: "filled", note: "touched" },
       { label: "kept", note: "stay" },
       { label: "filled", note: "late" },
