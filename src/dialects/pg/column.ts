@@ -351,6 +351,15 @@ export type OpenColumn<TValue> = {
   readonly time?: TimeSpec;
 };
 
+/** The state every default, client default, and generated expression starts from. */
+const DEFAULTED = {
+  hasDefault: true,
+  defaultSql: undefined,
+  defaultValue: undefined,
+  clientDefault: undefined,
+  generated: undefined,
+} as const;
+
 /**
  * Chainable column definition.
  *
@@ -427,11 +436,8 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
     }
     if (clientDefault !== undefined) {
       return rebuild<TValue, FlagTrue<TFlags, "hasDefault">>(this.state, {
-        hasDefault: true,
-        defaultSql: undefined,
-        defaultValue: undefined,
+        ...DEFAULTED,
         clientDefault,
-        generated: undefined,
       });
     }
     if (value === null && this.state.nullable === false) {
@@ -446,11 +452,9 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
       }
     }
     return rebuild<TValue, FlagTrue<TFlags, "hasDefault">>(this.state, {
-      hasDefault: true,
+      ...DEFAULTED,
       defaultSql: value === null ? "NULL" : sqlOf(this.state, value as TValue),
       defaultValue: value,
-      clientDefault: undefined,
-      generated: undefined,
     });
   }
 
@@ -465,11 +469,8 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
       definition("defaultSql must be a non-empty SQL expression.");
     }
     return rebuild<TValue, FlagTrue<TFlags, "hasDefault">>(this.state, {
-      hasDefault: true,
+      ...DEFAULTED,
       defaultSql: expression,
-      defaultValue: undefined,
-      clientDefault: undefined,
-      generated: undefined,
     });
   }
 
@@ -589,11 +590,8 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
       definition("generated() must be a non-empty SQL expression.");
     }
     return rebuild<TValue, WithGenerated<TFlags>>(this.state, {
+      ...DEFAULTED,
       generated: { stored: options?.stored !== false, expression },
-      hasDefault: true,
-      defaultSql: undefined,
-      defaultValue: undefined,
-      clientDefault: undefined,
     });
   }
 
