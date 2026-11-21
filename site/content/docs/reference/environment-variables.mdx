@@ -51,15 +51,19 @@ A replica URL is the same kind of argument. [Topology](/docs/operate/replicas-an
 
 ## CLI
 
-`okm` reads `OKM_DEBUG` when a command throws. [`okm protect`](/docs/reference/cli/protect#protect) also reads the user config directory for the fingerprint store.
+`okm` reads `OKM_DEBUG` when a command throws, and `NO_COLOR`, `FORCE_COLOR`, `CI`, and `TERM` to choose [how it prints](/docs/reference/cli#output). [`okm protect`](/docs/reference/cli/protect#protect) also reads the user config directory for the fingerprint store.
 
 | Variable | Read by | Accepted | Default | Unset |
 | --- | --- | --- | --- | --- |
-| `OKM_DEBUG` | the `okm` bin | `1` | none | `error <code>: <message>`, then the fix. No stack. |
+| `OKM_DEBUG` | the `okm` bin | `1` | none | `error <code>: <what happened>`, the fix, and `Details:` when the code has a page. No stack. |
+| `NO_COLOR` | the `okm` bin | any non-empty value | none | Color stays on in a terminal. A value makes the output plain. |
+| `FORCE_COLOR` | the `okm` bin | any non-empty value. `0` and `false` force plain | none | Color follows the terminal. A value forces color and wins over `NO_COLOR`. |
+| `CI` | the `okm` bin | any non-empty value | none | Color follows the terminal. A value makes the output plain. |
+| `TERM` | the `okm` bin | `dumb` makes the output plain | the terminal's | Any other value leaves color on. |
 | `XDG_CONFIG_HOME` | `okm protect` on Unix | a directory path | none | `~/.config` is used for `okm/protected.json` |
 | `APPDATA` | `okm protect` on Windows | a directory path | none | Windows falls back to the user profile when unset |
 
-`1` for `OKM_DEBUG` appends the stack after those two lines. Any other string leaves the stack off. `--verbose` prints the stack for that invocation. The protect store path is `$XDG_CONFIG_HOME/okm/protected.json` (or `~/.config/okm/protected.json`), and on Windows `%APPDATA%\okm\protected.json`. The file holds fingerprints, not URLs.
+`1` for `OKM_DEBUG` appends the stack after those lines. Any other string leaves the stack off. `--verbose` prints the stack for that invocation. The protect store path is `$XDG_CONFIG_HOME/okm/protected.json` (or `~/.config/okm/protected.json`), and on Windows `%APPDATA%\okm\protected.json`. The file holds fingerprints, not URLs.
 
 ```sh
 OKM_DEBUG=1 okm check

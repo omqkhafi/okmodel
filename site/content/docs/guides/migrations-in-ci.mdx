@@ -82,6 +82,7 @@ The first two lines are `check`, and the rest is `plan`: nothing is pending. If 
 ```text
 error OKM1549: The last migration's catalog does not match the schema.
 Run okm generate.
+Details: okm help OKM1549
 ```
 
 That is the most common CI failure, and the fix is the command in the message. After `bunx okm generate add-tag`, `check` prints `ok 2 migrations`.
@@ -150,6 +151,7 @@ The composite action in `.github/actions/migrate` runs the same `check` and `pla
 ```text title="check-protected.err"
 error OKM1850: okm migrate check writes a scratch schema and refuses protected target production (project config). Point it at a throwaway Postgres.
 Point okm migrate check at a throwaway Postgres.
+Details: okm help OKM1850
 ```
 
 Pass `--target` in every pipeline job. Two targets that point at one database and disagree about `protected` are [OKM1852](/docs/reference/errors#okm1852).
@@ -191,6 +193,7 @@ A contract migration, one that tightens or removes something a running version m
 ```text title="contract-protected.err"
 error OKM1850: contract is blocked on protected target production (project config).
 Use a read-only command or an expand migration.
+Details: okm help OKM1850
 ```
 
 Run a contract migration deliberately: add `--allow-protected` in a separate job that needs a reviewer's approval, after the code that stops using the old shape has shipped.
@@ -200,9 +203,10 @@ Run a contract migration deliberately: add `--allow-protected` in a separate job
 `okm check` compares the database to the schema and exits 1 when they differ. A column someone added by hand is [OKM1520](/docs/reference/errors#okm1520), and the message prints the statement that would remove it:
 
 ```text title="drift.err"
-error OKM1520: The database differs from the schema.
+error OKM1520: I found 1 difference between the schema and the database.
 alter table "public"."notes" drop column "drift"
-Change the schema or the database so okm check reports no difference.
+I changed nothing. Change the schema or the database so okm check reports no difference.
+Details: okm help OKM1520
 ```
 
 A passing run prints `ok`. Fix drift in the schema, by adding the column and generating a migration, or in the database, by dropping the column. Do not let the pipeline fix it by itself.
