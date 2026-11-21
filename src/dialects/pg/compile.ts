@@ -110,13 +110,14 @@ export function compileColumn(
       assertStoredText(value, "picklist value");
     }
   }
+  const owner = input.owner !== undefined ? { owner: input.owner } : {};
   const built = column({
     parent: input.parent,
     name,
     dataType: formatType(state.baseType, state.dims),
     nullable: state.nullable,
     provenance: input.provenance,
-    ...(input.owner !== undefined ? { owner: input.owner } : {}),
+    ...owner,
     ...(state.defaultSql !== undefined ? { defaultExpression: state.defaultSql } : {}),
     ...(state.collation !== undefined ? { collation: state.collation } : {}),
     ...(state.identity !== undefined ? { identity: state.identity } : {}),
@@ -134,7 +135,7 @@ export function compileColumn(
           nameKey: name,
           expression: picklistExpression(name, state.picklist.values, state.baseType, state.dims),
           provenance: input.provenance,
-          ...(input.owner !== undefined ? { owner: input.owner } : {}),
+          ...owner,
         })
       : undefined;
   const unique =
@@ -145,7 +146,7 @@ export function compileColumn(
           columns: [name],
           nameKey: name,
           provenance: input.provenance,
-          ...(input.owner !== undefined ? { owner: input.owner } : {}),
+          ...owner,
         })
       : undefined;
   return {

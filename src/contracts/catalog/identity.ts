@@ -228,13 +228,9 @@ export function sameNamespace(left: Namespace, right: Namespace): boolean {
   if (left.form !== right.form) {
     return false;
   }
-  if (left.form === "static" && right.form === "static") {
-    return left.name === right.name;
-  }
-  if (left.form === "template" && right.form === "template") {
-    return left.pattern === right.pattern;
-  }
-  return false;
+  return left.form === "static"
+    ? left.name === (right as typeof left).name
+    : left.pattern === (right as typeof left).pattern;
 }
 
 /**

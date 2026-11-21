@@ -391,20 +391,8 @@ type PreparedColumn = {
   readonly field: string;
   readonly sqlName: string;
   readonly dataType: string;
-  readonly nullable: boolean;
-  readonly references: ReferenceModifier | undefined;
-  readonly encode: (value: unknown) => string;
-  readonly decode: ((wire: string) => unknown) | undefined;
-  readonly hidden: boolean | "filter";
-  readonly sensitive: boolean;
-  readonly guarded: boolean;
-  readonly writable: boolean;
-  readonly unique: boolean;
-  /** Catalog-output label. Set when insert fills the column. Not hashed. */
-  readonly clientDefault: "client" | undefined;
-  readonly fill: ClientFill | undefined;
-  readonly elementEncode: ((value: unknown) => string) | undefined;
-  readonly accepts: readonly string[] | undefined;
+  /** What the builder holds. The query model reads its flags and codecs from here. */
+  readonly state: ColumnState<unknown>;
   /** Date and time mode after `defaults.time`. Absent on other columns. */
   readonly time: TimeMode | undefined;
 };
@@ -808,25 +796,7 @@ function rewritePass(
   names: Names,
 ): readonly AnyTable[] {
   let next = tenancy === undefined ? bareTables(tables) : tenancy.rewrite(tables, names);
-  const seen = new Set<object>();
-  const pending: object[] = [];
-  const add = (value: object): void => {
-    if (seen.has(value)) return;
-    if (typeof (value as { readonly rewrite?: unknown }).rewrite !== "function") return;
-    seen.add(value);
-    pending.push(value);
-  };
-  if (schemaTraits !== undefined) {
-    for (const trait of schemaTraits) add(trait);
-  }
-  for (const item of tables) {
-    const own = (item.options as { readonly traits?: unknown } | undefined)?.traits;
-    if (!Array.isArray(own)) continue;
-    for (const trait of own) {
-      if (typeof trait === "object" && trait !== null) add(trait);
-    }
-  }
-  for (const trait of pending) {
+  for (const trait of carriers("rewrite", [], schemaTraits, tables)) {
     const rewrite = (
       trait as {
         rewrite: (
@@ -840,6 +810,40 @@ function rewritePass(
     next = rewrite.call(trait, next, names, schemaTraits);
   }
   return next;
+}
+
+/**
+ * Distinct objects that carry a function under `key`, in rewrite or hook order.
+ *
+ * @param key - The method to look for
+ * @param first - Values checked before the traits (views, tenancy)
+ * @param schemaTraits - Schema traits, when any were passed
+ * @param tables - Tables passed to `schema()`
+ * @returns Each carrier once
+ */
+function carriers(
+  key: "rewrite" | "hook",
+  first: readonly unknown[],
+  schemaTraits: readonly Trait[] | undefined,
+  tables: readonly AnyTable[],
+): readonly object[] {
+  const found = new Set<object>();
+  const add = (value: unknown): void => {
+    if (
+      typeof value === "object" &&
+      value !== null &&
+      typeof (value as Record<string, unknown>)[key] === "function"
+    ) {
+      found.add(value);
+    }
+  };
+  first.forEach(add);
+  schemaTraits?.forEach(add);
+  for (const item of tables) {
+    const own = (item.options as { readonly traits?: unknown } | undefined)?.traits;
+    if (Array.isArray(own)) own.forEach(add);
+  }
+  return [...found];
 }
 
 const registeredHooks: SchemaHook[] = [];
@@ -871,29 +875,13 @@ function collectHooks(
   views: unknown,
 ): readonly SchemaHook[] | undefined {
   const found: SchemaHook[] = [];
-  const seen = new Set<object>();
-  const add = (value: object): void => {
-    if (seen.has(value)) return;
-    const hook = (value as { readonly hook?: unknown }).hook;
-    if (typeof hook !== "function") return;
-    seen.add(value);
-    found.push((hook as SchemaHook).bind(value));
-  };
-  if (Array.isArray(views)) {
-    for (const item of views) {
-      if (typeof item === "object" && item !== null) add(item);
-    }
-  }
-  if (tenancy !== undefined) add(tenancy);
-  if (schemaTraits !== undefined) {
-    for (const trait of schemaTraits) add(trait);
-  }
-  for (const item of tables) {
-    const own = (item.options as { readonly traits?: unknown } | undefined)?.traits;
-    if (!Array.isArray(own)) continue;
-    for (const trait of own) {
-      if (typeof trait === "object" && trait !== null) add(trait);
-    }
+  for (const value of carriers(
+    "hook",
+    [...(Array.isArray(views) ? views : []), tenancy],
+    schemaTraits,
+    tables,
+  )) {
+    found.push((value as { readonly hook: SchemaHook }).hook.bind(value));
   }
   for (const hook of registeredHooks) found.push(hook);
   return found.length === 0 ? undefined : found;
@@ -1146,7 +1134,6 @@ function compileTable(
         });
       });
     }
-    const decode = column.state.decode;
     const prepared: PreparedColumn = {
       field,
       sqlName: columnSql,
@@ -1156,25 +1143,7 @@ function compileTable(
           : printedIdentifier(column.state.typeDependency),
         column.state.dims,
       ),
-      nullable: column.state.nullable,
-      references: column.state.references,
-      encode: column.state.encode as (value: unknown) => string,
-      decode: decode === decodeText ? undefined : (decode as (wire: string) => unknown),
-      hidden: column.state.filterable === true ? "filter" : column.state.hidden,
-      sensitive: column.state.sensitive,
-      guarded: column.state.guarded,
-      writable:
-        column.state.guarded !== true &&
-        column.state.omitWrite !== true &&
-        column.state.generated === undefined,
-      unique: column.state.unique !== undefined,
-      clientDefault: column.state.clientDefault === undefined ? undefined : "client",
-      elementEncode:
-        column.state.dims > 0
-          ? (column.state.elementEncode as (value: unknown) => string)
-          : undefined,
-      fill: column.state.clientDefault,
-      accepts: column.state.accepts,
+      state: column.state,
       time: column.state.time && (column.state.time.mode ?? codecs.timestamps),
     };
     columns.push(prepared);
@@ -1265,7 +1234,7 @@ function uniqueTargets(
     if (fields.length > 0) uniques.push(fields);
   }
   for (const column of columns) {
-    if (column.unique) uniques.push([column.field]);
+    if (column.state.unique !== undefined) uniques.push([column.field]);
   }
   const named = options?.unique;
   if (named !== undefined) {
@@ -1457,7 +1426,7 @@ function compileForeignKeys(
   edges: FkEdge[],
 ): void {
   for (const column of item.columns) {
-    const reference = column.references;
+    const reference = column.state.references;
     if (reference === undefined) {
       continue;
     }
@@ -1480,7 +1449,7 @@ function compileForeignKeys(
     }
     if (reference.onDelete === "set null" || reference.onUpdate === "set null") {
       for (const local of localColumns) {
-        if (!local.nullable) {
+        if (!local.state.nullable) {
           definition(
             `Foreign key ${item.tsName}.${column.field} uses set null. ${item.tsName}.${local.field} must be nullable.`,
           );
@@ -1527,6 +1496,18 @@ function compileForeignKeys(
   }
 }
 
+function keyFail(
+  item: Prepared,
+  column: PreparedColumn,
+  problem: string,
+  accepted: readonly string[],
+  input?: string,
+): never {
+  const message = `Foreign key ${item.tsName}.${column.field} ${problem} Accepted columns: ${list(accepted)}.`;
+  if (input === undefined) catalogError("OKM1021", message);
+  throwNamed("OKM1021", input, accepted, message);
+}
+
 function localKey(
   item: Prepared,
   column: PreparedColumn,
@@ -1539,12 +1520,7 @@ function localKey(
   for (const name of along) {
     const extra = item.byField.get(name) ?? item.bySql.get(name);
     if (extra === undefined) {
-      throwNamed(
-        "OKM1021",
-        name,
-        accepted,
-        `Foreign key ${item.tsName}.${column.field} includes ${name}, which is not a column. Accepted columns: ${list(accepted)}.`,
-      );
+      keyFail(item, column, `includes ${name}, which is not a column.`, accepted, name);
     }
     columns.push(extra);
   }
@@ -1564,42 +1540,31 @@ function resolveTarget(
     for (const name of named) {
       const match = target.byField.get(name) ?? target.bySql.get(name);
       if (match === undefined) {
-        throwNamed(
-          "OKM1021",
-          name,
+        keyFail(
+          item,
+          column,
+          `references ${name} on ${target.tsName}, which is not a column.`,
           accepted,
-          `Foreign key ${item.tsName}.${column.field} references ${name} on ${target.tsName}, which is not a column. Accepted columns: ${list(accepted)}.`,
+          name,
         );
       }
       found.push(match);
     }
     if (found.length !== 1 && reference.along === undefined) {
-      catalogError(
-        "OKM1021",
-        `Foreign key ${item.tsName}.${column.field} on ${target.tsName} is ambiguous. Accepted columns: ${list(accepted)}.`,
-      );
+      keyFail(item, column, `on ${target.tsName} is ambiguous.`, accepted);
     }
     return found;
   }
   if (target.primary.length === 0) {
-    catalogError(
-      "OKM1021",
-      `Foreign key ${item.tsName}.${column.field} on ${target.tsName} has no primary key. Accepted columns: ${list(accepted)}.`,
-    );
+    keyFail(item, column, `on ${target.tsName} has no primary key.`, accepted);
   }
   if (target.primary.length !== 1) {
-    catalogError(
-      "OKM1021",
-      `Foreign key ${item.tsName}.${column.field} on ${target.tsName} is ambiguous. Accepted columns: ${list(target.primary)}.`,
-    );
+    keyFail(item, column, `on ${target.tsName} is ambiguous.`, target.primary);
   }
   const sqlName = target.primary[0] ?? "";
   const match = target.bySql.get(sqlName);
   if (match === undefined) {
-    catalogError(
-      "OKM1021",
-      `Foreign key ${item.tsName}.${column.field} on ${target.tsName} is missing its target. Accepted columns: ${list(accepted)}.`,
-    );
+    keyFail(item, column, `on ${target.tsName} is missing its target.`, accepted);
   }
   return [match];
 }
@@ -1701,23 +1666,28 @@ function tableModel(
   }
   let conceal = false;
   const columns: ColumnModel[] = item.columns.map((column) => {
-    if (column.hidden || column.sensitive) conceal = true;
+    const state = column.state;
+    const hidden = state.filterable === true ? "filter" : state.hidden;
+    if (hidden || state.sensitive) conceal = true;
+    const writable =
+      state.guarded !== true && state.omitWrite !== true && state.generated === undefined;
+    const fill = state.clientDefault;
     return {
       field: column.field,
       sql: column.sqlName,
       dataType: column.dataType,
-      encode: column.encode,
-      decode: column.decode,
-      hidden: column.hidden,
-      sensitive: column.sensitive,
-      guarded: column.guarded,
-      writable: column.writable,
-      guardUpdate: column.writable && primary.includes(column.field),
-      ...(column.fill !== undefined ? { fill: column.fill, clientDefault: "client" as const } : {}),
-      ...(column.elementEncode !== undefined ? { elementEncode: column.elementEncode } : {}),
-      accepts: column.accepts,
+      encode: state.encode as (value: unknown) => string,
+      decode: state.decode === decodeText ? undefined : state.decode,
+      hidden,
+      sensitive: state.sensitive,
+      guarded: state.guarded,
+      writable,
+      guardUpdate: writable && primary.includes(column.field),
+      ...(fill !== undefined ? { fill, clientDefault: "client" as const } : {}),
+      ...(state.dims > 0 ? { elementEncode: state.elementEncode } : {}),
+      accepts: state.accepts,
       ...(column.time !== undefined ? { time: column.time } : {}),
-      nullable: column.nullable,
+      nullable: state.nullable,
     };
   });
   return {
@@ -1781,37 +1751,23 @@ function resolveRelations(
       );
     }
     const field = call.field;
-    const matches =
-      call.kind === "one"
-        ? edges.filter(
-            (edge) =>
-              edge.fromTable === item.tsName &&
-              edge.toTable === call.table &&
-              (field === undefined || edge.fromField === field),
-          )
-        : edges.filter(
-            (edge) =>
-              edge.toTable === item.tsName &&
-              edge.fromTable === call.table &&
-              (field === undefined || edge.fromField === field),
-          );
-    if (matches.length !== 1) {
-      const hint = matches.map((edge) => edge.fromField).sort();
-      const which = hint.length === 0 ? "none" : hint.join(", ");
-      catalogError(
-        "OKM1021",
-        `Relation ${item.tsName}.${name} on ${call.table} is ambiguous. Accepted columns: ${which}.`,
-      );
-    }
+    const one = call.kind === "one";
+    const matches = edges.filter(
+      (edge) =>
+        (one ? edge.fromTable : edge.toTable) === item.tsName &&
+        (one ? edge.toTable : edge.fromTable) === call.table &&
+        (field === undefined || edge.fromField === field),
+    );
     const edge = matches[0];
-    if (edge === undefined) {
+    if (matches.length !== 1 || edge === undefined) {
+      const hint = matches.map((found) => found.fromField).sort();
       catalogError(
         "OKM1021",
-        `Relation ${item.tsName}.${name} on ${call.table} is ambiguous. Accepted columns: (none).`,
+        `Relation ${item.tsName}.${name} on ${call.table} is ambiguous. Accepted columns: ${hint.length === 0 ? "none" : hint.join(", ")}.`,
       );
     }
     resolved.push(
-      call.kind === "one"
+      one
         ? { name, kind: "one", table: call.table, local: edge.local, remote: edge.remote }
         : { name, kind: "many", table: call.table, local: edge.remote, remote: edge.local },
     );
@@ -1837,7 +1793,7 @@ function readPrimaryKey(
     }
     seen.add(field);
     const column = byField.get(field);
-    if (column === undefined || column.nullable) {
+    if (column === undefined || column.state.nullable) {
       catalogError("OKM1020", `Primary key ${tableName}.${field} is missing or nullable.`);
     }
     columns.push(column.sqlName);

@@ -44,8 +44,9 @@ function assertForeignKeys(objects: readonly CatalogObject[], keys: ReadonlySet<
       continue;
     }
     const references = object.definition.references;
+    const label = `Foreign key ${object.identity.name}`;
     if (references === undefined) {
-      catalogError("OKM1021", `Foreign key ${object.identity.name} is missing its target.`);
+      catalogError("OKM1021", `${label} is missing its target.`);
     }
     const tableKey = identityKey({
       kind: "table",
@@ -53,18 +54,12 @@ function assertForeignKeys(objects: readonly CatalogObject[], keys: ReadonlySet<
       name: references.parent.name,
     });
     if (!keys.has(tableKey)) {
-      catalogError(
-        "OKM1021",
-        `Foreign key ${object.identity.name} references missing table ${references.parent.name}.`,
-      );
+      catalogError("OKM1021", `${label} references missing table ${references.parent.name}.`);
     }
     for (const name of references.columns) {
       const columnKey = identityKey({ kind: "column", parent: references.parent, name });
       if (!keys.has(columnKey)) {
-        catalogError(
-          "OKM1021",
-          `Foreign key ${object.identity.name} references missing column ${name}.`,
-        );
+        catalogError("OKM1021", `${label} references missing column ${name}.`);
       }
     }
   }

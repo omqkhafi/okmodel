@@ -159,7 +159,7 @@ export function identitySequenceName(table: string, column: string): string {
  * @param role - What the text refers to
  */
 export function assertStoredText(value: string, role: string): void {
-  if (value.includes("\u0000") || hasControl(value)) {
+  if (hasControl(value)) {
     catalogError("OKM1122", `${role} contains a control character.`);
   }
 }
