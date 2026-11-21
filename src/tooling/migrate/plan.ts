@@ -179,6 +179,14 @@ export type PlanRequest = {
    * a plan with no connection, drop the check and add it again.
    */
   readonly postgres?: number;
+  /**
+   * The two catalogs as authored, when `before` and `after` were sealed.
+   *
+   * A sealed picklist check reads `= ANY (ARRAY[...])`, which the picklist
+   * planner does not parse. It reads the authored text instead, so a plan
+   * against a live target backfills the same way the offline plan does.
+   */
+  readonly authored?: { readonly before: Catalog; readonly after: Catalog };
 };
 
 type Indexed = {
@@ -324,7 +332,14 @@ export function planMigration(
   }
 
   const keptNames = pairSameShape(beforeBy, afterBy, dropKeys, createKeys);
-  const picklists = picklistChanges(beforeBy, afterBy, request.after);
+  const authored =
+    request.authored === undefined
+      ? undefined
+      : {
+          before: keyed(applyRenames(omitManagedObjects(request.authored.before), renames)),
+          after: keyed(omitManagedObjects(request.authored.after)),
+        };
+  const picklists = picklistChanges(beforeBy, afterBy, request.after, authored);
   const enums = enumEdits(beforeBy, afterBy);
   requireReplacements(picklists, enums, replacements);
   recreateDependents(beforeList, afterList, alters, dropKeys, createKeys, picklists);
@@ -1641,16 +1656,25 @@ function findReplacement(
   );
 }
 
+function keyed(source: Catalog): ReadonlyMap<string, CatalogObject> {
+  return new Map(index(source).map((item) => [item.key, item.object]));
+}
+
 function picklistChanges(
   beforeBy: ReadonlyMap<string, CatalogObject>,
   afterBy: ReadonlyMap<string, CatalogObject>,
   after: Catalog,
+  authored?: {
+    readonly before: ReadonlyMap<string, CatalogObject>;
+    readonly after: ReadonlyMap<string, CatalogObject>;
+  },
 ): PicklistChange[] {
   const changes: PicklistChange[] = [];
-  for (const [key, object] of beforeBy) {
-    if (object.kind !== "constraint" || object.definition.constraintKind !== "check") continue;
-    const next = afterBy.get(key);
-    if (next === undefined || next.kind !== "constraint") continue;
+  for (const [key, sealed] of beforeBy) {
+    if (sealed.kind !== "constraint" || sealed.definition.constraintKind !== "check") continue;
+    const object = authored?.before.get(key) ?? sealed;
+    const next = authored?.after.get(key) ?? afterBy.get(key);
+    if (object.kind !== "constraint" || next === undefined || next.kind !== "constraint") continue;
     const left = parseInList(object.definition.expression ?? "");
     const right = parseInList(next.definition.expression ?? "");
     if (left === undefined || right === undefined || left.column !== right.column) continue;

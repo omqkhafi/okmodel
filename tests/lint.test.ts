@@ -521,7 +521,9 @@ test("generate writes the file, and plan and check fail on an error", async () =
     });
     expect(generated.code).toBe("OKM1510");
     expect(generated.fix.summary).toContain("apply will refuse until it is fixed");
-    expect(generated.fix.summary).toContain("-- okm-allow OKM15xx: reason");
+    expect(generated.fix.summary).toContain("-- okm-allow OKM1511: reason");
+    expect(generated.fix.summary).toContain("when you answer its question in a terminal");
+    expect(generated.fix.summary).not.toContain("OKM15xx");
     const written = lines.join("");
     const sqlPath = written.split("\n")[0] ?? "";
     expect(sqlPath.endsWith(".sql")).toBe(true);
@@ -582,7 +584,7 @@ test("okm generate exits 1 on an error finding and still writes the file", () =>
     expect(stderr).toContain("error OKM1510:");
     expect(stderr.split("error OKM1511").length - 1).toBe(1);
     expect(stderr).toContain("apply will refuse until it is fixed");
-    expect(stderr).toContain("-- okm-allow OKM15xx: reason");
+    expect(stderr).toContain("-- okm-allow OKM1511: reason");
     expect(stderr).not.toContain("warning ");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -658,7 +660,7 @@ test("okm generate prints a warning once and keeps it out of OKM1510", () => {
     expect(stdout).not.toContain("error OKM1511");
     expect(stderr).not.toContain("warning ");
     expect(stderr.split("error OKM1511").length - 1).toBe(1);
-    expect(stderr).toContain("-- okm-allow OKM15xx: reason");
+    expect(stderr).toContain("-- okm-allow OKM1511: reason");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

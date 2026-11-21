@@ -47,7 +47,7 @@ import {
 } from "./allows.js";
 import { ask } from "../prompt.js";
 import { terminalConfirm } from "./confirm-drop.js";
-import { formatFindings, hasError, lintRefusal, type Finding } from "./lint.js";
+import { formatFindings, generateRefusalFix, hasError, lintRefusal, type Finding } from "./lint.js";
 import { formatAdvice, type IgnoreReport } from "./schema-rules.js";
 import { sessionFailure } from "./lost.js";
 import { guardStoredDriverUrl } from "./policy.js";
@@ -669,9 +669,7 @@ async function generate(
   if (errors.length > 0) {
     throw attachPartial(
       new OkmError("OKM1510", formatFindings(errors).trim(), {
-        fix: {
-          summary: "okm migrate apply will refuse until it is fixed. -- okm-allow OKM15xx: reason",
-        },
+        fix: { summary: generateRefusalFix(written.findings) },
       }),
       { data: { path: written.path }, warnings, outFile: null },
     );

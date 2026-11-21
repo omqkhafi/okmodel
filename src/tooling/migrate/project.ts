@@ -27,10 +27,10 @@ import {
   startupCatalog,
 } from "../../contracts/catalog/document.js";
 import { sha256 } from "../../contracts/sha256.js";
-import { isConnectionFailure } from "../../contracts/connection.js";
 import { OkmError } from "../../contracts/error.js";
 import { assertProjectWarnings } from "../../runtime/warnings/config.js";
 import { tagOutcome } from "../cli/outcome.js";
+import { cliNote } from "../cli/notices.js";
 import { assertSupported, formatEmulation } from "../capabilities/check.js";
 import { POSTGRES_FEATURES } from "../capabilities/postgres.js";
 import { featuresUsed } from "../capabilities/used.js";
@@ -58,6 +58,7 @@ import {
 } from "./export.js";
 import { placeCatalog } from "./place.js";
 import { annotateLock, readRowEstimates, renameAliases, type RowEstimate } from "./estimate.js";
+import { OPTIONAL_CONNECT_SECONDS, SKIPPED_READ_NOTE, skippableRead } from "./optional-read.js";
 import {
   assertTargetAlias,
   assertTargetPolicy,
@@ -143,6 +144,7 @@ export async function generateProject(
 ): Promise<{ readonly path: string; readonly findings: readonly Finding[] } | undefined> {
   const { cwd } = asProject(project);
   const prepared = await prepare(project, name, flags);
+  if (prepared.unreachable) cliNote(SKIPPED_READ_NOTE);
   if (name === "init") writeGitAttributes(cwd);
   writeArtifact(cwd, prepared.config, prepared.built);
   const directory = projectPath(cwd, prepared.config.migrations ?? "migrations");
@@ -217,7 +219,9 @@ export async function planProject(
 }> {
   const prepared = await prepare(project, name, flags);
   const findings = lintPrepared(prepared);
-  const lockText = await planLockText(prepared.config, prepared.plan, invoke);
+  const locks = await planLockText(prepared.config, prepared.plan, invoke, prepared.unreachable);
+  if (prepared.unreachable || locks.skipped) cliNote(SKIPPED_READ_NOTE);
+  const lockText = locks.annotate;
   return {
     plan: prepared.plan,
     findings,
@@ -430,6 +434,7 @@ async function prepare(
   readonly plan: MigrationPlan;
   readonly before: Catalog;
   readonly after: Catalog;
+  readonly unreachable: boolean;
 }> {
   const opened = await openProject(project);
   const compared = await comparedPlan(
@@ -443,6 +448,7 @@ async function prepare(
     plan: compared.plan,
     before: compared.before,
     after: compared.after,
+    unreachable: compared.unreachable,
   };
 }
 
@@ -457,37 +463,44 @@ function lintPrepared(prepared: {
 /**
  * Lock callback when a selected target answers.
  *
- * A connection or query failure returns `undefined` and does not throw.
- * The printed lock is then the offline lock. Protection and an unknown
- * `--target` still throw: those are the same refusals the other read-only
- * commands use. A pooler is not refused.
+ * A connection or query failure returns no callback and `skipped: true`, and
+ * does not throw. The printed lock is then the offline lock. `known` says a
+ * read of this target has already failed in this command, so it is not tried
+ * again. Protection and an unknown `--target` still throw: those are the same
+ * refusals the other read-only commands use. A pooler is not refused.
  *
  * @param config - Project config
  * @param plan - Plan to annotate
  * @param invoke - Target flags
- * @returns Annotated locks, or `undefined` for the offline lock text
+ * @param known - `true` when the live comparison already found the target unreachable
+ * @returns Annotated locks, or none for the offline lock text, and whether the read was skipped
  */
 async function planLockText(
   config: MigrateConfig,
   plan: MigrationPlan,
   invoke: InvokeFlags | undefined,
-): Promise<((step: PlanStep) => string) | undefined> {
+  known: boolean,
+): Promise<{
+  readonly annotate?: (step: PlanStep) => string;
+  readonly skipped: boolean;
+}> {
   const targets = listTargets(config);
-  if (targets.length === 0) return undefined;
+  if (targets.length === 0) return { skipped: false };
   assertTargetAlias(targets);
   const named = invoke?.target;
-  if (named === undefined && targets.length !== 1) return undefined;
+  if (named === undefined && targets.length !== 1) return { skipped: false };
   const target = selectTarget(config, named);
   assertTargetPolicy(target, "plan", invoke?.allowProtected ?? false);
+  if (known) return { skipped: true };
   let estimates: ReadonlyMap<string, RowEstimate>;
   try {
     const names = plan.steps.flatMap((step) => step.tables ?? []);
     estimates = await readRowEstimates(target.url, catalogNamespace(config), names);
   } catch {
-    return undefined;
+    return { skipped: true };
   }
   const aliases = renameAliases(plan.steps);
-  return (step) => annotateLock(step, estimates, aliases);
+  return { annotate: (step) => annotateLock(step, estimates, aliases), skipped: false };
 }
 
 /**
@@ -528,9 +541,11 @@ async function lintOpened(opened: {
 /**
  * Plans `previous` against the schema.
  *
- * An empty plan does not connect. One target with steps reprints both catalogs
- * and plans again, so server normalisation is not a migration. A connection
- * failure keeps the unsealed plan.
+ * An empty plan does not connect. A first migration has nothing to compare
+ * against and does not connect. One target with steps reprints both catalogs
+ * and plans again, so server normalisation is not a migration. That read is
+ * optional (D329): a connection that fails or a missing `postgres` package
+ * keeps the unsealed plan and sets `unreachable`.
  */
 async function comparedPlan(
   opened: {
@@ -541,7 +556,12 @@ async function comparedPlan(
   },
   name: string,
   replacements: ReturnType<typeof parseReplace>[] = [],
-): Promise<{ readonly plan: MigrationPlan; readonly before: Catalog; readonly after: Catalog }> {
+): Promise<{
+  readonly plan: MigrationPlan;
+  readonly before: Catalog;
+  readonly after: Catalog;
+  readonly unreachable: boolean;
+}> {
   const input = {
     before: opened.previous,
     after: opened.built.catalog,
@@ -556,22 +576,25 @@ async function comparedPlan(
     plan: draft,
     before: opened.previous,
     after: opened.built.catalog,
+    unreachable: false,
   };
-  if (draft.steps.length === 0) return plain;
+  if (draft.steps.length === 0 || opened.previous.objects.length === 0) return plain;
   const targets = listTargets(opened.config);
   const target = targets.length === 1 ? targets[0] : undefined;
   if (target === undefined) return plain;
   const sealed = await sealCatalogs(target.url, opened.previous, opened.built.catalog);
-  if (sealed === undefined) return plain;
+  if (sealed === undefined) return { ...plain, unreachable: true };
   return {
     plan: planStatements({
       ...input,
       before: sealed.before,
       after: sealed.after,
       postgres: sealed.postgres,
+      authored: { before: opened.previous, after: opened.built.catalog },
     }),
     before: sealed.before,
     after: sealed.after,
+    unreachable: false,
   };
 }
 
@@ -582,30 +605,32 @@ async function sealCatalogs(
 ): Promise<
   { readonly before: Catalog; readonly after: Catalog; readonly postgres: number } | undefined
 > {
-  const [{ catalogQuery, sealAuthored }, { driverUrl }, postgres] = await Promise.all([
-    import("./drift.js"),
-    import("./driver-url.js"),
-    import("postgres"),
-  ]);
-  const sql = postgres.default(driverUrl(url), {
-    max: 1,
-    connect_timeout: 5,
-    idle_timeout: 1,
-    onnotice: () => {},
-  });
   try {
-    const version = await sql<{ v: string }[]>`select current_setting('server_version_num') as v`;
-    const runner = catalogQuery(sql);
-    return {
-      before: await sealAuthored(runner, before),
-      after: await sealAuthored(runner, after),
-      postgres: Math.floor(Number(version[0]?.v ?? "0") / 10_000),
-    };
+    const [{ catalogQuery, sealAuthored }, { driverUrl }, postgres] = await Promise.all([
+      import("./drift.js"),
+      import("./driver-url.js"),
+      import("postgres"),
+    ]);
+    const sql = postgres.default(driverUrl(url), {
+      max: 1,
+      connect_timeout: OPTIONAL_CONNECT_SECONDS,
+      idle_timeout: 1,
+      onnotice: () => {},
+    });
+    try {
+      const version = await sql<{ v: string }[]>`select current_setting('server_version_num') as v`;
+      const runner = catalogQuery(sql);
+      return {
+        before: await sealAuthored(runner, before),
+        after: await sealAuthored(runner, after),
+        postgres: Math.floor(Number(version[0]?.v ?? "0") / 10_000),
+      };
+    } finally {
+      await sql.end({ timeout: 5 }).catch(() => undefined);
+    }
   } catch (error) {
-    if (error instanceof OkmError || !isConnectionFailure(error)) throw error;
+    if (error instanceof OkmError || !skippableRead(error)) throw error;
     return undefined;
-  } finally {
-    await sql.end({ timeout: 5 }).catch(() => undefined);
   }
 }
 

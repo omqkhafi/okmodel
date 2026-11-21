@@ -8,7 +8,7 @@
 
 import { aboutBatchCount } from "./backfill.js";
 import { driverUrl } from "./driver-url.js";
-import { finishQuiet, sessionFailure } from "./lost.js";
+import { OPTIONAL_CONNECT_SECONDS } from "./optional-read.js";
 import type { PlanStep } from "./plan.js";
 
 /**
@@ -24,7 +24,7 @@ export type RowEstimate =
   | { readonly kind: "unknown" };
 
 const ESTIMATE_SQL = `
-  select c.relname, c.reltuples::float8::text
+  select c.relname, c.reltuples::float8::text as reltuples
   from pg_class c
   join pg_namespace n on n.oid = c.relnamespace
   where n.nspname = $1
@@ -51,39 +51,28 @@ export async function readRowEstimates(
   tables: readonly string[],
 ): Promise<ReadonlyMap<string, RowEstimate>> {
   // Loaded here so a command that never reaches a target does not need `postgres`.
-  const { open } = await import("../../adapters/pg/postgresjs.js");
-  const pool = open({ url: driverUrl(url), max: 1 });
+  const postgres = (await import("postgres")).default;
+  const sql = postgres(driverUrl(url), {
+    max: 1,
+    connect_timeout: OPTIONAL_CONNECT_SECONDS,
+    idle_timeout: 1,
+    onnotice: () => {},
+  });
   try {
-    const connection = await pool.reserve?.();
-    if (connection === undefined) {
-      throw new Error("The target connection cannot start a transaction.");
-    }
-    let began = false;
-    try {
-      await connection.execute("begin read only");
-      began = true;
-      await connection.execute("set local statement_timeout = '5s'");
+    return await sql.begin("read only", async (transaction) => {
+      await transaction.unsafe("set local statement_timeout = '5s'");
       const map = new Map<string, RowEstimate>();
       const unique = [...new Set(tables)];
-      if (unique.length > 0) {
-        const result = await connection.execute(ESTIMATE_SQL, [schema, unique.join("\u001f")]);
-        for (const row of result.rows) {
-          const name = row[0];
-          if (name === null || name === undefined) continue;
-          map.set(name, classify(row[1] ?? null));
-        }
-      }
-      await connection.execute("commit");
-      began = false;
+      if (unique.length === 0) return map;
+      const rows = await transaction.unsafe<{ relname: string; reltuples: string | null }[]>(
+        ESTIMATE_SQL,
+        [schema, unique.join("\u001f")],
+      );
+      for (const row of rows) map.set(row.relname, classify(row.reltuples));
       return map;
-    } catch (error) {
-      if (began) await finishQuiet(() => connection.execute("rollback"));
-      throw sessionFailure(error) ?? error;
-    } finally {
-      await finishQuiet(() => connection.release());
-    }
+    });
   } finally {
-    await finishQuiet(() => pool.close());
+    await sql.end({ timeout: 5 }).catch(() => undefined);
   }
 }
 
