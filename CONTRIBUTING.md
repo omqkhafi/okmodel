@@ -18,7 +18,7 @@ When CI fails, read only `bun run ci:fail <pull request number>`. It prints the 
 
 `gate / check` is the required status. It always runs. A pull request runs format, lint, typecheck, the build, tests for the changed files (property tests at `OKM_PROPERTY_SCALE=0.25`), the runtime-entry size ceiling, and the title lint. Postgres 18 runs when the diff touches `src/dialects`, `src/runtime`, or `src/tooling/migrate`. A label does not start it. See `docs/github.md`.
 
-A push to `main` and the nightly run (03:00 UTC) run the rest: type cost, the editor check, attest, the portable runtimes, the temporal matrix, the package checks, Windows, the full test matrix, Postgres 15 through 18, and the tarball. A failure opens or updates one issue titled `CI failed after merge`. A later commit on `main` does not cancel the run already in progress.
+The after-merge checks run by hand with `gh workflow run "After merge"` or the Actions tab, and always on the release candidate. The ref defaults to `main`. A failure is a red run. No workflow opens an issue. A later run does not cancel the one already in progress.
 
 `bun run check` is the full local suite. It is not how a pull request finishes.
 
