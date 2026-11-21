@@ -72,12 +72,12 @@
   "generate.rename.plain": {
     "exit": 3,
     "stdout": "",
-    "stderr": "error OKM1530: I found a drop of note and an add of memo, which could be a rename.\nI stopped before changing anything. Add .renamedFrom(\"note\") on memo, or drop the column on purpose.\nDetails: okm help OKM1530\nconfig: <project>/okmodel.config.ts\n"
+    "stderr": "error OKM1530: I found a drop of note and an add of memo, which could be a rename.\nI stopped before changing anything. Pass --rename tasks.note=memo or --drop-and-add, or drop the column on purpose.\nDetails: okm help OKM1530\nconfig: <project>/okmodel.config.ts\n"
   },
   "generate.rename.pretty": {
     "exit": 3,
     "stdout": "",
-    "stderr": "\u001b[31merror\u001b[0m \u001b[31mOKM1530\u001b[0m: I found a drop of note and an add of memo, which could be a rename.\nI stopped before changing anything. Add .renamedFrom(\"note\") on memo, or drop the column on purpose.\n\u001b[2mDetails: okm help OKM1530\u001b[0m\n\u001b[2mconfig: <project>/okmodel.config.ts\u001b[0m\n"
+    "stderr": "\u001b[31merror\u001b[0m \u001b[31mOKM1530\u001b[0m: I found a drop of note and an add of memo, which could be a rename.\nI stopped before changing anything. Pass --rename tasks.note=memo or --drop-and-add, or drop the column on purpose.\n\u001b[2mDetails: okm help OKM1530\u001b[0m\n\u001b[2mconfig: <project>/okmodel.config.ts\u001b[0m\n"
   },
   "generate.drop.noterminal.plain": {
     "exit": 1,
@@ -141,6 +141,6 @@
   },
   "generate.drop.terminal": {
     "exit": 1,
-    "output": "This migration drops data:\n  step 1 OKM1512: alter table \"public\".\"tasks\" drop column \"note\"\nDrop it? [y/N] n\n\u001b[31merror\u001b[0m \u001b[31mOKM1510\u001b[0m: I did not write this migration. It drops data and the drop was not confirmed.\nPut the object back in the schema, or run okm generate again and answer y.\n\u001b[2mDetails: okm help OKM1510\u001b[0m\n\u001b[2mconfig: <project>/okmodel.config.ts\u001b[0m\n"
+    "output": "This migration drops data:\n  step 1 OKM1512: alter table \"public\".\"tasks\" drop column \"note\"\nnote holds 0 values. Drop it? [y/N] n\n\u001b[31merror\u001b[0m \u001b[31mOKM1510\u001b[0m: I did not write this migration. It drops data and the drop was not confirmed.\nPut the object back in the schema, or run okm generate again and answer y.\n\u001b[2mDetails: okm help OKM1510\u001b[0m\n\u001b[2mconfig: <project>/okmodel.config.ts\u001b[0m\n"
   }
 }

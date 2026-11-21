@@ -29,6 +29,16 @@ export type PlanStepJson = {
    * Absent when the step has no probe. Not part of `planHash`.
    */
   readonly probe?: string;
+  /**
+   * Rows with no value, when a target was probed.
+   *
+   * Absent when this step does not make a column required. `fill` is the
+   * expression the plan writes into the empty rows.
+   */
+  readonly data?: {
+    readonly emptyRows: number | string;
+    readonly fill?: string;
+  };
 };
 
 /** One destructive step in a plan document. */
@@ -90,6 +100,7 @@ export function planDocument(
   findings: readonly Finding[],
   lockText?: (step: PlanStep) => string,
   identity?: PlanIdentity,
+  data?: readonly ({ readonly emptyRows: number | string; readonly fill?: string } | undefined)[],
 ): PlanDocument {
   const dialect = identity?.dialect ?? "postgres";
   const fromCatalogHash = identity?.fromCatalogHash ?? "";
@@ -137,12 +148,13 @@ export function planDocument(
       })),
     }),
     requiresAck: operationClass === "destructive",
-    steps: steps.map((step) => ({
+    steps: steps.map((step, index) => ({
       class: step.class,
       operationClass: step.operationClass,
       lock: step.lock,
       sql: step.sql,
       ...(step.probe !== undefined ? { probe: step.probe } : {}),
+      ...(data?.[index] === undefined ? {} : { data: data[index] }),
     })),
     destructiveOperations: destructive,
     findings: findings.map((finding) => ({
@@ -196,8 +208,9 @@ export function formatPlanJson(
   findings: readonly Finding[],
   lockText?: (step: PlanStep) => string,
   identity?: PlanIdentity,
+  data?: readonly ({ readonly emptyRows: number | string; readonly fill?: string } | undefined)[],
 ): string {
-  return `${JSON.stringify(planDocument(plan, findings, lockText, identity))}\n`;
+  return `${JSON.stringify(planDocument(plan, findings, lockText, identity, data))}\n`;
 }
 
 /**

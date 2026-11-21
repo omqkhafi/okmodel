@@ -175,6 +175,12 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
   "ext test": textData(idOf("ext test"), "okm ext test data"),
   generate: object("generate", "okm generate data", ["path"], {
     path: { type: ["string", "null"] },
+    needs: objectNode(["flag", "target", "emptyRows", "suggest"], {
+      flag: { const: "--fill" },
+      target: { type: "string" },
+      emptyRows: { type: ["number", "string"] },
+      suggest: { type: "array", items: { type: "string" } },
+    }),
   }),
   "import drizzle": textData(idOf("import drizzle"), "okm import drizzle data"),
   "migrate plan": {
@@ -215,6 +221,10 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
             lock: { type: "string" },
             sql: { type: "string" },
             probe: { type: "string" },
+            data: objectNode(["emptyRows"], {
+              emptyRows: { type: ["number", "string"] },
+              fill: { type: "string" },
+            }),
           },
         },
       },

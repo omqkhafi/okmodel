@@ -82,6 +82,24 @@
           },
           "probe": {
             "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "emptyRows"
+            ],
+            "properties": {
+              "emptyRows": {
+                "type": [
+                  "number",
+                  "string"
+                ]
+              },
+              "fill": {
+                "type": "string"
+              }
+            }
           }
         }
       }

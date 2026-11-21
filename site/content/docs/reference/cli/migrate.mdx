@@ -19,6 +19,29 @@ Drop it? [y/N] y
 Reason (Enter for "confirmed at okm generate"): uname moved to profiles
 ```
 
+When the target answers, a column drop says how many values it holds: `title holds 2 values. Drop it? [y/N]`, `title holds 10,000 or more values. Drop it? [y/N]`, or `I could not count title in 2 s. Drop it? [y/N]`. An empty column is still asked. No target leaves the question as `Drop it? [y/N]`.
+
+A column removed and a column added on the same table, one of each, is a rename question on a terminal. The schema file is not edited. `--rename notes.title=name` and `--drop-and-add` answer it without a terminal. Without either, and without a terminal, the command exits 3 with OKM1530 and names those flags. `.renamedFrom` still declares the rename in the schema. A casing pair, a table, or more than one column on each side stays the existing OKM1530.
+
+```text
+I see "title" removed and "name" added on notes. Is this a rename?
+  1) Yes, rename title to name. It keeps its 3 values.
+  2) No, drop title and add name. title's 3 values are lost.
+Choose [1/2]: 1
+I wrote 0002_rename_title.sql. Nothing runs until you apply it.
+```
+
+A nullable column made required, and a new required column with no default on a table that already has rows, is a fill question on a terminal. A table created in the same plan is not asked. `--fill tasks.dueAt=now()` answers it. The expression is checked on the target when it answers: type, not null on the empty rows, checks, `varchar(n)`, a constant foreign key, and a constant on a unique column. `;` and comments are refused. The migration fills in batches of 1,000, adds the check `NOT VALID`, fills again, validates, sets not null, and drops the check. Without a terminal, empty rows are OKM1525 (exit 1) and `--json` adds `data.needs` (`flag`, `target`, `emptyRows`, `suggest`). No empty rows, or a target that does not answer, writes the safe plan and prints `note: Apply will stop before changing anything if rows are left.`
+
+```text
+tasks.dueAt becomes required. 1 rows have no value; the other 1 keep theirs.
+What should the 1 rows get?
+  1) now()                              suggested for timestamptz
+Choose [1-6]: 1
+I checked now() against the target: it returns timestamptz and is not null.
+I wrote 0002_require_due.sql: fill in batches of 1,000, add the check not valid, fill again, validate, set not null.
+```
+
 `--replace` records a removed picklist or enum value. The schema stores no replacement. A chain, a value replaced by another removed value, is OKM1541. `=null` on a column that is not nullable is OKM1541.
 
 ```sh
@@ -32,6 +55,8 @@ bunx okm generate rename-status --replace notes.status.draft=open
 ## migrate plan
 
 `okm migrate plan <name>` prints the plan and writes nothing. A missing name is `okm migrate plan needs a name.`
+
+With one target, or with `--target`, a database that answers adds `pg_class` row estimates to the lock lines, and a column that becomes required adds the probe: `2 rows have no value` or `2 rows have no value, filled with now()`. `--json` adds `data` on that step (`emptyRows`, and `fill` when the plan fills it). The other step keys stay. Apply of a migration that makes a column required counts the empty rows first. Some rows and no fill step stops before any statement, exits 1 with OKM1525, says how many, says `Nothing was changed.`, and names `--fill` or a later data migration. It does not tell you to edit a committed file. A committed migration that fails this check is a known limit: regenerate with `--fill` only when the migration has not run on a shared target; otherwise add a data migration that fills the column before the constraint. What to do with a migration that has already been applied somewhere else is open.
 
 With one target, or with `--target`, a database that answers adds `pg_class` row estimates to the lock lines. No target, several targets and no `--target`, or a target that cannot be reached, prints the plan without estimates. An unknown `--target` and a protection mismatch still throw. Those are the same refusals as [Database](/docs/reference/config-database). A pooler host is not refused. `generate` and `migrate plan` read the target only for row estimates and a comparison with the live check text, and each read waits 3 seconds at most for a connection. A target that does not answer, or a project without the `postgres` package, prints `note: I could not reach the target, so this plan has no row estimates and no live comparison.` on stderr once, exits as it would without the note, and prints the same plan on stdout. `--json` prints no note. A first migration reads no target.
 

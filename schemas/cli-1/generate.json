@@ -13,6 +13,36 @@
         "string",
         "null"
       ]
+    },
+    "needs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "flag",
+        "target",
+        "emptyRows",
+        "suggest"
+      ],
+      "properties": {
+        "flag": {
+          "const": "--fill"
+        },
+        "target": {
+          "type": "string"
+        },
+        "emptyRows": {
+          "type": [
+            "number",
+            "string"
+          ]
+        },
+        "suggest": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
     }
   }
 }

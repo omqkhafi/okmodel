@@ -77,7 +77,7 @@ The plan prints on stdout, and the lint refusal prints on stderr. Both are shown
 -- class: contract
 -- kind: add-column-required
 -- action: ddl
--- lock: ACCESS EXCLUSIVE on notes, rows unknown (table not analyzed)
+-- lock: ACCESS EXCLUSIVE on notes, rows unknown (table not analyzed); 0 rows have no value
 alter table "public"."notes" add column "body" text not null;
 error OKM1525 step 1: adds NOT NULL without a default -- fix: Add the column nullable, backfill, then set it NOT NULL.
 ```
@@ -180,7 +180,7 @@ bunx okm migrate plan require-body
 -- class: expand
 -- kind: add-constraint
 -- action: ddl
--- lock: ACCESS EXCLUSIVE on notes, rows unknown (table not analyzed); safe rewrite applied
+-- lock: ACCESS EXCLUSIVE on notes, rows unknown (table not analyzed); safe rewrite applied; 0 rows have no value
 alter table "public"."notes" add constraint "notes_body_notnull" check ("body" is not null) not valid;
 
 -- class: expand
@@ -192,7 +192,7 @@ alter table "public"."notes" validate constraint "notes_body_notnull";
 -- class: contract
 -- kind: set-not-null
 -- action: ddl
--- lock: ACCESS EXCLUSIVE on notes, rows unknown (table not analyzed); safe rewrite applied
+-- lock: ACCESS EXCLUSIVE on notes, rows unknown (table not analyzed); safe rewrite applied; 0 rows have no value
 alter table "public"."notes" alter column "body" set not null;
 
 -- class: expand
@@ -240,6 +240,9 @@ Run the backfill, then `bunx okm migrate apply` again. It resumes at step 2. `ok
 | [OKM1525](/docs/reference/errors#okm1525) / [OKM1510](/docs/reference/errors#okm1510) | A required add with no default. | Add it nullable, backfill, then tighten. |
 | `error invalid: ... violated by some row` | The validate step finds a null. | Backfill, then apply again. |
 | [OKM1850](/docs/reference/errors#okm1850) | A contract apply on a protected target without `--allow-protected`. | Review the plan, then pass the flag. |
+| [OKM1525](/docs/reference/errors#okm1525) | Apply finds empty rows and the migration has no fill. | Nothing was changed. Regenerate with `--fill` if the migration has not run on a shared target. Otherwise add a data migration that fills the column before the constraint. Do not edit the committed file. |
+
+A committed migration that apply stops this way is a known limit. The command names both next steps and does not choose between them.
 
 | Next | You use it for |
 | --- | --- |

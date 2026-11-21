@@ -643,13 +643,21 @@ async function generate(
   human: (text: string) => void,
   terminal: boolean,
 ): Promise<Produced> {
-  const confirm =
-    terminal && process.stdin.isTTY === true ? terminalConfirm(ask, writeErr) : undefined;
+  const asking = terminal && process.stdin.isTTY === true;
+  const confirm = asking ? terminalConfirm(ask, writeErr) : undefined;
   const written = await generateProject(
     project,
     parsed.operands[0] ?? "migration",
     parsed.replace,
     confirm,
+    {
+      renames: parsed.renames,
+      dropAndAdd: parsed.dropAndAdd,
+      fills: parsed.fills,
+      terminal: asking,
+      ask,
+      write: writeErr,
+    },
   );
   if (written === undefined) {
     human("no changes\n");
@@ -657,7 +665,7 @@ async function generate(
   }
   const errors = written.findings.filter((item) => item.severity === "error");
   const notices = formatFindings(written.findings.filter((item) => item.severity !== "error"));
-  human(`${written.path}\n`);
+  human(written.preface ?? `${written.path}\n`);
   human(notices);
   const warnings = warningsOf(written.findings);
   if (errors.length > 0) {
@@ -695,21 +703,22 @@ async function planCommand(
   parsed: ParsedCli,
   human: (text: string) => void,
 ): Promise<Produced> {
-  const { plan } = await import("./api.js");
-  const planned = await plan(parsed.operands[0] ?? "", {
-    cwd: project.cwd,
-    config: project.configPath,
-    ...invokeOf(parsed),
-    ...(parsed.replace.length > 0 ? { replace: parsed.replace } : {}),
-  });
+  const { planProject } = await import("./project.js");
+  const planned = await planProject(
+    project,
+    parsed.operands[0] ?? "",
+    parsed.replace,
+    invokeOf(parsed),
+    { renames: parsed.renames, dropAndAdd: parsed.dropAndAdd, fills: parsed.fills },
+  );
   const document: unknown = JSON.parse(planned.json);
-  const findings = formatFindings(planned.lint);
+  const findings = formatFindings(planned.findings);
   const text = `${planned.text}${findings}`;
   human(planned.text);
   human(findings);
-  const warnings = warningsOf(planned.lint);
-  if (hasError(planned.lint)) {
-    throw attachPartial(lintRefusal(planned.lint), { data: document, warnings, outFile: null });
+  const warnings = warningsOf(planned.findings);
+  if (hasError(planned.findings)) {
+    throw attachPartial(lintRefusal(planned.findings), { data: document, warnings, outFile: null });
   }
   return { text, data: document, warnings, outFile: null };
 }

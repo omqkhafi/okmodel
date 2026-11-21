@@ -122,10 +122,9 @@ postgresTest(
       expect(withoutConfig(checkedRejected.stderr)).toBe(fence(migration, "text", "lint.err"));
       const generatedBad = cliProc(cwd, ["generate", "add-body"]);
       expect(generatedBad.status).toBe(1);
-      expect(generatedBad.stdout).toBe(`${join(cwd, "migrations", "0002_add-body.sql")}\n`);
-      expect(generatedBad.stderr).toContain("okm migrate apply will refuse until it is fixed.");
-      rmSync(join(cwd, "migrations", "0002_add-body.sql"));
-      rmSync(join(cwd, "migrations", "0002_add-body.catalog.json"));
+      expect(generatedBad.stdout).toBe("");
+      expect(generatedBad.stderr).toContain("OKM1525");
+      expect(generatedBad.stderr).toContain("--fill");
 
       writeFence(cwd, "schema.ts", fence(migration, "ts", "schema.ts"));
       const accepted = cliProc(cwd, ["migrate", "plan", "add-body"]);
