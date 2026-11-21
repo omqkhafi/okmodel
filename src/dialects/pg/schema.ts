@@ -391,20 +391,8 @@ type PreparedColumn = {
   readonly field: string;
   readonly sqlName: string;
   readonly dataType: string;
-  readonly nullable: boolean;
-  readonly references: ReferenceModifier | undefined;
-  readonly encode: (value: unknown) => string;
-  readonly decode: ((wire: string) => unknown) | undefined;
-  readonly hidden: boolean | "filter";
-  readonly sensitive: boolean;
-  readonly guarded: boolean;
-  readonly writable: boolean;
-  readonly unique: boolean;
-  /** Catalog-output label. Set when insert fills the column. Not hashed. */
-  readonly clientDefault: "client" | undefined;
-  readonly fill: ClientFill | undefined;
-  readonly elementEncode: ((value: unknown) => string) | undefined;
-  readonly accepts: readonly string[] | undefined;
+  /** What the builder holds. The query model reads its flags and codecs from here. */
+  readonly state: ColumnState<unknown>;
   /** Date and time mode after `defaults.time`. Absent on other columns. */
   readonly time: TimeMode | undefined;
 };
@@ -1146,7 +1134,6 @@ function compileTable(
         });
       });
     }
-    const decode = column.state.decode;
     const prepared: PreparedColumn = {
       field,
       sqlName: columnSql,
@@ -1156,25 +1143,7 @@ function compileTable(
           : printedIdentifier(column.state.typeDependency),
         column.state.dims,
       ),
-      nullable: column.state.nullable,
-      references: column.state.references,
-      encode: column.state.encode as (value: unknown) => string,
-      decode: decode === decodeText ? undefined : (decode as (wire: string) => unknown),
-      hidden: column.state.filterable === true ? "filter" : column.state.hidden,
-      sensitive: column.state.sensitive,
-      guarded: column.state.guarded,
-      writable:
-        column.state.guarded !== true &&
-        column.state.omitWrite !== true &&
-        column.state.generated === undefined,
-      unique: column.state.unique !== undefined,
-      clientDefault: column.state.clientDefault === undefined ? undefined : "client",
-      elementEncode:
-        column.state.dims > 0
-          ? (column.state.elementEncode as (value: unknown) => string)
-          : undefined,
-      fill: column.state.clientDefault,
-      accepts: column.state.accepts,
+      state: column.state,
       time: column.state.time && (column.state.time.mode ?? codecs.timestamps),
     };
     columns.push(prepared);
@@ -1265,7 +1234,7 @@ function uniqueTargets(
     if (fields.length > 0) uniques.push(fields);
   }
   for (const column of columns) {
-    if (column.unique) uniques.push([column.field]);
+    if (column.state.unique !== undefined) uniques.push([column.field]);
   }
   const named = options?.unique;
   if (named !== undefined) {
@@ -1457,7 +1426,7 @@ function compileForeignKeys(
   edges: FkEdge[],
 ): void {
   for (const column of item.columns) {
-    const reference = column.references;
+    const reference = column.state.references;
     if (reference === undefined) {
       continue;
     }
@@ -1480,7 +1449,7 @@ function compileForeignKeys(
     }
     if (reference.onDelete === "set null" || reference.onUpdate === "set null") {
       for (const local of localColumns) {
-        if (!local.nullable) {
+        if (!local.state.nullable) {
           definition(
             `Foreign key ${item.tsName}.${column.field} uses set null. ${item.tsName}.${local.field} must be nullable.`,
           );
@@ -1697,23 +1666,28 @@ function tableModel(
   }
   let conceal = false;
   const columns: ColumnModel[] = item.columns.map((column) => {
-    if (column.hidden || column.sensitive) conceal = true;
+    const state = column.state;
+    const hidden = state.filterable === true ? "filter" : state.hidden;
+    if (hidden || state.sensitive) conceal = true;
+    const writable =
+      state.guarded !== true && state.omitWrite !== true && state.generated === undefined;
+    const fill = state.clientDefault;
     return {
       field: column.field,
       sql: column.sqlName,
       dataType: column.dataType,
-      encode: column.encode,
-      decode: column.decode,
-      hidden: column.hidden,
-      sensitive: column.sensitive,
-      guarded: column.guarded,
-      writable: column.writable,
-      guardUpdate: column.writable && primary.includes(column.field),
-      ...(column.fill !== undefined ? { fill: column.fill, clientDefault: "client" as const } : {}),
-      ...(column.elementEncode !== undefined ? { elementEncode: column.elementEncode } : {}),
-      accepts: column.accepts,
+      encode: state.encode as (value: unknown) => string,
+      decode: state.decode === decodeText ? undefined : state.decode,
+      hidden,
+      sensitive: state.sensitive,
+      guarded: state.guarded,
+      writable,
+      guardUpdate: writable && primary.includes(column.field),
+      ...(fill !== undefined ? { fill, clientDefault: "client" as const } : {}),
+      ...(state.dims > 0 ? { elementEncode: state.elementEncode } : {}),
+      accepts: state.accepts,
       ...(column.time !== undefined ? { time: column.time } : {}),
-      nullable: column.nullable,
+      nullable: state.nullable,
     };
   });
   return {
@@ -1819,7 +1793,7 @@ function readPrimaryKey(
     }
     seen.add(field);
     const column = byField.get(field);
-    if (column === undefined || column.nullable) {
+    if (column === undefined || column.state.nullable) {
       catalogError("OKM1020", `Primary key ${tableName}.${field} is missing or nullable.`);
     }
     columns.push(column.sqlName);
