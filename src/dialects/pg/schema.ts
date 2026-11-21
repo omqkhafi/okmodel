@@ -808,25 +808,7 @@ function rewritePass(
   names: Names,
 ): readonly AnyTable[] {
   let next = tenancy === undefined ? bareTables(tables) : tenancy.rewrite(tables, names);
-  const seen = new Set<object>();
-  const pending: object[] = [];
-  const add = (value: object): void => {
-    if (seen.has(value)) return;
-    if (typeof (value as { readonly rewrite?: unknown }).rewrite !== "function") return;
-    seen.add(value);
-    pending.push(value);
-  };
-  if (schemaTraits !== undefined) {
-    for (const trait of schemaTraits) add(trait);
-  }
-  for (const item of tables) {
-    const own = (item.options as { readonly traits?: unknown } | undefined)?.traits;
-    if (!Array.isArray(own)) continue;
-    for (const trait of own) {
-      if (typeof trait === "object" && trait !== null) add(trait);
-    }
-  }
-  for (const trait of pending) {
+  for (const trait of carriers("rewrite", [], schemaTraits, tables)) {
     const rewrite = (
       trait as {
         rewrite: (
@@ -840,6 +822,40 @@ function rewritePass(
     next = rewrite.call(trait, next, names, schemaTraits);
   }
   return next;
+}
+
+/**
+ * Distinct objects that carry a function under `key`, in rewrite or hook order.
+ *
+ * @param key - The method to look for
+ * @param first - Values checked before the traits (views, tenancy)
+ * @param schemaTraits - Schema traits, when any were passed
+ * @param tables - Tables passed to `schema()`
+ * @returns Each carrier once
+ */
+function carriers(
+  key: "rewrite" | "hook",
+  first: readonly unknown[],
+  schemaTraits: readonly Trait[] | undefined,
+  tables: readonly AnyTable[],
+): readonly object[] {
+  const found = new Set<object>();
+  const add = (value: unknown): void => {
+    if (
+      typeof value === "object" &&
+      value !== null &&
+      typeof (value as Record<string, unknown>)[key] === "function"
+    ) {
+      found.add(value);
+    }
+  };
+  first.forEach(add);
+  schemaTraits?.forEach(add);
+  for (const item of tables) {
+    const own = (item.options as { readonly traits?: unknown } | undefined)?.traits;
+    if (Array.isArray(own)) own.forEach(add);
+  }
+  return [...found];
 }
 
 const registeredHooks: SchemaHook[] = [];
@@ -871,29 +887,13 @@ function collectHooks(
   views: unknown,
 ): readonly SchemaHook[] | undefined {
   const found: SchemaHook[] = [];
-  const seen = new Set<object>();
-  const add = (value: object): void => {
-    if (seen.has(value)) return;
-    const hook = (value as { readonly hook?: unknown }).hook;
-    if (typeof hook !== "function") return;
-    seen.add(value);
-    found.push((hook as SchemaHook).bind(value));
-  };
-  if (Array.isArray(views)) {
-    for (const item of views) {
-      if (typeof item === "object" && item !== null) add(item);
-    }
-  }
-  if (tenancy !== undefined) add(tenancy);
-  if (schemaTraits !== undefined) {
-    for (const trait of schemaTraits) add(trait);
-  }
-  for (const item of tables) {
-    const own = (item.options as { readonly traits?: unknown } | undefined)?.traits;
-    if (!Array.isArray(own)) continue;
-    for (const trait of own) {
-      if (typeof trait === "object" && trait !== null) add(trait);
-    }
+  for (const value of carriers(
+    "hook",
+    [...(Array.isArray(views) ? views : []), tenancy],
+    schemaTraits,
+    tables,
+  )) {
+    found.push((value as { readonly hook: SchemaHook }).hook.bind(value));
   }
   for (const hook of registeredHooks) found.push(hook);
   return found.length === 0 ? undefined : found;
