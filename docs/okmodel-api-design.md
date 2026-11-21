@@ -663,7 +663,8 @@ A bare `t.id()` stores `gen_random_uuid()` (D262). `{ default: "uuidv4" }` store
 | Builder or option | Version |
 |---|---|
 | `table({ presets })` | 0.2 |
-| `table({ computed, policies })` | later |
+| `table({ computed })` | declared in `schema({ computed })` (D328); the table option stays OKM1061 |
+| `table({ policies })` | later |
 
 - Fields are `NOT NULL` unless `.nullable()`.
 - A type that names an extension (`citext`, `ltree`) is not installed unless that extension is in `schema({ extensions })`. A list that omits it fails when the catalog is built (OKM1810). Omitting the list leaves the dependency check (OKM1020).

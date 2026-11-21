@@ -251,7 +251,7 @@ test("reference is a table option", () => {
   });
 });
 
-test("later options are OKM1061 and name the version that adds them", () => {
+test("later options are OKM1061 and say what to do instead", () => {
   const tableError = capture(() =>
     schema({ tables: [table("tasks", { id: t.id() }, { relations: { owner: true } })] }),
   );
@@ -260,8 +260,8 @@ test("later options are OKM1061 and name the version that adds them", () => {
   expect(tableError.message).toContain("is not a relation");
   const computed = capture(() => table("tasks", { id: t.id() }, { computed: { label: true } }));
   expect(computed.code).toBe("OKM1061");
-  expect(computed.message).toContain("arrives later");
-  expect(computed.message).not.toContain("P15");
+  expect(computed.message).toContain("Declare it in schema({ computed })");
+  expect(computed.message).not.toContain("arrives later");
   const policies = capture(() => table("tasks", { id: t.id() }, { policies: { read: true } }));
   expect(policies.code).toBe("OKM1061");
   expect(policies.message).toContain("arrives later");

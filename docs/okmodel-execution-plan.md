@@ -236,6 +236,7 @@ The plan is [#307](https://github.com/omqkhafi/okmodel/issues/307). Milestone [0
 | 0.10 PG18 not-null introspection | PG18-NN | A `NOT NULL … NOT VALID` constraint is its own state in introspection, drift, plan, pull, and the external check (D316). Plan: `VALIDATE CONSTRAINT` on the existing `validate-constraint` step class. Follow-up, not built: the same read for `NOT VALID` check and foreign-key constraints (`convalidated`). Introspection is tooling and dialect code: no gate moves. Milestone [0.10](https://github.com/omqkhafi/okmodel/milestone/13) |
 | 0.10 Computed | CP-1 | Query-level `computed` on `find`, `one`, `.stream()`, `count`, `exists`, and `page`: `count`, `exists`, `sum`, `avg`, `min`, and `max` of a `many` or `manyThrough` relation in the same statement as the parent rows, usable in `where` and `orderBy`, with OKM2012 (D326). Runtime and dialects. The compiler is one lazy chunk reached through `window.attach`; app startup +61 min and +35 gzip under the existing gates, chunk 14,995 min. Known limits, not built: no list verb, no free table, no `computed` in `include`, no stored value, `page()` not orderable by a computed value. Waits for the PostgreSQL 19 patch tag before it merges. |
 | 0.10 Check round trip | D327 | Pull, generate, and check read a table check from the catalog expression and reprint it through one step. `enforced: false` is `NOT ENFORCED` (create on 18, `ALTER CONSTRAINT` on 19). `NO INHERIT` is refused. Pull omits the `okm_*` journal tables. No new ErrorKind and no gate move. |
+| 0.10 Computed declared | CP-2 | `schema({ computed })` declares computed values by table name and value name; a read selects one with `true` (D328). Types, schema, and the lazy chunk only. App startup +20 min and +4 gzip under the existing gates; the runtime entry is unchanged. The `table({ computed })` refusal stays OKM1061 and points at the schema option. Known limits, not built: presets cannot list declared names, `okm check` does not validate declarations. |
 
 ### Later phases (prompts written when reached)
 
@@ -243,7 +244,7 @@ M2 Depth is Phase 7 (trains 0.6 Access, 0.7 Query depth, 0.8 SQL lane, 0.9 Tooli
 
 | Item | When |
 |---|---|
-| `orderBy` with a function call, and computed fields (OKM1061) | After M2 (D282). Not built. `orderBy` still does not accept the value `fn()` returns. `table({ computed })` throws OKM1061 and names no release |
+| `orderBy` with a function call, and computed fields (OKM1061) | After M2 (D282). Not built. `orderBy` still does not accept the value `fn()` returns. `table({ computed })` throws OKM1061 and points at `schema({ computed })` (D328) |
 
 ## Dependency notes (audit of draft 16)
 

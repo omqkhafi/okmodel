@@ -225,16 +225,62 @@ const posts = table(
 export const app = schema({ tables: [users, posts] });
 ```
 
+## Declare on the schema
+
+A value you read in many places is declared once, on `schema()`, and selected by name with `true`. The key is the table name, then the value name. The callback is the same one a read takes, and `u` is typed from the schema's own tables.
+
+```ts title="computed-declared.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { many, schema, table, t } from "okmodel/pg";
+
+const users = table(
+  "users",
+  { id: t.identity(), name: t.text() },
+  { relations: { posts: many("posts", "authorId") } },
+);
+const posts = table("posts", {
+  id: t.identity(),
+  authorId: t.bigint().references("users"),
+  title: t.text(),
+  views: t.integer().nullable(),
+});
+export const app = schema({
+  tables: [users, posts],
+  computed: {
+    users: {
+      postCount: (u) => u.posts.count(),
+      topViews: (u) => u.posts.max("views"),
+    },
+  },
+});
+
+export async function counts(url: string) {
+  await using db = connect(url, { schema: app });
+  return await db.users.find({
+    orderBy: { id: "asc" },
+    limit: 10,
+    where: { postCount: 2 },
+    computed: { postCount: true, topViews: true }, // [!code focus]
+  });
+}
+```
+
+`true` reads the declared callback, so the value has the same SQL, the same guards, and the same type as the callback passed on the read. A declared value that is not selected costs nothing: the callbacks are stored as given, and none runs until a read selects it. Declared and ad hoc values mix in one read and share one grouped subquery per relation. `where`, `orderBy`, `one`, `.stream()`, `count`, `exists`, and `page` take a declared name the same way they take an ad hoc one.
+
+A declaration is not a database object. It adds nothing to the catalog, so `okm generate`, `okm check`, `okm pull`, and `okm migrate` read the project as they did before. Names and callbacks are checked when a read selects them, not when the schema is built. A callback under a declared name on a read is refused, so there is one definition of each name. The `computed` option on `table()` stays refused with [OKM1061](/docs/reference/errors#okm1061), and its message points here.
+
 ## Refusals
 
 Each refusal names the problem and a fix. None adds an error kind.
 
 | Call | Result |
 | --- | --- |
-| A name that is a field, a relation, or another computed name | OKM1120. |
+| A name that is a field, a relation, or another computed name, declared or on the read | OKM1120. |
+| `true` for a name the schema did not declare, a callback under a declared name, or a declared table that is not in the schema | OKM1120. |
+| `computed` on `table()` | OKM1061. Declare it in `schema({ computed })`. |
 | An aggregate of a `one` or a morph relation, or a verb outside the table | OKM1120. |
 | A hidden field in any verb or `where` | OKM1120. |
-| An `async` callback, or a result that is not an aggregate or a fragment | OKM1125. |
+| An `async` callback, declared or on the read, or a result that is not an aggregate or a fragment | OKM1125. |
 | `sum` or `avg` of a field that is not numeric, `min` or `max` of an unordered type | OKM1124. |
 | `page` ordered by a computed value | OKM1120. |
 | `computed` inside an `include` | OKM1120. |
@@ -248,5 +294,6 @@ Each refusal names the problem and a fix. None adds an error kind.
 - `computed` does not go inside an `include`.
 - Nothing is stored. Every read counts again, so a value is always current. For a count that is read far more often than the rows change, keep a column and update it with the writes.
 - `page()` cannot be ordered by a computed value.
+- A preset cannot list a declared name. Pass `true` on the read that uses the preset.
 - A hot parent with tens of thousands of related rows costs about one pass over those rows. Use a `where` that narrows them, or a stored count.
 - Migrating from Drizzle: a column built with `extras` and a `sql` subquery becomes a `computed` entry. See [From Drizzle](/docs/migrations/from-drizzle#extras).

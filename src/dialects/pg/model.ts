@@ -379,4 +379,6 @@ export type QuerySchema = {
    * Absent when the schema uses none, so a featureless app does not carry the key.
    */
   readonly hooks?: readonly SchemaHook[];
+  /** `schema({ computed })`: table name, then value name, to the callback as declared. */
+  readonly computed?: Readonly<Record<string, Readonly<Record<string, unknown>>>> | undefined;
 };

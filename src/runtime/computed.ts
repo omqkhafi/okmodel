@@ -178,7 +178,10 @@ export async function attach(schema: QuerySchema, call: ReadCall): Promise<ReadC
     );
   }
   const ctx: Ctx = { schema, table, groups: [], tokens: new Map() };
-  const items = Object.keys(raw).map((name) => readItem(ctx, name, raw[name]));
+  const known = declared(schema, table);
+  const items = Object.keys(raw).map((name) =>
+    readItem(ctx, name, choose(table, name, raw, known)),
+  );
   const names = new Map(items.map((item) => [item.name, item]));
   const conds: Cond[] = [];
   const plain = splitWhere(call.where, names, conds);
@@ -237,8 +240,69 @@ function refuseCombination(call: ReadCall): void {
   );
 }
 
-function readItem(ctx: Ctx, name: string, callback: unknown): Item {
-  const { table } = ctx;
+const checked = new WeakSet<object>();
+
+/**
+ * The values `schema({ computed })` declared for this table, checked on first use.
+ *
+ * The first read with `computed` on any table checks that every declared table
+ * is a table of the schema. The first read on this table checks its names.
+ */
+function declared(schema: QuerySchema, table: Indexed): Record<string, unknown> | undefined {
+  const all = schema.computed;
+  if (all === undefined) return undefined;
+  if (!checked.has(all)) {
+    const tables = [...indexes(schema).keys()];
+    for (const key of Object.keys(all)) {
+      if (!tables.includes(key)) {
+        throwNamed(
+          "OKM1120",
+          key,
+          tables,
+          `computed declares values for ${key}, which is not a table of this schema. Accepted names: ${list(tables)}.`,
+        );
+      }
+    }
+    checked.add(all);
+  }
+  const own = all[table.model.name];
+  if (own !== undefined && !checked.has(own)) {
+    for (const name of Object.keys(own)) refuseName(table, name);
+    checked.add(own);
+  }
+  return own;
+}
+
+/** A value of the read: the callback as passed, or the declared one for `true`. */
+function choose(
+  table: Indexed,
+  name: string,
+  raw: Record<string, unknown>,
+  known: Record<string, unknown> | undefined,
+): unknown {
+  const own = known !== undefined && Object.hasOwn(known, name);
+  const names = (): string => list(Object.keys(known ?? {}));
+  if (raw[name] !== true) {
+    if (own) {
+      fail(
+        "OKM1120",
+        `computed name ${name} is already declared on ${table.model.name}. Declared: ${names()}.`,
+        `Select it with computed: { ${name}: true }, or name this one differently.`,
+      );
+    }
+    return raw[name];
+  }
+  if (!own) {
+    fail(
+      "OKM1120",
+      `computed.${name} is not declared on ${table.model.name}. Declared: ${names()}.`,
+      "Declare it in schema({ computed }), or pass a callback of the row.",
+    );
+  }
+  return known[name];
+}
+
+function refuseName(table: Indexed, name: string): void {
   refusePrototypeKey(name, "computed");
   if (table.columns.has(name) || table.relations.has(name)) {
     fail(
@@ -247,10 +311,15 @@ function readItem(ctx: Ctx, name: string, callback: unknown): Item {
       "Name the computed value something that is not a field or a relation. It becomes a new key on the row.",
     );
   }
+}
+
+function readItem(ctx: Ctx, name: string, callback: unknown): Item {
+  const { table } = ctx;
+  refuseName(table, name);
   if (typeof callback !== "function") {
     fail(
       "OKM1120",
-      `computed.${name} must be a function of the row.`,
+      `computed.${name} must be a function of the row, or true for a declared name.`,
       `Pass computed: { ${name}: (u) => u.posts.count() }.`,
     );
   }
