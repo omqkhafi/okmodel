@@ -11,6 +11,7 @@ import { AGENT_TARGETS, RECORD_FILE, readAgentFile, type AgentTarget } from "../
 import { planAgents, planDecline, type AgentsPlan } from "../agents/plan.js";
 import { readAgentsRecord } from "../agents/record.js";
 import { canonicalHash } from "../canonical-json.js";
+import { writeErr } from "../cli/output.js";
 import type { ParsedCli } from "../cli/parse.js";
 import { ask } from "../prompt.js";
 import type { InitPlan } from "./engine.js";
@@ -81,7 +82,7 @@ export async function planInitAgents(input: {
   if (record !== undefined) return undefined;
   if (!input.tty || parsed.yes || parsed.json) return undefined;
   const offer = planAgents({ root, mode: "install", version, facts });
-  process.stderr.write(`${offer.lines.join("\n")}\n`);
+  writeErr(`${offer.lines.join("\n")}\n`);
   const answer = (await ask("Write these agent files? [Y/n] ")).toLowerCase();
   return answer === "n" || answer === "no" ? planDecline(root) : offer;
 }

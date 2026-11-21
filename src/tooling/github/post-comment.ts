@@ -7,6 +7,7 @@
 
 import { readFileSync } from "node:fs";
 
+import { writeErr, writeOut } from "../cli/output.js";
 import {
   PLAN_COMMENT_BOT,
   planCommentBody,
@@ -74,7 +75,7 @@ export async function postPlanComment(
     throw new Error(`GitHub comment write failed (${String(response.status)}).`);
   }
   const verb = target === undefined ? "created" : "updated";
-  process.stdout.write(`${verb} the plan comment\n`);
+  writeOut(`${verb} the plan comment\n`);
 }
 
 async function listComments(url: string, headers: HeadersInit): Promise<readonly StickyComment[]> {
@@ -133,7 +134,7 @@ if (import.meta.main) {
     await postPlanComment(planPath, checkStatus, planStatus);
   } catch (error) {
     const message = error instanceof Error ? error.message : "comment failed";
-    process.stderr.write(`${message}\n`);
+    writeErr(`${message}\n`);
     process.exitCode = 1;
   }
 }

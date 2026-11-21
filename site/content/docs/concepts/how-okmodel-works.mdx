@@ -126,9 +126,10 @@ ok
 After `alter table notes add column body text` is run by hand, the same command exits with status 1 and prints the drift as [OKM1520](/docs/reference/errors#okm1520), with the statement that would remove it:
 
 ```text title="check-drift.err"
-error OKM1520: The database differs from the schema.
+error OKM1520: I found 1 difference between the schema and the database.
 alter table "public"."notes" drop column "body"
-Change the schema or the database so okm check reports no difference.
+I changed nothing. Change the schema or the database so okm check reports no difference.
+Details: okm help OKM1520
 ```
 
 Fix it in the schema, by adding the column and generating a migration, or in the database, by dropping the column. `okm check` never changes the database.

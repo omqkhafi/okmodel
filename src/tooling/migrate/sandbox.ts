@@ -40,6 +40,7 @@ import {
   ownSchema,
   stepFailureFix,
 } from "./runner.js";
+import { isLockTimeout } from "./step-engine.js";
 import { snapshotDifference } from "./snapshot.js";
 import { replaceSchemaName, sqlStatements } from "./sql-lex.js";
 
@@ -933,6 +934,7 @@ function failStep(id: string, index: number, error: unknown): OkmError {
     {
       cause: error,
       fix: stepFailureFix(error, "check"),
+      ...(isLockTimeout(error) ? { retryable: true } : {}),
     },
   );
 }

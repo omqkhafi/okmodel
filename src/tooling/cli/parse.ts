@@ -135,15 +135,26 @@ export function argvHasJson(argv: readonly string[]): boolean {
 }
 
 /**
- * Parses one invocation.
+ * `okm help OKM1520` as `okm doctor OKM1520`, so both print one page.
  *
- * `--allow-protected`, `--allow-pooler`, `--allow-data-loss`, and `--replace`
- * are not read from the environment. `-f` is not a short form.
+ * Any other `help` is left alone and prints the command list as before.
  *
  * @param argv - Arguments after the program name
- * @returns The invocation
- * @throws OkmError tagged `usage` when the arguments are not accepted
+ * @returns The rewritten arguments, or `undefined`
  */
+function helpAsDoctor(argv: readonly string[]): readonly string[] | undefined {
+  const words = commandWords(argv);
+  const code = words[1];
+  if (words[0] !== "help" || words.length !== 2 || code === undefined) return undefined;
+  if (!/^okm\d+$/i.test(code)) return undefined;
+  const at = argv.indexOf("help");
+  const rewritten = [...argv];
+  rewritten[at] = "doctor";
+  const place = argv.indexOf(code, at + 1);
+  rewritten[place] = code.toUpperCase();
+  return rewritten;
+}
+
 /**
  * Command id named by `argv`, when the words match a command.
  *
@@ -158,7 +169,19 @@ export function commandId(argv: readonly string[]): string | null {
   return matchCommand(words)?.spec.id ?? null;
 }
 
+/**
+ * Parses one invocation.
+ *
+ * `--allow-protected`, `--allow-pooler`, `--allow-data-loss`, and `--replace`
+ * are not read from the environment. `-f` is not a short form.
+ *
+ * @param argv - Arguments after the program name
+ * @returns The invocation
+ * @throws OkmError tagged `usage` when the arguments are not accepted
+ */
 export function parseCli(argv: readonly string[]): ParsedCli {
+  const asDoctor = helpAsDoctor(argv);
+  if (asDoctor !== undefined) return parseCli(asDoctor);
   if (argv.length === 0 || argv[0] === "help") {
     return blank({ help: true, json: argvHasJson(argv) });
   }

@@ -28,16 +28,42 @@ A process that cannot load a `.ts` config exits 2. The line is `okm needs Node.j
 | Invocation | Result |
 | --- | --- |
 | No arguments, `help`, `--help`, or `-h` | Prints `okm <command>` and one line per command. |
+| `okm help <code>` | Prints the page `okm doctor <code>` prints. An unknown code says so and names the nearest one. |
 | `okm <command> --help` | Prints that command. `-h` is the same flag. |
 | `--version`, `-V` | Prints the package version and does not run a command. The Node.js check still runs first. |
-| A failure | The exit code is the outcome below. Human stderr is `error <code>: <message>` and a fix line. |
-| `--verbose`, `-v`, or `OKM_DEBUG=1` | That failure also prints the stack. |
+| A failure | The exit code is the outcome below. Human stderr is `error <code>: <what happened>`, a fix line, and `Details: okm help <code>` when the code has a page. See [Output](#output). |
+| `--verbose`, `-v`, or `OKM_DEBUG=1` | That failure also prints the stack. An unexpected error prints one line and no stack without one of them. |
 
 An unknown command is `Unknown command <name>.` A group without its subcommand (`okm migrate`, `okm ext`, `okm catalog`, `okm import`, `okm driver`) names the subcommands. A close spelling adds `Did you mean`. With `--json`, that failure's envelope reports `command: null`.
 
 Exit codes are by outcome. `0` is done, or nothing to do. `1` is a command that ran and failed, including an error finding and an unexpected internal error. `2` is usage or configuration: an unknown flag, a missing config, a missing flag value. `3` is a decision the command will not ask for (OKM1530), a committed step that needs a person (OKM1553, OKM1555), an init choice with no terminal (OKM1863), a tenancy mode init does not write (OKM1867), two configs the same distance from the working directory (OKM1891), a workspace choice with no terminal (OKM1892), or agent files that change an existing file with no `--yes` and no terminal (OKM1884). `4` is a guard: a protected target without `--allow-protected` (OKM1850), a store fingerprint with no terminal (OKM1859), two targets that alias one database and disagree about protection (OKM1852), a file the user already has (OKM1855), a different driver already installed (OKM1862), a user-modified init file (OKM1864), a plan hash that no longer matches (OKM1866), two packages that share one migrations directory (OKM1893), or an agent file that is refused: damaged or repeated markers (OKM1882, OKM1883), a path off the closed list (OKM1886), a file that changed after the plan (OKM1887), or a damaged `.okm/init.json` (OKM1888). `5` is a target that cannot be reached, a refused feature, or a project init cannot use: no connection, a server older than the floor (OKM1803), a missing extension (OKM1811), a pooler host, OKM1860, or OKM1865. A code with no outcome in that list stays `1`.
 
 `--json` on every command prints one `okm.cli/1` document on stdout and nothing else. Stderr is empty on success. A failure still prints that document; a terminal also gets one terse stderr line, and a pipe does not, so `2>&1` stays one JSON document. There are no prompts and no color. The keys, in order, are `schema`, `command`, `okmVersion`, `capabilities`, `ok`, `exit`, `target` (omitted when the command did not select a database), `data`, `errors`, `warnings`, `truncated`, `outFile`. `ok` is true only when `exit` is 0. `target.fingerprint.hostDb` is the SHA-256 of lower-cased `host:port/database`. `identity` is null. The fingerprint has no URL, host, or credential. `--out <file>` writes `data` to that file (`-` keeps it on stdout) and the envelope records `outFile` (`path`, `bytes`). Commands that already used `--out` for their own file or directory keep that meaning.
+
+## Output
+
+`okm` picks how it prints from the stream and the environment. There is no flag.
+
+| Mode | When | What changes |
+| --- | --- | --- |
+| Pretty | Stdout is a terminal, `NO_COLOR` is unset, `TERM` is not `dumb`, and `CI` is unset. `FORCE_COLOR` forces it. | The severity word and the code are colored, and `config:`, `note:`, and `Details:` lines are dim. |
+| Plain | Everything else: a pipe, a file, CI, `NO_COLOR`, `TERM=dumb`. | No ANSI. The same words, line for line. |
+
+`FORCE_COLOR` set to anything but empty, `0`, or `false` forces pretty and wins over `NO_COLOR`. `FORCE_COLOR=0` forces plain. Neither mode draws boxes or spinners, reads the keyboard, or changes the terminal. `--json` ignores all of this and prints the same document in both modes.
+
+The stable prefixes are the same in both modes, so a script can match them: `error <code>:` for a failure, `warning <code> ` for a finding, `ok` for a clean check, and `config:` for the file a command loaded. Streams and exit codes do not change with the mode.
+
+On a terminal, prose wraps at the terminal width, or at 80 when the width is unknown. Piped output is never wrapped, so a transcript stays greppable. SQL, findings, paths, and the prefixes never wrap.
+
+`okm` speaks in the first person and in short sentences. An error says what happened, what it did or did not do, and the next step:
+
+```text
+error OKM1530: I found a drop of title and an add of name, which could be a rename.
+I stopped before changing anything. Add .renamedFrom("title") on name, or drop the column on purpose.
+Details: okm help OKM1530
+```
+
+A failure that `okm` did not expect prints one line. Set `OKM_DEBUG=1`, or pass `--verbose`, to see where it happened. A lock timeout in `migrate apply` is `retryable: true` in `--json`, and its fix line says that running the command again is safe. Drift stays exit 1; the exit codes below do not change.
 
 ## Commands
 

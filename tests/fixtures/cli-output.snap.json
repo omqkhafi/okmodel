@@ -1,0 +1,146 @@
+{
+  "check.clean.plain": {
+    "exit": 0,
+    "stdout": "ok\n",
+    "stderr": "config: <project>/okmodel.config.ts\n"
+  },
+  "check.clean.pretty": {
+    "exit": 0,
+    "stdout": "\u001b[32mok\u001b[0m\n",
+    "stderr": "\u001b[2mconfig: <project>/okmodel.config.ts\u001b[0m\n"
+  },
+  "check.drift.plain": {
+    "exit": 1,
+    "stdout": "",
+    "stderr": "error OKM1520: I found 1 difference between the schema and the database.\nalter table \"public\".\"tasks\" add column \"note\" text\nI changed nothing. Change the schema or the database so okm check reports no difference.\nDetails: okm help OKM1520\nconfig: <project>/okmodel.config.ts\n"
+  },
+  "check.drift.pretty": {
+    "exit": 1,
+    "stdout": "",
+    "stderr": "\u001b[31merror\u001b[0m \u001b[31mOKM1520\u001b[0m: I found 1 difference between the schema and the database.\nalter table \"public\".\"tasks\" add column \"note\" text\nI changed nothing. Change the schema or the database so okm check reports no difference.\n\u001b[2mDetails: okm help OKM1520\u001b[0m\n\u001b[2mconfig: <project>/okmodel.config.ts\u001b[0m\n"
+  },
+  "migrate.plan.plain": {
+    "exit": 0,
+    "stdout": "-- class: expand\n-- name: add_note\n\n-- class: expand\n-- kind: add-column\n-- action: ddl\n-- lock: ACCESS EXCLUSIVE on tasks, rows unknown (table not analyzed)\nalter table \"public\".\"tasks\" add column \"note\" text;\n",
+    "stderr": "config: <project>/okmodel.config.ts\n"
+  },
+  "migrate.plan.pretty": {
+    "exit": 0,
+    "stdout": "-- class: expand\n-- name: add_note\n\n-- class: expand\n-- kind: add-column\n-- action: ddl\n-- lock: ACCESS EXCLUSIVE on tasks, rows unknown (table not analyzed)\nalter table \"public\".\"tasks\" add column \"note\" text;\n",
+    "stderr": "\u001b[2mconfig: <project>/okmodel.config.ts\u001b[0m\n"
+  },
+  "generate.write.plain": {
+    "exit": 0,
+    "stdout": "<project>/migrations/0002_add_note.sql\n",
+    "stderr": "config: <project>/okmodel.config.ts\n"
+  },
+  "generate.write.pretty": {
+    "exit": 0,
+    "stdout": "<project>/migrations/0002_add_note.sql\n",
+    "stderr": "\u001b[2mconfig: <project>/okmodel.config.ts\u001b[0m\n"
+  },
+  "migrate.apply.success.plain": {
+    "exit": 0,
+    "stdout": "target default\napplied 0002_add_note\n",
+    "stderr": "config: <project>/okmodel.config.ts\n"
+  },
+  "migrate.apply.success.pretty": {
+    "exit": 0,
+    "stdout": "target default\napplied 0002_add_note\n",
+    "stderr": "\u001b[2mconfig: <project>/okmodel.config.ts\u001b[0m\n"
+  },
+  "migrate.status.plain": {
+    "exit": 0,
+    "stdout": "target\tversion\tcatalog\tstate\tprotected\ndefault\t0002_add_note\tf3a90c9631e889ef1aff12a9cbdd7df967866035ef2f3203eb717d68023c04e3\tcurrent\tfalse\n",
+    "stderr": "config: <project>/okmodel.config.ts\n"
+  },
+  "migrate.status.pretty": {
+    "exit": 0,
+    "stdout": "target\tversion\tcatalog\tstate\tprotected\ndefault\t0002_add_note\tf3a90c9631e889ef1aff12a9cbdd7df967866035ef2f3203eb717d68023c04e3\tcurrent\tfalse\n",
+    "stderr": "\u001b[2mconfig: <project>/okmodel.config.ts\u001b[0m\n"
+  },
+  "check.clean.after.plain": {
+    "exit": 0,
+    "stdout": "ok\n",
+    "stderr": "config: <project>/okmodel.config.ts\n"
+  },
+  "check.clean.after.pretty": {
+    "exit": 0,
+    "stdout": "\u001b[32mok\u001b[0m\n",
+    "stderr": "\u001b[2mconfig: <project>/okmodel.config.ts\u001b[0m\n"
+  },
+  "generate.rename.plain": {
+    "exit": 3,
+    "stdout": "",
+    "stderr": "error OKM1530: I found a drop of note and an add of memo, which could be a rename.\nI stopped before changing anything. Add .renamedFrom(\"note\") on memo, or drop the column on purpose.\nDetails: okm help OKM1530\nconfig: <project>/okmodel.config.ts\n"
+  },
+  "generate.rename.pretty": {
+    "exit": 3,
+    "stdout": "",
+    "stderr": "\u001b[31merror\u001b[0m \u001b[31mOKM1530\u001b[0m: I found a drop of note and an add of memo, which could be a rename.\nI stopped before changing anything. Add .renamedFrom(\"note\") on memo, or drop the column on purpose.\n\u001b[2mDetails: okm help OKM1530\u001b[0m\n\u001b[2mconfig: <project>/okmodel.config.ts\u001b[0m\n"
+  },
+  "generate.drop.noterminal.plain": {
+    "exit": 1,
+    "stdout": "<project>/migrations/0003_drop_note.sql\n",
+    "stderr": "error OKM1510: I found 1 error in this migration, so okm migrate apply will refuse it.\nerror OKM1512 step 1: drops a column -- fix: Stop reading the column in an expand migration, then drop it in a later contract.\nOKM1512: Stop reading the column in an expand migration, then drop it in a later contract. okm migrate apply will refuse until it is fixed. An acknowledged override is a -- okm-allow OKM1512: reason line that okm generate writes when you answer its question in a terminal.\nDetails: okm help OKM1510\nconfig: <project>/okmodel.config.ts\n"
+  },
+  "generate.drop.noterminal.pretty": {
+    "exit": 1,
+    "stdout": "<project>/migrations/0003_drop_note.sql\n",
+    "stderr": "\u001b[31merror\u001b[0m \u001b[31mOKM1510\u001b[0m: I found 1 error in this migration, so okm migrate apply will refuse it.\n\u001b[31merror\u001b[0m \u001b[31mOKM1512\u001b[0m step 1: drops a column -- fix: Stop reading the column in an expand migration, then drop it in a later contract.\nOKM1512: Stop reading the column in an expand migration, then drop it in a later contract. okm migrate apply will refuse until it is fixed. An acknowledged override is a -- okm-allow OKM1512: reason line that okm generate writes when you answer its question in a terminal.\n\u001b[2mDetails: okm help OKM1510\u001b[0m\n\u001b[2mconfig: <project>/okmodel.config.ts\u001b[0m\n"
+  },
+  "migrate.apply.locktimeout.plain": {
+    "exit": 1,
+    "stdout": "",
+    "stderr": "error invalid: Migration 0003_add_other failed at step 1: canceling statement due to lock timeout\nI could not get a lock in time and stopped at this step. Run okm migrate apply again when that lock is free. Finished steps are not repeated, so running it again is safe.\nconfig: <project>/okmodel.config.ts\n"
+  },
+  "migrate.apply.locktimeout.pretty": {
+    "exit": 1,
+    "stdout": "",
+    "stderr": "\u001b[31merror\u001b[0m \u001b[31minvalid\u001b[0m: Migration 0003_add_other failed at step 1: canceling statement due to lock timeout\nI could not get a lock in time and stopped at this step. Run okm migrate apply again when that lock is free. Finished steps are not repeated, so running it again is safe.\n\u001b[2mconfig: <project>/okmodel.config.ts\u001b[0m\n"
+  },
+  "url.unreachable.plain": {
+    "exit": 5,
+    "stdout": "",
+    "stderr": "error unavailable: connect ECONNREFUSED 127.0.0.1:1\nI could not reach the target, so I changed nothing. Check the host and port in the database URL, then run the command again.\nconfig: <project>/okmodel.config.ts\n"
+  },
+  "url.unreachable.pretty": {
+    "exit": 5,
+    "stdout": "",
+    "stderr": "\u001b[31merror\u001b[0m \u001b[31munavailable\u001b[0m: connect ECONNREFUSED 127.0.0.1:1\nI could not reach the target, so I changed nothing. Check the host and port in the database URL, then run the command again.\n\u001b[2mconfig: <project>/okmodel.config.ts\u001b[0m\n"
+  },
+  "url.database.plain": {
+    "exit": 1,
+    "stdout": "",
+    "stderr": "error driver: database \"okm_no_such_database\" does not exist\nI could not find that database, so I changed nothing. Create it, or correct the database name in the URL.\nconfig: <project>/okmodel.config.ts\n"
+  },
+  "url.database.pretty": {
+    "exit": 1,
+    "stdout": "",
+    "stderr": "\u001b[31merror\u001b[0m \u001b[31mdriver\u001b[0m: database \"okm_no_such_database\" does not exist\nI could not find that database, so I changed nothing. Create it, or correct the database name in the URL.\n\u001b[2mconfig: <project>/okmodel.config.ts\u001b[0m\n"
+  },
+  "schema.throws.plain": {
+    "exit": 1,
+    "stdout": "",
+    "stderr": "error driver: boom in schema\nI could not load ./schema.ts, so I changed nothing. Fix the error above in that file or in what it imports, then run the command again.\nconfig: <project>/okmodel.config.ts\n"
+  },
+  "schema.throws.pretty": {
+    "exit": 1,
+    "stdout": "",
+    "stderr": "\u001b[31merror\u001b[0m \u001b[31mdriver\u001b[0m: boom in schema\nI could not load ./schema.ts, so I changed nothing. Fix the error above in that file or in what it imports, then run the command again.\n\u001b[2mconfig: <project>/okmodel.config.ts\u001b[0m\n"
+  },
+  "config.missing.plain": {
+    "exit": 2,
+    "stdout": "",
+    "stderr": "error OKM1895: I could not find <project>/okmodel.config.ts.\nI did nothing. Create <project>/okmodel.config.ts, or pass --config <path>.\nDetails: okm help OKM1895\nconfig: <project>/okmodel.config.ts\n"
+  },
+  "config.missing.pretty": {
+    "exit": 2,
+    "stdout": "",
+    "stderr": "\u001b[31merror\u001b[0m \u001b[31mOKM1895\u001b[0m: I could not find <project>/okmodel.config.ts.\nI did nothing. Create <project>/okmodel.config.ts, or pass --config <path>.\n\u001b[2mDetails: okm help OKM1895\u001b[0m\n\u001b[2mconfig: <project>/okmodel.config.ts\u001b[0m\n"
+  },
+  "generate.drop.terminal": {
+    "exit": 1,
+    "output": "This migration drops data:\n  step 1 OKM1512: alter table \"public\".\"tasks\" drop column \"note\"\nDrop it? [y/N] n\n\u001b[31merror\u001b[0m \u001b[31mOKM1510\u001b[0m: I did not write this migration. It drops data and the drop was not confirmed.\nPut the object back in the schema, or run okm generate again and answer y.\n\u001b[2mDetails: okm help OKM1510\u001b[0m\n\u001b[2mconfig: <project>/okmodel.config.ts\u001b[0m\n"
+  }
+}

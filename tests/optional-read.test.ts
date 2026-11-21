@@ -19,7 +19,8 @@ import { skippableRead } from "../src/tooling/migrate/optional-read.js";
 import { generateProject, planProject } from "../src/tooling/migrate/project.js";
 
 const root = repoRoot();
-const NOTE = "note: target unreachable, so this plan has no row estimates and no live comparison";
+const NOTE =
+  "note: I could not reach the target, so this plan has no row estimates and no live comparison.";
 
 let blackhole: net.Server;
 let blackholeUrl = "";

@@ -29,7 +29,7 @@ import {
 import { sha256 } from "../../contracts/sha256.js";
 import { OkmError } from "../../contracts/error.js";
 import { assertProjectWarnings } from "../../runtime/warnings/config.js";
-import { tagOutcome } from "../cli/outcome.js";
+import { missingPostgres, tagOutcome } from "../cli/outcome.js";
 import { cliNote } from "../cli/notices.js";
 import { assertSupported, formatEmulation } from "../capabilities/check.js";
 import { POSTGRES_FEATURES } from "../capabilities/postgres.js";
@@ -916,7 +916,12 @@ export async function loadConfig(project: string | ProjectContext): Promise<Migr
  */
 export async function loadSchema(cwd: string, spec: string): Promise<Built> {
   const path = projectPath(cwd, spec);
-  const imported: unknown = await import(`${pathToFileURL(path).href}?okm=${Date.now()}`);
+  let imported: unknown;
+  try {
+    imported = await import(`${pathToFileURL(path).href}?okm=${Date.now()}`);
+  } catch (error) {
+    throw loadFailure(error, spec);
+  }
   const record = isRecord(imported) ? imported : {};
   for (const value of Object.values(record)) {
     if (!isBuilt(value)) continue;
@@ -925,6 +930,25 @@ export async function loadSchema(cwd: string, spec: string): Promise<Built> {
     return value;
   }
   throw new OkmError("invalid", `${spec} must export a schema().`);
+}
+
+/**
+ * The error for a schema file that threw while it loaded.
+ *
+ * Only an unmapped throw gets the new fix text. An OKM code, a driver error,
+ * and a missing `postgres` package keep what they carry.
+ */
+function loadFailure(error: unknown, spec: string): unknown {
+  if (error instanceof OkmError || missingPostgres(error) !== undefined) return error;
+  const mapped = OkmError.from(error);
+  if (mapped.code !== "driver") return error;
+  return new OkmError(mapped.code, mapped.message, {
+    kind: mapped.kind,
+    cause: error,
+    fix: {
+      summary: `I could not load ${spec}, so I changed nothing. Fix the error above in that file or in what it imports, then run the command again.`,
+    },
+  });
 }
 
 function readPrevious(directory: string): Previous | undefined {

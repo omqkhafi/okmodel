@@ -15,7 +15,7 @@ export const OPTIONAL_CONNECT_SECONDS = 3;
 
 /** The line written to stderr when an optional read was skipped. */
 export const SKIPPED_READ_NOTE =
-  "note: target unreachable, so this plan has no row estimates and no live comparison";
+  "note: I could not reach the target, so this plan has no row estimates and no live comparison.";
 
 /**
  * Whether a failed optional read means "skip it".

@@ -42,8 +42,9 @@ postgresTest(
       await held.unsafe("lock table held.gate in access exclusive mode");
       const error = await rejected(["migrate", "check"], cwd);
       expect(error.message.toLowerCase()).toContain("lock timeout");
+      expect(error.retryable).toBe(true);
       expect(error.fix.summary).toBe(
-        "A lock timed out. Run okm migrate check again when that lock is free. The step does not need a change.",
+        "I could not get a lock in time and stopped at this step. Run okm migrate check again when that lock is free. The step does not need a change, so running it again is safe.",
       );
     } finally {
       await held.unsafe("rollback").catch(() => undefined);
