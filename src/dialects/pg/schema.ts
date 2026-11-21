@@ -1527,6 +1527,18 @@ function compileForeignKeys(
   }
 }
 
+function keyFail(
+  item: Prepared,
+  column: PreparedColumn,
+  problem: string,
+  accepted: readonly string[],
+  input?: string,
+): never {
+  const message = `Foreign key ${item.tsName}.${column.field} ${problem} Accepted columns: ${list(accepted)}.`;
+  if (input === undefined) catalogError("OKM1021", message);
+  throwNamed("OKM1021", input, accepted, message);
+}
+
 function localKey(
   item: Prepared,
   column: PreparedColumn,
@@ -1539,12 +1551,7 @@ function localKey(
   for (const name of along) {
     const extra = item.byField.get(name) ?? item.bySql.get(name);
     if (extra === undefined) {
-      throwNamed(
-        "OKM1021",
-        name,
-        accepted,
-        `Foreign key ${item.tsName}.${column.field} includes ${name}, which is not a column. Accepted columns: ${list(accepted)}.`,
-      );
+      keyFail(item, column, `includes ${name}, which is not a column.`, accepted, name);
     }
     columns.push(extra);
   }
@@ -1564,42 +1571,31 @@ function resolveTarget(
     for (const name of named) {
       const match = target.byField.get(name) ?? target.bySql.get(name);
       if (match === undefined) {
-        throwNamed(
-          "OKM1021",
-          name,
+        keyFail(
+          item,
+          column,
+          `references ${name} on ${target.tsName}, which is not a column.`,
           accepted,
-          `Foreign key ${item.tsName}.${column.field} references ${name} on ${target.tsName}, which is not a column. Accepted columns: ${list(accepted)}.`,
+          name,
         );
       }
       found.push(match);
     }
     if (found.length !== 1 && reference.along === undefined) {
-      catalogError(
-        "OKM1021",
-        `Foreign key ${item.tsName}.${column.field} on ${target.tsName} is ambiguous. Accepted columns: ${list(accepted)}.`,
-      );
+      keyFail(item, column, `on ${target.tsName} is ambiguous.`, accepted);
     }
     return found;
   }
   if (target.primary.length === 0) {
-    catalogError(
-      "OKM1021",
-      `Foreign key ${item.tsName}.${column.field} on ${target.tsName} has no primary key. Accepted columns: ${list(accepted)}.`,
-    );
+    keyFail(item, column, `on ${target.tsName} has no primary key.`, accepted);
   }
   if (target.primary.length !== 1) {
-    catalogError(
-      "OKM1021",
-      `Foreign key ${item.tsName}.${column.field} on ${target.tsName} is ambiguous. Accepted columns: ${list(target.primary)}.`,
-    );
+    keyFail(item, column, `on ${target.tsName} is ambiguous.`, target.primary);
   }
   const sqlName = target.primary[0] ?? "";
   const match = target.bySql.get(sqlName);
   if (match === undefined) {
-    catalogError(
-      "OKM1021",
-      `Foreign key ${item.tsName}.${column.field} on ${target.tsName} is missing its target. Accepted columns: ${list(accepted)}.`,
-    );
+    keyFail(item, column, `on ${target.tsName} is missing its target.`, accepted);
   }
   return [match];
 }
