@@ -163,11 +163,12 @@ export type ColumnTenancy = {
  */
 export function readTenancy(value: unknown): ColumnTenancy | undefined {
   if (value === undefined) return undefined;
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    definition("schema() tenancy must be columnTenancy() from okmodel/tenancy.");
-  }
-  const record = value as Record<string, unknown>;
-  if (typeof record.rewrite !== "function") {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    typeof (value as Record<string, unknown>).rewrite !== "function"
+  ) {
     definition("schema() tenancy must be columnTenancy() from okmodel/tenancy.");
   }
   return value as ColumnTenancy;
