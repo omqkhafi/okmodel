@@ -124,14 +124,7 @@ export function table(input: TableInput): TableObject {
   };
   const definition: TableDefinition =
     input.partition === undefined ? {} : { partition: copyPartition(input.partition) };
-  return {
-    kind: "table",
-    identity,
-    owner: input.owner ?? "managed",
-    definition,
-    dependencies: normaliseEdges(input.dependencies ?? []),
-    provenance: input.provenance,
-  };
+  return objectOf("table", identity, input, definition, input.dependencies ?? []);
 }
 
 /**
@@ -197,14 +190,10 @@ export function column(input: ColumnInput): ColumnObject {
         }
       : {}),
   };
-  return {
-    kind: "column",
-    identity,
-    owner: input.owner ?? "managed",
-    definition,
-    dependencies: normaliseEdges([tableIdentity(input.parent), ...(input.dependencies ?? [])]),
-    provenance: input.provenance,
-  };
+  return objectOf("column", identity, input, definition, [
+    tableIdentity(input.parent),
+    ...(input.dependencies ?? []),
+  ]);
 }
 
 /**
@@ -252,18 +241,11 @@ export function index(input: IndexInput): IndexObject {
     ...(input.predicate !== undefined ? { predicate: input.predicate } : {}),
     ...(input.expression !== undefined ? { expression: input.expression } : {}),
   };
-  return {
-    kind: "index",
-    identity,
-    owner: input.owner ?? "managed",
-    definition,
-    dependencies: normaliseEdges([
-      tableIdentity(input.parent),
-      ...columns.map((columnName) => columnIdentity(input.parent, columnName)),
-      ...(input.dependencies ?? []),
-    ]),
-    provenance: input.provenance,
-  };
+  return objectOf("index", identity, input, definition, [
+    tableIdentity(input.parent),
+    ...columns.map((columnName) => columnIdentity(input.parent, columnName)),
+    ...(input.dependencies ?? []),
+  ]);
 }
 
 /**
@@ -386,14 +368,7 @@ export function constraint(input: ConstraintInput): ConstraintObject {
     }
   }
   targets.push(...(input.dependencies ?? []));
-  return {
-    kind: "constraint",
-    identity,
-    owner: input.owner ?? "managed",
-    definition,
-    dependencies: normaliseEdges(targets),
-    provenance: input.provenance,
-  };
+  return objectOf("constraint", identity, input, definition, targets);
 }
 
 /**
@@ -418,17 +393,34 @@ export function sequence(input: SequenceInput): SequenceObject {
     namespace: input.namespace,
     name: input.name,
   };
-  return {
-    kind: "sequence",
+  return objectOf(
+    "sequence",
     identity,
-    owner: input.owner ?? "managed",
-    definition: {
+    input,
+    {
       dataType: input.dataType ?? "bigint",
       start,
       increment,
       cycle: input.cycle ?? false,
     },
-    dependencies: normaliseEdges(input.dependencies ?? []),
+    input.dependencies ?? [],
+  );
+}
+
+/** Shapes one catalog object. Every kind ends the same way. */
+function objectOf<TKind extends string, TIdentity, TDefinition>(
+  kind: TKind,
+  identity: TIdentity,
+  input: CommonInput,
+  definition: TDefinition,
+  targets: readonly ObjectIdentity[],
+) {
+  return {
+    kind,
+    identity,
+    owner: input.owner ?? "managed",
+    definition,
+    dependencies: normaliseEdges(targets),
     provenance: input.provenance,
   };
 }
