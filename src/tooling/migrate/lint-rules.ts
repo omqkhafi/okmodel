@@ -888,6 +888,7 @@ function validatingCheck(input: StepInput): boolean {
   if (widenValidate(input)) return false;
   if (notNullFloorValidate(input)) return false;
   if (ownColumnCheckValidate(input)) return false;
+  if (picklistSwapValidate(input)) return false;
   if (validates(input, "check")) return true;
   return checkWithoutNotValid(input);
 }
@@ -992,6 +993,54 @@ function ownColumnCheckValidate(input: StepInput): boolean {
   if (columns.length === 0) return false;
   const expression = constraint.definition.expression ?? "";
   return columns.every((column) => ownColumnSafe(input, tableSql, column, expression));
+}
+
+/**
+ * `VALIDATE` of a picklist check the planner swapped after its backfill.
+ *
+ * Removing a value plans `backfill-expand`, `backfill-contract`, then
+ * `narrow-check` steps: drop the check, add it `NOT VALID`, validate. The
+ * backfill has moved every removed value, so the scan cannot meet a row that
+ * fails. It is not OKM1531 when a backfill of that column sits earlier in the
+ * same migration, no other write on the table follows it, and the `ADD
+ * CONSTRAINT … NOT VALID` of the same name is also earlier (D301, amended).
+ * A `VALIDATE` with no such backfill stays an error.
+ *
+ * @param input - Step context with earlier SQL and the catalogs
+ * @returns `true` when this validate ends that swap
+ */
+function picklistSwapValidate(input: StepInput): boolean {
+  if (input.step.kind !== "narrow-check") return false;
+  const matched = /^alter table\s+(\S+)\s+validate constraint\s+(\S+)/.exec(
+    normalizedSql(input.step.sql),
+  );
+  const tableSql = matched?.[1];
+  const constraintSql = matched?.[2];
+  if (tableSql === undefined || constraintSql === undefined) return false;
+  const constraint = findConstraint(input.after, lastName(constraintSql) ?? "");
+  if (constraint === undefined || constraint.definition.constraintKind !== "check") return false;
+  const [column] = constraint.definition.columns;
+  if (column === undefined || constraint.definition.columns.length !== 1) return false;
+  const swapped = input.earlier.some((step) => {
+    if (step.kind !== "narrow-check") return false;
+    const prior = normalizedSql(step.sql);
+    return (
+      sameTable(alterTableTarget(prior), tableSql) &&
+      prior.includes(`add constraint ${constraintSql} `) &&
+      /\bnot valid\b/.test(prior)
+    );
+  });
+  if (!swapped) return false;
+  const filled = new RegExp(
+    `^update\\s+(?:only\\s+)?(\\S+)\\s+set\\s+"?${escapeRegExp(column)}"?\\s*=`,
+  );
+  let last = -1;
+  input.earlier.forEach((step, index) => {
+    if (step.kind !== "backfill-expand" && step.kind !== "backfill-contract") return;
+    const update = filled.exec(normalizedSql(step.sql));
+    if (sameTable(update?.[1], tableSql)) last = index;
+  });
+  return last >= 0 && !writesTableAfter(input.earlier, tableSql, last);
 }
 
 /**

@@ -45,3 +45,15 @@ export function cliNotice(summary: string): void {
   }
   process.stderr.write(`${summary}\n`);
 }
+
+/**
+ * Writes a one-line note to stderr in a human run and drops it under `--json`.
+ *
+ * A note says a command skipped optional work. It is not a warning: the
+ * envelope and the exit code stay what they would be without it.
+ *
+ * @param text - One line, without a trailing newline
+ */
+export function cliNote(text: string): void {
+  if (current === undefined) process.stderr.write(`${text}\n`);
+}

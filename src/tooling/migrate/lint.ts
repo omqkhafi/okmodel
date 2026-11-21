@@ -174,6 +174,27 @@ export function lintRefusal(findings: readonly Finding[], fix?: string): OkmErro
   return attachCliDetail(error, { location: { step } });
 }
 
+/**
+ * Fix text for the OKM1510 that `okm generate` throws after it wrote the file.
+ *
+ * It names each code that fired and its safe form, and says how an override
+ * is acknowledged. A person does not hand-edit a migration.
+ *
+ * @param findings - Error findings of the written plan
+ * @returns One paragraph for `fix.summary`
+ */
+export function generateRefusalFix(findings: readonly Finding[]): string {
+  const codes = [
+    ...new Set(findings.filter((item) => item.severity === "error").map((item) => item.code)),
+  ];
+  const safe = codes.map((code) => `${code}: ${errorDoc(code)?.fix ?? "change the statement."}`);
+  return [
+    ...safe,
+    "okm migrate apply will refuse until it is fixed.",
+    `An acknowledged override is a -- okm-allow ${codes[0] ?? "CODE"}: reason line that okm generate writes when you answer its question in a terminal.`,
+  ].join(" ");
+}
+
 type Hit = {
   readonly code: string;
   readonly severity: LintSeverity;
