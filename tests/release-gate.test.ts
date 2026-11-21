@@ -402,12 +402,14 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(ci).toContain("bun run pack-contract");
   expect(ci).toContain("bun test --changed=");
   expect(ci).toContain("bun run size -- --runtime-entry");
-  expect(after).toMatch(/push:\n {4}branches:\n {6}- main\n/);
-  expect(after).toContain('cron: "0 3 * * *"');
+  expect(after).toContain("workflow_dispatch:");
+  expect(after).not.toMatch(/^ {2}push:\n/m);
+  expect(after).not.toContain("cron:");
   expect(after).toContain("uses: ./.github/workflows/postgres-suite.yml");
   expect(after).toContain("uses: ./.github/workflows/postgres-tarball.yml");
-  expect(after).toContain("bun ./scripts/ci-issue.ts");
-  expect(after).toContain("name: gate / issue");
+  expect(after).not.toContain("bun ./scripts/ci-issue.ts");
+  expect(after).not.toContain("name: gate / issue");
+  expect(after).not.toContain("issues: write");
   const prMeta = readFileSync(join(root, ".github/workflows/pr-meta.yml"), "utf8");
   expect(prMeta).not.toContain("synchronize");
   expect(prMeta).not.toContain("opened");

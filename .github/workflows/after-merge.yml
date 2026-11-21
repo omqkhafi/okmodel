@@ -1,22 +1,11 @@
 name: After merge
 
-# Push to main, and nightly at 03:00 UTC. A failure opens or updates one issue.
-# Pull requests do not run this workflow. `gate / check` stays on ci.yml.
-# A push that touches only the site or agent rules skips it; the nightly
-# still runs everything. examples/, docs/, schemas/, skills/, and README.md
-# are not ignored: the examples job runs only here, and the rest ship.
+# Manual run on any ref. `gh workflow run` and the Actions tab default the
+# ref to main. Run it on the release candidate. A failure is a red run.
+# Nothing in this file opens an issue. Pull requests do not run this
+# workflow. `gate / check` stays on ci.yml. Release does not call this file.
 on:
-  push:
-    branches:
-      - main
-    paths-ignore:
-      - "site/**"
-      - "AGENTS.md"
-      - "CLAUDE.md"
-      - ".cursor/**"
-      - ".agents/**"
-  schedule:
-    - cron: "0 3 * * *"
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.event_name == 'schedule' && 'after-merge-nightly' || format('after-merge-{0}', github.sha) }}
@@ -456,71 +445,3 @@ jobs:
     with:
       versions: '["15", "16", "17", "18", "19"]'
       dist_artifact: dist
-
-  issue:
-    name: gate / issue
-    needs:
-      [
-        changes,
-        build,
-        types,
-        test,
-        test-dist,
-        runtimes,
-        temporal,
-        attest,
-        windows,
-        package,
-        size,
-        inform,
-        suite,
-        lifecycle,
-        composition,
-        examples,
-        tarball,
-      ]
-    if: always()
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      issues: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Require pinned Bun
-        run: |
-          set -euo pipefail
-          pin="$(tr -d '[:space:]' < .bun-version)"
-          if [ -z "$pin" ]; then
-            echo ".bun-version is missing or empty" >&2
-            exit 1
-          fi
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version-file: .bun-version
-
-      - name: Open or update one issue
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: >
-          bun ./scripts/ci-issue.ts
-          changes=${{ needs.changes.result }}
-          build=${{ needs.build.result }}
-          types=${{ needs.types.result }}
-          test=${{ needs.test.result }}
-          test-dist=${{ needs.test-dist.result }}
-          runtimes=${{ needs.runtimes.result }}
-          temporal=${{ needs.temporal.result }}
-          attest=${{ needs.attest.result }}
-          windows=${{ needs.windows.result }}
-          package=${{ needs.package.result }}
-          size=${{ needs.size.result }}
-          inform=${{ needs.inform.result }}
-          suite=${{ needs.suite.result }}
-          lifecycle=${{ needs.lifecycle.result }}
-          composition=${{ needs.composition.result }}
-          examples=${{ needs.examples.result }}
-          tarball=${{ needs.tarball.result }}
