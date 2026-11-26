@@ -8,6 +8,7 @@ import type { DriverPool } from "../../../contracts/driver.js";
 import { OkmError } from "../../../contracts/error.js";
 import type { CatalogObject, GrantObject } from "../../../contracts/catalog/types.js";
 import { FUNCTION_ARG_TYPES } from "../introspect.js";
+import { normalizeRoles } from "./config.js";
 import type { RolesInput } from "./index.js";
 
 /** A pool or a reserved connection. Both can run one statement. */
@@ -29,24 +30,23 @@ export async function assertRoleHealth(
   roles: RolesInput,
   objects: readonly CatalogObject[],
 ): Promise<void> {
-  const managed = new Set((roles.managed ?? []).map((role) => role.name));
-  const named = [roles.migration, roles.app];
-  if (roles.reporting !== undefined) named.push(roles.reporting);
+  const entries = normalizeRoles(roles);
+  const named = new Set(entries.map((entry) => entry.name));
   for (const name of named) {
-    if (managed.has(name)) continue;
     if (!(await roleExists(runner, name))) {
-      throw new OkmError("not_found", `Role ${name} is named in roles and does not exist.`, {
-        kind: "not_found",
-        fix: { summary: "Create the role, or list it in roles.managed so the plan creates it." },
-      });
+      throw new OkmError(
+        "OKM1911",
+        `Role ${name} does not exist. Run \`okm roles apply\` before this command.`,
+        {
+          kind: "not_found",
+          fix: { summary: "Run okm roles apply --admin-env <NAME>." },
+        },
+      );
     }
   }
-  if (managed.size > 0) await assertCreateRole(runner, await currentUser(runner));
   for (const object of objects) {
     if (object.kind !== "grant") continue;
-    if (managed.has(object.identity.role) && !(await roleExists(runner, object.identity.role))) {
-      continue;
-    }
+    if (!named.has(object.identity.role) && object.identity.role !== "public") continue;
     await assertGrant(runner, object);
   }
 }

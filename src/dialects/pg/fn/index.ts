@@ -5,6 +5,7 @@
  * records. `schema()` only asks each declared object for those records.
  */
 
+import { beginGrantBatch, rememberGrants } from "../role/grant-slot.js";
 import { assertIdentifier } from "../../../contracts/catalog/identifier.js";
 import { OkmError } from "../../../contracts/error.js";
 import { staticNamespace } from "../../../contracts/catalog/identity.js";
@@ -126,6 +127,8 @@ export type FunctionOptions = {
   readonly dependsOn?: readonly DependsOn[];
   /** Schema. The default is `public`. */
   readonly schema?: string;
+  /** `EXECUTE` for declared roles. Keys are `roles` keys. */
+  readonly grants?: Readonly<Record<string, unknown>>;
 };
 
 /**
@@ -226,6 +229,8 @@ export function fn<
   const declared = options.arguments ?? [];
   const contribute = (peers: unknown, built: unknown): readonly CatalogObject[] => {
     assertPeers(peers, "functions");
+    if (typeof built === "object" && built !== null) beginGrantBatch(built);
+    rememberGrants("function", schema, name, options.grants);
     const namespace = staticNamespace(schema);
     const provenance: Provenance = { origin: "file", name };
     return [

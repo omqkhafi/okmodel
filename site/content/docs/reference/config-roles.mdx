@@ -1,122 +1,65 @@
 ---
 title: "Roles"
-description: "roles names migration, app, and optional reporting grants."
+description: "Roles, logins, and keyed grants. The config holds names, never a password."
 ---
-`roles` names migration, app, and optional reporting grants.
 
-A name in `managed` is a role the plan creates. A name outside that list is external and has to exist already. `schema()` has no `roles` field. The grants are added when the config sets `roles`.
+`roles` names the migration role, the application role, and any other role. Keys are free. `migration`, `app`, and `reporting` keep their meaning. The config holds no password and no URL.
 
-| Field | Required | What it sets |
-| --- | --- | --- |
-| `migration` | yes | Runs the files. When this role already exists and is not the session user, apply issues `SET ROLE` before the statements. Default privileges are for this role. |
-| `app` | yes | Receives the grants in the first table. After the plan, `SELECT` on `okm_meta`. |
-| `reporting` | no | The grants in the second table. |
-| `managed` | no | Roles the plan creates. See [managed](#managed). |
-| `columns` | no | Column `SELECT` or `UPDATE`. See [columns](#columns). |
-
-Grants are on managed objects.
-
-| Object | `app` |
-| --- | --- |
-| table | `SELECT`, `INSERT`, `UPDATE`, `DELETE` |
-| view | `SELECT`, `INSERT`, `UPDATE`, `DELETE` |
-| materialized view | `SELECT` |
-| sequence | `USAGE`, `SELECT` |
-| function | `EXECUTE` |
-
-Default privileges are `ALTER DEFAULT PRIVILEGES` for the migration role, in each schema those objects use. With no such schema, they are issued in `public`.
-
-| Object | Privileges |
-| --- | --- |
-| tables | `SELECT`, `INSERT`, `UPDATE`, `DELETE` |
-| functions | `EXECUTE` |
-| sequences | `USAGE`, `SELECT` |
-
-The plan revokes `INSERT`, `UPDATE`, and `DELETE` on a materialized view granted to `app`. After the plan, `app` receives `SELECT` on `okm_meta`. When this run creates the migration role, that role receives `USAGE` and `CREATE` on the schema, and `SELECT`, `INSERT`, and `UPDATE` on `okm_meta`, `okm_history`, and `okm_backfill`. Apply then issues `SET ROLE`.
-
-| Object | `reporting` |
-| --- | --- |
-| table | `SELECT` |
-| view | `SELECT` |
-| materialized view | `SELECT` |
-| schema | `USAGE` |
-
-`reporting` also receives a default `SELECT` on later tables, for the migration role. It is select only and is not tenant-safe against its own SQL: under `rlsTenancy` it can `set_config('app.unscoped', …)` itself and then read every tenant. It still cannot write. Two applies that alter the same role at once can fail with Postgres `tuple concurrently updated`; run apply again.
-
-```ts title="okmodel.config.ts"
-import { defineConfig } from "okmodel/migrate";
-
-export default defineConfig({
-  schema: "./schema.ts",
-  database: process.env.DATABASE_URL!,
-  roles: {
-    migration: "okm_migrate", // [!code focus]
-    app: "okm_app", // [!code focus]
-    reporting: "okm_read", // [!code focus]
-  },
-});
+```ts
+roles: {
+  migration: { name: "okm_migrate", env: "MIGRATE_DATABASE_URL" },
+  app: { name: "okm_app", env: "APP_DATABASE_URL", connectionLimit: 20 },
+  reporting: { name: "okm_read", env: "REPORTING_DATABASE_URL" },
+  worker: { name: "okm_worker", env: "WORKER_DATABASE_URL" },
+}
 ```
 
-### Managed
+`env` is the name of the variable that holds that role's URL. With `env`, `okm roles apply` creates a login role when the name is missing. Without `env`, it creates a `NOLOGIN` group. An existing role keeps the database's login flag and its password.
 
-`managed` lists roles the plan creates and alters. A role is never dropped. The statement is `NOSUPERUSER NOCREATEDB NOCREATEROLE`. An external role emits no `CREATE ROLE` and no `ALTER ROLE`. `login` and `inherit` are altered only when the role is already managed.
+## Cycle
 
-| Field | Default | Result |
-| --- | --- | --- |
-| `name` | — | The role name. |
-| `login` | `NOLOGIN` | `LOGIN` when `true`. |
-| `inherit` | `INHERIT` | `NOINHERIT` when `false`. |
+1. Add `roles` to `okmodel.config.ts`.
+2. Set each URL variable. `okm roles generate` prints random URLs once, or writes them to a git-ignored file with mode 0600.
+3. `okm roles apply --admin-env ADMIN_DATABASE_URL` creates missing roles. The admin URL is the variable, never an argument.
+4. `okm migrate apply` checks that every named role exists, then grants.
+5. The application connects with the app URL.
+6. `okm roles status` reads attributes, one login each, and unmanaged roles. JSON has no secrets.
+7. To rotate, add a second login (`okm_app_b`), grant it the same privileges, move traffic, then retire the first. There is no built-in rotate.
 
-A managed role that `pg_roles` does not have is created. `okm doctor` skips that absence. The role that applies a `CREATE ROLE` or `ALTER ROLE` needs `CREATEROLE`. A superuser passes the same check. The message names that role: `Role postgres lacks CREATEROLE. Nothing was changed.` A role another session created first does not fail the create.
+`okm roles set-password <role> --admin-env NAME` is the only password change. The password is a client SCRAM-SHA-256 verifier. If the server refuses a client verifier, it says so and the next invocation passes `--plain`. There is no silent plaintext fallback.
 
-### Columns
+A password under 16 characters, or a password that is the same half twice, asks `[c]` continue, `[g]` generate, `[x]` cancel. A local host does not ask. Without a terminal, pass `--accept-weak-password` or `--generate` with `--env-file`.
 
-`columns` grants `SELECT` or `UPDATE` on named columns. `on` is the SQL name of one table, view, or materialized view. A column may be the field name or the SQL name. An empty list adds no grant. A role named only here receives those column grants.
+## Grants
 
-| Field | Required | What it sets |
-| --- | --- | --- |
-| `role` | yes | The role that receives the privilege. |
-| `on` | yes | The table, view, or materialized view. |
-| `select` | no | Columns granted `SELECT`. |
-| `update` | no | Columns granted `UPDATE`. |
+Grants sit on the object. Keys are role keys.
 
-On a table with a [hidden](/docs/schema/visibility#hidden) column, `reporting` receives `SELECT` on the visible columns. `hidden({ filterable: true })` stays in that hidden set. A `select` list for `reporting` adds those columns, including a hidden one. On a table with no hidden column, `reporting` receives `SELECT` on the table. On a view or a materialized view, a `select` list for `reporting` is the `SELECT` grant for those columns.
-
-```ts title="okmodel.config.ts"
-import { defineConfig } from "okmodel/migrate";
-
-export default defineConfig({
-  schema: "./schema.ts",
-  database: process.env.DATABASE_URL!,
-  roles: {
-    migration: "okm_migrate",
-    app: "okm_app",
-    reporting: "okm_read",
-    managed: [{ name: "okm_app", login: true }], // [!code focus]
-    columns: [{ role: "okm_app", on: "users", select: ["email"] }], // [!code focus]
+```ts
+table("docs", {
+  id: t.text().primaryKey(),
+  title: t.text(),
+}, {
+  grants: {
+    app: "write",
+    reporting: { select: ["id", "title"] },
+    audit: ["select"],
   },
-});
+})
 ```
 
-| Case | Result |
+`"read"` is select. `"write"` is select, insert, update, and delete. A materialized view is `"read"` or `"maintain"`. `"all"` is refused. Objects without `grants` keep the baseline: `app` receives DML, and `reporting` receives select. Objects this catalog does not manage, and roles it does not declare, are not changed. `PUBLIC` is explicit and needs `--allow-protected`. There is no `WITH GRANT OPTION`.
+
+Default privileges are not emitted. An identity column needs no sequence grant. A `serial` column does. Grant the parent of a partition, not the children. `TRUNCATE` ignores row security.
+
+A non-owner refresh of a materialized view is `MAINTAIN` when `minPostgres` is 17 or later. On 15 and 16 the plan adds `okm_refresh_<name>()`, `SECURITY DEFINER`, with `search_path` pinned, and grants execute to the role.
+
+## Providers
+
+| Provider | What a real run showed |
 | --- | --- |
-| An empty `migration`, `app`, `reporting`, managed `name`, or column `role` | Refused. `roles.migration needs a name.` The label is `migration`, `app`, `reporting`, `managed role`, or `column grant role`. |
-| `reporting` is `migration` or `app` | Refused. `Role okm_app cannot be the reporting role and also migration or app.` |
-| `update` on the reporting role | Refused. `Role okm_read is the reporting role and cannot be granted update.` |
-| `on` names an ignored table | Refused. `Column grant on users targets an ignored table.` |
-| An external `migration`, `app`, or `reporting` role is absent | `okm doctor` refuses. `Role okm_app is named in roles and does not exist.` |
-| `on` or a column is missing, or `on` matches more than one object | OKM1020. |
-| A privilege is missing on an object that exists | OKM1825. An object absent from the database is skipped. |
-| `connect()` | Leaves roles unchecked. |
+| Neon | PostgreSQL 19.0. The admin login is a `neon_superuser` member, not a superuser. It refuses a client SCRAM verifier, so use `--plain`. The pooled URL is a transaction pooler. Roles created through SQL are visible on a replica within about 2 seconds. |
+| Supabase | PostgreSQL 17.12. The login role `postgres` is not a superuser. It accepts a client verifier. Pooler logins need the `role.projectref` username. `statement_timeout` defaults to 2 minutes. |
+| Amazon RDS | Not verified. |
+| Heroku | Not verified. |
 
-<Callout type="error" title="OKM1020">
-`Column grant names missing, which is not in the schema.` `Column users.missing is not in the schema.` `Column grant on users matches more than one object.`
-</Callout>
-
-<Callout type="error" title="OKM1825">
-`Role okm_read lacks SELECT(email) on public.users.email.` `okm doctor` names the role, the privilege, and the object.
-</Callout>
-
-<Callout type="error" title="OKM1122">
-A reserved word is `role user is a reserved word.` A name past 63 bytes includes the count, as in `is 64 bytes. The limit is 63.`
-</Callout>
+Roles are cluster-wide, so they are created by `okm roles apply`, not inside a migration. Migrations use a direct URL. `okm doctor` warns when the migration URL looks pooled. A single idle client that keeps one backend pid is not proof: a transaction pooler does that until several clients run at once. When a step needs a session setting outside a transaction, and no URL signal matched, okmodel opens eight clients together. Each runs a few statements while the others run and reads `pg_backend_pid()`. A pid that changes, or fewer backends than clients, means pooled. One stable pid per client is proven direct, and only then is the session form used. The same probe runs for `okm doctor` and for a login result the password check cannot classify. A URL that already matches a pooler signal is not probed.

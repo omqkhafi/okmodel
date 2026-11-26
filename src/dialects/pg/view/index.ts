@@ -20,6 +20,7 @@ import { quoteIdent } from "../ddl.js";
 import type { SchemaHook } from "../model.js";
 import { type Names, namesFor } from "../casing.js";
 import type { AnyTable, SqlText } from "../table.js";
+import { beginGrantBatch, rememberGrants } from "../role/grant-slot.js";
 import { viewClient, type ViewInstall } from "./client.js";
 
 /** One declared output column. `type` is the Postgres type name. */
@@ -41,6 +42,8 @@ export type ViewOptions = {
    * OKM1820 unless this is `global("reason")`.
    */
   readonly tenancy?: unknown;
+  /** Privileges keyed by `roles` keys. A materialized view accepts read or maintain. */
+  readonly grants?: Readonly<Record<string, unknown>>;
 };
 
 /** Output columns of {@link ViewFrom.from}. A tuple keeps each name. */
@@ -258,6 +261,8 @@ export function view<const N extends string, const C extends readonly ViewColumn
     contribute(peers, built) {
       assertPeers(peers);
       assertNoTable(built, name);
+      if (typeof built === "object" && built !== null) beginGrantBatch(built);
+      rememberGrants("view", schema, name, options.grants);
       const provenance: Provenance = { origin: "file", name };
       return [
         viewObject({
@@ -334,6 +339,8 @@ export function materializedView<
     contribute(peers, built) {
       assertPeers(peers);
       assertNoTable(built, name);
+      if (typeof built === "object" && built !== null) beginGrantBatch(built);
+      rememberGrants("materializedView", schema, name, options.grants);
       const namespace = staticNamespace(schema);
       const provenance: Provenance = { origin: "file", name };
       const parent = { namespace, name };

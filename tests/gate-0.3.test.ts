@@ -548,7 +548,7 @@ function project(
   const rolesLine =
     roles === undefined
       ? ""
-      : `  roles: { migration: ${JSON.stringify(roles.migration)}, app: ${JSON.stringify(roles.app)}, managed: [{ name: ${JSON.stringify(roles.migration)}} ] },\n`;
+      : `  roles: { migration: { name: ${JSON.stringify(roles.migration)} }, app: { name: ${JSON.stringify(roles.app)} } },\n`;
   writeFileSync(
     join(cwd, "okmodel.config.ts"),
     [

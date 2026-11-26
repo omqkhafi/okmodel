@@ -303,6 +303,10 @@ async function route(
     const { agentsCommand } = await import("../agents/command.js");
     return agentsCommand(parsed, cwd, human);
   }
+  if (id.startsWith("roles ") || id === "access") {
+    const { rolesCli } = await import("./roles-cli.js");
+    return rolesCli(id, project, parsed, human, terminal);
+  }
   if (id === "import drizzle") return drizzle(project, parsed, human);
   if (id === "migrate plan") return planCommand(project, parsed, human);
   if (id === "migrate apply") return applyCommand(project, parsed, human);

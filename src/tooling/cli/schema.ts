@@ -455,6 +455,25 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
       },
     },
   ),
+  "roles apply": object("roles apply", "okm roles apply data", ["text"], {
+    text: { type: "string" },
+  }),
+  "roles set-password": object("roles set-password", "okm roles set-password data", ["text"], {
+    text: { type: "string" },
+  }),
+  "roles status": object("roles status", "okm roles status data", ["roles", "failed"], {
+    failed: { type: "boolean" },
+    roles: { type: "array" },
+  }),
+  "roles generate": object("roles generate", "okm roles generate data", ["text"], {
+    text: { type: "string" },
+  }),
+  access: object("access", "okm access data", ["grants", "memberships", "unmanaged", "policies"], {
+    grants: { type: "array" },
+    memberships: { type: "array" },
+    unmanaged: { type: "array" },
+    policies: { type: "array" },
+  }),
 };
 
 /**

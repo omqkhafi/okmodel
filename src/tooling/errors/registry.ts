@@ -1135,6 +1135,45 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     since: "0.10",
   },
   {
+    code: "OKM1910",
+    title: "Roles config",
+    summary:
+      "roles is missing, still uses a name string, names an unknown role, or a grant says all.",
+    fix: "Use roles: { migration: { name, env }, app: { name, env } }. okm roles apply --admin-env NAME creates the missing roles.",
+    since: "0.10",
+  },
+  {
+    code: "OKM1911",
+    title: "Role missing",
+    summary: "A role named by the config does not exist yet.",
+    fix: "okm roles apply --admin-env NAME creates the missing roles.",
+    since: "0.10",
+  },
+  {
+    code: "OKM1912",
+    title: "Password refused",
+    summary:
+      "The password command refused a weak password, an unencoded URL character, a secret file, or a server that will not take a client SCRAM verifier.",
+    fix: "Pass --accept-weak-password or --generate --env-file, percent-encode the password, or pass --plain when the server asks for plaintext.",
+    since: "0.10",
+  },
+  {
+    code: "OKM1913",
+    title: "Revoke missed",
+    summary:
+      "A REVOKE left the privilege in place because another role granted it. PostgreSQL treats that revoke as a no-op.",
+    fix: "Connect as that grantor, or GRANT the migration role ADMIN OPTION and revoke with GRANTED BY.",
+    since: "0.10",
+  },
+  {
+    code: "OKM1914",
+    title: "Role attribute",
+    summary:
+      "A managed role is a superuser, has CREATEROLE, has BYPASSRLS without a reason, owns a table, or membership options were asked on PostgreSQL 15. A CREATEROLE role that is not a superuser cannot alter a role it did not create.",
+    fix: "Leave the role as declared. Nothing was changed.",
+    since: "0.10",
+  },
+  {
     code: "OKM1899",
     title: "Ledger name taken",
     summary: "A migration ledger name already belongs to another table.",

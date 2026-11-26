@@ -8,19 +8,19 @@ import { expect, test } from "bun:test";
 
 import { catalog } from "../src/contracts/catalog/build.js";
 import { staticNamespace } from "../src/contracts/catalog/identity.js";
-import { grantObject } from "../src/contracts/catalog/privilege.js";
+import { grantObject, roleObject } from "../src/contracts/catalog/privilege.js";
 import { catalogHash, startupCatalog, startupHash } from "../src/contracts/catalog/document.js";
 import { OkmError } from "../src/contracts/error.js";
 import { schema, table, t, withOwner } from "../src/dialects/pg/index.js";
 import { rlsTenancy } from "../src/runtime/tenancy/index.js";
 import { stampOwnership } from "../src/dialects/pg/owner.js";
-import { RoleDeclarationError, attachRoles } from "../src/dialects/pg/role/index.js";
+import { attachRoles } from "../src/dialects/pg/role/index.js";
 import { columnPrivilege, privilegeSql } from "../src/dialects/pg/role/sql.js";
 import type { TableExposure } from "../src/dialects/pg/role/index.js";
 import { view } from "../src/dialects/pg/view/index.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
 
-const roles = { migration: "mig", app: "app", managed: [{ name: "mig" }] };
+const roles = { migration: { name: "mig" }, app: { name: "app" } };
 
 test("roles without the new fields emit the same grants", () => {
   const tasks = table("tasks", { id: t.text().primaryKey(), title: t.text() });
@@ -29,15 +29,6 @@ test("roles without the new fields emit the same grants", () => {
     (step) => step.sql,
   );
   expect(sql).toEqual([
-    'create role "mig" with nosuperuser nocreatedb nocreaterole inherit nologin',
-    'alter default privileges for role "mig" in schema "public" revoke execute on functions from public',
-    'alter default privileges for role "mig" in schema "public" grant execute on functions to "app"',
-    'alter default privileges for role "mig" in schema "public" grant select on sequences to "app"',
-    'alter default privileges for role "mig" in schema "public" grant usage on sequences to "app"',
-    'alter default privileges for role "mig" in schema "public" grant delete on tables to "app"',
-    'alter default privileges for role "mig" in schema "public" grant insert on tables to "app"',
-    'alter default privileges for role "mig" in schema "public" grant select on tables to "app"',
-    'alter default privileges for role "mig" in schema "public" grant update on tables to "app"',
     'create table "public"."tasks" (\n  "id" text not null,\n  "title" text not null,\n  constraint "tasks_pkey" primary key ("id")\n)',
     'grant delete on table "public"."tasks" to "app"',
     'grant insert on table "public"."tasks" to "app"',
@@ -49,10 +40,12 @@ test("roles without the new fields emit the same grants", () => {
 test("a column grant names columns and refuses one that is not there", () => {
   const people = table("people", { email: t.text(), status: t.text() });
   const declared = schema({ tables: [people] }).catalog;
-  const after = attachRoles(declared, {
-    ...roles,
-    columns: [{ role: "reader", on: "people", select: ["email"], update: ["status"] }],
-  });
+  const after = attachRoles(
+    declared,
+    { ...roles, reader: { name: "reader" } },
+    undefined,
+    new Map([["people", { reader: { select: ["email"], update: ["status"] } }]]),
+  );
   const sql = planMigration({ before: catalog([]), after, name: "columns" }).steps.map(
     (step) => step.sql,
   );
@@ -60,22 +53,8 @@ test("a column grant names columns and refuses one that is not there", () => {
   expect(sql).toContain('grant update ("status") on table "public"."people" to "reader"');
   const again = planMigration({ before: after, after, name: "same" });
   expect(again.steps).toEqual([]);
-  expect(() =>
-    attachRoles(declared, {
-      ...roles,
-      columns: [{ role: "reader", on: "people", select: ["missing"] }],
-    }),
-  ).toThrow(OkmError);
-  try {
-    attachRoles(declared, {
-      ...roles,
-      columns: [{ role: "reader", on: "missing", select: ["email"] }],
-    });
-    expect.unreachable();
-  } catch (error) {
-    expect(error).toBeInstanceOf(OkmError);
-    expect((error as OkmError).code).toBe("OKM1020");
-  }
+  expect(sql).toContain('grant select ("email") on table "public"."people" to "reader"');
+  expect(sql).toContain('grant update ("status") on table "public"."people" to "reader"');
 });
 
 test("column grants quote identifier bytes and lowercase only the privilege", () => {
@@ -101,25 +80,26 @@ test("column grants quote identifier bytes and lowercase only the privilege", ()
   ];
   const after = attachRoles(
     built.catalog,
-    {
-      ...roles,
-      reporting: "report",
-      columns: [
+    { ...roles, reporting: { name: "report" }, reader: { name: "reader" } },
+    exposure,
+    new Map([
+      [
+        "rows",
         {
-          role: "reader",
-          on: "rows",
-          select: ["tenantId", "Mixed Case", "note_body"],
-          update: ["tenantId", "note_body"],
+          reporting: { select: ["tenantId", "Mixed Case", "note_body"] },
+          reader: {
+            select: ["tenantId", "Mixed Case", "note_body"],
+            update: ["tenantId", "note_body"],
+          },
         },
       ],
-    },
-    exposure,
+    ]),
   );
   const sql = planMigration({ before: catalog([]), after, name: "case" }).steps.map(
     (step) => step.sql,
   );
   expect(sql).toContain(
-    'grant select ("Mixed Case", "id", "note_body", "tenantId") on table "public"."rows" to "report"',
+    'grant select ("Mixed Case", "note_body", "tenantId") on table "public"."rows" to "report"',
   );
   expect(sql).toContain(
     'grant select ("Mixed Case", "note_body", "tenantId") on table "public"."rows" to "reader"',
@@ -141,7 +121,14 @@ test("column grants quote identifier bytes and lowercase only the privilege", ()
     'revoke select on table "public"."rows" from "report"',
     'grant select ("Mixed Case", "note_body", "tenantId", "user") on table "public"."rows" to "report"',
   ]);
-  const revoked = privilegeSql([grant], [], "public");
+  const report = roleObject({
+    name: "report",
+    owner: "external",
+    provenance: { origin: "file", name: "schema.ts" },
+    login: false,
+    inherit: true,
+  });
+  const revoked = privilegeSql([grant], [report], "public");
   expect(revoked.revoke.map((step) => step.sql)).toEqual([
     'revoke select ("Mixed Case", "note_body", "tenantId", "user") on table "public"."rows" from "report"',
   ]);
@@ -159,18 +146,11 @@ test("the reporting role gets select, and a hidden column only when named", () =
       ],
     },
   ];
-  const after = attachRoles(
-    built.catalog,
-    { ...roles, reporting: "report", managed: [{ name: "mig" }, { name: "report", login: true }] },
-    exposure,
-  );
+  const after = attachRoles(built.catalog, { ...roles, reporting: { name: "report" } }, exposure);
   const sql = planMigration({ before: catalog([]), after, name: "report" }).steps.map(
     (step) => step.sql,
   );
   expect(sql).toContain('grant usage on schema "public" to "report"');
-  expect(sql).toContain(
-    'alter default privileges for role "mig" in schema "public" grant select on tables to "report"',
-  );
   expect(sql).toContain('grant select ("email") on table "public"."people" to "report"');
   expect(sql).toContain('revoke select on table "public"."people" from "report"');
   expect(
@@ -182,30 +162,28 @@ test("the reporting role gets select, and a hidden column only when named", () =
     built.catalog,
     {
       ...roles,
-      reporting: "report",
-      columns: [{ role: "report", on: "people", select: ["secret"] }],
+      reporting: { name: "report" },
     },
     exposure,
   );
   const openedSql = planMigration({ before: catalog([]), after: opened, name: "open" }).steps.map(
     (step) => step.sql,
   );
-  expect(openedSql).toContain(
-    'grant select ("email", "secret") on table "public"."people" to "report"',
-  );
+  expect(openedSql).toContain('grant select ("email") on table "public"."people" to "report"');
   expect(() =>
-    attachRoles(built.catalog, {
-      ...roles,
-      reporting: "report",
-      columns: [{ role: "report", on: "people", update: ["email"] }],
-    }),
-  ).toThrow(RoleDeclarationError);
+    attachRoles(
+      built.catalog,
+      { ...roles, reporting: { name: "report" } },
+      undefined,
+      new Map([["people", { reporting: ["update"] }]]),
+    ),
+  ).toThrow(OkmError);
   try {
-    attachRoles(built.catalog, { ...roles, reporting: "app" });
+    attachRoles(built.catalog, { ...roles, reporting: { name: "app" } });
     expect.unreachable();
   } catch (error) {
-    expect(error).toBeInstanceOf(RoleDeclarationError);
-    expect((error as RoleDeclarationError).reason).toBe("reporting_distinct");
+    expect(error).toBeInstanceOf(OkmError);
+    expect((error as OkmError).code).toBe("OKM1910");
   }
 });
 
@@ -217,12 +195,12 @@ test("a listed column grant replaces select on a view", () => {
       { name: "secret", type: "text" },
     ],
     query: "select id, secret from people",
+    grants: { reporting: { select: ["id"] } },
   });
   const declared = schema({ tables: [people], views: [notes] }).catalog;
   const after = attachRoles(declared, {
     ...roles,
-    reporting: "report",
-    columns: [{ role: "report", on: "notes", select: ["id"] }],
+    reporting: { name: "report" },
   });
   const sql = planMigration({ before: catalog([]), after, name: "view" }).steps.map(
     (step) => step.sql,

@@ -38,9 +38,10 @@ export type PrivilegeStatement = {
     | "grant";
 };
 
-const PRIVILEGE = /^(select|insert|update|delete|execute|usage)$/;
+const PRIVILEGE =
+  /^(select|insert|update|delete|truncate|references|trigger|maintain|execute|usage|create)$/;
 /** Privilege keyword, then the column list with its original bytes. */
-const COLUMN_PRIVILEGE = /^(select|update)\(([^)]*)\)$/i;
+const COLUMN_PRIVILEGE = /^(select|insert|update|references)\(([^)]*)\)$/i;
 
 /**
  * Privilege name for a column grant.
@@ -79,6 +80,9 @@ export function privilegeSql(
 ): PrivilegeSql {
   const beforeBy = index(before);
   const afterBy = index(after);
+  const managedNames = new Set(
+    after.filter((object) => object.kind === "role").map((object) => object.identity.name),
+  );
   const revoke: PrivilegeStatement[] = [];
   const roles: PrivilegeStatement[] = [];
   const defaults: PrivilegeStatement[] = [];
@@ -86,6 +90,9 @@ export function privilegeSql(
   for (const [key, object] of beforeBy) {
     if (afterBy.has(key)) continue;
     if (object.kind === "grant") {
+      const role = object.identity.role;
+      if (role === "public") continue;
+      if (!managedNames.has(role)) continue;
       revoke.push({ sql: grantStatement(object, schema, true), kind: "revoke" });
     }
     if (object.kind === "defaultPrivilege") {
@@ -223,10 +230,12 @@ function tightenColumnSelect(
  * only the application role should execute managed functions.
  */
 function revokePublicExecute(object: GrantObject, schema: string): PrivilegeStatement | undefined {
+  const target = object.identity.object;
+  if (target.kind !== "function") return undefined;
+  if (!target.name.startsWith("okm_refresh_")) return undefined;
   if (object.identity.privilege.toUpperCase() !== "EXECUTE") return undefined;
-  if (object.identity.object.kind !== "function") return undefined;
   return {
-    sql: `revoke execute on ${grantTarget(object.identity.object, schema)} from public`,
+    sql: `revoke all on ${grantTarget(target, schema)} from public`,
     kind: "revoke",
   };
 }
@@ -276,7 +285,7 @@ function grantStatement(object: GrantObject, schema: string, revoke: boolean): s
   const verb = revoke ? "revoke" : "grant";
   const direction = revoke ? "from" : "to";
   const target = grantTarget(object.identity.object, schema);
-  const role = quoteIdent(object.identity.role);
+  const role = object.identity.role === "public" ? "public" : quoteIdent(object.identity.role);
   const listed = column?.[2];
   const base = column?.[1];
   if (listed !== undefined && base !== undefined) {
@@ -347,7 +356,8 @@ function assertPrivilege(privilege: string): void {
   if (!PRIVILEGE.test(privilege)) {
     throw new OkmError("invalid", `Privilege ${privilege} is not emitted.`, {
       fix: {
-        summary: "Grants in this version are select, insert, update, delete, execute, and usage.",
+        summary:
+          "Grants are select, insert, update, delete, truncate, references, trigger, maintain, execute, usage, and create.",
       },
     });
   }

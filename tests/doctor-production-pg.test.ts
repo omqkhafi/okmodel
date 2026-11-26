@@ -427,7 +427,7 @@ postgresTest(
     const missing = `zq_missing_${tag}`;
     const dir = targetsProject(
       { production: { url: who.url, protected: true } },
-      `roles: { migration: ${JSON.stringify(who.secrets[0])}, app: ${JSON.stringify(missing)} },`,
+      `roles: { migration: { name: ${JSON.stringify(who.secrets[0])} }, app: { name: ${JSON.stringify(missing)} } },`,
     );
     const run = production(dir, [], who.secrets);
     expect(run.code).toBe(1);

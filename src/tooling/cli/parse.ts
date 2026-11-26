@@ -104,6 +104,16 @@ export type ParsedCli = {
   readonly time: string | undefined;
   /** `okm agents update --protected`. `yes` or `no`. */
   readonly protectedFlag: string | undefined;
+  /** `okm roles --admin-env`. A variable name. */
+  readonly adminEnv: string | undefined;
+  /** `okm roles set-password --plain`. */
+  readonly plain: boolean;
+  /** `okm roles --accept-weak-password`. */
+  readonly acceptWeakPassword: boolean;
+  /** `okm roles --generate`. */
+  readonly generate: boolean;
+  /** `okm roles --env-file`. */
+  readonly envFile: string | undefined;
   /** Positionals after the command words. */
   readonly operands: readonly string[];
 };
@@ -114,6 +124,7 @@ const GROUP_FIX: Readonly<Record<string, string>> = {
   catalog: "Use okm catalog export.",
   raw: "Use okm raw sync.",
   agents: "Use okm agents status, okm agents update, or okm agents remove.",
+  roles: "Use okm roles apply, set-password, status, or generate.",
   import: "Use okm import drizzle <path>.",
   driver: "Use okm driver test <driver>.",
 };
@@ -321,6 +332,11 @@ export function parseCli(argv: readonly string[]): ParsedCli {
     limits: values.limits === true,
     time: stringValue(values.time),
     protectedFlag: stringValue(values.protected),
+    adminEnv: stringValue(values["admin-env"]),
+    plain: values.plain === true,
+    acceptWeakPassword: values["accept-weak-password"] === true,
+    generate: values.generate === true,
+    envFile: stringValue(values["env-file"]),
     operands,
   };
 }
@@ -421,6 +437,11 @@ function blank(flags: { readonly help: boolean; readonly json: boolean }): Parse
     limits: false,
     time: undefined,
     protectedFlag: undefined,
+    adminEnv: undefined,
+    plain: false,
+    acceptWeakPassword: false,
+    generate: false,
+    envFile: undefined,
     operands: [],
   };
 }

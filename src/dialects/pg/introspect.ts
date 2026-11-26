@@ -661,7 +661,19 @@ async function includeOutsideReferences(
   }
 }
 
-const EMITTED = new Set(["SELECT", "INSERT", "UPDATE", "DELETE", "EXECUTE", "USAGE"]);
+const EMITTED = new Set([
+  "SELECT",
+  "INSERT",
+  "UPDATE",
+  "DELETE",
+  "TRUNCATE",
+  "REFERENCES",
+  "TRIGGER",
+  "MAINTAIN",
+  "EXECUTE",
+  "USAGE",
+  "CREATE",
+]);
 
 const ROLES = `select rolname, rolcanlogin, rolinherit from pg_roles where rolname !~ '^pg_'`;
 
@@ -841,7 +853,14 @@ async function readPrivileges(
   >();
   for (const row of columns) {
     const privilege = text(row, "privilege").toUpperCase();
-    if (privilege !== "SELECT" && privilege !== "UPDATE") continue;
+    if (
+      privilege !== "SELECT" &&
+      privilege !== "INSERT" &&
+      privilege !== "UPDATE" &&
+      privilege !== "REFERENCES"
+    ) {
+      continue;
+    }
     const kind = grantKind(text(row, "kind"));
     if (kind !== "table" && kind !== "view" && kind !== "materializedView") continue;
     const name = text(row, "name");

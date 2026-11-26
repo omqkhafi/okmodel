@@ -15,7 +15,7 @@
  * reads.
  */
 
-import { assertStableBackend, type StableBackendOptions } from "./policy.js";
+import { probePooler, type StableBackendOptions } from "./pooler.js";
 
 /**
  * Refuses a session whose backend pid changes across eight reads.
@@ -26,10 +26,10 @@ import { assertStableBackend, type StableBackendOptions } from "./policy.js";
  * @param options - Optional hold between reads (PgBouncer tests)
  */
 export async function probeStableBackend(
-  _url: string,
+  url: string,
   readPid: () => Promise<string>,
   allowPooler: boolean,
   options?: StableBackendOptions,
 ): Promise<void> {
-  await assertStableBackend(readPid, allowPooler, options);
+  await probePooler(url, readPid, allowPooler, options);
 }

@@ -102,13 +102,14 @@ postgresTest(
     const mig = roleName("mig");
     const app = roleName("app");
     const roles: RolesInput = {
-      migration: mig,
-      app,
-      managed: [{ name: mig }, { name: app }],
+      migration: { name: mig },
+      app: { name: app },
     };
     const database = await createIsolatedDatabase();
     const sql = openPostgres(database.url);
     try {
+      await sql.unsafe(`create role ${quoteIdent(mig)} nologin`);
+      await sql.unsafe(`create role ${quoteIdent(app)} nologin`);
       const before = attachRoles(
         schema({
           tables: [table("tasks", { id: t.text().primaryKey(), title: t.text() })],
@@ -308,9 +309,8 @@ postgresTest(
     const mig = roleName("mig");
     const app = roleName("app");
     const roles: RolesInput = {
-      migration: mig,
-      app,
-      managed: [{ name: mig }, { name: app }],
+      migration: { name: mig },
+      app: { name: app },
     };
     const database = await createIsolatedDatabase();
     const sql = openPostgres(database.url);
@@ -344,9 +344,8 @@ postgresTest(
     const mig = roleName("mig");
     const app = roleName("app");
     const roles: RolesInput = {
-      migration: mig,
-      app,
-      managed: [{ name: mig }, { name: app }],
+      migration: { name: mig },
+      app: { name: app },
     };
     const replay = await createIsolatedDatabase();
     const snap = await createIsolatedDatabase();
@@ -478,7 +477,7 @@ async function expectNoDrift(
   author: Catalog,
   roles: RolesInput,
 ): Promise<void> {
-  const managed = [roles.migration, roles.app];
+  const managed = [roles.migration.name, roles.app.name];
   const live = await introspectSchema(queryOf(sql), "public", "public", { managedRoles: managed });
   const plan = planMigration({ before: live, after: author, name: `recreate-${seed}-check` });
   if (plan.steps.length === 0) return;
@@ -489,8 +488,10 @@ async function expectNoDrift(
 async function resetPair(replay: Sql, snap: Sql, roles: RolesInput): Promise<void> {
   await clearDatabase(replay);
   await clearDatabase(snap);
-  await dropRole(replay, roles.migration);
-  await dropRole(replay, roles.app);
+  await dropRole(replay, roles.migration.name);
+  await dropRole(replay, roles.app.name);
+  await replay.unsafe(`create role ${quoteIdent(roles.migration.name)} nologin`);
+  await replay.unsafe(`create role ${quoteIdent(roles.app.name)} nologin`);
 }
 
 async function clearDatabase(sql: Sql): Promise<void> {
@@ -504,8 +505,10 @@ async function clearDatabase(sql: Sql): Promise<void> {
 
 async function resetDatabase(sql: Sql, roles: RolesInput): Promise<void> {
   await clearDatabase(sql);
-  await dropRole(sql, roles.migration);
-  await dropRole(sql, roles.app);
+  await dropRole(sql, roles.migration.name);
+  await dropRole(sql, roles.app.name);
+  await sql.unsafe(`create role ${quoteIdent(roles.migration.name)} nologin`);
+  await sql.unsafe(`create role ${quoteIdent(roles.app.name)} nologin`);
 }
 
 async function dropRole(sql: Sql, name: string): Promise<void> {

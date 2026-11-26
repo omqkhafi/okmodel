@@ -212,14 +212,13 @@ test("altering a managed role is contract and creating one is expand", () => {
   const created = planMigration({
     before: catalog([]),
     after: attachRoles(schema({ tables: [tasks] }).catalog, {
-      migration: "mig",
-      app: "app",
-      managed: [{ name: "mig" }],
+      migration: { name: "mig" },
+      app: { name: "app" },
     }),
     name: "roles",
   });
-  const role = created.steps.find((step) => step.sql.startsWith("create role"));
-  expect(role?.kind).toBe("create-role");
+  const role = created.steps.find((step) => step.sql.startsWith("grant select"));
+  expect(role?.kind).toBe("grant");
   expect(role?.class).toBe("expand");
 });
 

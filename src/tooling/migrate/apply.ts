@@ -16,7 +16,13 @@ import type { Catalog } from "../../contracts/catalog/types.js";
 import { hasError, lintMigrationDirectory, lintPlan, lintRefusal } from "./lint.js";
 import type { DriverConnection } from "../../contracts/driver.js";
 import { OkmError } from "../../contracts/error.js";
-import { assertCreateRole, currentUser, roleExists } from "../../dialects/pg/role/check.js";
+import {
+  assertCreateRole,
+  assertRoleHealth,
+  currentUser,
+  roleExists,
+} from "../../dialects/pg/role/check.js";
+import type { RolesInput } from "../../dialects/pg/role/index.js";
 import { changesRole } from "../../dialects/pg/role/sql.js";
 import { introspectSchema } from "../../dialects/pg/introspect.js";
 import { batchSizeField } from "./backfill.js";
@@ -68,7 +74,7 @@ import {
   type InvokeFlags,
   type ProtectionMatch,
 } from "./policy.js";
-import { probeStableBackend } from "./pooler-probe.js";
+import { detectPooler, probeConcurrent, type PoolerDetection } from "./pooler.js";
 import {
   APPLY_APPLICATION,
   counted,
@@ -123,6 +129,8 @@ export type ApplyRequest = {
    * `SET ROLE` before any statement. That statement is not a plan step.
    */
   readonly migrationRole?: string;
+  /** Declared roles. Apply refuses when one of them is missing. */
+  readonly roles?: RolesInput;
   /**
    * Application role.
    *
@@ -354,8 +362,9 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
   const connection = reserved;
   let locked = false;
   let direct: DirectSession | undefined;
+  let poolerDetail: string | undefined;
   try {
-    direct = await directSession(connection, request, url);
+    if (request.roles !== undefined) await assertRoleHealth(connection, request.roles, []);
     await assertStandardStrings(connection);
     await lockTarget(connection, request.target);
     locked = true;
@@ -386,6 +395,11 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
     const history = await readHistory(connection);
     const done = expandProvisioned(request.migrations, history.done, history.ids);
     const units = request.migrations.flatMap((migration) => applyUnits(migration, done));
+    if (units.some((unit) => !unit.transactional)) {
+      const attempt = await openDirectSession(connection, request, url);
+      direct = attempt.session;
+      poolerDetail = attempt.detection.detail;
+    }
     const report = await runTarget(
       connection,
       {
@@ -393,7 +407,7 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
         units,
         lockWaitMs: request.lockWaitMs ?? DEFAULT_LOCK_WAIT_MS,
         lockTimeoutMs: request.lockTimeoutMs ?? DEFAULT_LOCK_MS,
-        ...(direct !== undefined ? { directPid: direct.pid, observer: direct.observer } : {}),
+        ...directFields(direct, request, poolerDetail),
         statementTimeoutMs: request.statementTimeoutMs ?? DEFAULT_STATEMENT_MS,
         backfillStatementTimeoutMs:
           request.backfillStatementTimeoutMs ?? request.statementTimeoutMs ?? DEFAULT_STATEMENT_MS,
@@ -549,7 +563,11 @@ async function runApply(
     ...(built !== undefined ? { headHash: startupHash(built.catalog) } : {}),
     ...(externalConfigured ? { restampHead: true } : {}),
     ...(config.roles !== undefined
-      ? { migrationRole: config.roles.migration, appRole: config.roles.app }
+      ? {
+          migrationRole: config.roles.migration.name,
+          appRole: config.roles.app.name,
+          roles: config.roles,
+        }
       : {}),
     ...catalogSchema(config.namespace),
     lintDirectory: directory,
@@ -596,7 +614,11 @@ export async function pushProject(
     renames: head.renames,
     catalogHash,
     ...(config.roles !== undefined
-      ? { migrationRole: config.roles.migration, appRole: config.roles.app, roles: config.roles }
+      ? {
+          migrationRole: config.roles.migration.name,
+          appRole: config.roles.app.name,
+          roles: config.roles,
+        }
       : {}),
     ...catalogSchema(config.namespace),
     ...batchSizeField(config.backfill?.batchSize),
@@ -661,8 +683,8 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
   const connection = await pool.reserve();
   let locked = false;
   let direct: DirectSession | undefined;
+  let poolerDetail: string | undefined;
   try {
-    direct = await directSession(connection, request, url);
     await assertStandardStrings(connection);
     await lockTarget(connection, request.target);
     locked = true;
@@ -763,6 +785,11 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
     await assertExtensionsAvailable(connection, [migration]);
     await assertUuidV7Available(connection, [migration]);
     const units = applyUnits(migration, new Set());
+    if (units.some((unit) => !unit.transactional)) {
+      const attempt = await openDirectSession(connection, request, url);
+      direct = attempt.session;
+      poolerDetail = attempt.detection.detail;
+    }
     await refuseBlocking(
       (text, params) => connection.execute(text, params),
       schema,
@@ -782,7 +809,7 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
         lockWaitMs: DEFAULT_LOCK_WAIT_MS,
         lockTimeoutMs: DEFAULT_LOCK_MS,
         statementTimeoutMs: DEFAULT_STATEMENT_MS,
-        ...(direct !== undefined ? { directPid: direct.pid, observer: direct.observer } : {}),
+        ...directFields(direct, request, poolerDetail),
         backfillStatementTimeoutMs: request.backfillStatementTimeoutMs ?? DEFAULT_STATEMENT_MS,
         ...(request.backfillPauseMs !== undefined
           ? { backfillPauseMs: request.backfillPauseMs }
@@ -1039,20 +1066,25 @@ export type DirectSession = {
 const SESSION_TIMEOUTS =
   "select set_config('lock_timeout', $1, false), set_config('statement_timeout', $2, false)";
 
+/** A session, when the URL was proven direct, plus the detection that decided it. */
+export type DirectAttempt = {
+  readonly session?: DirectSession;
+  readonly detection: PoolerDetection;
+};
+
 /**
- * Checks the connection is direct, then sets the session timeouts on it.
+ * Proves the URL with eight overlapping clients, then sets the session timeouts.
  *
- * Only a connection that passed the pid probe takes a session setting. Behind
- * `--allow-pooler` a session setting is lost, or reaches another client, so
- * nothing is set and each transaction scopes its own timeouts. `end` puts the
- * original values back and reads them again.
+ * A URL signal or `--allow-pooler` skips the clients. The session form is set
+ * only when those clients kept one backend each. `end` puts the original
+ * values back and reads them again.
  *
  * @param connection - Reserved connection
  * @param request - Pooler opt-in and the timeouts
  * @param url - Driver URL, for the observer's own connection
- * @returns The session, or `undefined` when the probe was skipped
+ * @returns The session when proven direct, otherwise only the detection
  */
-export async function directSession(
+export async function openDirectSession(
   connection: DriverConnection,
   request: {
     readonly url: string;
@@ -1061,16 +1093,18 @@ export async function directSession(
     readonly statementTimeoutMs?: number;
   },
   url: string,
-): Promise<DirectSession | undefined> {
-  await probeStableBackend(request.url, () => backendPid(connection), request.allowPooler === true);
-  if (request.allowPooler === true) return undefined;
+): Promise<DirectAttempt> {
+  const hinted = detectPooler({ url: request.url, marker: request.allowPooler === true });
+  if (hinted.pooled || request.allowPooler === true) return { detection: hinted };
+  const detection = await probeConcurrent(request.url);
+  if (!detection.provenDirect) return { detection };
   const pid = await backendPid(connection);
   const before = (await connection.execute(READ_TIMEOUTS)).rows[0] ?? [];
   const lock = String(request.lockTimeoutMs ?? DEFAULT_LOCK_MS);
   const statement = String(request.statementTimeoutMs ?? DEFAULT_STATEMENT_MS);
   await connection.execute(SESSION_TIMEOUTS, [lock, statement]);
   const observer = lockObserver(() => open({ url, max: 1 }));
-  return {
+  const session: DirectSession = {
     pid,
     observer,
     async end() {
@@ -1084,10 +1118,46 @@ export async function directSession(
       }
     },
   };
+  return { session, detection };
+}
+
+/**
+ * Session timeouts for a proven-direct connection.
+ *
+ * @param connection - Reserved connection
+ * @param request - Pooler opt-in and the timeouts
+ * @param url - Driver URL, for the observer's own connection
+ * @returns The session, or `undefined` when the URL is not proven direct
+ */
+export async function directSession(
+  connection: DriverConnection,
+  request: {
+    readonly url: string;
+    readonly allowPooler?: boolean;
+    readonly lockTimeoutMs?: number;
+    readonly statementTimeoutMs?: number;
+  },
+  url: string,
+): Promise<DirectSession | undefined> {
+  return (await openDirectSession(connection, request, url)).session;
 }
 
 const READ_TIMEOUTS =
   "select current_setting('lock_timeout'), current_setting('statement_timeout')";
+
+function directFields(
+  direct: DirectSession | undefined,
+  request: { readonly url: string; readonly allowPooler?: boolean },
+  detail?: string,
+):
+  | { readonly directPid: string; readonly observer: LockObserver }
+  | { readonly poolerReason: string } {
+  if (direct !== undefined) return { directPid: direct.pid, observer: direct.observer };
+  const found = detectPooler({ url: request.url, marker: request.allowPooler === true });
+  return {
+    poolerReason: detail ?? found.detail ?? "the connection is not proven direct",
+  };
+}
 
 export async function lockTarget(connection: DriverConnection, target: string): Promise<void> {
   const result = await connection.execute("select pg_try_advisory_lock(hashtext($1))", [

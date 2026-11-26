@@ -501,7 +501,10 @@ test("proof:session.settings", async () => {
 
 test("proof:roles.grants", () => {
   const built = schema({ tables: [table("users", { id: t.id() })] });
-  const withRoles = attachRoles(built.catalog, { migration: "okm_migrate", app: "okm_app" });
+  const withRoles = attachRoles(built.catalog, {
+    migration: { name: "okm_migrate" },
+    app: { name: "okm_app" },
+  });
   expect(withRoles.objects.some((object) => object.kind === "role")).toBe(true);
   expect(withRoles.objects.some((object) => object.kind === "grant")).toBe(true);
   expect(featuresUsed(withRoles)).toContain("roles.grants");

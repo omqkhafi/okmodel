@@ -202,7 +202,7 @@ export async function runBaseline(
       throw error;
     }
     const session: { setRole?: string } = {};
-    await grantAppMeta(connection, config.roles?.app, session);
+    await grantAppMeta(connection, config.roles?.app.name, session);
     return report;
   } catch (error) {
     throw sessionFailure(error) ?? error;

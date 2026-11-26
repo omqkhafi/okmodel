@@ -115,6 +115,32 @@ const allowDataLoss: FlagSpec = {
   hint: "Drop columns and tables that hold rows. This invocation only. No short form.",
 };
 
+const adminEnv: FlagSpec = {
+  name: "admin-env",
+  type: "string",
+  hint: "<NAME> reads the admin URL from that variable. The URL is not an argument.",
+};
+const plain: FlagSpec = {
+  name: "plain",
+  type: "boolean",
+  hint: "Send the password as plaintext. Required when the server refuses a client SCRAM verifier.",
+};
+const acceptWeak: FlagSpec = {
+  name: "accept-weak-password",
+  type: "boolean",
+  hint: "Accept a password under 16 characters or a duplicated password.",
+};
+const generateFlag: FlagSpec = {
+  name: "generate",
+  type: "boolean",
+  hint: "Replace a weak password with a random one. With --env-file, write it there.",
+};
+const envFile: FlagSpec = {
+  name: "env-file",
+  type: "string",
+  hint: "<path> writes role URLs. The file must be git-ignored and is mode 0600.",
+};
+
 const replace: FlagSpec = {
   name: "replace",
   type: "string",
@@ -729,6 +755,70 @@ export const COMMANDS: readonly CommandSpec[] = [
     usesDatabase: false,
     ownOut: false,
     flags: [yes, dryRun, planHash],
+  }),
+  spec({
+    id: "roles apply",
+    policy: "none",
+    words: ["roles", "apply"],
+    summary:
+      "Create missing roles and align connection limits. Does not change an existing password.",
+    usage: "roles apply --admin-env <NAME>",
+    minOperands: 0,
+    maxOperands: 0,
+    usesDatabase: false,
+    ownOut: false,
+    flags: [adminEnv, plain, acceptWeak, generateFlag, envFile],
+  }),
+  spec({
+    id: "roles set-password",
+    policy: "none",
+    words: ["roles", "set-password"],
+    summary:
+      "Set one role password from its URL. The password is a client SCRAM verifier unless --plain is set.",
+    usage: "roles set-password <role> --admin-env <NAME>",
+    minOperands: 1,
+    maxOperands: 1,
+    missing: "roles set-password needs the role key.",
+    usesDatabase: false,
+    ownOut: false,
+    flags: [adminEnv, plain, acceptWeak, generateFlag, envFile],
+  }),
+  spec({
+    id: "roles status",
+    policy: "status",
+    words: ["roles", "status"],
+    summary: "Read role attributes, one login each, and unmanaged roles. JSON has no secrets.",
+    usage: "roles status",
+    minOperands: 0,
+    maxOperands: 0,
+    usesDatabase: true,
+    ownOut: false,
+    flags: [],
+  }),
+  spec({
+    id: "roles generate",
+    policy: "none",
+    words: ["roles", "generate"],
+    summary: "Print random role URLs once, or write them to a git-ignored file.",
+    usage: "roles generate",
+    minOperands: 0,
+    maxOperands: 0,
+    usesDatabase: false,
+    ownOut: false,
+    flags: [envFile],
+  }),
+  spec({
+    id: "access",
+    policy: "status",
+    words: ["access"],
+    summary: "Read grants, grantors, and memberships for a table or a role.",
+    usage: "access <table|role>",
+    minOperands: 1,
+    maxOperands: 1,
+    missing: "access needs a table or a role.",
+    usesDatabase: true,
+    ownOut: false,
+    flags: [],
   }),
 ];
 

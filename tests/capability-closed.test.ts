@@ -108,8 +108,8 @@ function catalogs(): readonly Catalog[] {
     tables: [table("notes", { id: t.uuid().primaryKey(), body: t.text() })],
   }).catalog;
   const roles = attachRoles(schema({ tables: [table("users", { id: t.id() })] }).catalog, {
-    migration: "okm_migrate",
-    app: "okm_app",
+    migration: { name: "okm_migrate" },
+    app: { name: "okm_app" },
   });
   return [
     identity,
@@ -372,6 +372,12 @@ test("refusal:policies.table", () => refuse("policies.table"));
 test("refusal:session.settings", () => refuse("session.settings"));
 test("refusal:session.local", () => refuse("session.local"));
 test("refusal:roles.grants", () => refuse("roles.grants"));
+test("refusal:roles.manage", () => refuse("roles.manage"));
+test("refusal:roles.membership", () => refuse("roles.membership"));
+test("refusal:grants.object", () => refuse("grants.object"));
+test("refusal:grants.column", () => refuse("grants.column"));
+test("refusal:grants.verify", () => refuse("grants.verify"));
+test("refusal:pooler.detect", () => refuse("pooler.detect"));
 test("refusal:guard.fragment", () => refuse("guard.fragment"));
 test("refusal:guard.pooler", () => refuse("guard.pooler"));
 test("refusal:tooling.introspect", () => refuse("tooling.introspect"));
