@@ -18,6 +18,9 @@ import { arrayElement } from "../quote.js";
 
 const EXPR = Symbol.for("okmodel.expr");
 
+/** Output name set by {@link Expr.as}. Not enumerable, so node equality ignores it. */
+export const EXPR_AS = Symbol.for("okmodel.expr.as");
+
 /** How much the database may change the answer for the same inputs. */
 export type Volatility = "immutable" | "stable" | "volatile";
 
@@ -42,6 +45,13 @@ export type Cond = Readonly<Record<string, unknown>> & { readonly [EXPR]?: never
 export type Expr<T = unknown, N extends boolean = boolean, V extends Volatility = Volatility> = {
   readonly [EXPR]: Node;
   readonly [meta]?: { readonly type: T; readonly nullable: N; readonly volatility: V };
+  /**
+   * Names this expression as a select column.
+   *
+   * @param name - Output column name
+   * @returns The same expression, named
+   */
+  as<const Name extends string>(name: Name): Expr<T, N, V> & { readonly "~as": Name };
 };
 
 /** An expression a generated column or an index expression accepts. */
@@ -66,7 +76,15 @@ export type Node =
     }
   | {
       readonly k: "fn";
-      readonly name: "lower" | "upper" | "length" | "coalesce" | "nullif" | "now";
+      readonly name:
+        | "lower"
+        | "upper"
+        | "length"
+        | "coalesce"
+        | "nullif"
+        | "now"
+        | "to_tsvector"
+        | "setweight";
       readonly args: readonly Node[];
     }
   | { readonly k: "concat"; readonly args: readonly Node[] }
@@ -208,7 +226,22 @@ export function nodeOf(value: Expr): Node {
 }
 
 function make<T, N extends boolean, V extends Volatility>(node: Node): Expr<T, N, V> {
-  return { [EXPR]: node };
+  const expr = { [EXPR]: node } as Expr<T, N, V>;
+  Object.defineProperty(expr, "as", {
+    enumerable: false,
+    writable: false,
+    value<const Name extends string>(name: Name): Expr<T, N, V> & { readonly "~as": Name } {
+      if (typeof name !== "string" || name.length === 0) {
+        throw new OkmError("OKM1120", "as() needs a column name.", {
+          fix: { summary: "Pass the output column name." },
+        });
+      }
+      const named = make<T, N, V>(node);
+      Object.defineProperty(named, EXPR_AS, { value: name, enumerable: false });
+      return named as Expr<T, N, V> & { readonly "~as": Name };
+    },
+  });
+  return expr;
 }
 
 function lift(value: unknown): Node {
@@ -311,6 +344,51 @@ export function upper<const A extends Text>(value: A): Expr<string, NullOf<A>, W
 /** `length(text)`: characters. */
 export function length<const A extends Text>(value: A): Expr<number, NullOf<A>, Worst<VolOf<A>>> {
   return make({ k: "fn", name: "length", args: [lift(value)] });
+}
+
+/**
+ * `to_tsvector(config, text)`.
+ *
+ * The configuration is a constant, so the call is immutable.
+ *
+ * @param config - Text search configuration, such as `english`
+ * @param value - Text to parse
+ * @returns A tsvector expression
+ */
+export function toTsvector(
+  config: string,
+  value: string | Expr<unknown, boolean, Volatility>,
+): Expr<string, boolean, "immutable"> {
+  if (config.length === 0 || config.includes("'") || config.includes("\0")) {
+    throw new OkmError("OKM1120", "toTsvector needs a text search configuration name.", {
+      fix: { summary: "Pass a name such as english or simple." },
+    });
+  }
+  return make({
+    k: "fn",
+    name: "to_tsvector",
+    args: [{ k: "lit", v: config }, lift(value)],
+  }) as Expr<string, boolean, "immutable">;
+}
+
+/**
+ * `setweight(vector, weight)`.
+ *
+ * The weight is a constant `A`, `B`, `C`, or `D`, so the call is immutable.
+ *
+ * @param value - A tsvector expression
+ * @param weight - Weight letter
+ * @returns The weighted vector
+ */
+export function setweight(
+  value: Expr<unknown, boolean, Volatility> | Expr<string, boolean, Volatility>,
+  weight: "A" | "B" | "C" | "D",
+): Expr<string, boolean, "immutable"> {
+  return make({
+    k: "fn",
+    name: "setweight",
+    args: [nodeOf(value), { k: "lit", v: weight }],
+  }) as Expr<string, boolean, "immutable">;
 }
 
 /**

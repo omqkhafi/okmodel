@@ -31,6 +31,10 @@ export type ViewInput = {
   readonly query: string;
   /** `WITH (security_invoker = true)`. Omitted from the record when unset. */
   readonly securityInvoker?: true;
+  /** `WITH (security_barrier = true)`. Omitted from the record when unset. */
+  readonly securityBarrier?: true;
+  /** `WITH LOCAL` or `WITH CASCADED CHECK OPTION`. */
+  readonly checkOption?: "local" | "cascaded";
   readonly owner?: Owner;
   readonly provenance: Provenance;
   readonly dependencies?: readonly ObjectIdentity[];
@@ -39,6 +43,10 @@ export type ViewInput = {
 /** Input for {@link materializedViewObject}. */
 export type MaterializedViewInput = ViewInput & {
   readonly refresh?: "concurrently";
+  readonly populate?: "later";
+  readonly using?: string;
+  readonly storage?: readonly (readonly [string, string])[];
+  readonly tablespace?: string;
 };
 
 /** Input for {@link materializedViewIndex}. */
@@ -87,6 +95,8 @@ export function viewObject(input: ViewInput): ViewObject {
     columns,
     query,
     ...(input.securityInvoker === true ? { securityInvoker: true as const } : {}),
+    ...(input.securityBarrier === true ? { securityBarrier: true as const } : {}),
+    ...(input.checkOption !== undefined ? { checkOption: input.checkOption } : {}),
   };
   return {
     kind: "view",
@@ -116,6 +126,10 @@ export function materializedViewObject(input: MaterializedViewInput): Materializ
     columns,
     query,
     ...(input.refresh === "concurrently" ? { refresh: "concurrently" as const } : {}),
+    ...(input.populate === "later" ? { populate: "later" as const } : {}),
+    ...(input.using !== undefined ? { using: input.using } : {}),
+    ...(input.storage !== undefined && input.storage.length > 0 ? { storage: input.storage } : {}),
+    ...(input.tablespace !== undefined ? { tablespace: input.tablespace } : {}),
   };
   return {
     kind: "materializedView",

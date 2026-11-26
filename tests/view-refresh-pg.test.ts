@@ -10,7 +10,7 @@ import { expect } from "bun:test";
 
 import { OkmError } from "../src/contracts/error.js";
 import { renderCatalog } from "../src/dialects/pg/ddl.js";
-import { schema, table, text, uuid } from "../src/dialects/pg/index.js";
+import { index, schema, table, text, uuid } from "../src/dialects/pg/index.js";
 import { materializedView, view } from "../src/dialects/pg/view/index.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { withPostgresSchema } from "../packages/harness/src/postgres.js";
@@ -29,38 +29,55 @@ const notes = table("notes", {
   title: text(),
 });
 
-const columns = [
-  { name: "tenant_id", type: "uuid" },
-  { name: "id", type: "uuid" },
-  { name: "title", type: "text" },
-] as const;
+const listed = [
+  { name: "tenant_id", type: uuid() },
+  { name: "id", type: uuid() },
+  { name: "title", type: text() },
+];
 
 const app = schema({
   casing: "snake",
   tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
   tables: [notes],
   views: [
-    view("note_titles", {
-      columns: [{ name: "title", type: "text" }],
-      query: "select title from notes",
-      tenancy: global("titles are shared"),
-    }),
-    materializedView("daily_totals", {
-      columns,
-      query: "select tenant_id, id, title from notes",
-    }),
-    materializedView("slow_totals", {
-      columns,
-      indexes: [{ columns: ["id"], unique: true }],
-      refresh: "concurrently",
-      query: "select tenant_id, id, title from notes cross join lateral (select pg_sleep(1)) s",
-    }),
-    materializedView("open_counts", {
-      columns,
-      indexes: [{ name: "open_id", columns: ["id"], unique: true }],
-      refresh: "concurrently",
-      query: "select tenant_id, id, title from notes",
-    }),
+    view("note_titles", { tables: [], tenancy: global("titles are shared") }, (q) =>
+      q.sql({
+        columns: [{ name: "title", type: text() }],
+        query: "select title from notes",
+      }),
+    ),
+    materializedView("daily_totals", { tables: [] }, (q) =>
+      q.sql({
+        columns: listed,
+        query: "select tenant_id, id, title from notes",
+      }),
+    ),
+    materializedView(
+      "slow_totals",
+      {
+        tables: [],
+        indexes: (columns) => [index(columns.id).unique()],
+        refresh: "concurrently",
+      },
+      (q) =>
+        q.sql({
+          columns: listed,
+          query: "select tenant_id, id, title from notes cross join lateral (select pg_sleep(1)) s",
+        }),
+    ),
+    materializedView(
+      "open_counts",
+      {
+        tables: [],
+        indexes: (columns) => [index(columns.id).unique().name("open_id")],
+        refresh: "concurrently",
+      },
+      (q) =>
+        q.sql({
+          columns: listed,
+          query: "select tenant_id, id, title from notes",
+        }),
+    ),
   ],
 });
 

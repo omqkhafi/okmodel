@@ -9,6 +9,7 @@ import { fn } from "../src/dialects/pg/fn/index.js";
 import {
   fragment,
   ident,
+  not,
   schema,
   sql as predicate,
   table,
@@ -34,8 +35,8 @@ postgresTest(gate, "a call returns the slug and the builder view is readable", a
       volatility: "immutable",
       body: predicate`select lower(title)`,
     });
-    const active = view("active_notes", (q) =>
-      q.from(notes, ["id", "title"]).where(predicate`title is not null`),
+    const active = view("active_notes", { tables: [notes] }, (q) =>
+      q.notes.find({ select: ["id", "title"], where: { title: not(null) } }),
     );
     const app = schema({
       tables: [notes],

@@ -428,7 +428,7 @@ const triggerV3 = [
 ].join("\n");
 
 const viewHeader = [
-  `import { schema, t, table } from ${pg};`,
+  `import { index, schema, t, table } from ${pg};`,
   `import { materializedView, view } from ${JSON.stringify(join(root, "src/dialects/pg/view/index.ts"))};`,
 ].join("\n");
 
@@ -439,6 +439,19 @@ const viewColumns = [
 
 const viewColumnsNext = [...viewColumns, { name: "marker", type: "integer" }];
 
+function columnType(type: string): string {
+  if (type === "integer") return "t.integer()";
+  if (type === "bigint") return "t.bigint()";
+  if (type === "uuid") return "t.uuid()";
+  return "t.text()";
+}
+
+function sqlColumns(columns: readonly { readonly name: string; readonly type: string }[]): string {
+  return columns
+    .map((column) => `{ name: ${JSON.stringify(column.name)}, type: ${columnType(column.type)} }`)
+    .join(", ");
+}
+
 function viewSource(
   name: string,
   query: string,
@@ -448,10 +461,10 @@ function viewSource(
     "export const app = schema({",
     '  tables: [table("tasks", { id: t.text().primaryKey(), title: t.text() })],',
     "  views: [",
-    `    view(${JSON.stringify(name)}, {`,
-    `      columns: ${JSON.stringify(columns)},`,
+    `    view(${JSON.stringify(name)}, { tables: [] }, (q) => q.sql({`,
+    `      columns: [${sqlColumns(columns)}],`,
     `      query: ${JSON.stringify(query)},`,
-    "    }),",
+    "    })),",
     "  ],",
     "});",
   ].join("\n");
@@ -469,11 +482,13 @@ function matSource(query: string): string {
     '  tables: [table("tasks", { id: t.text().primaryKey(), title: t.text() })],',
     "  views: [",
     '    materializedView("sums", {',
-    `      columns: ${JSON.stringify(viewColumns)},`,
-    `      query: ${JSON.stringify(query)},`,
+    "      tables: [],",
     '      refresh: "concurrently",',
-    '      indexes: [{ columns: ["id"], unique: true }],',
-    "    }),",
+    "      indexes: (columns) => [index(columns.id).unique()],",
+    "    }, (q) => q.sql({",
+    `      columns: [${sqlColumns(viewColumns)}],`,
+    `      query: ${JSON.stringify(query)},`,
+    "    })),",
     "  ],",
     "});",
   ].join("\n");

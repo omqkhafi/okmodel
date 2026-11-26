@@ -57,7 +57,15 @@ export type ViewInstall = (
  * One output column. `source` is the table field a `q.from` column reads. The
  * client key comes from it, so a cased SQL name cannot change the key.
  */
-type SourceColumn = { readonly name: string; readonly type: string; readonly source?: string };
+type SourceColumn = {
+  readonly name: string;
+  readonly type: string;
+  readonly source?: string;
+  readonly nullable?: boolean;
+  readonly strict?: boolean;
+  readonly encode?: (value: unknown) => string;
+  readonly decode?: (wire: string) => unknown;
+};
 
 /** A value, or a function `install` calls once the schema names are known. */
 type ColumnSource = readonly SourceColumn[] | (() => readonly SourceColumn[]);
@@ -104,6 +112,7 @@ export function viewClient(
 ): { readonly field: string; readonly install: ViewInstall; readonly hook: SchemaHook } {
   const field = camelCase(name);
   const marked = readGlobal(name, tenancy);
+  let strictFields: readonly string[] = [];
   return {
     field,
     install(model, scope, tables, names, scoped) {
@@ -133,12 +142,14 @@ export function viewClient(
           scoped.add(name);
         }
       }
+      const models = columnModels(listed, scope, names);
+      strictFields = models.strict;
       const built: TableModel = {
         name: field,
         sql: name,
         primary: [],
         uniques: [],
-        columns: columnModels(listed, scope, names),
+        columns: models.columns,
         relations: [],
       };
       if (marked !== undefined) globalViews.set(built, marked);
@@ -149,7 +160,7 @@ export function viewClient(
         if (refresh !== "plain") target.refresh = refreshHandle(ctx.session, name, refresh);
         return;
       }
-      publish(field, target, ctx);
+      publish(field, target, ctx, strictFields);
     },
   };
 }
@@ -221,7 +232,12 @@ function lazyRefresh(run: () => Promise<void>): Promise<void> {
   return self as unknown as Promise<void>;
 }
 
-function publish(field: string, target: Record<string, unknown>, ctx: SchemaHookCtx): void {
+function publish(
+  field: string,
+  target: Record<string, unknown>,
+  ctx: SchemaHookCtx,
+  strict: readonly string[],
+): void {
   if (ctx.tables === undefined || ctx.table !== undefined) return;
   const handle = ctx.tables[field];
   if (typeof handle !== "object" || handle === null) return;
@@ -230,10 +246,13 @@ function publish(field: string, target: Record<string, unknown>, ctx: SchemaHook
   const map: Record<string, unknown> =
     typeof views === "object" && views !== null ? (views as Record<string, unknown>) : {};
   map[field] = {
-    find: source.find,
-    one: source.one,
+    find: guard(source.find, strict, false),
+    one: guard(source.one, strict, true),
     count: source.count,
     exists: source.exists,
+    ...(typeof source.aggregate === "function"
+      ? { aggregate: guard(source.aggregate, strict, false) }
+      : {}),
     ...(typeof source.refresh === "function" ? { refresh: source.refresh } : {}),
   };
   target.views = map;
@@ -241,13 +260,89 @@ function publish(field: string, target: Record<string, unknown>, ctx: SchemaHook
   delete target[field];
 }
 
+/**
+ * Checks a non-null view column after the row is decoded.
+ *
+ * The wrapper stays lazy: the query starts when the handle is awaited, the
+ * same way the table handle does.
+ *
+ * @param method - `find`, `one`, or `aggregate` on the table handle
+ * @param strict - Client fields declared not null
+ * @param one - The result is one row, or null
+ * @returns The same method, refusing NULL in a non-null column
+ */
+function guard(method: unknown, strict: readonly string[], one: boolean): unknown {
+  if (typeof method !== "function" || strict.length === 0) return method;
+  return (options?: unknown) => {
+    const pending = (method as (input?: unknown) => Promise<unknown> & Record<string, unknown>)(
+      options,
+    );
+    const self = {
+      // oxlint-disable-next-line unicorn/no-thenable -- await starts the query; calling find does not
+      then(onFulfilled?: (value: unknown) => unknown, onRejected?: (error: unknown) => unknown) {
+        return Promise.resolve(pending)
+          .then((value) => checkNulls(value, strict, one))
+          .then(onFulfilled, onRejected);
+      },
+      catch(onRejected?: (error: unknown) => unknown) {
+        return self.then(undefined, onRejected);
+      },
+      finally(fn: () => void) {
+        return self.then(
+          (value) => {
+            fn();
+            return value;
+          },
+          (error: unknown) => {
+            fn();
+            throw error;
+          },
+        );
+      },
+      sql: typeof pending.sql === "function" ? pending.sql.bind(pending) : undefined,
+      inspect: typeof pending.inspect === "function" ? pending.inspect.bind(pending) : undefined,
+    };
+    return self;
+  };
+}
+
+function checkNulls(value: unknown, strict: readonly string[], one: boolean): unknown {
+  if (one) {
+    if (value !== null && typeof value === "object")
+      scan([value as Record<string, unknown>], strict);
+    return value;
+  }
+  if (Array.isArray(value)) scan(value as readonly Record<string, unknown>[], strict);
+  return value;
+}
+
+function scan(rows: readonly Record<string, unknown>[], strict: readonly string[]): void {
+  for (const row of rows) {
+    for (const field of strict) {
+      if (row[field] == null) {
+        throw new OkmError(
+          "OKM1901",
+          `View column ${field} is declared not null and the database returned NULL.`,
+          {
+            fix: {
+              summary:
+                "Declare the column with .nullable(), or stop the query from returning NULL.",
+            },
+          },
+        );
+      }
+    }
+  }
+}
+
 function columnModels(
   columns: readonly SourceColumn[],
   tenancy: ColumnTenancy | undefined,
   names: Names,
-): readonly ColumnModel[] {
+): { readonly columns: readonly ColumnModel[]; readonly strict: readonly string[] } {
   const seen = new Set<string>();
   const models: ColumnModel[] = [];
+  const strict: string[] = [];
   for (const column of columns) {
     const field = fieldName(column.source ?? column.name, tenancy, names);
     if (seen.has(field)) {
@@ -258,22 +353,26 @@ function columnModels(
     seen.add(field);
     const uuid = column.type.toLowerCase() === "uuid";
     const key = tenancy !== undefined && field === tenancy.key;
+    if (column.strict === true) strict.push(field);
     models.push({
       field,
       sql: column.name,
       dataType: column.type,
-      encode: uuid
-        ? (value: unknown) => encodeUuid(textValue(value))
-        : (value: unknown) => encodeText(textValue(value)),
-      decode: uuid ? decodeUuid : decodeText,
+      encode:
+        column.encode ??
+        (uuid
+          ? (value: unknown) => encodeUuid(textValue(value))
+          : (value: unknown) => encodeText(textValue(value))),
+      decode: column.decode ?? (uuid ? decodeUuid : decodeText),
       hidden: false,
       sensitive: false,
       guarded: key,
       writable: false,
       guardUpdate: false,
+      ...(column.nullable === true ? { nullable: true } : {}),
     });
   }
-  return models;
+  return { columns: models, strict };
 }
 
 function exposesKey(

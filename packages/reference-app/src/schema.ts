@@ -89,25 +89,30 @@ const taskIsOpen = fn("task_is_open", {
 });
 
 /** Projects that are not archived. */
-const activeProjects = view("active_projects", {
-  columns: [
-    { name: "workspace_id", type: "uuid" },
-    { name: "id", type: "uuid" },
-    { name: "name", type: "text" },
-  ],
-  query: " SELECT workspace_id,\n    id,\n    name\n   FROM projects\n  WHERE archived_at IS NULL;",
-});
+const activeProjects = view("active_projects", { tables: [] }, (q) =>
+  q.sql({
+    columns: [
+      { name: "workspace_id", type: t.uuid() },
+      { name: "id", type: t.uuid() },
+      { name: "name", type: t.text() },
+    ],
+    query:
+      " SELECT workspace_id,\n    id,\n    name\n   FROM projects\n  WHERE archived_at IS NULL;",
+  }),
+);
 
 /** Open tasks per project, through `task_is_open`. */
-const openTasks = view("open_tasks", {
-  columns: [
-    { name: "workspace_id", type: "uuid" },
-    { name: "project_id", type: "uuid" },
-    { name: "open_tasks", type: "bigint" },
-  ],
-  query:
-    " SELECT workspace_id,\n    project_id,\n    count(*) AS open_tasks\n   FROM tasks\n  WHERE task_is_open(status) AND archived_at IS NULL\n  GROUP BY workspace_id, project_id;",
-});
+const openTasks = view("open_tasks", { tables: [] }, (q) =>
+  q.sql({
+    columns: [
+      { name: "workspace_id", type: t.uuid() },
+      { name: "project_id", type: t.uuid() },
+      { name: "open_tasks", type: t.bigint() },
+    ],
+    query:
+      " SELECT workspace_id,\n    project_id,\n    count(*) AS open_tasks\n   FROM tasks\n  WHERE task_is_open(status) AND archived_at IS NULL\n  GROUP BY workspace_id, project_id;",
+  }),
+);
 
 /** The application schema. */
 export default schema({

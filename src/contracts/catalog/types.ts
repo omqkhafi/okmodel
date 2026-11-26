@@ -530,10 +530,13 @@ export type ViewDefinition = {
   /**
    * `WITH (security_invoker = true)`.
    *
-   * Set only for a view over tenant tables under `rlsTenancy`. Omitted
-   * otherwise, so a view under another strategy keeps the same catalog bytes.
+   * The default for every view. Omitted only for `{ definer: reason }`.
    */
   readonly securityInvoker?: true;
+  /** `WITH (security_barrier = true)`. Set for a definer view, and when `barrier` is set. */
+  readonly securityBarrier?: true;
+  /** `WITH [LOCAL | CASCADED] CHECK OPTION`. Absent when the view has none. */
+  readonly checkOption?: "local" | "cascaded";
 };
 
 /**
@@ -546,6 +549,19 @@ export type MaterializedViewDefinition = {
   readonly columns: readonly ViewColumn[];
   readonly query: string;
   readonly refresh?: "concurrently";
+  /**
+   * Skip the plan's populate step.
+   *
+   * Postgres does not store this. Introspection leaves it unset, and plan
+   * comparison ignores it.
+   */
+  readonly populate?: "later";
+  /** Access method. Omitted for the default heap, which Postgres does not need named. */
+  readonly using?: string;
+  /** Storage parameters, in the order they are written. */
+  readonly storage?: readonly (readonly [string, string])[];
+  /** Tablespace, when it is not the database default. */
+  readonly tablespace?: string;
 };
 
 /** A view. Identity is `(namespace, name)`. */

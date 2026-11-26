@@ -201,12 +201,13 @@ postgresTest(
       "statement-timeout",
       "server-version",
       "extensions",
+      "view-invoker",
     ]);
-    expect(run.report.summary).toEqual({ fail: 0, warn: 0, ok: 9 });
+    expect(run.report.summary).toEqual({ fail: 0, warn: 0, ok: 10 });
     expect(find(run.report, "lock-timeout").summary).toContain("7000 ms");
     expect(find(run.report, "statement-timeout").summary).toContain("30000 ms");
     expect(run.text.startsWith("target `production`\n")).toBe(true);
-    expect(run.text).toContain("0 fail, 0 warn, 9 ok");
+    expect(run.text).toContain("0 fail, 0 warn, 10 ok");
     expect(run.envelope.errors).toEqual([]);
   },
   120_000,

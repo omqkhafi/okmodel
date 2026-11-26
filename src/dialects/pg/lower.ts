@@ -170,6 +170,15 @@ function lowerChange(change: LogicalChange): readonly DdlStep[] {
       return dropRoutine(change.object, change.schema, "drop-view");
     case "replace-view":
       return replaceRoutine(viewSql(change.object, change.schema, true), "replace-view");
+    case "rename-view-column":
+      return [
+        ddlStep(
+          `alter view ${qualify(change.schema, change.object.identity.name)} rename column ${quoteIdent(change.from)} to ${quoteIdent(change.to)}`,
+          "rename-view-column",
+          "ddl",
+          ACCESS,
+        ),
+      ];
     case "create-matview":
       return createRoutine(change.object, change.schema, "create-matview");
     case "drop-matview":

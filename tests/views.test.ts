@@ -14,7 +14,7 @@ import { catalog } from "../src/contracts/catalog/build.js";
 import type { Catalog } from "../src/contracts/catalog/types.js";
 import { viewObject } from "../src/contracts/catalog/view.js";
 import { OkmError } from "../src/contracts/error.js";
-import { schema, table, t } from "../src/dialects/pg/index.js";
+import { index, schema, table, t } from "../src/dialects/pg/index.js";
 import { materializedView, view } from "../src/dialects/pg/view/index.js";
 import { open } from "../src/adapters/pg/pglite.js";
 import { connect } from "../src/runtime/pg/pglite.js";
@@ -29,22 +29,26 @@ test("appending a column is create or replace, and removing one drops and recrea
   const before = schema({
     tables: [tasks],
     views: [
-      view("active_tasks", {
-        columns: [{ name: "id", type: "text" }],
-        query: "select id from tasks",
-      }),
+      view("active_tasks", { tables: [] }, (q) =>
+        q.sql({
+          columns: [{ name: "id", type: t.text() }],
+          query: "select id from tasks",
+        }),
+      ),
     ],
   });
   const appended = schema({
     tables: [tasks],
     views: [
-      view("active_tasks", {
-        columns: [
-          { name: "id", type: "text" },
-          { name: "title", type: "text" },
-        ],
-        query: "select id, title from tasks",
-      }),
+      view("active_tasks", { tables: [] }, (q) =>
+        q.sql({
+          columns: [
+            { name: "id", type: t.text() },
+            { name: "title", type: t.text() },
+          ],
+          query: "select id, title from tasks",
+        }),
+      ),
     ],
   });
   const compatible = planMigration({
@@ -61,10 +65,12 @@ test("appending a column is create or replace, and removing one drops and recrea
   const removed = schema({
     tables: [tasks],
     views: [
-      view("active_tasks", {
-        columns: [{ name: "title", type: "text" }],
-        query: "select title from tasks",
-      }),
+      view("active_tasks", { tables: [] }, (q) =>
+        q.sql({
+          columns: [{ name: "title", type: t.text() }],
+          query: "select title from tasks",
+        }),
+      ),
     ],
   });
   const incompatible = planMigration({
@@ -83,26 +89,30 @@ test("a column type change drops the view, alters, and recreates it", () => {
     schema({
       tables: [tasks],
       views: [
-        view("active_tasks", {
-          columns: [
-            { name: "id", type: "text" },
-            { name: "title", type: "text" },
-          ],
-          query: "select id, title from tasks",
-        }),
+        view("active_tasks", { tables: [] }, (q) =>
+          q.sql({
+            columns: [
+              { name: "id", type: t.text() },
+              { name: "title", type: t.text() },
+            ],
+            query: "select id, title from tasks",
+          }),
+        ),
       ],
     }).catalog,
   );
   const after = schema({
     tables: [table("tasks", { id: t.text().primaryKey(), title: t.integer() })],
     views: [
-      view("active_tasks", {
-        columns: [
-          { name: "id", type: "text" },
-          { name: "title", type: "integer" },
-        ],
-        query: "select id, title from tasks",
-      }),
+      view("active_tasks", { tables: [] }, (q) =>
+        q.sql({
+          columns: [
+            { name: "id", type: t.text() },
+            { name: "title", type: t.integer() },
+          ],
+          query: "select id, title from tasks",
+        }),
+      ),
     ],
   });
   const plan = planMigration({ before, after: after.catalog, name: "type" });
@@ -119,10 +129,12 @@ test("drop goes view then table, and a leftover dependent is OKM1821", () => {
     schema({
       tables: [tasks],
       views: [
-        view("active_tasks", {
-          columns: [{ name: "title", type: "text" }],
-          query: "select title from tasks",
-        }),
+        view("active_tasks", { tables: [] }, (q) =>
+          q.sql({
+            columns: [{ name: "title", type: t.text() }],
+            query: "select title from tasks",
+          }),
+        ),
       ],
     }).catalog,
   );
@@ -145,15 +157,22 @@ test("a materialized view is created with no data, populated, and refreshes conc
   const app = schema({
     tables: [tasks],
     views: [
-      materializedView("task_titles", {
-        columns: [
-          { name: "id", type: "text" },
-          { name: "title", type: "text" },
-        ],
-        query: "select id, title from tasks",
-        indexes: [{ name: "task_titles_id", columns: ["id"], unique: true }],
-        refresh: "concurrently",
-      }),
+      materializedView(
+        "task_titles",
+        {
+          tables: [],
+          indexes: (columns) => [index(columns.id).unique().name("task_titles_id")],
+          refresh: "concurrently",
+        },
+        (q) =>
+          q.sql({
+            columns: [
+              { name: "id", type: t.text() },
+              { name: "title", type: t.text() },
+            ],
+            query: "select id, title from tasks",
+          }),
+      ),
     ],
   });
   const plan = planMigration({ before: catalog([]), after: app.catalog, name: "create" });
@@ -173,12 +192,19 @@ test("a materialized view is created with no data, populated, and refreshes conc
   const changed = schema({
     tables: [tasks],
     views: [
-      materializedView("task_titles", {
-        columns: [{ name: "title", type: "text" }],
-        query: "select title from tasks",
-        indexes: [{ name: "task_titles_title", columns: ["title"], unique: true }],
-        refresh: "concurrently",
-      }),
+      materializedView(
+        "task_titles",
+        {
+          tables: [],
+          indexes: (columns) => [index(columns.title).unique().name("task_titles_title")],
+          refresh: "concurrently",
+        },
+        (q) =>
+          q.sql({
+            columns: [{ name: "title", type: t.text() }],
+            query: "select title from tasks",
+          }),
+      ),
     ],
   });
   const replace = planMigration({
@@ -196,11 +222,12 @@ test("a materialized view is created with no data, populated, and refreshes conc
 
 test("concurrent refresh without a unique index is OKM1822", () => {
   const error = capture(() =>
-    materializedView("task_titles", {
-      columns: [{ name: "title", type: "text" }],
-      query: "select title from tasks",
-      refresh: "concurrently",
-    }),
+    materializedView("task_titles", { tables: [], refresh: "concurrently" }, (q) =>
+      q.sql({
+        columns: [{ name: "title", type: t.text() }],
+        query: "select title from tasks",
+      }),
+    ),
   );
   expect(error.code).toBe("OKM1822");
 });
@@ -213,10 +240,12 @@ test("a view over a tenant table is OKM1820 unless it exposes the key or is glob
       tenancy: tenant,
       tables: [tasks],
       views: [
-        view("titles", {
-          columns: [{ name: "title", type: "text" }],
-          query: "select title from tasks",
-        }),
+        view("titles", { tables: [] }, (q) =>
+          q.sql({
+            columns: [{ name: "title", type: t.text() }],
+            query: "select title from tasks",
+          }),
+        ),
       ],
     });
   expect(capture(hidden).code).toBe("OKM1820");
@@ -226,13 +255,15 @@ test("a view over a tenant table is OKM1820 unless it exposes the key or is glob
     tenancy: tenant,
     tables: [tasks],
     views: [
-      view("titles", {
-        columns: [
-          { name: "tenant_id", type: "uuid" },
-          { name: "title", type: "text" },
-        ],
-        query: "select tenant_id, title from tasks",
-      }),
+      view("titles", { tables: [] }, (q) =>
+        q.sql({
+          columns: [
+            { name: "tenant_id", type: t.uuid() },
+            { name: "title", type: t.text() },
+          ],
+          query: "select tenant_id, title from tasks",
+        }),
+      ),
     ],
   });
   expect(Object.hasOwn(opened.model, "titles")).toBe(true);
@@ -242,11 +273,12 @@ test("a view over a tenant table is OKM1820 unless it exposes the key or is glob
     tenancy: tenant,
     tables: [tasks],
     views: [
-      view("titles", {
-        columns: [{ name: "title", type: "text" }],
-        query: "select title from tasks",
-        tenancy: global("shared titles"),
-      }),
+      view("titles", { tables: [], tenancy: global("shared titles") }, (q) =>
+        q.sql({
+          columns: [{ name: "title", type: t.text() }],
+          query: "select title from tasks",
+        }),
+      ),
     ],
   });
   expect(Object.hasOwn(shared.model, "titles")).toBe(true);
@@ -261,10 +293,12 @@ test("a view over a tenant table is OKM1820 unless it exposes the key or is glob
     tenancy: tenant,
     tables: [countries],
     views: [
-      view("country_ids", {
-        columns: [{ name: "id", type: "text" }],
-        query: "select id from countries",
-      }),
+      view("country_ids", { tables: [] }, (q) =>
+        q.sql({
+          columns: [{ name: "id", type: t.text() }],
+          query: "select id from countries",
+        }),
+      ),
     ],
   });
   expect(Object.hasOwn(reference.model, "countryIds")).toBe(true);
@@ -286,7 +320,7 @@ export const app = schema({
   casing: "snake",
   tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
   tables: [tasks],
-  views: [view("titles", { columns: [{ name: "title", type: "text" }], query: "select title from tasks" })],
+  views: [view("titles", { tables: [] }, (q) => q.sql({ columns: [{ name: "title", type: t.text() }], query: "select title from tasks" }))],
 });
 `,
   );
@@ -325,6 +359,11 @@ function dependOnTitle(source: Catalog): Catalog {
       query: object.definition.query,
       provenance: object.provenance,
       dependencies: [title.identity],
+      ...(object.definition.securityInvoker === true ? { securityInvoker: true as const } : {}),
+      ...(object.definition.securityBarrier === true ? { securityBarrier: true as const } : {}),
+      ...(object.definition.checkOption !== undefined
+        ? { checkOption: object.definition.checkOption }
+        : {}),
     });
   });
   return catalog(objects);
@@ -334,14 +373,18 @@ test("a plain view has no refresh at runtime", async () => {
   const app = schema({
     tables: [tasks],
     views: [
-      view("active_tasks", {
-        columns: [{ name: "id", type: "text" }],
-        query: "select id from tasks",
-      }),
-      materializedView("task_titles", {
-        columns: [{ name: "title", type: "text" }],
-        query: "select title from tasks",
-      }),
+      view("active_tasks", { tables: [] }, (q) =>
+        q.sql({
+          columns: [{ name: "id", type: t.text() }],
+          query: "select id from tasks",
+        }),
+      ),
+      materializedView("task_titles", { tables: [] }, (q) =>
+        q.sql({
+          columns: [{ name: "title", type: t.text() }],
+          query: "select title from tasks",
+        }),
+      ),
     ],
   });
   const db = await connect(await open(), { schema: app });
@@ -353,13 +396,29 @@ test("a plain view has no refresh at runtime", async () => {
   }
 });
 
+test("views that read each other in a cycle are OKM1900", () => {
+  const peers: { readonly name: string }[] = [];
+  const first = view("first_view", { tables: peers as never }, ((q: {
+    readonly second_view: { find: () => unknown };
+  }) => q.second_view.find()) as never);
+  const second = view("second_view", { tables: peers as never }, ((q: {
+    readonly first_view: { find: () => unknown };
+  }) => q.first_view.find()) as never);
+  peers.push(first, second);
+  const error = capture(() => schema({ tables: [], views: [first, second] }).catalog);
+  expect(error.code).toBe("OKM1900");
+  expect(error.message).toContain("first_view");
+  expect(error.message).toContain("second_view");
+});
+
 test("materializedView refuses a refresh value other than concurrently", () => {
   const error = capture(() =>
-    materializedView("daily", {
-      columns: [{ name: "id", type: "text" }],
-      query: "select id from tasks",
-      refresh: "blocking" as "concurrently",
-    }),
+    materializedView("daily", { tables: [], refresh: "blocking" as "concurrently" }, (q) =>
+      q.sql({
+        columns: [{ name: "id", type: t.text() }],
+        query: "select id from tasks",
+      }),
+    ),
   );
   expect(error.code).toBe("OKM1120");
   expect(error.kind).toBe("invalid");

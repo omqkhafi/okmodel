@@ -505,17 +505,20 @@ thrown(
 thrown(
   "OKM1822",
   () => {
-    materializedView("titles", {
-      columns: [{ name: "title", type: "text" }],
-      query: "select title from notes",
-      refresh: "concurrently",
-    });
+    materializedView("titles", { tables: [], refresh: "concurrently" }, (q) =>
+      q.sql({
+        columns: [{ name: "title", type: t.text() }],
+        query: "select title from notes",
+      }),
+    );
   },
   () => {
-    materializedView("titles", {
-      columns: [{ name: "title", type: "text" }],
-      query: "select title from notes",
-    });
+    materializedView("titles", { tables: [] }, (q) =>
+      q.sql({
+        columns: [{ name: "title", type: t.text() }],
+        query: "select title from notes",
+      }),
+    );
   },
 );
 
@@ -774,20 +777,24 @@ reported(
 reported(
   "OKM1516",
   () => {
-    const listed = view("titles", {
-      columns: [{ name: "title", type: "text" }],
-      query: "select title from tasks",
-    });
+    const listed = view("titles", { tables: [] }, (q) =>
+      q.sql({
+        columns: [{ name: "title", type: t.text() }],
+        query: "select title from tasks",
+      }),
+    );
     return schemaCodes(
       schema({ tables: [tasks()], views: [listed] }),
       schema({ tables: [tasks()] }),
     );
   },
   () => {
-    const listed = view("titles", {
-      columns: [{ name: "title", type: "text" }],
-      query: "select title from tasks",
-    });
+    const listed = view("titles", { tables: [] }, (q) =>
+      q.sql({
+        columns: [{ name: "title", type: t.text() }],
+        query: "select title from tasks",
+      }),
+    );
     return schemaCodes(schema({ tables: [] }), schema({ tables: [tasks()], views: [listed] }));
   },
 );
@@ -809,20 +816,24 @@ reported(
 reported(
   "OKM1518",
   () => {
-    const stored = materializedView("titles", {
-      columns: [{ name: "title", type: "text" }],
-      query: "select title from tasks",
-    });
+    const stored = materializedView("titles", { tables: [] }, (q) =>
+      q.sql({
+        columns: [{ name: "title", type: t.text() }],
+        query: "select title from tasks",
+      }),
+    );
     return schemaCodes(
       schema({ tables: [tasks()], views: [stored] }),
       schema({ tables: [tasks()] }),
     );
   },
   () => {
-    const stored = materializedView("titles", {
-      columns: [{ name: "title", type: "text" }],
-      query: "select title from tasks",
-    });
+    const stored = materializedView("titles", { tables: [] }, (q) =>
+      q.sql({
+        columns: [{ name: "title", type: t.text() }],
+        query: "select title from tasks",
+      }),
+    );
     return schemaCodes(schema({ tables: [] }), schema({ tables: [tasks()], views: [stored] }));
   },
 );
@@ -869,6 +880,7 @@ const quiet = {
   minimum: undefined,
   roleConfig: "not-set",
   extensions: { required: [], versions: new Map<string, string>(), refusal: undefined },
+  invokerGaps: [],
 } as const;
 
 function productionCodes(protection: "open" | "project", config: MigrateConfig): readonly string[] {
@@ -1866,10 +1878,12 @@ thrown(
       tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
       tables: [table("tasks", { id: t.identity(), title: t.text() })],
       views: [
-        view("titles", {
-          columns: [{ name: "title", type: "text" }],
-          query: "select title from tasks",
-        }),
+        view("titles", { tables: [] }, (q) =>
+          q.sql({
+            columns: [{ name: "title", type: t.text() }],
+            query: "select title from tasks",
+          }),
+        ),
       ],
     });
   },
@@ -1879,13 +1893,15 @@ thrown(
       tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
       tables: [table("tasks", { id: t.identity(), title: t.text() })],
       views: [
-        view("titles", {
-          columns: [
-            { name: "tenant_id", type: "uuid" },
-            { name: "title", type: "text" },
-          ],
-          query: "select tenant_id, title from tasks",
-        }),
+        view("titles", { tables: [] }, (q) =>
+          q.sql({
+            columns: [
+              { name: "tenant_id", type: t.uuid() },
+              { name: "title", type: t.text() },
+            ],
+            query: "select tenant_id, title from tasks",
+          }),
+        ),
       ],
     });
   },

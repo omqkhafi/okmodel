@@ -569,8 +569,13 @@ type TraitShapes<TColumns, TOptions> = TOptions extends { readonly traits: infer
  * @param columns - Columns in index order
  * @returns An index call `schema()` compiles
  */
-export function index(...columns: readonly ColumnHandle[]): IndexChain {
-  return buildIndex({ columns: columns.map((column) => column.name) });
+export function index(...columns: readonly (ColumnHandle | undefined)[]): IndexChain {
+  const names: string[] = [];
+  for (const column of columns) {
+    if (column === undefined) definition("index() needs a column of this table.");
+    names.push(column.name);
+  }
+  return buildIndex({ columns: names });
 }
 
 /**

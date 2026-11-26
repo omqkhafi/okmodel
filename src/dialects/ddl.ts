@@ -258,6 +258,7 @@ const KIND_SQL: Readonly<Record<StepKind, RegExp>> = {
   "create-view": /^create view\b/,
   "drop-view": /^drop view\b/,
   "replace-view": /^create or replace view\b/,
+  "rename-view-column": /^alter view\b.*\brename column\b/,
   "create-matview": /^create materialized view\b/,
   "drop-matview": /^drop materialized view\b/,
   "refresh-matview": /^refresh materialized view\b/,
@@ -562,6 +563,13 @@ export type LogicalChange =
       readonly op: "replace-view";
       readonly object: ViewObject;
       readonly schema: string;
+    }
+  | {
+      readonly op: "rename-view-column";
+      readonly object: ViewObject;
+      readonly schema: string;
+      readonly from: string;
+      readonly to: string;
     }
   | {
       readonly op: "create-matview";

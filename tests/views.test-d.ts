@@ -2,7 +2,7 @@
  * `db.views` is typed from `schema({ views })`.
  *
  * Connected, scoped, and routed clients carry it. A schema without views has
- * no `views` member. Every view field is text or null.
+ * no `views` member. A column's type and nullability come from its builder.
  */
 
 import { expectTypeOf } from "expect-type";
@@ -18,23 +18,27 @@ const app = schema({
   tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
   tables: [tasks],
   views: [
-    view("active_tasks", {
-      columns: [
-        { name: "tenant_id", type: "uuid" },
-        { name: "open_count", type: "bigint" },
-      ],
-      query: "select tenant_id, count(*) as open_count from tasks group by tenant_id",
-    }),
-    materializedView("task_titles", {
-      columns: [{ name: "title", type: "text" }],
-      query: "select title from tasks",
-    }),
+    view("active_tasks", { tables: [] }, (q) =>
+      q.sql({
+        columns: [
+          { name: "tenant_id", type: t.uuid() },
+          { name: "open_count", type: t.bigint() },
+        ],
+        query: "select tenant_id, count(*) as open_count from tasks group by tenant_id",
+      }),
+    ),
+    materializedView("task_titles", { tables: [] }, (q) =>
+      q.sql({
+        columns: [{ name: "title", type: t.text() }],
+        query: "select title from tasks",
+      }),
+    ),
   ],
 });
 const plain = schema({ tables: [tasks] });
 
 type Has<T, K extends string> = K extends keyof T ? true : false;
-type Active = { readonly tenantId: string | null; readonly openCount: string | null };
+type Active = { readonly tenantId: string; readonly openCount: string };
 
 void (async () => {
   const db = await connect("memory://views", { schema: app });
@@ -46,10 +50,10 @@ void (async () => {
   expectTypeOf(rows).toEqualTypeOf<readonly Active[]>();
 
   const picked = await scoped.views.activeTasks.find({ limit: 5, select: ["openCount"] });
-  expectTypeOf(picked).toEqualTypeOf<readonly { readonly openCount: string | null }[]>();
+  expectTypeOf(picked).toEqualTypeOf<readonly { readonly openCount: string }[]>();
 
   const all = await db.views.taskTitles.find({}).all("every title");
-  expectTypeOf(all).toEqualTypeOf<readonly { readonly title: string | null }[]>();
+  expectTypeOf(all).toEqualTypeOf<readonly { readonly title: string }[]>();
 
   expectTypeOf(await scoped.views.activeTasks.one()).toEqualTypeOf<Active | null>();
   expectTypeOf(await scoped.views.activeTasks.count()).toEqualTypeOf<number>();

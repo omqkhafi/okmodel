@@ -1,5 +1,5 @@
 /**
- * `view(name, (q) => q.from(...))` stores a select.
+ * `view(name, { tables }, (q) => q.notes.find(...))` stores a select.
  *
  * Postgres execution is `builder-fn-pg.test.ts`.
  */
@@ -7,8 +7,8 @@
 import { expect, test } from "bun:test";
 
 import { OkmError } from "../src/contracts/error.js";
-import { schema, sql, table, t } from "../src/dialects/pg/index.js";
-import { view, type ViewBuilt, type ViewFrom } from "../src/dialects/pg/view/index.js";
+import { not, schema, table, t } from "../src/dialects/pg/index.js";
+import { view } from "../src/dialects/pg/view/index.js";
 
 const notes = table("notes", {
   id: t.text().primaryKey(),
@@ -16,18 +16,22 @@ const notes = table("notes", {
   ownerId: t.uuid(),
 });
 
-test("from selects the named columns and where appends the predicate", () => {
+test("find selects the named columns and where appends the predicate", () => {
   const app = schema({
     casing: "snake",
     tables: [notes],
     views: [
-      view("active_notes", (q) => q.from(notes, ["id", "title"]).where(sql`title is not null`)),
+      view("active_notes", { tables: [notes] }, (q) =>
+        q.notes.find({ select: ["id", "title"], where: { title: not(null) } }),
+      ),
     ],
   });
   const object = app.catalog.objects.find((item) => item.kind === "view");
   expect(object?.kind).toBe("view");
   if (object?.kind !== "view") return;
-  expect(object.definition.query).toBe('select "id", "title" from "notes" where title is not null');
+  expect(object.definition.query).toBe(
+    'select t."id" as "id", t."title" as "title" from "notes" t where t."title" is not null',
+  );
   expect(object.definition.columns.map((column) => column.name)).toEqual(["id", "title"]);
 });
 
@@ -35,29 +39,41 @@ test("snake casing quotes the SQL names", () => {
   const app = schema({
     casing: "snake",
     tables: [notes],
-    views: [view("owned_notes", (q) => q.from(notes, ["id", "ownerId"]))],
+    views: [
+      view("owned_notes", { tables: [notes] }, (q) => q.notes.find({ select: ["id", "ownerId"] })),
+    ],
   });
   const object = app.catalog.objects.find((item) => item.kind === "view");
   if (object?.kind !== "view") throw new Error("view missing");
-  expect(object.definition.query).toBe('select "id", "owner_id" from "notes"');
+  expect(object.definition.query).toBe(
+    'select t."id" as "id", t."owner_id" as "owner_id" from "notes" t',
+  );
   expect(object.definition.columns.map((column) => column.name)).toEqual(["id", "owner_id"]);
 });
+
 test("an omitted column list uses every field, in declaration order", () => {
   const app = schema({
     tables: [notes],
-    views: [view("all_notes", (q) => q.from(notes))],
+    views: [view("all_notes", { tables: [notes] }, (q) => q.notes.find())],
   });
   const object = app.catalog.objects.find((item) => item.kind === "view");
   if (object?.kind !== "view") throw new Error("view missing");
-  expect(object.definition.query).toBe('select "id", "title", "ownerId" from "notes"');
+  expect(object.definition.query).toBe(
+    'select t."id" as "id", t."title" as "title", t."ownerId" as "ownerId" from "notes" t',
+  );
 });
 
-test("a callback that does not return from() is OKM1121", () => {
-  const build = (() => "nope") as unknown as (q: ViewFrom) => ViewBuilt;
-  expect(() => view("broken", build)).toThrow(OkmError);
-  try {
-    view("broken", build);
-  } catch (error) {
-    expect((error as OkmError).code).toBe("OKM1121");
-  }
+test("a callback that does not return find() is OKM1121", () => {
+  const build = (() => "nope") as never;
+  let code = "";
+  expect(() => {
+    try {
+      return schema({ tables: [notes], views: [view("broken", { tables: [notes] }, build)] })
+        .catalog;
+    } catch (error) {
+      code = error instanceof OkmError ? error.code : "";
+      throw error;
+    }
+  }).toThrow(OkmError);
+  expect(code).toBe("OKM1121");
 });

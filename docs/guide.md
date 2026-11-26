@@ -1062,34 +1062,30 @@ export const app = schema({
 
 ### Views
 
-A view is a saved query. You give it the SQL and the columns that query returns. `db.views.active.find({ limit: 20 })` reads `active`. That handle has no insert or update. View handles are camelCased: a view named `active_projects` reads as `db.views.activeProjects`. `okm check` reprints the query on the connected server before it compares, so a difference that is only how that server prints the query is not drift. A materialized view refreshes with `db.views.name.refresh()`, which runs `REFRESH MATERIALIZED VIEW` and returns void. The plan populates it with a plain refresh first (Postgres rejects `CONCURRENTLY` on an empty view), then refreshes concurrently when the declaration sets `refresh: "concurrently"`. A materialized view that refreshes while people are reading it needs a unique index, or the declaration is OKM1822. A view over a tenant table must expose the tenant key, or be `global("reason")`, or schema build fails with OKM1820. `isolation()` reads a tenant view and a materialized view after seeding the underlying tables. It does not insert into the view. A global view is skipped and listed with its reason.
+A view is a saved query. The body is `q.<table>.find` or `.aggregate` over the tables in `tables`, or `q.sql` when the query needs SQL the compiler does not print. `db.views.active.find({ limit: 20 })` reads `active`. That handle has no insert or update. View handles are camelCased: a view named `active_projects` reads as `db.views.activeProjects`. Every view is `security_invoker` unless `{ definer: "reason" }`. `okm check` reprints the query on the connected server before it compares, so a difference that is only how that server prints the query is not drift. A materialized view refreshes with `db.views.name.refresh()`, which runs `REFRESH MATERIALIZED VIEW` and returns void. The plan populates it with a plain refresh first (Postgres rejects `CONCURRENTLY` on an empty view), then refreshes concurrently when the declaration sets `refresh: "concurrently"`. A materialized view that refreshes while people are reading it needs a plain unique index, or the declaration is OKM1822. A view over a tenant table must expose the tenant key, or be `global("reason")`, or schema build fails with OKM1820. `isolation()` reads a tenant view and a materialized view after seeding the underlying tables. It does not insert into the view. A global view is skipped and listed with its reason. PostgreSQL does not store view nullability. A column declared without `.nullable()` throws OKM1901 when a read returns NULL.
 
 `views.ts`:
 
 ```ts
-import { schema, table, t } from "okmodel/pg";
+import { index, not, schema, table, t } from "okmodel/pg";
 import { materializedView, view } from "okmodel/view";
 
 const tasks = table("tasks", { id: t.text().primaryKey(), title: t.text() });
-const columns = [
-  { name: "id", type: "text" },
-  { name: "title", type: "text" },
-];
 export const app = schema({
   tables: [tasks],
   views: [
     // A saved query. find reads it. The handle has no insert.
-    view("active", {
-      columns,
-      query: "SELECT id,\n    title\n   FROM tasks\n  WHERE title IS NOT NULL",
-    }),
+    view("active", { tables: [tasks] }, (q) => q.tasks.find({ where: { title: not(null) } })),
     // Concurrent refresh needs the unique index.
-    materializedView("sums", {
-      columns,
-      query: "SELECT id,\n    title\n   FROM tasks",
-      refresh: "concurrently",
-      indexes: [{ columns: ["id"], unique: true }],
-    }),
+    materializedView(
+      "sums",
+      {
+        tables: [tasks],
+        refresh: "concurrently",
+        indexes: (columns) => [index(columns.id).unique()],
+      },
+      (q) => q.tasks.find({ select: ["id", "title"] }),
+    ),
   ],
 });
 ```
@@ -1097,7 +1093,7 @@ export const app = schema({
 `tenant-views.ts`:
 
 ```ts
-import { schema, table, t } from "okmodel/pg";
+import { index, schema, table, t } from "okmodel/pg";
 import { open } from "okmodel/pg/pglite";
 import { columnTenancy } from "okmodel/tenancy";
 import { testing } from "okmodel/testing";
@@ -1109,21 +1105,12 @@ const app = schema({
   tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
   tables: [tasks],
   views: [
-    view("open_tasks", {
-      columns: [
-        { name: "tenant_id", type: "uuid" },
-        { name: "title", type: "text" },
-      ],
-      query: " SELECT tenant_id,\n    title\n   FROM tasks;",
-    }),
-    materializedView("task_titles", {
-      columns: [
-        { name: "tenant_id", type: "uuid" },
-        { name: "title", type: "text" },
-      ],
-      query: " SELECT tenant_id,\n    title\n   FROM tasks;",
-      indexes: [{ columns: ["title"], unique: true }],
-    }),
+    view("open_tasks", { tables: [tasks] }, (q) => q.tasks.find({ select: ["tenantId", "title"] })),
+    materializedView(
+      "task_titles",
+      { tables: [tasks], indexes: (columns) => [index(columns.title).unique()] },
+      (q) => q.tasks.find({ select: ["tenantId", "title"] }),
+    ),
   ],
 });
 const harness = await testing(app, { driver: open() });
