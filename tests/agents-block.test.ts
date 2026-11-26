@@ -63,7 +63,12 @@ test("every long flag the block names exists in the CLI spec", () => {
   for (const command of COMMANDS) for (const flag of command.flags) known.add(`--${flag.name}`);
   const mentions = flagMentions(text);
   expect(mentions.bad).toEqual([]);
-  expect(mentions.flags).toEqual(["allow-protected", "accept-unverified", "allow-pooler"]);
+  expect(mentions.flags).toEqual([
+    "allow-protected",
+    "accept-unverified",
+    "allow-pooler",
+    "allow-blocking",
+  ]);
   for (const flag of mentions.flags) expect(known.has(`--${flag}`)).toBe(true);
 });
 

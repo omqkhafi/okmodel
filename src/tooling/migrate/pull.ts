@@ -242,17 +242,21 @@ async function readCatalog(
     const chosen = uniqueNames(requested);
     const parts: { schema: string; objects: readonly CatalogObject[] }[] = [];
     const reserved: IntrospectSkip[] = [];
+    const notPulled: IntrospectSkip[] = [];
     for (const name of chosen) {
       // Logical name is the concrete schema so a foreign key to another
       // schema is recorded, instead of looking like a missing public table.
-      const live = await introspectSchema(queryOf(sql), name, name, { reserved });
+      const live = await introspectSchema(queryOf(sql), name, name, { reserved, notPulled });
       parts.push({ schema: name, objects: live.objects });
     }
     const merged = mergePulledSchemas(parts);
     return {
       catalog: omitManagedObjects(merged.catalog),
       schemas: chosen,
-      outside: [...merged.outside, ...reserved.map((item) => ({ ...item, sql: "" }))],
+      outside: [
+        ...merged.outside,
+        ...[...reserved, ...notPulled].map((item) => ({ ...item, sql: "" })),
+      ],
     };
   } catch (error) {
     if (error instanceof OkmError) throw error;

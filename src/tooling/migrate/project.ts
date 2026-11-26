@@ -69,7 +69,7 @@ import {
 import { refuseAmbiguousConfigs } from "./discover.js";
 import { asProject, CONFIG_FILE, projectPath, type ProjectContext } from "./paths.js";
 import { readUnpulled, unpulledKeys } from "./unpulled.js";
-import { formatPlanJson } from "./plan-json.js";
+import { formatPlanJson, type WeightEstimate } from "./plan-json.js";
 import type { Fill, ProbeCount } from "./data-probe.js";
 import {
   columnSwaps,
@@ -454,6 +454,7 @@ export async function planProject(
         toCatalogHash: catalogHash(prepared.after),
       },
       rows,
+      locks.weigh,
     ),
   };
 }
@@ -678,6 +679,7 @@ async function planLockText(
   known: boolean,
 ): Promise<{
   readonly annotate?: (step: PlanStep) => string;
+  readonly weigh?: (step: PlanStep) => WeightEstimate | undefined;
   readonly skipped: boolean;
 }> {
   const targets = listTargets(config);
@@ -696,7 +698,30 @@ async function planLockText(
     return { skipped: true };
   }
   const aliases = renameAliases(plan.steps);
-  return { annotate: (step) => annotateLock(step, estimates, aliases), skipped: false };
+  if (!plan.steps.some((step) => step.weight !== undefined)) {
+    return { annotate: (step) => annotateLock(step, estimates, aliases), skipped: false };
+  }
+  const { planCounts, weightPhrase, widest, estimateMs } = await import("./weight.js");
+  const counts = await planCounts(target.url, catalogNamespace(config), plan.steps, estimates);
+  return {
+    annotate: (step) => {
+      const base = annotateLock(step, estimates, aliases);
+      if (step.weight === undefined) return base;
+      const big = widest(step, counts);
+      return `${base}; ${weightPhrase(step.weight, big?.table ?? "", big?.count)}`;
+    },
+    weigh: (step) => {
+      const big = step.weight === undefined ? undefined : widest(step, counts);
+      if (step.weight === undefined || big === undefined) return undefined;
+      return {
+        estimatedRows: big.count.least
+          ? `${big.count.rows.toLocaleString("en-US")} or more`
+          : Math.round(big.count.rows),
+        estimateMs: estimateMs(step.weight, big.count.rows),
+      };
+    },
+    skipped: false,
+  };
 }
 
 /**

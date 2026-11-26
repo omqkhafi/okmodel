@@ -38,6 +38,8 @@ export type InvokeFlags = {
   readonly target?: string;
   readonly allowProtected: boolean;
   readonly allowPooler: boolean;
+  /** `--allow-blocking` on `okm migrate apply` and `okm push`. Other commands leave this unset. */
+  readonly allowBlocking?: boolean;
   /** `okm push --allow-data-loss`. Other commands leave this unset. */
   readonly allowDataLoss?: boolean;
   readonly lockTimeoutMs?: number;

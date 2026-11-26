@@ -24,6 +24,7 @@ export const API_ENTRIES = [
   { subpath: "okmodel/ext", file: "src/dialects/pg/ext/index.ts" },
   { subpath: "okmodel/fn", file: "src/dialects/pg/fn/index.ts" },
   { subpath: "okmodel/view", file: "src/dialects/pg/view/index.ts" },
+  { subpath: "okmodel/expr", file: "src/dialects/pg/expr/index.ts" },
   { subpath: "okmodel/pg/citext", file: "src/dialects/pg/ext/citext.ts" },
   { subpath: "okmodel/pg/pg_trgm", file: "src/dialects/pg/ext/pg-trgm.ts" },
   { subpath: "okmodel/pg/unaccent", file: "src/dialects/pg/ext/unaccent.ts" },

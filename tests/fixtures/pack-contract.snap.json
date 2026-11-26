@@ -8,6 +8,10 @@
       "import": "./dist/contracts/index.js",
       "types": "./dist/contracts/index.d.ts"
     },
+    "./expr": {
+      "import": "./dist/dialects/pg/expr/index.js",
+      "types": "./dist/dialects/pg/expr/index.d.ts"
+    },
     "./ext": {
       "import": "./dist/dialects/pg/ext/index.js",
       "types": "./dist/dialects/pg/ext/index.d.ts"
@@ -213,6 +217,8 @@
     "dist/dialects/pg/emit.d.ts",
     "dist/dialects/pg/enum.d.ts",
     "dist/dialects/pg/errors.d.ts",
+    "dist/dialects/pg/expr/index.d.ts",
+    "dist/dialects/pg/expr/index.js",
     "dist/dialects/pg/ext/btree-gin.d.ts",
     "dist/dialects/pg/ext/btree-gin.js",
     "dist/dialects/pg/ext/btree-gist.d.ts",
@@ -643,6 +649,10 @@
     "dist/shared/*.js",
     "dist/shared/*.js",
     "dist/shared/*.js",
+    "dist/shared/*.js",
+    "dist/shared/*.js",
+    "dist/shared/*.js",
+    "dist/shared/*.js",
     "dist/tooling/agents/apply.d.ts",
     "dist/tooling/agents/block.d.ts",
     "dist/tooling/agents/command.d.ts",
@@ -730,6 +740,7 @@
     "dist/tooling/migrate/escape-regexp.d.ts",
     "dist/tooling/migrate/estimate.d.ts",
     "dist/tooling/migrate/export.d.ts",
+    "dist/tooling/migrate/expr-sql.d.ts",
     "dist/tooling/migrate/ext-surface.d.ts",
     "dist/tooling/migrate/ext.d.ts",
     "dist/tooling/migrate/extensions.d.ts",
@@ -772,6 +783,7 @@
     "dist/tooling/migrate/sandbox.d.ts",
     "dist/tooling/migrate/schema-api.d.ts",
     "dist/tooling/migrate/schema-rules.d.ts",
+    "dist/tooling/migrate/scratch-check.d.ts",
     "dist/tooling/migrate/seed.d.ts",
     "dist/tooling/migrate/server-requirements.d.ts",
     "dist/tooling/migrate/snapshot.d.ts",
@@ -783,6 +795,7 @@
     "dist/tooling/migrate/type-name.d.ts",
     "dist/tooling/migrate/unpulled.d.ts",
     "dist/tooling/migrate/values.d.ts",
+    "dist/tooling/migrate/weight.d.ts",
     "dist/tooling/node-version.d.ts",
     "dist/tooling/prompt.d.ts",
     "dist/tooling/shared/*.js",
@@ -1026,6 +1039,8 @@
     "docs/errors/OKM1844.md",
     "docs/errors/OKM1845.md",
     "docs/errors/OKM1846.md",
+    "docs/errors/OKM1847.md",
+    "docs/errors/OKM1848.md",
     "docs/errors/OKM1850.md",
     "docs/errors/OKM1851.md",
     "docs/errors/OKM1852.md",

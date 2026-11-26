@@ -1,0 +1,104 @@
+---
+title: Expressions
+description: Typed SQL expressions as plain data. Each helper carries its result type, whether it can be null, and its volatility in the TypeScript type.
+---
+
+`okmodel/expr` builds SQL expressions as values. A helper returns a plain data node. The node knows its result type, whether it can be null, and its volatility, and the SQL is written later by the tooling, never by the helper. Nothing here is loaded by an application that does not import it.
+
+Postgres: native. Proof passes (`proof:expr.core`).
+
+```ts
+import { add, col, concat, lower, now } from "okmodel/expr";
+
+const total = add(col<number>("price"), col<number>("tax"));
+const label = concat(lower(col<string>("title")), "-", col<string, true>("note"));
+const stamp = now();
+```
+
+`col<T, N>(name)` names a column. `T` is its TypeScript type and `N` is `true` when it can be null. Anything else a helper takes is another expression, or a string, a finite number, a bigint, a boolean, or `null`.
+
+## The helpers
+
+Each row was run against a real Postgres: the SQL is what is printed, the type is what `pg_typeof` returns, and volatility is what a generated column accepts (immutable) or refuses (stable).
+
+| Helper | Prints | Postgres type | Volatility |
+| --- | --- | --- | --- |
+| `add(col("qty"), 1)` | `("qty" + 1)` | integer | immutable |
+| `sub(col("qty"), 1)` | `("qty" - 1)` | integer | immutable |
+| `mul(col("qty"), 2)` | `("qty" * 2)` | integer | immutable |
+| `div(col("qty"), 2)` | `("qty" / 2)` | integer | immutable |
+| `mod(col("qty"), 4)` | `("qty" % 4)` | integer | immutable |
+| `and({ qty: gt(1) }, { title: eq("a") })` | `("qty" > '1') and ("title" = 'a')` | boolean | immutable |
+| `lower(col("title"))` | `lower("title")` | text | immutable |
+| `upper(col("title"))` | `upper("title")` | text | immutable |
+| `length(col("title"))` | `length("title")` | integer | immutable |
+| `concat(col("title"), col("note"))` | `(coalesce("title", '') \|\| coalesce("note", ''))` | text | immutable |
+| `coalesce(col("note"), "none")` | `coalesce("note", 'none')` | text | immutable |
+| `nullif(col("title"), "")` | `nullif("title", '')` | text | immutable |
+| `cast(col("qty"), "text")` | `("qty")::text` | text | immutable |
+| `cast(col("paid_at"), "text")` | `("paid_at")::text` | text | stable |
+| `jsonText(col("meta"), "sku")` | `("meta" ->> 'sku')` | text | immutable |
+| `extract("year", col("paid_at"))` | `extract(year from "paid_at")` | numeric | stable |
+| `atTimeZone(col("paid_at"), "UTC")` | `("paid_at" at time zone 'UTC')` | timestamp without time zone | immutable |
+| `caseWhen([[{ qty: gt(9) }, "bulk"]], "single")` | `case when "qty" > '9' then 'bulk' else 'single' end` | text | immutable |
+| `now()` | `now()` | timestamp with time zone | stable |
+| `setting("app.tenant", "text")` | `(select nullif(current_setting('app.tenant', true), '')::text)` | text | stable |
+| `setting("app.ids", "uuid[]")` | `((select coalesce(nullif(current_setting('app.ids', true), ''), '{}'))::uuid[])` | uuid[] | stable |
+
+`concat` is not SQL `concat()`. That function is stable, so Postgres refuses it in a generated column. `concat` here reads a missing part as empty text and joins with `||`, which is immutable. A part that is not text is a compile error: cast it first.
+
+A cast to or from a date or time type is stable, because it can depend on the session. Reading a part of a `timestamptz` with `extract` is stable for the same reason. On a `timestamp` or a `date` it is immutable, and `atTimeZone` with a fixed zone turns a `timestamptz` into a `timestamp`.
+
+## Comparisons are the `where` operators
+
+There is no second comparison API. `eq`, `lt`, `lte`, `gt`, `gte`, `between`, `inList`, `or`, and `not` are the `where` operators you already use. The new part is that an operand can be an expression, which compares a column with another column:
+
+```ts
+import { gt, lt, or } from "okmodel/pg";
+import { add, col } from "okmodel/expr";
+
+const underLimit = { qty: lt(col("limit_qty")) };
+const wellOver = { qty: gt(add(col<number>("limit_qty"), 1)) };
+const either = or([underLimit, wellOver]);
+```
+
+A query still binds every value as a parameter. A column operand belongs in DDL, where there are no parameters: the tooling prints the same object as SQL with each value written as a quoted literal, so a date, a bigint, a quote, or a backslash is safe. A value Postgres cannot hold, such as text with a NUL character, is refused before any SQL is written. A relation filter is refused too, because DDL has no second table to join.
+
+## Immutable places
+
+An index expression and a generated column need an immutable expression. `ImmutableExpr` is that type, and a stable helper is a compile error where it is required:
+
+```ts
+import { add, col, now, setting, type ImmutableExpr } from "okmodel/expr";
+
+declare function generated(expression: ImmutableExpr): void;
+
+generated(add(col<number>("qty"), 1));
+// @ts-expect-error now() is stable
+generated(now());
+// @ts-expect-error a setting is stable
+generated(setting("app.tenant", "text"));
+```
+
+One stable operand makes the whole expression stable. `StableExpr` is the type for a place that takes an expression fixed for one statement, such as a policy or a check.
+
+The type cannot see inside a `where` object that you pass to `and()` or `caseWhen()`, so those count as immutable and Postgres has the last word. A refused statement reads like this:
+
+```text
+Postgres refused it: functions in index expression must be marked IMMUTABLE (SQLSTATE 42P17).
+```
+
+## Settings
+
+`setting(name, type)` reads a custom setting such as `app.tenant`. It is wrapped in a subselect, so Postgres evaluates it once per statement and not once per row. An unset or empty setting is `null`, and a list type reads as an empty list.
+
+A list type prints the cast outside the subselect. The cast inside it fails with `42883` the first time the setting sits under `= any(...)`, because the subselect then returns one array instead of its elements.
+
+`settingList(values)` writes the value to store in a list setting. Every element is double-quoted with a backslash and a double quote escaped, SQL `NULL` is written unquoted, and an empty list is `{}`. A comma, a brace, a space, an empty string, Arabic or accented text, and the text `NULL` all come back as they went in. A plain `join(",")` loses six of those twelve cases.
+
+```ts
+import { settingList } from "okmodel/expr";
+
+settingList(["a,b", "NULL", null, "say \"hi\""]);
+// {"a,b","NULL",NULL,"say \"hi\""}
+```

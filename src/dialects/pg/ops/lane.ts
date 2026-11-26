@@ -268,7 +268,7 @@ const REDACTED = "[redacted]";
  * Outside production this sends `EXPLAIN` with the real parameters and returns
  * the lines. A hidden or sensitive value is `[redacted]` in `params` and in
  * those lines. The plan Postgres chose is unchanged: the text is edited after
- * `EXPLAIN` returns, which works on Postgres 15 through 18. In production
+ * `EXPLAIN` returns, which works on Postgres 15 and later. In production
  * (`NODE_ENV` is `"production"`) it does not send the statement. `plan` is
  * null and `params` is empty.
  *

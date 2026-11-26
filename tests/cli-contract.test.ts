@@ -44,6 +44,7 @@ const EXIT_BY_CODE: Readonly<Record<string, 0 | 1 | 2 | 3 | 4 | 5>> = {
   OKM1844: 5,
   OKM1845: 2,
   OKM1846: 5,
+  OKM1847: 4,
   OKM1850: 4,
   OKM1852: 4,
   OKM1853: 2,

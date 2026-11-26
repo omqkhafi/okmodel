@@ -91,6 +91,28 @@ export const STEP_CLASS = {
 export type StepKind = keyof typeof STEP_CLASS;
 
 /**
+ * How long a step holds a lock that keeps the table from being used.
+ *
+ * Separate from {@link MigrationClass}: that says whether a step can lose
+ * data (`--allow-protected`), this says whether it means downtime
+ * (`--allow-blocking`). A step can be both. Absent on a step that is neither.
+ * `blocking` holds a lock that blocks readers and writers for the whole build
+ * and has no online alternative. `rewrite` rewrites the table under
+ * ACCESS EXCLUSIVE.
+ */
+export type StepWeight = "blocking" | "rewrite";
+
+/**
+ * Reads a weight name.
+ *
+ * @param value - Text from a migration file
+ * @returns The weight, or `undefined` for any other text
+ */
+export function readWeight(value: string): StepWeight | undefined {
+  return value === "blocking" || value === "rewrite" ? value : undefined;
+}
+
+/**
  * How much a step can change what readers already depend on.
  *
  * `destructive` loses data or a name. `data` rewrites rows or refreshes a

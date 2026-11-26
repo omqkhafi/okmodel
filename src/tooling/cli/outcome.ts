@@ -45,6 +45,7 @@ const CODE_EXIT: Readonly<Record<string, ExitCode>> = {
   OKM1844: 5,
   OKM1845: 2,
   OKM1846: 5,
+  OKM1847: 4,
   OKM1850: 4,
   OKM1852: 4,
   OKM1853: 2,

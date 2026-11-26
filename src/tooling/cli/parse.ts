@@ -29,6 +29,8 @@ export type ParsedCli = {
   readonly out: string | undefined;
   readonly allowProtected: boolean;
   readonly allowPooler: boolean;
+  /** `--allow-blocking` on apply and push. Not read from the environment. */
+  readonly allowBlocking: boolean;
   /** `okm push --allow-data-loss`. Not read from the environment. */
   readonly allowDataLoss: boolean;
   readonly dryRun: boolean;
@@ -278,6 +280,7 @@ export function parseCli(argv: readonly string[]): ParsedCli {
     ...(out === undefined ? { out: undefined } : { out }),
     allowProtected: values["allow-protected"] === true,
     allowPooler: values["allow-pooler"] === true,
+    allowBlocking: values["allow-blocking"] === true,
     allowDataLoss: values["allow-data-loss"] === true,
     dryRun: values["dry-run"] === true,
     provision: values.provision === true,
@@ -377,6 +380,7 @@ function blank(flags: { readonly help: boolean; readonly json: boolean }): Parse
     out: undefined,
     allowProtected: false,
     allowPooler: false,
+    allowBlocking: false,
     allowDataLoss: false,
     dryRun: false,
     provision: false,

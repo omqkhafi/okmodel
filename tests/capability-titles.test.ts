@@ -23,3 +23,13 @@ test("commented test titles are not proofs", () => {
 test("type.uuidv7 since reads UUIDV7_POSTGRES", () => {
   expect(POSTGRES_FEATURES["type.uuidv7"].since).toBe(String(UUIDV7_POSTGRES));
 });
+
+test("a postgresTest title is a proof title", () => {
+  const root = mkdtempSync(join(tmpdir(), "okm-titles-pg-"));
+  writeFileSync(
+    join(root, "x.test.ts"),
+    'postgresTest(gate, "proof:gated", async () => {});\n// postgresTest(gate, "proof:commented out")\npostgresTest(\n  gate,\n  "proof:split",\n);\n',
+  );
+  // A formatter splits a long call across lines, so a split call counts too.
+  expect([...collectTestTitles([root])].sort()).toEqual(["proof:gated", "proof:split"]);
+});

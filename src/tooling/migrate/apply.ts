@@ -80,6 +80,7 @@ import {
 import { driverUrl } from "./driver-url.js";
 import type { DeclaredRename } from "../../dialects/pg/declarations.js";
 import postgres from "postgres";
+import { refuseBlocking, weightedSteps } from "./weight.js";
 
 /** One step with its index in the migration file. */
 export type IndexedStep = {
@@ -105,6 +106,8 @@ export type ApplyRequest = {
   readonly protection?: ProtectionMatch;
   readonly allowProtected?: boolean;
   readonly allowPooler?: boolean;
+  /** Run a `blocking` or `rewrite` step over 100,000 rows. */
+  readonly allowBlocking?: boolean;
   readonly searchPath?: string;
   readonly lockTimeoutMs?: number;
   readonly statementTimeoutMs?: number;
@@ -358,6 +361,7 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
     locked = true;
     request.onLocked?.();
     await refuseEmptyRequired(connection, request);
+    await refuseHeavySteps(connection, request);
     if (request.lintDirectory !== undefined) {
       await refusePendingLint(connection, request.lintDirectory, request.migrations);
     }
@@ -522,6 +526,7 @@ async function runApply(
     protection: target.protection,
     allowProtected: flags.allowProtected,
     allowPooler: flags.allowPooler || config.allowPooler === true,
+    allowBlocking: flags.allowBlocking === true,
     ...(flags.lockTimeoutMs !== undefined
       ? { lockTimeoutMs: flags.lockTimeoutMs }
       : config.timeouts?.lock !== undefined
@@ -585,6 +590,7 @@ export async function pushProject(
     protection: target.protection,
     allowProtected: flags.allowProtected,
     allowPooler: flags.allowPooler || config.allowPooler === true,
+    allowBlocking: flags.allowBlocking === true,
     ...backfillTiming(config.backfill),
     after: head.catalog,
     renames: head.renames,
@@ -613,6 +619,7 @@ type PushRequest = {
   readonly protection?: ProtectionMatch;
   readonly allowProtected?: boolean;
   readonly allowPooler?: boolean;
+  readonly allowBlocking?: boolean;
   readonly after: Catalog;
   readonly renames: readonly DeclaredRename[];
   readonly catalogHash: string;
@@ -756,6 +763,12 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
     await assertExtensionsAvailable(connection, [migration]);
     await assertUuidV7Available(connection, [migration]);
     const units = applyUnits(migration, new Set());
+    await refuseBlocking(
+      (text, params) => connection.execute(text, params),
+      schema,
+      weightedSteps(units),
+      request.allowBlocking === true,
+    );
     const report = await runTarget(
       connection,
       {
@@ -1164,10 +1177,8 @@ async function pendingMigrationIds(
   connection: DriverConnection,
   migrations: readonly StoredMigration[],
 ): Promise<ReadonlySet<string>> {
-  const present = await connection.execute("select to_regclass('okm_history') is not null");
-  if (!wireTrue(present.rows[0]?.[0])) return new Set(migrations.map((migration) => migration.id));
-  const history = await readHistory(connection);
-  const done = expandProvisioned(migrations, history.done, history.ids);
+  const done = await doneSteps(connection, migrations);
+  if (done === undefined) return new Set(migrations.map((migration) => migration.id));
   const pending = new Set<string>();
   for (const migration of migrations) {
     for (let index = 0; index < migration.steps.length; index += 1) {
@@ -1178,6 +1189,50 @@ async function pendingMigrationIds(
     }
   }
   return pending;
+}
+
+/**
+ * Steps `okm_history` records as applied, as `${migrationId}:${stepIndex}`.
+ *
+ * @param connection - Reserved connection
+ * @param migrations - Files in apply order
+ * @returns `undefined` when `okm_history` does not exist yet
+ */
+async function doneSteps(
+  connection: DriverConnection,
+  migrations: readonly StoredMigration[],
+): Promise<ReadonlySet<string> | undefined> {
+  const present = await connection.execute("select to_regclass('okm_history') is not null");
+  if (!wireTrue(present.rows[0]?.[0])) return undefined;
+  const history = await readHistory(connection);
+  return expandProvisioned(migrations, history.done, history.ids);
+}
+
+/**
+ * Stops before any step when a `blocking` or `rewrite` step would run on a
+ * table over 100,000 rows and `--allow-blocking` was not passed.
+ *
+ * The count is taken here, on the real target, so a table that grew since the
+ * plan was printed is counted as it is now. Nothing is written before this
+ * returns: the history tables are not created yet.
+ *
+ * @param connection - Reserved connection, after the advisory lock
+ * @param request - The apply request
+ */
+async function refuseHeavySteps(
+  connection: DriverConnection,
+  request: ApplyRequest,
+): Promise<void> {
+  if (request.allowBlocking === true) return;
+  if (!request.migrations.some((migration) => migration.steps.some((step) => step.weight))) return;
+  const done = (await doneSteps(connection, request.migrations)) ?? new Set<string>();
+  const units = request.migrations.flatMap((migration) => applyUnits(migration, done));
+  await refuseBlocking(
+    (text, params) => connection.execute(text, params),
+    concreteSchema(request),
+    weightedSteps(units),
+    false,
+  );
 }
 
 async function readHistory(

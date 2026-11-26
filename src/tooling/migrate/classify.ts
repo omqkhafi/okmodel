@@ -12,9 +12,11 @@ export {
   classOf,
   isStepKind,
   operationClassOf,
+  readWeight,
   strictestClass,
   strictestOperation,
   type MigrationClass,
   type OperationClass,
   type StepKind,
+  type StepWeight,
 } from "../../dialects/step-class.js";

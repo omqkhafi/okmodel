@@ -7,6 +7,7 @@
     "config-roles",
     "cli",
     "schema-api",
+    "expr",
     "github-action",
     "errors",
     "warnings",

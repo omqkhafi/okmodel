@@ -1,5 +1,5 @@
 /**
- * Reads literal `test("...")` titles for the registry proof check.
+ * Reads literal `test("...")` and `postgresTest(gate, "...")` titles for the registry proof check.
  *
  * Loaded by the registry test, not by `describe()`.
  */
@@ -7,7 +7,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-const TITLE = /\b(?:test|it)\(\s*(["'])((?:\\.|(?!\1).)*)\1/g;
+const TITLE = /\b(?:(?:test|it)\(|postgresTest\(\s*\w+,)\s*(["'])((?:\\.|(?!\1).)*)\1/g;
 
 /**
  * Literal test titles under `roots`.
