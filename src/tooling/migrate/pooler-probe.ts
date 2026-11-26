@@ -65,6 +65,10 @@ export async function probeConcurrent(url: string): Promise<PoolerDetection> {
         return seen;
       }),
     );
+    const banner = await pools[0]?.execute("select version()");
+    // PGlite is one process. Every connection reports the same pid, which is
+    // not a transaction-mode pooler.
+    if (String(banner?.rows[0]?.[0] ?? "").includes("PGlite")) return detectPooler({ url });
     const distinct = new Set(sets.flatMap((set) => [...set]));
     return detectPooler({
       url,

@@ -11,6 +11,7 @@ import {
   poolerSignal,
 } from "../src/tooling/migrate/pooler.js";
 import { resolvePooler } from "../src/tooling/migrate/pooler-probe.js";
+import { listenPostgres } from "./doc-run.js";
 
 test("proof:pooler.detect", () => {
   expect(detectPooler({ url: "postgres://u@ep-cool-pooler.region.aws.neon.tech/db" }).signal).toBe(
@@ -72,6 +73,17 @@ test("a URL signal and allowPooler skip the eight clients", async () => {
   const marked = await resolvePooler("postgres://u@db.example:5432/db", true);
   expect(marked.signal).toBe("config");
   expect(marked.provenDirect).toBe(false);
+});
+
+test("PGlite is one process and is not a pooler", async () => {
+  const server = await listenPostgres();
+  try {
+    const found = await resolvePooler(server.url);
+    expect(found.pooled).toBe(false);
+    expect(found.provenDirect).toBe(false);
+  } finally {
+    await server.close();
+  }
 });
 
 test("a session URL that matches a pooler signal is refused", () => {
