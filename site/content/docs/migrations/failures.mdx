@@ -92,6 +92,7 @@ The table is generated from `STEP_KINDS`, `postgresHasProbe`, and `unitMode`. Do
 | `widen-check` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `narrow-check` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `create-index` | no when CONCURRENTLY | when CONCURRENTLY | a plain statement rolls back; CONCURRENTLY follows the probe, and partial drops the index and rebuilds | OKM1553, OKM1556 |
+| `comment` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `drop-index` | no when CONCURRENTLY | when CONCURRENTLY | a plain statement rolls back; CONCURRENTLY follows the probe | OKM1553, OKM1556 |
 | `rename-index` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `create-sequence` | yes | no | rolls back with the history row; the next apply runs the step again | — |
@@ -120,6 +121,7 @@ The table is generated from `STEP_KINDS`, `postgresHasProbe`, and `unitMode`. Do
 | `create-view` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `drop-view` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `replace-view` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `rename-view-column` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `create-matview` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `drop-matview` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `refresh-matview` | yes | no | rolls back with the history row; the next apply runs the step again | — |

@@ -174,6 +174,10 @@ const SPEC_CODES = [
   "OKM2101",
   "OKM2102",
   "OKM2103",
+  "OKM2104",
+  "OKM2105",
+  "OKM2106",
+  "OKM2107",
   "OKM1891",
   "OKM1892",
   "OKM1893",
@@ -188,6 +192,10 @@ const SPEC_CODES = [
   "OKM1913",
   "OKM1914",
   "OKM1899",
+  "OKM1900",
+  "OKM1901",
+  "OKM1902",
+  "OKM1903",
   "OKM2200",
   "OKM2201",
   "OKM2202",
@@ -504,14 +512,15 @@ test("the error registry lists every spec 21 code and stays off the runtime entr
   expect(errorSource.includes("idempotency key")).toBe(true);
 });
 
-test("OKM1060 names a bad column, a unique gin or gist index, and a bad casing", () => {
+test("OKM1060 names a bad column and a bad casing", () => {
   const doc = errorDoc("OKM1060");
   if (doc === undefined) throw new Error("OKM1060 is not in the registry");
-  expect(doc.summary).toContain("gin");
-  expect(doc.summary).toContain("gist");
   expect(doc.summary).toContain("casing");
   expect(doc.summary).toContain("snake or camel");
-  expect(doc.fix).toContain("btree");
+  const index = errorDoc("OKM1903");
+  if (index === undefined) throw new Error("OKM1903 is not in the registry");
+  expect(index.summary).toContain("btree");
+  expect(index.summary).toContain("gist");
   expect(doc.fix).toContain("snake or camel");
 });
 

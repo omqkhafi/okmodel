@@ -142,23 +142,29 @@ export function columnFixture(casing: Casing | undefined) {
       }),
     ],
     views: [
-      view("status_list", (q) =>
-        q.from(statusCodes, ["codeID", "label"]).tenancy(global("lookup rows are shared")),
+      view(
+        "status_list",
+        { tables: [statusCodes], tenancy: global("lookup rows are shared") },
+        (q) => q.statusCodes.find({ select: ["codeID", "label"] }),
       ),
-      view("account_emails", {
-        columns: [
-          { name: n("emailURL"), type: "text" },
-          { name: n("tenantID"), type: "uuid" },
-        ],
-        query: `select "${n("emailURL")}", "${n("tenantID")}" from "${n("userAccounts")}"`,
-      }),
-      materializedView("unit_names", {
-        columns: [
-          { name: n("displayName"), type: "text" },
-          { name: n("tenantID"), type: "uuid" },
-        ],
-        query: `select "${n("displayName")}", "${n("tenantID")}" from "${n("orgUnits")}"`,
-      }),
+      view("account_emails", { tables: [] }, (q) =>
+        q.sql({
+          columns: [
+            { name: n("emailURL"), type: t.text() },
+            { name: n("tenantID"), type: t.uuid() },
+          ],
+          query: `select "${n("emailURL")}", "${n("tenantID")}" from "${n("userAccounts")}"`,
+        }),
+      ),
+      materializedView("unit_names", { tables: [] }, (q) =>
+        q.sql({
+          columns: [
+            { name: n("displayName"), type: t.text() },
+            { name: n("tenantID"), type: t.uuid() },
+          ],
+          query: `select "${n("displayName")}", "${n("tenantID")}" from "${n("orgUnits")}"`,
+        }),
+      ),
     ],
   });
 }

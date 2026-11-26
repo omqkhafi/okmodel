@@ -230,6 +230,7 @@ const KIND_SQL: Readonly<Record<StepKind, RegExp>> = {
   "widen-check": /^alter table\b.*\b(?:drop constraint|add constraint|validate constraint)\b/,
   "narrow-check": /^alter table\b.*\b(?:drop constraint|add constraint|validate constraint)\b/,
   "create-index": /^create (?:unique )?index\b/,
+  comment: /^comment on\b/,
   "drop-index": /^drop index\b/,
   "rename-index": /^alter index\b.*\brename to\b/,
   "create-sequence": /^create sequence\b/,
@@ -258,6 +259,7 @@ const KIND_SQL: Readonly<Record<StepKind, RegExp>> = {
   "create-view": /^create view\b/,
   "drop-view": /^drop view\b/,
   "replace-view": /^create or replace view\b/,
+  "rename-view-column": /^alter view\b.*\brename column\b/,
   "create-matview": /^create materialized view\b/,
   "drop-matview": /^drop materialized view\b/,
   "refresh-matview": /^refresh materialized view\b/,
@@ -441,6 +443,13 @@ export type LogicalChange =
       readonly tableIsNew: boolean;
     }
   | {
+      readonly op: "comment";
+      readonly object: CatalogObject;
+      readonly schema: string;
+      /** `null` clears a comment OKM previously wrote. */
+      readonly text: string | null;
+    }
+  | {
       readonly op: "create-index";
       readonly index: IndexObject;
       readonly schema: string;
@@ -562,6 +571,13 @@ export type LogicalChange =
       readonly op: "replace-view";
       readonly object: ViewObject;
       readonly schema: string;
+    }
+  | {
+      readonly op: "rename-view-column";
+      readonly object: ViewObject;
+      readonly schema: string;
+      readonly from: string;
+      readonly to: string;
     }
   | {
       readonly op: "create-matview";

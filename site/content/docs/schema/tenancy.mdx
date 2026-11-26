@@ -169,7 +169,7 @@ export default schema({
 });
 ```
 
-The migration creates two policies on `notes`: `notes_tenant` for the tenant set in the transaction setting `app.tenant`, and `notes_unscoped_select` for reads when `app.unscoped` is set. A view that exposes the key is created `security_invoker`, so the policies apply through it. `unscoped()` can read and cannot write. A key list and `via()` are refused.
+The migration creates two policies on `notes`: `notes_tenant` for the tenant set in the transaction setting `app.tenant`, and `notes_unscoped_select` for reads when `app.unscoped` is set. Every view is created `security_invoker` unless it is declared with `{ definer: reason }`. A view that exposes the key is read through those policies. `unscoped()` can read and cannot write. A key list and `via()` are refused.
 
 On connect, okmodel checks that the role cannot skip the policies: it must not own the tables, be a superuser, or have `BYPASSRLS` ([OKM1707](/docs/reference/errors#okm1707)), and each table must force RLS with the expected policies ([OKM1708](/docs/reference/errors#okm1708)). A passing check is cached for that endpoint until its generation changes. A failed check is not cached, and the message names the endpoint.
 

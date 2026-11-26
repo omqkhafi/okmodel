@@ -472,6 +472,11 @@ export type CheckProjectResult = {
    */
   readonly notice?: string;
   /**
+   * Comments on the database that the schema does not manage.
+   * OKM leaves them in place. `okm pull` writes them.
+   */
+  readonly information?: readonly string[];
+  /**
    * Emulated features this schema uses. Absent when there are none.
    * A refused feature throws OKM1860 before this returns.
    */
@@ -558,6 +563,8 @@ export async function checkProject(
     projectFilterUses(cwd, opened.config),
     opened.config.warnings ?? {},
   );
+  const { assertIndexImmutable } = await import("./index-rules.js");
+  await assertIndexImmutable(opened.built.catalog);
   const refusal = adviceRefusal(advice);
   if (refusal !== undefined) throw refusal;
   const named = flags?.target;
@@ -584,16 +591,18 @@ export async function checkProject(
   const { assertSchemaMajor, assertSchemaExtensions } = await import("./server-requirements.js");
   const directory = projectPath(cwd, opened.config.migrations ?? "migrations");
   await assertSchemaMajor(target.url, opened.built);
-  await assertAuthorDrift(
+  const information = await assertAuthorDrift(
     target.url,
     opened.built.catalog,
     opened.config.roles,
     allowPooler,
     unpulledKeys(readUnpulled(cwd)),
+    opened.previous,
   );
   await assertSchemaExtensions(target.url, opened.built, directory);
+  const noted = information.length > 0 ? { information } : {};
   await rawOnlineCheck(cwd, opened.config, target.url, allowPooler);
-  return finish({ findings });
+  return finish({ findings, ...noted });
 }
 
 /**

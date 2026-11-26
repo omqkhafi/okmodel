@@ -483,9 +483,23 @@ function planTable(
     const label = `${table.identity.name}.${column.identity.name}`;
     if (column === identityColumn) {
       const renamed = sqlNameCall(casing, field, column.identity.name, label, renames);
+      const owned = bag.sequences.find(
+        (item) =>
+          item.identity.name === identitySequence(table.identity.name, column.identity.name),
+      );
+      const sequenceComment =
+        owned?.comment === undefined ? "" : `, comment: ${JSON.stringify(owned.comment)}`;
       const call =
-        column.definition.dataType === "integer" ? "t.integerIdentity()" : "t.identity()";
-      columnLines.push(`    ${jsKey(field)}: ${call}${renamed},`);
+        column.definition.dataType === "integer"
+          ? sequenceComment.length === 0
+            ? "t.integerIdentity()"
+            : `t.integerIdentity({${sequenceComment.slice(2)}})`
+          : sequenceComment.length === 0
+            ? "t.identity()"
+            : `t.identity({${sequenceComment.slice(2)}})`;
+      const columnComment =
+        column.comment === undefined ? "" : `.comment(${JSON.stringify(column.comment)})`;
+      columnLines.push(`    ${jsKey(field)}: ${call}${columnComment}${renamed},`);
       emitted.add(column.identity.name);
       continue;
     }
@@ -516,6 +530,9 @@ function planTable(
   if (nameDiffers(casing, exportName, table.identity.name)) {
     if (casing !== undefined) renames.push(table.identity.name);
     options.push(`    sqlName: ${JSON.stringify(table.identity.name)},`);
+  }
+  if (table.comment !== undefined) {
+    options.push(`    comment: ${JSON.stringify(table.comment)},`);
   }
   if (primary !== undefined && identityColumn === undefined && primaryColumns.length > 0) {
     if (primaryColumns.every((name) => emitted.has(name)) && plainConstraint(primary)) {
@@ -585,9 +602,12 @@ function planTable(
       const expression = off
         ? constraint.definition.expression
         : stripNotValid(constraint.definition.expression);
-      const body = off
-        ? `{ expression: (columns) => { ${touch}return ${sqlTemplate(expression)}; }, enforced: false }`
-        : `(columns) => { ${touch}return ${sqlTemplate(expression)}; }`;
+      const comment =
+        constraint.comment === undefined ? "" : `, comment: ${JSON.stringify(constraint.comment)}`;
+      const body =
+        off || comment.length > 0
+          ? `{ expression: (columns) => { ${touch}return ${sqlTemplate(expression)}; }${off ? ", enforced: false" : ""}${comment} }`
+          : `(columns) => { ${touch}return ${sqlTemplate(expression)}; }`;
       checks.push(`      ${jsKey(constraint.definition.nameKey)}: ${body},`);
       continue;
     }
@@ -631,7 +651,7 @@ function planTable(
         );
         continue;
       }
-      foreign.set(field, referenceCall(references, tableExports));
+      foreign.set(field, referenceCall(references, tableExports, constraint.comment));
       continue;
     }
     skipped.push(
@@ -675,19 +695,21 @@ function planTable(
       );
       continue;
     }
-    if (index.definition.columns.length === 0) {
+    if (index.definition.columns.length === 0 && index.definition.expression === undefined) {
       skipped.push(
         skip(
           index,
           "index",
           label,
-          "index() needs a column. This index is an expression",
+          "index() needs a column or an expression",
           statementFor(statements, index.identity.name),
         ),
       );
       continue;
     }
-    indexLines.push(`      ${indexCall(index, fields)},`);
+    const written = indexCall(index, fields);
+    if (written.includes("sql`")) needsSql = true;
+    indexLines.push(`      ${written},`);
     needsIndex = true;
   }
   if (indexLines.length > 0) {
@@ -844,6 +866,7 @@ function columnSource(
   if (column.definition.generated !== undefined) {
     call += `.generated(${JSON.stringify(column.definition.generated.expression)})`;
   }
+  if (column.comment !== undefined) call += `.comment(${JSON.stringify(column.comment)})`;
   if (column.definition.collation !== undefined) return undefined;
   return call;
 }
@@ -980,6 +1003,7 @@ function rewriteForeign(lines: readonly string[], foreign: ReadonlyMap<string, s
 function referenceCall(
   references: NonNullable<ConstraintObject["definition"]["references"]>,
   tableExports: ReadonlyMap<string, string>,
+  comment?: string,
 ): string {
   const options: string[] = [];
   if (references.columns.length > 0) {
@@ -989,28 +1013,68 @@ function referenceCall(
     options.push(`onDelete: ${JSON.stringify(references.onDelete)}`);
   if (references.onUpdate !== undefined)
     options.push(`onUpdate: ${JSON.stringify(references.onUpdate)}`);
+  if (comment !== undefined) options.push(`comment: ${JSON.stringify(comment)}`);
   const optionText = options.length === 0 ? "" : `, { ${options.join(", ")} }`;
   const parent = tableExports.get(references.parent.name) ?? exportNameOf(references.parent.name);
   return `.references(${JSON.stringify(parent)}${optionText})`;
 }
 
 function indexCall(index: IndexObject, fields: ReadonlyMap<string, string>): string {
-  const columns = index.definition.columns
-    .map((name) => `columns.${fields.get(name) ?? name}`)
-    .join(", ");
-  let call = `index(${columns})`;
-  if (index.definition.unique) call += ".unique()";
+  const definition = index.definition;
+  const elements = definition.elements ?? [];
+  const elementOf = (name: string) => elements.find((element) => element.column === name);
+  const columnArg = (name: string): string => {
+    const element = elementOf(name);
+    let text = `columns.${fields.get(name) ?? name}`;
+    if (element?.order === "desc") text += ".desc()";
+    if (element?.nulls === "last") text += ".nullsLast()";
+    if (element?.nulls === "first") text += ".nullsFirst()";
+    if (element?.opclass !== undefined) text += `.ops(${JSON.stringify(element.opclass)})`;
+    return text;
+  };
+  const expression =
+    definition.expression !== undefined ? `sql\`${sqlBody(definition.expression)}\`` : undefined;
+  const args = [
+    ...definition.columns.map((name) => columnArg(name)),
+    ...(expression !== undefined ? [expression] : []),
+  ];
+  const head = `index(${args.join(", ")})`;
+  let call = head;
+  if (definition.unique) {
+    call += definition.nullsNotDistinct ? ".unique({ nullsNotDistinct: true })" : ".unique()";
+  }
+  if (
+    definition.method !== undefined &&
+    definition.method !== "btree" &&
+    definition.expression?.startsWith("using ") !== true
+  ) {
+    call += `.using(${JSON.stringify(definition.method)})`;
+  }
+  if (definition.include !== undefined && definition.include.length > 0) {
+    const included = definition.include
+      .map((name) => `columns.${fields.get(name) ?? name}`)
+      .join(", ");
+    call += `.include(${included})`;
+  }
+  if (definition.storage !== undefined) call += `.with(${storageLiteral(definition.storage)})`;
+  if (definition.predicate !== undefined) {
+    call += `.where(sql\`${sqlBody(definition.predicate)}\`)`;
+  }
+  if (index.comment !== undefined) call += `.comment(${JSON.stringify(index.comment)})`;
   const sqlName = customIndexName(index);
   if (sqlName !== undefined) call += `.name(${JSON.stringify(sqlName)})`;
-  const extra: string[] = [];
-  if (index.definition.predicate !== undefined) {
-    extra.push(`predicate: ${JSON.stringify(index.definition.predicate)}`);
-  }
-  if (index.definition.expression !== undefined) {
-    extra.push(`expression: ${JSON.stringify(index.definition.expression)}`);
-  }
-  if (extra.length === 0) return call;
-  return `{ ...${call}, ${extra.join(", ")} }`;
+  return call;
+}
+
+function sqlBody(expression: string): string {
+  return expression.replaceAll("\\", "\\\\").replaceAll("`", "\\`").replaceAll("${", "\\${");
+}
+
+function storageLiteral(storage: Readonly<Record<string, string>>): string {
+  const fields = Object.entries(storage)
+    .map(([key, value]) => `${key}: ${/^-?\d+$/.test(value) ? value : JSON.stringify(value)}`)
+    .join(", ");
+  return `{ ${fields} }`;
 }
 
 /**
@@ -1021,10 +1085,14 @@ function indexCall(index: IndexObject, fields: ReadonlyMap<string, string>): str
  * read, and baseline has nothing to reconcile.
  */
 function customIndexName(index: IndexObject): string | undefined {
+  const nameKey =
+    index.definition.columns.length > 0
+      ? index.definition.columns.join("_")
+      : index.definition.nameKey;
   const expected = deterministicName({
     parent: index.identity.parent.name,
     purpose: "index",
-    nameKey: index.definition.columns.join("_"),
+    nameKey,
   });
   return index.identity.name === expected ? undefined : index.identity.name;
 }
@@ -1105,11 +1173,16 @@ function schemaText(
     readonly functions: readonly string[];
     readonly triggers: readonly string[];
     readonly views: readonly string[];
+    readonly needsIndex: boolean;
   },
   importExt: PullImportExt,
   casing: Casing | undefined,
 ): string {
-  const lines = ['import { schema } from "okmodel/pg";'];
+  const pgNames = ["schema"];
+  if (routines.views.length > 0) pgNames.push("t");
+  if (routines.needsIndex) pgNames.push("index");
+  pgNames.sort();
+  const lines = [`import { ${pgNames.join(", ")} } from "okmodel/pg";`];
   if (extensions.length > 0) lines.push('import { extension } from "okmodel/ext";');
   for (const line of routines.imports) lines.push(line);
   const sorted = [...imports].sort((left, right) => compare(left.name, right.name));

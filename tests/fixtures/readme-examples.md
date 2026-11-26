@@ -441,27 +441,23 @@ export const app = schema({
 `views.ts`:
 
 ```ts
-import { schema, table, t } from "okmodel/pg";
+import { index, not, schema, table, t } from "okmodel/pg";
 import { materializedView, view } from "okmodel/view";
 
 const tasks = table("tasks", { id: t.text().primaryKey(), title: t.text() });
-const columns = [
-  { name: "id", type: "text" },
-  { name: "title", type: "text" },
-];
 export const app = schema({
   tables: [tasks],
   views: [
-    view("active", {
-      columns,
-      query: "SELECT id,\n    title\n   FROM tasks\n  WHERE title IS NOT NULL",
-    }),
-    materializedView("sums", {
-      columns,
-      query: "SELECT id,\n    title\n   FROM tasks",
-      refresh: "concurrently",
-      indexes: [{ columns: ["id"], unique: true }],
-    }),
+    view("active", { tables: [tasks] }, (q) => q.tasks.find({ where: { title: not(null) } })),
+    materializedView(
+      "sums",
+      {
+        tables: [tasks],
+        refresh: "concurrently",
+        indexes: (columns) => [index(columns.id).unique()],
+      },
+      (q) => q.tasks.find({ select: ["id", "title"] }),
+    ),
   ],
 });
 ```

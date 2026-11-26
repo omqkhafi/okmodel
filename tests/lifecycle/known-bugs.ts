@@ -91,7 +91,7 @@ export const KNOWN_BUGS: readonly KnownBug[] = [
     repro: [
       "// channel: okm check --target replica",
       'const tasks = table("tasks", { id: t.identity().primaryKey(), title: t.text() });',
-      'const ids = view("task_ids", (q) => q.from(tasks, ["id"]));',
+      'const ids = view("task_ids", { tables: [tasks] }, (q) => q.tasks.find({ select: ["id"] }));',
       "export const app = schema({ tables: [tasks], views: [ids] });",
       "// driver: cannot execute CREATE SCHEMA in a read-only transaction",
       "// check creates schema okm_view_seal to seal the view",

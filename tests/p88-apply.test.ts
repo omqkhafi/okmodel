@@ -14,7 +14,7 @@ import { catalog } from "../src/contracts/catalog/build.js";
 import { catalogHash, parseCatalog, serializeCatalog } from "../src/contracts/catalog/document.js";
 import { tenantPolicyExpression } from "../src/contracts/catalog/policy.js";
 import { OkmError } from "../src/contracts/error.js";
-import { id, one, schema, table, text, uuid } from "../src/dialects/pg/index.js";
+import { id, index, one, schema, table, text, uuid } from "../src/dialects/pg/index.js";
 import { materializedView } from "../src/dialects/pg/view/index.js";
 import { attachRoles } from "../src/dialects/pg/role/index.js";
 import { privilegeSql } from "../src/dialects/pg/role/sql.js";
@@ -95,24 +95,30 @@ test("a path foreign key follows the unique it references, for every name order"
 
 test("a materialized view index round-trips without a column dependency", () => {
   const tasks = table("tasks", { id: text().primaryKey(), title: text() });
-  const columns = [
-    { name: "id", type: "text" },
-    { name: "title", type: "text" },
-  ];
   const built = schema({
     tables: [tasks],
     views: [
-      materializedView("sums", {
-        columns,
-        query: "SELECT id, title FROM tasks",
-        refresh: "concurrently",
-        indexes: [
-          { columns: ["id"], unique: true },
-          { columns: ["title"], unique: false },
-          { columns: ["id", "title"], unique: true },
-          { columns: ["title", "id"], unique: false },
-        ],
-      }),
+      materializedView(
+        "sums",
+        {
+          tables: [],
+          refresh: "concurrently",
+          indexes: (columns) => [
+            index(columns.id).unique(),
+            index(columns.title),
+            index(columns.id, columns.title).unique(),
+            index(columns.title, columns.id),
+          ],
+        },
+        (q) =>
+          q.sql({
+            columns: [
+              { name: "id", type: text() },
+              { name: "title", type: text() },
+            ],
+            query: "SELECT id, title FROM tasks",
+          }),
+      ),
     ],
   });
   const again = parseCatalog(serializeCatalog(built.catalog));
@@ -130,14 +136,18 @@ test("application role writes are revoked on a materialized view", () => {
   const built = schema({
     tables: [tasks],
     views: [
-      materializedView("sums", {
-        columns: [
-          { name: "id", type: "text" },
-          { name: "title", type: "text" },
-        ],
-        query: "SELECT id, title FROM tasks",
-        indexes: [{ columns: ["id"], unique: true }],
-      }),
+      materializedView(
+        "sums",
+        { tables: [], indexes: (columns) => [index(columns.id).unique()] },
+        (q) =>
+          q.sql({
+            columns: [
+              { name: "id", type: text() },
+              { name: "title", type: text() },
+            ],
+            query: "SELECT id, title FROM tasks",
+          }),
+      ),
     ],
   });
   const declared = attachRoles(built.catalog, {

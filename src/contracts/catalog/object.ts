@@ -24,7 +24,9 @@ import {
   type ConstraintObject,
   type DependencyEdge,
   type IndexDefinition,
+  type IndexElement,
   type IndexObject,
+  type IndexStorage,
   type Namespace,
   type NamespaceIdentity,
   type ObjectIdentity,
@@ -43,6 +45,8 @@ type CommonInput = {
   readonly owner?: Owner;
   readonly provenance: Provenance;
   readonly dependencies?: readonly ObjectIdentity[];
+  /** Stored on the envelope. Absent means the comment is not managed. */
+  readonly comment?: string | undefined;
 };
 
 /** Input for {@link table}. */
@@ -67,12 +71,17 @@ export type ColumnInput = CommonInput & {
 /** Input for {@link index}. */
 export type IndexInput = CommonInput & {
   readonly parent: ObjectRef;
-  readonly name?: string;
+  readonly name?: string | undefined;
   readonly nameKey?: string;
   readonly columns?: readonly string[];
   readonly unique?: boolean;
-  readonly predicate?: string;
-  readonly expression?: string;
+  readonly predicate?: string | undefined;
+  readonly expression?: string | undefined;
+  readonly method?: string | undefined;
+  readonly include?: readonly string[] | undefined;
+  readonly elements?: readonly IndexElement[] | undefined;
+  readonly storage?: IndexStorage | undefined;
+  readonly nullsNotDistinct?: boolean | undefined;
 };
 
 /** Input for {@link constraint}. */
@@ -200,8 +209,9 @@ export function column(input: ColumnInput): ColumnObject {
  * Builds an index object.
  *
  * The stored name comes from {@link deterministicName} unless `name` is set.
- * Either way a name past the dialect limit is fitted. `nameKey` is what a
- * later rename must keep passing.
+ * An explicit name is stored as given, including one past 63 bytes, so tooling
+ * can refuse it. A generated name is still fitted. `nameKey` is what a later
+ * rename must keep passing.
  *
  * @param input - Parent, columns, and the stable name key
  * @returns An index envelope
@@ -228,7 +238,7 @@ export function index(input: IndexInput): IndexObject {
   const name =
     input.name === undefined
       ? deterministicName({ parent: input.parent.name, purpose: "index", nameKey })
-      : fitIdentifier(input.name);
+      : explicitIndexName(input.name);
   const identity: AnchoredIdentity & { readonly kind: "index" } = {
     kind: "index",
     parent: input.parent,
@@ -238,9 +248,8 @@ export function index(input: IndexInput): IndexObject {
     columns,
     unique: input.unique ?? false,
     nameKey,
-    ...(input.predicate !== undefined ? { predicate: input.predicate } : {}),
-    ...(input.expression !== undefined ? { expression: input.expression } : {}),
   };
+  assignIndex(definition, input);
   return objectOf("index", identity, input, definition, [
     tableIdentity(input.parent),
     ...columns.map((columnName) => columnIdentity(input.parent, columnName)),
@@ -422,7 +431,41 @@ function objectOf<TKind extends string, TIdentity, TDefinition>(
     definition,
     dependencies: normaliseEdges(targets),
     provenance: input.provenance,
+    ...(input.comment !== undefined ? { comment: input.comment } : {}),
   };
+}
+
+/**
+ * Keeps an explicit index name, including one over the 63-byte limit.
+ *
+ * Characters are still checked. Length is a tooling check so `schema()` can
+ * store the name the author wrote.
+ *
+ * @param name - Name from `.name()`
+ * @returns The same name
+ */
+function assignIndex(definition: IndexDefinition, input: IndexInput): void {
+  const target = definition as Record<string, unknown>;
+  for (const key of [
+    "predicate",
+    "expression",
+    "method",
+    "include",
+    "elements",
+    "storage",
+  ] as const) {
+    const value = input[key];
+    if (value === undefined || value === "btree" || (Array.isArray(value) && value.length === 0)) {
+      continue;
+    }
+    target[key] = value;
+  }
+  if (input.nullsNotDistinct === true) target.nullsNotDistinct = true;
+}
+
+function explicitIndexName(name: string): string {
+  assertIdentifier(name, "index name", 4096);
+  return name;
 }
 
 /**

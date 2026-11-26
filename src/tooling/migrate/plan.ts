@@ -19,9 +19,11 @@ import {
   settleChecks,
 } from "../../contracts/catalog/document.js";
 import { isDomain, sameEnumLabels } from "../../contracts/catalog/enum.js";
-import { identitySequenceName } from "../../contracts/catalog/identifier.js";
+import { fitIdentifier, identitySequenceName } from "../../contracts/catalog/identifier.js";
 import { identityKey, identityLabel, staticNamespace } from "../../contracts/catalog/identity.js";
 import { compareText } from "../../contracts/catalog/object.js";
+import { ddlStep } from "../../dialects/ddl-step.js";
+import { assertIndexRules } from "./index-rules.js";
 import {
   identitySequence,
   ownedByView,
@@ -34,6 +36,7 @@ import type {
   ColumnObject,
   ConstraintObject,
   FunctionObject,
+  IndexObject,
   MaterializedViewObject,
   TableObject,
   ViewColumn,
@@ -267,6 +270,7 @@ export function planMigration(
   dialect: DdlDialect = postgresDialect,
 ): MigrationPlan {
   requireDialect(dialect);
+  assertIndexRules(input.after);
   settleChecks(input.before);
   settleChecks(input.after);
   const request: PlanRequest = {
@@ -294,8 +298,13 @@ export function planMigration(
     | { readonly kind: "function"; readonly before: FunctionObject; readonly after: FunctionObject }
     | { readonly kind: "view"; readonly before: ViewObject; readonly after: ViewObject }
   )[] = [];
+  const viewRenames: {
+    readonly object: ViewObject;
+    readonly columns: readonly { readonly from: string; readonly to: string }[];
+  }[] = [];
   const alters: { readonly before: ColumnObject; readonly after: ColumnObject }[] = [];
   const enforcement: { readonly before: ConstraintObject; readonly after: ConstraintObject }[] = [];
+  const storageReplaces: { readonly before: IndexObject; readonly after: IndexObject }[] = [];
   for (const item of beforeList) {
     if (!afterBy.has(item.key)) {
       if (item.object.kind === "role") continue;
@@ -329,6 +338,11 @@ export function planMigration(
         replaces.push({ kind: "view", before: previous, after: item.object });
         continue;
       }
+      const renamed = renamedViewColumns(previous, item.object);
+      if (renamed !== undefined) {
+        viewRenames.push({ object: item.object, columns: renamed });
+        continue;
+      }
     }
     if (previous.kind === "type" && item.object.kind === "type") {
       refuseDomainBaseChange(previous, item.object);
@@ -348,6 +362,14 @@ export function planMigration(
       enforcementOnly(previous, item.object)
     ) {
       enforcement.push({ before: previous, after: item.object });
+      continue;
+    }
+    if (
+      previous.kind === "index" &&
+      item.object.kind === "index" &&
+      indexStorageOnly(previous, item.object)
+    ) {
+      storageReplaces.push({ before: previous, after: item.object });
       continue;
     }
     dropKeys.add(item.key);
@@ -645,6 +667,21 @@ export function planMigration(
       steps.push(...take(dialect.lower({ op: "replace-view", object: change.after, schema })));
     }
   }
+  for (const rename of viewRenames) {
+    for (const column of rename.columns) {
+      steps.push(
+        ...take(
+          dialect.lower({
+            op: "rename-view-column",
+            object: rename.object,
+            schema,
+            from: column.from,
+            to: column.to,
+          }),
+        ),
+      );
+    }
+  }
   for (const kind of ["function", "trigger", "view", "materializedView"] as const) {
     for (const object of creationOrder(request.after)) {
       if (object.kind !== kind) continue;
@@ -675,6 +712,7 @@ export function planMigration(
     if (object.kind !== "materializedView") continue;
     const key = identityKey(object.identity);
     if (!createKeys.has(key)) continue;
+    if (object.definition.populate === "later") continue;
     assertConcurrentRefresh(object, request.after);
     steps.push(...take(dialect.lower({ op: "refresh-matview", object, schema })));
   }
@@ -691,6 +729,10 @@ export function planMigration(
       }),
     ),
   );
+  for (const replace of storageReplaces) {
+    steps.push(...storageReplaceSteps(replace.before, replace.after, schema, dialect));
+  }
+  steps.push(...commentDiffSteps(beforeBy, afterBy, createKeys, schema, dialect));
   steps.push(
     ...contractSwaps(
       picklists,
@@ -1440,14 +1482,20 @@ function recreateDependents(
   createKeys: Set<string>,
   picklists: readonly PicklistChange[],
 ): void {
-  const changed = new Set(
-    alters
-      .filter(
-        (item) =>
-          canonicalTypeName(item.before.definition.dataType) !==
-          canonicalTypeName(item.after.definition.dataType),
-      )
-      .map((item) => identityKey(item.after.identity)),
+  const typed = alters.filter(
+    (item) =>
+      canonicalTypeName(item.before.definition.dataType) !==
+      canonicalTypeName(item.after.definition.dataType),
+  );
+  const changed = new Set(typed.map((item) => identityKey(item.after.identity)));
+  const tables = new Set(
+    typed.map((item) =>
+      identityKey({
+        kind: "table",
+        namespace: item.after.identity.parent.namespace,
+        name: item.after.identity.parent.name,
+      }),
+    ),
   );
   if (changed.size === 0) return;
   const deferred = new Set(picklists.map((change) => identityKey(change.before.identity)));
@@ -1455,7 +1503,7 @@ function recreateDependents(
   for (const item of beforeList) {
     const key = identityKey(item.object.identity);
     if (deferred.has(key) || !afterBy.has(key)) continue;
-    if (!dependsOnChanged(item.object, changed)) continue;
+    if (!dependsOnChanged(item.object, changed, tables)) continue;
     dropKeys.add(key);
     createKeys.add(key);
   }
@@ -1526,7 +1574,11 @@ function refuseRoutineDrops(
   }
 }
 
-function dependsOnChanged(object: CatalogObject, columns: ReadonlySet<string>): boolean {
+function dependsOnChanged(
+  object: CatalogObject,
+  columns: ReadonlySet<string>,
+  tables: ReadonlySet<string>,
+): boolean {
   if (
     object.kind !== "index" &&
     object.kind !== "constraint" &&
@@ -1535,7 +1587,14 @@ function dependsOnChanged(object: CatalogObject, columns: ReadonlySet<string>): 
   ) {
     return false;
   }
-  return object.dependencies.some((edge) => columns.has(identityKey(edge.target)));
+  return object.dependencies.some((edge) => {
+    if (columns.has(identityKey(edge.target))) return true;
+    return (
+      (object.kind === "view" || object.kind === "materializedView") &&
+      edge.target.kind === "table" &&
+      tables.has(identityKey(edge.target))
+    );
+  });
 }
 
 function recreateViewDependents(
@@ -1584,13 +1643,62 @@ function assertConcurrentRefresh(object: MaterializedViewObject, source: Catalog
     (item) =>
       item.kind === "index" &&
       item.definition.unique &&
+      item.definition.expression === undefined &&
+      item.definition.predicate === undefined &&
+      item.definition.columns.length > 0 &&
       item.identity.parent.name === object.identity.name,
   );
   if (unique) return;
   throw new OkmError(
     "OKM1822",
-    `Materialized view ${object.identity.name} refreshes concurrently and has no unique index.`,
-    { fix: { summary: "Add a unique index, or refresh without CONCURRENTLY." } },
+    `Materialized view ${object.identity.name} refreshes concurrently and has no unique index on plain columns.`,
+    {
+      fix: {
+        summary:
+          "Add a unique index with no expression and no predicate, or refresh without CONCURRENTLY.",
+      },
+    },
+  );
+}
+
+/**
+ * A pure output-column rename: same types, same query, same options, names moved.
+ *
+ * A new name that is still another column's name needs two steps that can
+ * collide, so that case is a drop and create instead.
+ *
+ * @param before - View in the database
+ * @param after - View in the schema
+ * @returns The renames, or `undefined` when this is not a pure rename
+ */
+function renamedViewColumns(
+  before: ViewObject,
+  after: ViewObject,
+): readonly { readonly from: string; readonly to: string }[] | undefined {
+  const left = before.definition.columns;
+  const right = after.definition.columns;
+  if (left.length !== right.length || left.length === 0) return undefined;
+  if (before.definition.query !== after.definition.query) return undefined;
+  if (!sameViewOptions(before, after)) return undefined;
+  const renames: { from: string; to: string }[] = [];
+  const oldNames = new Set(left.map((column) => column.name));
+  for (let index = 0; index < left.length; index += 1) {
+    const from = left[index];
+    const to = right[index];
+    if (from === undefined || to === undefined) return undefined;
+    if (canonicalTypeName(from.dataType) !== canonicalTypeName(to.dataType)) return undefined;
+    if (from.name === to.name) continue;
+    if (oldNames.has(to.name)) return undefined;
+    renames.push({ from: from.name, to: to.name });
+  }
+  return renames.length > 0 ? renames : undefined;
+}
+
+function sameViewOptions(before: ViewObject, after: ViewObject): boolean {
+  return (
+    before.definition.securityInvoker === after.definition.securityInvoker &&
+    before.definition.securityBarrier === after.definition.securityBarrier &&
+    before.definition.checkOption === after.definition.checkOption
   );
 }
 
@@ -2198,6 +2306,81 @@ function comparedExtensionType(
   return typeName;
 }
 
+function quotedName(name: string): string {
+  return `"${name.replaceAll('"', '""')}"`;
+}
+
+function indexStorageOnly(before: IndexObject, after: IndexObject): boolean {
+  const { storage: leftStorage, ...left } = before.definition;
+  const { storage: rightStorage, ...right } = after.definition;
+  return (
+    stable(left) === stable(right) && stable(leftStorage ?? null) !== stable(rightStorage ?? null)
+  );
+}
+
+function storageReplaceSteps(
+  before: IndexObject,
+  after: IndexObject,
+  schema: string,
+  dialect: DdlDialect,
+): PlanStep[] {
+  const temp = fitIdentifier(`${after.identity.name}_okmnew`);
+  const created: IndexObject = { ...after, identity: { ...after.identity, name: temp } };
+  return [
+    ...take([
+      ddlStep(
+        `drop index concurrently if exists ${quotedName(schema)}.${quotedName(temp)}`,
+        "drop-index",
+        "ddl",
+        "SHARE UPDATE EXCLUSIVE",
+        false,
+      ),
+    ]),
+    ...take(dialect.lower({ op: "create-index", index: created, schema, onExistingTable: true })),
+    ...take(dialect.lower({ op: "drop-index", index: before, schema, onExistingTable: true })),
+    ...take(dialect.lower({ op: "rename-index", schema, from: temp, to: after.identity.name })),
+  ];
+}
+
+function commentDiffSteps(
+  beforeBy: ReadonlyMap<string, CatalogObject>,
+  afterBy: ReadonlyMap<string, CatalogObject>,
+  createKeys: ReadonlySet<string>,
+  schema: string,
+  dialect: DdlDialect,
+): PlanStep[] {
+  const createdTables = new Set<string>();
+  for (const [key, object] of afterBy) {
+    if (object.kind === "table" && createKeys.has(key)) createdTables.add(object.identity.name);
+  }
+  const steps: PlanStep[] = [];
+  for (const [key, after] of afterBy) {
+    const before = beforeBy.get(key);
+    if (before === undefined) continue;
+    const covered =
+      createKeys.has(key) ||
+      ((after.kind === "column" || after.kind === "constraint" || after.kind === "index") &&
+        createdTables.has(after.identity.parent.name)) ||
+      (after.kind === "sequence" &&
+        after.dependencies.some(
+          (edge) => edge.target.kind === "table" && createdTables.has(edge.target.name),
+        ));
+    if (covered) continue;
+    if ((before.comment ?? undefined) === (after.comment ?? undefined)) continue;
+    steps.push(
+      ...take(
+        dialect.lower({
+          op: "comment",
+          object: after,
+          schema,
+          text: after.comment ?? null,
+        }),
+      ),
+    );
+  }
+  return steps;
+}
+
 function sameDefinition(
   left: CatalogObject,
   right: CatalogObject,
@@ -2207,7 +2390,10 @@ function sameDefinition(
     return (
       stable(canonicalColumns(left.definition.columns)) ===
         stable(canonicalColumns(right.definition.columns)) &&
-      left.definition.query === right.definition.query
+      left.definition.query === right.definition.query &&
+      left.definition.using === right.definition.using &&
+      left.definition.tablespace === right.definition.tablespace &&
+      stable(left.definition.storage ?? []) === stable(right.definition.storage ?? [])
     );
   }
   return stable(forComparison(left, schemas)) === stable(forComparison(right, schemas));
@@ -2292,7 +2478,10 @@ function forComparison(
 }
 
 function canonicalColumns(columns: readonly ViewColumn[]): ViewColumn[] {
-  return columns.map((column) => ({ ...column, dataType: canonicalTypeName(column.dataType) }));
+  return columns.map((column) => ({
+    name: column.name,
+    dataType: canonicalTypeName(column.dataType),
+  }));
 }
 
 /**

@@ -129,6 +129,8 @@ export type FunctionOptions = {
   readonly schema?: string;
   /** `EXECUTE` for declared roles. Keys are `roles` keys. */
   readonly grants?: Readonly<Record<string, unknown>>;
+  /** Comment on the function. Absent means unmanaged. */
+  readonly comment?: string;
 };
 
 /**
@@ -160,6 +162,8 @@ export type TriggerOptions = {
   readonly updateOf?: readonly string[];
   readonly when?: SqlText | string;
   readonly calls: Routine;
+  /** Comment on the trigger. Absent means unmanaged. */
+  readonly comment?: string;
 };
 
 /**
@@ -247,6 +251,7 @@ export function fn<
         ...(atomic ? { atomic: true } : {}),
         provenance,
         dependencies: dependencyEdges(options.dependsOn, built),
+        ...(options.comment !== undefined ? { comment: options.comment } : {}),
       }),
     ];
   };
@@ -448,6 +453,7 @@ export function trigger(name: string, options: TriggerOptions): TriggerDeclarati
           ...(options.updateOf !== undefined ? { updateOf: options.updateOf } : {}),
           ...(when !== undefined ? { when } : {}),
           provenance: { origin: "file", name },
+          ...(options.comment !== undefined ? { comment: options.comment } : {}),
         }),
       ];
     },

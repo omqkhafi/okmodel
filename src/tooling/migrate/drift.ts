@@ -17,6 +17,7 @@ import postgres, { type Sql } from "postgres";
 
 import { OkmError } from "../../contracts/error.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
+import { identityKey } from "../../contracts/catalog/identity.js";
 import { quoteIdent } from "../../dialects/pg/ddl.js";
 import { isDomain } from "../../contracts/catalog/enum.js";
 import type { CatalogObject } from "../../contracts/catalog/types.js";
@@ -61,7 +62,8 @@ export async function assertAuthorDrift(
   roles?: RolesInput,
   allowPooler = false,
   unpulled: ReadonlySet<string> = NO_UNPULLED,
-): Promise<void> {
+  commentAuthority?: Catalog,
+): Promise<readonly string[]> {
   assertDirectConnection(url, allowPooler);
   const schema = authorSchema(author);
   // pg_get_viewdef qualifies a table that is not on the search path, so a
@@ -96,7 +98,7 @@ export async function assertAuthorDrift(
     `;
     if (present[0]?.reg == null) {
       await introspectSchema(runner, schema, schema, introspectOptions);
-      return;
+      return [];
     }
     const authorOnServer = await sealAuthored(runner, author);
     const live = await sealStoredChecks(
@@ -108,8 +110,9 @@ export async function assertAuthorDrift(
     // exists, so a full plan would drop that security. A schema with no
     // policy leaves the live policies in place. rlsTenancy declares policies
     // and still drifts when they differ.
+    const comments = unmanagedComments(live, authorOnServer, commentAuthority);
     const compared = {
-      before: withoutUnpulled(withoutUnmanagedPolicies(live, authorOnServer), unpulled),
+      before: withoutUnpulled(withoutUnmanagedPolicies(comments.catalog, authorOnServer), unpulled),
       after: authorOnServer,
       name: "check",
       schema,
@@ -120,7 +123,7 @@ export async function assertAuthorDrift(
       const postgres = Math.floor(Number(version[0]?.v ?? "0") / 10_000);
       if (postgres >= 19) plan = planMigration({ ...compared, postgres });
     }
-    if (invalid.length === 0 && plan.steps.length === 0) return;
+    if (invalid.length === 0 && plan.steps.length === 0) return comments.information;
     const weaker = unvalidatedNotNull(live, authorOnServer);
     const sqlText = plan.steps.map((step) => step.sql).join("\n");
     throw new OkmError(
@@ -140,6 +143,79 @@ export async function assertAuthorDrift(
   } finally {
     await finishQuiet(() => sql.end({ timeout: 5 }));
   }
+}
+
+/**
+ * Drops a live comment the schema does not declare and no earlier snapshot recorded.
+ *
+ * The plan then has nothing to remove. A comment the snapshot recorded stays,
+ * so a later plan can write `IS NULL`. The returned lines are OKM2107.
+ *
+ * @param live - Introspected catalog
+ * @param author - Schema catalog
+ * @param authority - Previous migration snapshot, when one exists
+ * @returns The catalog to plan and the information lines
+ */
+export function unmanagedComments(
+  live: Catalog,
+  author: Catalog,
+  authority: Catalog | undefined,
+): { readonly catalog: Catalog; readonly information: readonly string[] } {
+  const authorBy = new Map(author.objects.map((object) => [identityKey(object.identity), object]));
+  const authorityBy = new Map(
+    (authority?.objects ?? []).map((object) => [identityKey(object.identity), object]),
+  );
+  const information: string[] = [];
+  const objects = live.objects.map((object) =>
+    stripUnmanaged(object, authorBy, authorityBy, information),
+  );
+  return { catalog: { ...live, objects }, information };
+}
+
+function named(object: CatalogObject): string {
+  return "name" in object.identity ? object.identity.name : object.kind;
+}
+
+function stripUnmanaged(
+  object: CatalogObject,
+  authorBy: ReadonlyMap<string, CatalogObject>,
+  authorityBy: ReadonlyMap<string, CatalogObject>,
+  information: string[],
+): CatalogObject {
+  const key = identityKey(object.identity);
+  const wanted = authorBy.get(key);
+  const known = authorityBy.get(key);
+  let next = object;
+  if (
+    object.comment !== undefined &&
+    wanted?.comment === undefined &&
+    known?.comment === undefined
+  ) {
+    information.push(
+      `OKM2107 ${object.kind} ${named(object)} has a comment the schema does not manage. okm pull writes it.`,
+    );
+    const { comment: _comment, ...rest } = object;
+    next = rest;
+  }
+  if (next.kind !== "view" && next.kind !== "materializedView") return next;
+  const columns = next.definition.columns.map((column) => {
+    if (column.comment === undefined) return column;
+    const authorColumn =
+      wanted?.kind === next.kind
+        ? wanted.definition.columns.find((item) => item.name === column.name)
+        : undefined;
+    const knownColumn =
+      known?.kind === next.kind
+        ? known.definition.columns.find((item) => item.name === column.name)
+        : undefined;
+    if (authorColumn?.comment !== undefined || knownColumn?.comment !== undefined) return column;
+    information.push(
+      `OKM2107 ${next.kind} ${next.identity.name}.${column.name} has a comment the schema does not manage. okm pull writes it.`,
+    );
+    const { comment: _comment, ...rest } = column;
+    return rest;
+  });
+  return { ...next, definition: { ...next.definition, columns } };
 }
 
 /**
@@ -306,7 +382,11 @@ export async function sealIndexExpressions(
   const objects: CatalogObject[] = [];
   let changed = false;
   for (const object of source.objects) {
-    if (object.kind !== "index" || object.definition.expression === undefined) {
+    const predicateOnly =
+      object.kind === "index" &&
+      object.definition.expression === undefined &&
+      object.definition.predicate !== undefined;
+    if (object.kind !== "index" || (object.definition.expression === undefined && !predicateOnly)) {
       objects.push(object);
       continue;
     }
@@ -314,7 +394,10 @@ export async function sealIndexExpressions(
     try {
       reprinted = await reprintIndex(
         runner,
-        object.definition.expression,
+        object.definition.expression ??
+          (object.definition.columns[0] !== undefined
+            ? quoteIdent(object.definition.columns[0])
+            : "true"),
         columnsByParent.get(object.identity.parent.name) ?? [],
         types,
         {
@@ -328,7 +411,7 @@ export async function sealIndexExpressions(
     } catch (error) {
       // A pending `using` tail names an operator class the migration has not
       // installed yet. Keep the author text so check still reports the drift.
-      if (usingTailClosed(object.definition.expression, error)) {
+      if (usingTailClosed(object.definition.expression ?? "", error)) {
         objects.push(object);
         continue;
       }
@@ -340,7 +423,26 @@ export async function sealIndexExpressions(
         : reprinted.predicate.length > 0
           ? reprinted.predicate
           : object.definition.predicate;
-    const expression = reprinted.expression.length > 0 ? reprinted.expression : undefined;
+    const expression = predicateOnly
+      ? undefined
+      : reprinted.expression.length > 0
+        ? reprinted.expression
+        : undefined;
+    if (predicateOnly) {
+      if (predicate === object.definition.predicate) {
+        objects.push(object);
+        continue;
+      }
+      changed = true;
+      objects.push({
+        ...object,
+        definition: {
+          ...object.definition,
+          ...(predicate !== undefined ? { predicate } : {}),
+        },
+      });
+      continue;
+    }
     if (
       expression === object.definition.expression &&
       sameColumnNames(reprinted.columns, object.definition.columns) &&
@@ -357,6 +459,7 @@ export async function sealIndexExpressions(
         ...rest,
         columns: reprinted.columns,
         ...(expression !== undefined ? { expression } : {}),
+        ...(reprinted.elements !== undefined ? { elements: reprinted.elements } : {}),
         ...(predicate !== undefined ? { predicate } : {}),
       },
     });

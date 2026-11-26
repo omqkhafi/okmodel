@@ -29,6 +29,8 @@ export type EnumTypeInput = {
   readonly owner?: Owner;
   readonly provenance: Provenance;
   readonly dependencies?: readonly ObjectIdentity[];
+  /** Absent means the comment is not managed. */
+  readonly comment?: string;
 };
 
 /**
@@ -72,6 +74,7 @@ export function enumType(input: EnumTypeInput): TypeObject {
     definition: { labels },
     dependencies: normaliseEdges(input.dependencies ?? []),
     provenance: input.provenance,
+    ...(input.comment !== undefined ? { comment: input.comment } : {}),
   };
 }
 
@@ -84,6 +87,8 @@ export type DomainTypeInput = {
   readonly owner?: Owner;
   readonly provenance: Provenance;
   readonly dependencies?: readonly ObjectIdentity[];
+  /** Absent means the comment is not managed. */
+  readonly comment?: string;
 };
 
 /**
@@ -119,6 +124,7 @@ export function domainType(input: DomainTypeInput): TypeObject {
     definition,
     dependencies: normaliseEdges(input.dependencies ?? []),
     provenance: input.provenance,
+    ...(input.comment !== undefined ? { comment: input.comment } : {}),
   };
 }
 

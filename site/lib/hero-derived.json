@@ -945,7 +945,7 @@
         {
           "n": 1,
           "mark": "add",
-          "text": "import { schema, sql, table, t } from \"okmodel/pg\";"
+          "text": "import { not, schema, table, t } from \"okmodel/pg\";"
         },
         {
           "n": 2,
@@ -985,30 +985,25 @@
         {
           "n": 15,
           "mark": "add",
-          "text": "const titled = view(\"titled\", {"
+          "text": "const titled = view(\"titled\", { tables: [notes] }, (q) =>"
         },
         {
           "n": 16,
           "mark": "add",
-          "text": "  columns: [{ name: \"id\", type: \"bigint\" }, { name: \"title\", type: \"text\" }],"
+          "text": "  q.notes.find({ select: [\"id\", \"title\"], where: { title: not(null) } }),"
         },
         {
           "n": 17,
           "mark": "add",
-          "text": "  query: sql`select id, title from notes where title is not null`,"
+          "text": ");"
         },
         {
           "n": 18,
           "mark": "add",
-          "text": "});"
-        },
-        {
-          "n": 19,
-          "mark": "add",
           "text": ""
         },
         {
-          "n": 20,
+          "n": 19,
           "mark": "add",
           "text": "export default schema({ tables: [authors, notes], views: [titled] });"
         }
@@ -1022,7 +1017,7 @@
             "kind": "create-view",
             "lock": "ACCESS EXCLUSIVE",
             "transactional": true,
-            "sql": "create view \"public\".\"titled\" as select id, title from notes where title is not null;"
+            "sql": "create view \"public\".\"titled\" with (security_invoker = true) as select t.\"id\" as \"id\", t.\"title\" as \"title\" from \"notes\" t where t.\"title\" is not null;"
           }
         ]
       },

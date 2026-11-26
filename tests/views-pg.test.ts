@@ -12,7 +12,7 @@ import type { Sql } from "postgres";
 import { catalog } from "../src/contracts/catalog/build.js";
 import type { Catalog } from "../src/contracts/catalog/types.js";
 import { introspectSchema, type CatalogQuery } from "../src/dialects/pg/introspect.js";
-import { schema, table, t } from "../src/dialects/pg/index.js";
+import { index, schema, table, t } from "../src/dialects/pg/index.js";
 import { materializedView, view } from "../src/dialects/pg/view/index.js";
 import { sealViews } from "../src/dialects/pg/view/scratch.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
@@ -35,13 +35,15 @@ postgresTest(
       const declared = schema({
         tables: [tasks],
         views: [
-          view("active_tasks", {
-            columns: [
-              { name: "id", type: "text" },
-              { name: "title", type: "text" },
-            ],
-            query: "select id, title from tasks where title is not null",
-          }),
+          view("active_tasks", { tables: [] }, (q) =>
+            q.sql({
+              columns: [
+                { name: "id", type: t.text() },
+                { name: "title", type: t.text() },
+              ],
+              query: "select id, title from tasks where title is not null",
+            }),
+          ),
         ],
       });
       const sealed = await sealViews(queryOf(sql), declared.catalog);
@@ -59,14 +61,16 @@ postgresTest(
       const appended = schema({
         tables: [tasks],
         views: [
-          view("active_tasks", {
-            columns: [
-              { name: "id", type: "text" },
-              { name: "title", type: "text" },
-              { name: "marker", type: "integer" },
-            ],
-            query: "select id, title, 1 as marker from tasks where title is not null",
-          }),
+          view("active_tasks", { tables: [] }, (q) =>
+            q.sql({
+              columns: [
+                { name: "id", type: t.text() },
+                { name: "title", type: t.text() },
+                { name: "marker", type: t.integer() },
+              ],
+              query: "select id, title, 1 as marker from tasks where title is not null",
+            }),
+          ),
         ],
       });
       const sealedNext = await sealViews(queryOf(sql), appended.catalog);
@@ -92,13 +96,15 @@ postgresTest(
       const before = schema({
         tables: [table("tasks", { id: t.text().primaryKey(), title: t.text() })],
         views: [
-          view("active_tasks", {
-            columns: [
-              { name: "id", type: "text" },
-              { name: "title", type: "text" },
-            ],
-            query: "select id, title from tasks",
-          }),
+          view("active_tasks", { tables: [] }, (q) =>
+            q.sql({
+              columns: [
+                { name: "id", type: t.text() },
+                { name: "title", type: t.text() },
+              ],
+              query: "select id, title from tasks",
+            }),
+          ),
         ],
       });
       const sealed = await sealViews(queryOf(sql), before.catalog);
@@ -106,13 +112,15 @@ postgresTest(
       const after = schema({
         tables: [table("tasks", { id: t.text().primaryKey(), title: t.integer() })],
         views: [
-          view("active_tasks", {
-            columns: [
-              { name: "id", type: "text" },
-              { name: "title", type: "integer" },
-            ],
-            query: "select id, title from tasks",
-          }),
+          view("active_tasks", { tables: [] }, (q) =>
+            q.sql({
+              columns: [
+                { name: "id", type: t.text() },
+                { name: "title", type: t.integer() },
+              ],
+              query: "select id, title from tasks",
+            }),
+          ),
         ],
       });
       const sealedAfter = await sealViews(queryOf(sql), after.catalog);
@@ -139,10 +147,12 @@ postgresTest(
       const app = schema({
         tables: [table("tasks", { id: t.text().primaryKey(), title: t.text() })],
         views: [
-          view("active_tasks", {
-            columns: [{ name: "id", type: "text" }],
-            query: "select id from tasks",
-          }),
+          view("active_tasks", { tables: [] }, (q) =>
+            q.sql({
+              columns: [{ name: "id", type: t.text() }],
+              query: "select id from tasks",
+            }),
+          ),
         ],
       });
       const sealed = await sealViews(queryOf(sql), app.catalog);
@@ -170,15 +180,22 @@ postgresTest(
       const app = schema({
         tables: [table("tasks", { id: t.text().primaryKey(), title: t.text() })],
         views: [
-          materializedView("task_titles", {
-            columns: [
-              { name: "id", type: "text" },
-              { name: "title", type: "text" },
-            ],
-            query: "select id, title from tasks",
-            indexes: [{ name: "task_titles_id", columns: ["id"], unique: true }],
-            refresh: "concurrently",
-          }),
+          materializedView(
+            "task_titles",
+            {
+              tables: [],
+              indexes: (columns) => [index(columns.id).unique().name("task_titles_id")],
+              refresh: "concurrently",
+            },
+            (q) =>
+              q.sql({
+                columns: [
+                  { name: "id", type: t.text() },
+                  { name: "title", type: t.text() },
+                ],
+                query: "select id, title from tasks",
+              }),
+          ),
         ],
       });
       const sealed = await sealViews(queryOf(sql), app.catalog);
@@ -211,18 +228,21 @@ postgresTest(
         tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
         tables: [tasks],
         views: [
-          view("active_tasks", {
-            columns: [
-              { name: "tenant_id", type: "uuid" },
-              { name: "title", type: "text" },
-            ],
-            query: "select tenant_id, title from tasks",
-          }),
-          view("shared_titles", {
-            columns: [{ name: "title", type: "text" }],
-            query: "select title from tasks",
-            tenancy: global("shared titles"),
-          }),
+          view("active_tasks", { tables: [] }, (q) =>
+            q.sql({
+              columns: [
+                { name: "tenant_id", type: t.uuid() },
+                { name: "title", type: t.text() },
+              ],
+              query: "select tenant_id, title from tasks",
+            }),
+          ),
+          view("shared_titles", { tables: [], tenancy: global("shared titles") }, (q) =>
+            q.sql({
+              columns: [{ name: "title", type: t.text() }],
+              query: "select title from tasks",
+            }),
+          ),
         ],
       });
       const sealed = await sealViews(queryOf(sql), app.catalog);

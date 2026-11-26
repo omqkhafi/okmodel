@@ -629,7 +629,7 @@ postgresTest(
           `const tasks = table("tasks", { id: t.identity(), status: t.text() });`,
           "export const app = schema({",
           "  tables: [tasks],",
-          `  views: [view("open_tasks", { columns: [{ name: "id", type: "bigint" }], query: ${JSON.stringify(" SELECT id\n   FROM tasks\n  WHERE status <> 'done'::text;")} })],`,
+          `  views: [view("open_tasks", { tables: [] }, (q) => q.sql({ columns: [{ name: "id", type: t.bigint() }], query: ${JSON.stringify(" SELECT id\n   FROM tasks\n  WHERE status <> 'done'::text;")} }))],`,
           "});",
         ].join("\n"),
       );
@@ -678,7 +678,7 @@ postgresTest(
           "export const app = schema({",
           "  tables: [tasks],",
           "  functions: [isOpen],",
-          `  views: [view("open_tasks", { columns: [{ name: "id", type: "bigint" }], query: ${JSON.stringify(" SELECT id\n   FROM tasks\n  WHERE is_open(status);")} })],`,
+          `  views: [view("open_tasks", { tables: [] }, (q) => q.sql({ columns: [{ name: "id", type: t.bigint() }], query: ${JSON.stringify(" SELECT id\n   FROM tasks\n  WHERE is_open(status);")} }))],`,
           "});",
         ].join("\n"),
       );
@@ -712,7 +712,7 @@ postgresTest(
 
 postgresTest(
   gate,
-  "an archivable unique index stored with the old predicate is cleared by one migration",
+  "an archivable unique index stored with the old predicate is not drift",
   async () => {
     await withProject(async ({ cwd }) => {
       writeModule(cwd, ARCHIVABLE_UNIQUE);
@@ -729,28 +729,9 @@ postgresTest(
       );
       await capture(["migrate", "apply"], cwd);
 
-      const pending = await rejected(["check"], cwd);
-      expect(pending.code).toBe("OKM1510");
-      expect(pending.message).toContain("OKM1529");
-      await generateWithErrors(cwd, ["generate", "archive_predicate"]);
-      const upgrade = migrationPath(cwd, ".sql");
-      expect(upgrade).toContain("0002_archive_predicate");
-      writeFileSync(
-        upgrade,
-        readFileSync(upgrade, "utf8").replace(
-          /^(create unique index concurrently .*)$/m,
-          "-- okm-allow OKM1529: rebuilds the same index with the printed predicate\n$1",
-        ),
-      );
-      expect(await capture(["migrate", "apply"], cwd)).toContain("applied 0002_archive_predicate");
-      const listed = await capture(["check"], cwd);
-      expect(listed).toContain("allow 0002_archive_predicate step 2 OKM1529 data-dependent: ");
-      expect(listed.endsWith("ok\n")).toBe(true);
-      expect(listed).not.toContain("OKM2300");
-
+      expect(await capture(["check"], cwd)).toBe("ok\n");
       const history = await rejected(["migrate", "check"], cwd);
-      expect(history.code).toBe("OKM1547");
-      expect(history.message).toContain("0001_init");
+      expect(history.code).toBe("OKM1549");
     });
   },
   90_000,

@@ -147,6 +147,9 @@ export type Not<V> = Tagged<"not", V>;
 /** Disjunction. Each branch is a where object. */
 export type Or<V> = Tagged<"or", readonly V[]>;
 
+/** Conjunction. Each branch is a where object or a boolean expression. */
+export type And<V> = Tagged<"and", readonly V[]>;
+
 /**
  * `T`, and not a tagged operator.
  *

@@ -9,6 +9,7 @@ import { expect, test } from "bun:test";
 import { OkmError } from "../src/contracts/error.js";
 import { open as openPglite } from "../src/adapters/pg/pglite.js";
 import {
+  index,
   boolean,
   id,
   identity,
@@ -170,15 +171,22 @@ test("B-34: testing populates concurrent matviews so refresh() works", async () 
     tenancy: columnTenancy({ key: "workspaceId", type: "uuid" }),
     tables: [table("projects", { id: id({ default: "none" }), name: text() })],
     views: [
-      materializedView("project_titles", {
-        columns: [
-          { name: "workspace_id", type: "uuid" },
-          { name: "name", type: "text" },
-        ],
-        query: "select workspace_id, name from projects",
-        refresh: "concurrently",
-        indexes: [{ columns: ["workspace_id"], unique: true }],
-      }),
+      materializedView(
+        "project_titles",
+        {
+          tables: [],
+          refresh: "concurrently",
+          indexes: (columns) => [index(columns.workspaceId).unique()],
+        },
+        (q) =>
+          q.sql({
+            columns: [
+              { name: "workspace_id", type: uuid() },
+              { name: "name", type: text() },
+            ],
+            query: "select workspace_id, name from projects",
+          }),
+      ),
     ],
   });
   const harness = await testing(app, { driver: openPglite() });
@@ -203,25 +211,30 @@ test("isolation reads a tenant view and a materialized view, and skips a global 
       tenancy,
       tables: [table("projects", { id: id({ default: "none" }), name: text() })],
       views: [
-        view("project_names", {
-          columns: [
-            { name: "workspace_id", type: "uuid" },
-            { name: "name", type: "text" },
-          ],
-          query: " SELECT workspace_id,\n    name\n   FROM projects;",
-        }),
-        materializedView("project_directory", {
-          columns: [
-            { name: "workspace_id", type: "uuid" },
-            { name: "name", type: "text" },
-          ],
-          query: "select workspace_id, name from projects",
-        }),
-        view("shared_titles", {
-          columns: [{ name: "name", type: "text" }],
-          query: "select name from projects",
-          tenancy: global("shared titles"),
-        }),
+        view("project_names", { tables: [] }, (q) =>
+          q.sql({
+            columns: [
+              { name: "workspace_id", type: uuid() },
+              { name: "name", type: text() },
+            ],
+            query: " SELECT workspace_id,\n    name\n   FROM projects;",
+          }),
+        ),
+        materializedView("project_directory", { tables: [] }, (q) =>
+          q.sql({
+            columns: [
+              { name: "workspace_id", type: uuid() },
+              { name: "name", type: text() },
+            ],
+            query: "select workspace_id, name from projects",
+          }),
+        ),
+        view("shared_titles", { tables: [], tenancy: global("shared titles") }, (q) =>
+          q.sql({
+            columns: [{ name: "name", type: text() }],
+            query: "select name from projects",
+          }),
+        ),
       ],
     });
   const harness = await testing(withView(columnTenancy({ key: "workspaceId", type: "uuid" })), {

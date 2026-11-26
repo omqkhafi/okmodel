@@ -8,7 +8,7 @@
  * is not a literal is not read.
  */
 
-import type { Catalog, ObjectRef } from "../../contracts/catalog/types.js";
+import type { Catalog, IndexDefinition, ObjectRef } from "../../contracts/catalog/types.js";
 import { OkmError } from "../../contracts/error.js";
 import type { TableModel } from "../../dialects/pg/model.js";
 import { warningRule, type WarningIgnore } from "../../runtime/warnings/catalog.js";
@@ -71,6 +71,7 @@ type Group = {
   primary: boolean;
   readonly keys: (readonly string[])[];
   readonly opaque: (readonly string[])[];
+  readonly partials: { readonly columns: readonly string[]; readonly predicate: string }[];
   readonly foreign: {
     readonly columns: readonly string[];
     readonly parent: string;
@@ -100,6 +101,8 @@ export function schemaAdvice(
     ...missingForeignIndexes(groups),
     ...missingPrimaryKeys(groups),
     ...missingFilterIndexes(groups, input, uses),
+    ...duplicateIndexes(input.catalog),
+    ...genericPlanTrap(groups, input, uses),
   ].sort(compareFound);
   const ignore = config.ignore ?? [];
   const used = new Set<WarningIgnore>();
@@ -198,6 +201,7 @@ function groupTables(catalog: Catalog): ReadonlyMap<string, Group> {
         primary: false,
         keys: [],
         opaque: [],
+        partials: [],
         foreign: [],
       };
       groups.set(key, group);
@@ -210,8 +214,10 @@ function groupTables(catalog: Catalog): ReadonlyMap<string, Group> {
         object.owner === "managed";
     } else if (object.kind === "index") {
       const group = open(object.identity.parent);
-      const { columns, expression } = object.definition;
-      (expression === undefined ? group.keys : group.opaque).push(columns);
+      const { columns, expression, predicate } = object.definition;
+      if (expression !== undefined) group.opaque.push(columns);
+      else if (predicate !== undefined) group.partials.push({ columns, predicate });
+      else group.keys.push(columns);
     } else if (object.kind === "constraint") {
       const group = open(object.identity.parent);
       const { constraintKind, columns, references } = object.definition;
@@ -308,7 +314,8 @@ function missingFilterIndexes(
     for (const use of uses) {
       if (use.table === model.name) reach(use.field, `the filters() ${use.list} list`, use);
     }
-    for (const preset of presetFields(model)) {
+    const presets = presetFields(model);
+    for (const preset of presets) {
       for (const field of preset.fields) reach(field, `preset ${preset.name}`);
     }
     const tenant = new Set<string>();
@@ -319,6 +326,7 @@ function missingFilterIndexes(
     for (const [column, entry] of reached) {
       if (undecided(group, [column])) continue;
       if (group.keys.some((list) => leads(list, column, tenant))) continue;
+      if (partialCovers(group, column, tenant, entry, presets, model)) continue;
       found.push({
         rule,
         table: group.name,
@@ -331,10 +339,12 @@ function missingFilterIndexes(
   return found;
 }
 
-function presetFields(
-  model: TableModel,
-): readonly { readonly name: string; readonly fields: readonly string[] }[] {
-  const out: { name: string; fields: readonly string[] }[] = [];
+function presetFields(model: TableModel): readonly {
+  readonly name: string;
+  readonly fields: readonly string[];
+  readonly filters: readonly unknown[];
+}[] {
+  const out: { name: string; fields: readonly string[]; filters: readonly unknown[] }[] = [];
   for (const [name, preset] of Object.entries(model.presets ?? {})) {
     if (typeof preset !== "function") continue;
     const added: unknown[] = [];
@@ -349,9 +359,173 @@ function presetFields(
     } catch {
       continue;
     }
-    out.push({ name, fields: [...new Set(added.flatMap(fieldsOf))] });
+    out.push({ name, fields: [...new Set(added.flatMap(fieldsOf))], filters: added });
   }
   return out;
+}
+
+function partialCovers(
+  group: Group,
+  column: string,
+  tenant: ReadonlySet<string>,
+  entry: Reach,
+  presets: readonly { readonly name: string; readonly filters: readonly unknown[] }[],
+  model: TableModel,
+): boolean {
+  return group.partials.some((partial) => {
+    if (!leads(partial.columns, column, tenant)) return false;
+    return entry.sources.every((source) => {
+      if (!source.startsWith("preset ")) return false;
+      const preset = presets.find((item) => item.name === source.slice("preset ".length));
+      return (
+        preset?.filters.some((filter) => predicateIncluded(partial.predicate, filter, model)) ===
+        true
+      );
+    });
+  });
+}
+
+function predicateIncluded(predicate: string, filter: unknown, model: TableModel): boolean {
+  if (typeof filter !== "object" || filter === null || Array.isArray(filter)) return false;
+  const body = predicate.toLowerCase();
+  const entries = Object.entries(filter);
+  if (entries.length === 0) return false;
+  for (const [field, value] of entries) {
+    const column = model.columns.find((item) => item.field === field);
+    const sql = (column?.sql ?? field).toLowerCase();
+    if (!body.includes(sql)) return false;
+    if (value === null) {
+      if (!body.includes("is null")) return false;
+      continue;
+    }
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      if (!body.includes(String(value).toLowerCase())) return false;
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
+function duplicateIndexes(catalog: Catalog): readonly Found[] {
+  const duplicate = registered("duplicate-index");
+  const redundant = registered("redundant-index");
+  const found: Found[] = [];
+  const byTable = new Map<string, Extract<(typeof catalog.objects)[number], { kind: "index" }>[]>();
+  for (const object of catalog.objects) {
+    if (object.kind !== "index") continue;
+    const list = byTable.get(object.identity.parent.name) ?? [];
+    list.push(object);
+    byTable.set(object.identity.parent.name, list);
+  }
+  for (const [table, indexes] of byTable) {
+    for (let leftAt = 0; leftAt < indexes.length; leftAt += 1) {
+      for (let rightAt = leftAt + 1; rightAt < indexes.length; rightAt += 1) {
+        const left = indexes[leftAt];
+        const right = indexes[rightAt];
+        if (left === undefined || right === undefined) continue;
+        if (sameIndex(left.definition, right.definition)) {
+          found.push({
+            rule: duplicate,
+            table,
+            target: `${table}.${right.identity.name}`,
+            reason: `Index ${right.identity.name} duplicates ${left.identity.name}.`,
+          });
+          continue;
+        }
+        const shorter = prefixRedundant(left, right);
+        if (shorter === undefined) continue;
+        found.push({
+          rule: redundant,
+          table,
+          target: `${table}.${shorter.identity.name}`,
+          reason: `Index ${shorter.identity.name} is a prefix of another index on ${table}. A unique, partial, or expression index is redundant only on a full match.`,
+        });
+      }
+    }
+  }
+  return found;
+}
+
+function sameIndex(left: IndexDefinition, right: IndexDefinition): boolean {
+  return (
+    left.unique === right.unique &&
+    (left.method ?? "btree") === (right.method ?? "btree") &&
+    left.predicate === right.predicate &&
+    left.expression === right.expression &&
+    left.columns.length === right.columns.length &&
+    left.columns.every((column, index) => column === right.columns[index])
+  );
+}
+
+function prefixRedundant(
+  left: Extract<Catalog["objects"][number], { kind: "index" }>,
+  right: Extract<Catalog["objects"][number], { kind: "index" }>,
+): Extract<Catalog["objects"][number], { kind: "index" }> | undefined {
+  if (!plainIndex(left) || !plainIndex(right)) return undefined;
+  const leftCols = left.definition.columns;
+  const rightCols = right.definition.columns;
+  if (
+    leftCols.length < rightCols.length &&
+    leftCols.every((column, index) => column === rightCols[index])
+  ) {
+    return left;
+  }
+  if (
+    rightCols.length < leftCols.length &&
+    rightCols.every((column, index) => column === leftCols[index])
+  ) {
+    return right;
+  }
+  return undefined;
+}
+
+function plainIndex(index: Extract<Catalog["objects"][number], { kind: "index" }>): boolean {
+  return (
+    index.definition.unique !== true &&
+    index.definition.predicate === undefined &&
+    index.definition.expression === undefined
+  );
+}
+
+function genericPlanTrap(
+  groups: ReadonlyMap<string, Group>,
+  input: SchemaAdviceInput,
+  uses: readonly FilterUse[],
+): readonly Found[] {
+  const rule = registered("partial-index-bound-value");
+  const found: Found[] = [];
+  for (const name of Object.keys(input.model)) {
+    const model = input.model[name];
+    if (model === undefined) continue;
+    const group = [...groups.values()].find((item) => item.name === model.sql);
+    if (group === undefined) continue;
+    const bound = new Set<string>();
+    for (const use of uses) {
+      if (use.table !== model.name) continue;
+      const column = model.columns.find((item) => item.field === use.field);
+      if (column !== undefined) bound.add(column.sql);
+    }
+    for (const preset of presetFields(model)) {
+      for (const field of preset.fields) {
+        const column = model.columns.find((item) => item.field === field);
+        if (column !== undefined) bound.add(column.sql);
+      }
+    }
+    for (const partial of group.partials) {
+      for (const column of partial.columns) {
+        if (!bound.has(column)) continue;
+        if (!partial.predicate.toLowerCase().includes(column.toLowerCase())) continue;
+        found.push({
+          rule,
+          table: group.name,
+          target: `${group.name}.${column}`,
+          reason: `${group.name}.${column} is filtered with a bound value and is also a partial-index predicate column. Presets and filters() compile to parameters, so the generic plan may ignore that index.`,
+        });
+      }
+    }
+  }
+  return found;
 }
 
 function leads(list: readonly string[], column: string, tenant: ReadonlySet<string>): boolean {

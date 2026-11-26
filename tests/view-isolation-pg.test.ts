@@ -108,14 +108,16 @@ postgresTest(
       tenancy: rlsTenancy({ key: "tenantId", type: "uuid" }),
       tables: [notes],
       views: [
-        view("open_notes", {
-          columns: [
-            { name: "id", type: "uuid" },
-            { name: "tenant_id", type: "uuid" },
-            { name: "title", type: "text" },
-          ],
-          query: "select id, tenant_id, title from notes",
-        }),
+        view("open_notes", { tables: [] }, (q) =>
+          q.sql({
+            columns: [
+              { name: "id", type: uuid() },
+              { name: "tenant_id", type: uuid() },
+              { name: "title", type: text() },
+            ],
+            query: "select id, tenant_id, title from notes",
+          }),
+        ),
       ],
     });
     const database = await createIsolatedDatabase();
@@ -188,25 +190,30 @@ function columnSchema(tenancy: ColumnTenancy) {
     tenancy,
     tables: [table("projects", { id: id({ default: "none" }), name: text() })],
     views: [
-      view("project_names", {
-        columns: [
-          { name: "workspace_id", type: "uuid" },
-          { name: "name", type: "text" },
-        ],
-        query: "select workspace_id, name from projects",
-      }),
-      materializedView("project_directory", {
-        columns: [
-          { name: "workspace_id", type: "uuid" },
-          { name: "name", type: "text" },
-        ],
-        query: "select workspace_id, name from projects",
-      }),
-      view("shared_titles", {
-        columns: [{ name: "name", type: "text" }],
-        query: "select name from projects",
-        tenancy: global("shared titles"),
-      }),
+      view("project_names", { tables: [] }, (q) =>
+        q.sql({
+          columns: [
+            { name: "workspace_id", type: uuid() },
+            { name: "name", type: text() },
+          ],
+          query: "select workspace_id, name from projects",
+        }),
+      ),
+      materializedView("project_directory", { tables: [] }, (q) =>
+        q.sql({
+          columns: [
+            { name: "workspace_id", type: uuid() },
+            { name: "name", type: text() },
+          ],
+          query: "select workspace_id, name from projects",
+        }),
+      ),
+      view("shared_titles", { tables: [], tenancy: global("shared titles") }, (q) =>
+        q.sql({
+          columns: [{ name: "name", type: text() }],
+          query: "select name from projects",
+        }),
+      ),
     ],
   });
 }
@@ -223,14 +230,16 @@ function compositeSchema() {
       ),
     ],
     views: [
-      view("document_titles", {
-        columns: [
-          { name: "organization_id", type: "uuid" },
-          { name: "workspace_id", type: "uuid" },
-          { name: "title", type: "text" },
-        ],
-        query: "select organization_id, workspace_id, title from documents",
-      }),
+      view("document_titles", { tables: [] }, (q) =>
+        q.sql({
+          columns: [
+            { name: "organization_id", type: uuid() },
+            { name: "workspace_id", type: uuid() },
+            { name: "title", type: text() },
+          ],
+          query: "select organization_id, workspace_id, title from documents",
+        }),
+      ),
     ],
   });
 }
@@ -258,14 +267,16 @@ function pathSchema() {
     tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
     tables: [organizations, projects],
     views: [
-      view("project_names", {
-        columns: [
-          { name: "tenant_id", type: "uuid" },
-          { name: "name", type: "text" },
-        ],
-        query:
-          "select organizations.tenant_id, projects.name from projects join organizations on organizations.id = projects.organization_id",
-      }),
+      view("project_names", { tables: [] }, (q) =>
+        q.sql({
+          columns: [
+            { name: "tenant_id", type: uuid() },
+            { name: "name", type: text() },
+          ],
+          query:
+            "select organizations.tenant_id, projects.name from projects join organizations on organizations.id = projects.organization_id",
+        }),
+      ),
     ],
   });
 }

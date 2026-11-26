@@ -78,10 +78,12 @@ postgresTest(
       const declared = schema({
         tables: [tasks],
         views: [
-          view("task_ids", {
-            columns: [{ name: "id", type: "bigint" }],
-            query: "select id from tasks",
-          }),
+          view("task_ids", { tables: [] }, (q) =>
+            q.sql({
+              columns: [{ name: "id", type: t.bigint() }],
+              query: "select id from tasks",
+            }),
+          ),
         ],
       });
       const sealed = await sealViews(queryOf(sql), declared.catalog);
@@ -114,13 +116,15 @@ postgresTest(
         schema({
           tables: [table("tasks", { id: t.text().primaryKey(), title: t.text() })],
           views: [
-            view("task_rows", {
-              columns: [
-                { name: "id", type: "text" },
-                { name: "title", type: "text" },
-              ],
-              query: "select id, title from tasks",
-            }),
+            view("task_rows", { tables: [] }, (q) =>
+              q.sql({
+                columns: [
+                  { name: "id", type: t.text() },
+                  { name: "title", type: t.text() },
+                ],
+                query: "select id, title from tasks",
+              }),
+            ),
           ],
         }).catalog,
         roles,
@@ -129,13 +133,15 @@ postgresTest(
         schema({
           tables: [table("tasks", { id: t.text().primaryKey(), title: t.varchar(80) })],
           views: [
-            view("task_rows", {
-              columns: [
-                { name: "id", type: "text" },
-                { name: "title", type: "character varying(80)" },
-              ],
-              query: "select id, title from tasks",
-            }),
+            view("task_rows", { tables: [] }, (q) =>
+              q.sql({
+                columns: [
+                  { name: "id", type: t.text() },
+                  { name: "title", type: t.varchar(80) },
+                ],
+                query: "select id, title from tasks",
+              }),
+            ),
           ],
         }).catalog,
         roles,
@@ -231,13 +237,15 @@ postgresTest(
           }),
         ],
         views: [
-          view("task_rows", {
-            columns: [
-              { name: "id", type: "bigint" },
-              { name: "email", type: "text" },
-            ],
-            query: "select id, email from tasks",
-          }),
+          view("task_rows", { tables: [] }, (q) =>
+            q.sql({
+              columns: [
+                { name: "id", type: t.bigint() },
+                { name: "email", type: t.text() },
+              ],
+              query: "select id, email from tasks",
+            }),
+          ),
         ],
       });
       const afterTasks = table(
@@ -275,13 +283,15 @@ postgresTest(
           }),
         ],
         views: [
-          view("task_rows", {
-            columns: [
-              { name: "id", type: "bigint" },
-              { name: "contact", type: "text" },
-            ],
-            query: "select id, contact from items",
-          }),
+          view("task_rows", { tables: [] }, (q) =>
+            q.sql({
+              columns: [
+                { name: "id", type: t.bigint() },
+                { name: "contact", type: t.text() },
+              ],
+              query: "select id, contact from items",
+            }),
+          ),
         ],
       });
       const runner = queryOf(sql);
@@ -588,24 +598,34 @@ function declare(shape: Shape, flip: boolean, seed: number, roles: RolesInput): 
       }),
     );
     views.push(
-      view("task_rows", {
-        columns: [
-          { name: "id", type: "bigint" },
-          { name: titleName, type: titleType },
-        ],
-        query: `select id, ${titleName} from ${tableName}`,
-      }),
-      materializedView("task_titles", {
-        columns: [
-          { name: "id", type: "bigint" },
-          { name: titleName, type: titleType },
-        ],
-        query: `select id, ${titleName} from ${tableName}`,
-        indexes:
-          shape === "matview-index"
-            ? [{ columns: [titleName], unique: true }]
-            : [{ columns: ["id"], unique: true }],
-      }),
+      view("task_rows", { tables: [] }, (q) =>
+        q.sql({
+          columns: [
+            { name: "id", type: t.bigint() },
+            { name: titleName, type: titleType === "text" ? t.text() : t.varchar(80) },
+          ],
+          query: `select id, ${titleName} from ${tableName}`,
+        }),
+      ),
+      materializedView(
+        "task_titles",
+        {
+          tables: [],
+          indexes: (columns) => [
+            shape === "matview-index"
+              ? index(columns[titleName]!).unique()
+              : index(columns.id).unique(),
+          ],
+        },
+        (q) =>
+          q.sql({
+            columns: [
+              { name: "id", type: t.bigint() },
+              { name: titleName, type: titleType === "text" ? t.text() : t.varchar(80) },
+            ],
+            query: `select id, ${titleName} from ${tableName}`,
+          }),
+      ),
     );
   }
   const built = schema({

@@ -110,7 +110,7 @@ const EXTRA = [
   "alter table notes add column note xml",
   "create sequence extra_seq",
   "create function note_open(s note_status) returns boolean language sql immutable as $$ select s = 'open' $$",
-  "create view open_notes as select id, title from notes where open",
+  "create view open_notes with (security_invoker = true) as select id, title from notes where open",
 ];
 
 postgresTest(
@@ -153,7 +153,8 @@ postgresTest(
       expect(readFileSync(join(cwd, "schema.ts"), "utf8")).toContain("fn(");
       expect(first.text).toContain("notes.note");
       expect(first.text).toContain("extra_seq");
-      expect(first.text).toContain("notes_title_expr");
+      expect(first.text).not.toContain("notes_title_expr");
+      expect(readFileSync(join(cwd, "tables", "notes.ts"), "utf8")).toContain("sql`lower(title)`");
       const names = readdirSync(join(cwd, "tables"));
       const source = readFileSync(join(cwd, "schema.ts"), "utf8");
       expect(unlistedTableFiles(source, names)).toEqual([]);
@@ -195,8 +196,9 @@ postgresTest(
       expect(pulled.text).toContain("policies: 0");
       const source = readFileSync(join(cwd, "adopted/schema.ts"), "utf8");
       expect(source).toContain("fn(");
-      expect(source).toContain('view("active_projects"');
-      expect(source).toContain('view("open_tasks"');
+      const flat = source.replaceAll(/\s+/g, "");
+      expect(flat).toContain('view("active_projects"');
+      expect(flat).toContain('view("open_tasks"');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
       await database.close();
@@ -218,8 +220,8 @@ postgresTest(
         "create function item_touch() returns trigger language plpgsql as $$ begin perform 1 from items; return new; end $$",
         "create function item_count() returns bigint language sql begin atomic select count(*) from items; end",
         "create trigger items_touch before update on items for each row execute function item_touch()",
-        "create view item_names as select id, name from items",
-        "create view item_name_count as select count(*) as n from item_names",
+        "create view item_names with (security_invoker = true) as select id, name from items",
+        "create view item_name_count with (security_invoker = true) as select count(*) as n from item_names",
         "create materialized view item_mat as select id, name from items with no data",
         "create unique index item_mat_id on item_mat (id)",
       ]);
@@ -239,9 +241,10 @@ postgresTest(
       expect(source).toContain("candidate-only: a plpgsql body is not proved by creation");
       expect(source).toContain("dependsOn: [items]");
       expect(source).toContain("verified: scratch replay created this function");
-      expect(source).toContain('view("item_names"');
+      expect(source.replaceAll(/\s+/g, "")).toContain('view("item_names"');
       expect(source).toContain("materializedView(");
-      expect(source).not.toContain("(q) =>");
+      expect(source).toContain("q.sql(");
+      expect(source).toContain(".nullable()");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
       await database.close();

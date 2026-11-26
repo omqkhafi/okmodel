@@ -150,8 +150,8 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1060",
     title: "Invalid column",
     summary:
-      "A column definition has a bad length, precision, scale, array rank, interval qualifier, or an empty or repeated picklist or enum. .unique() on a gin or gist index is this code too: Postgres builds unique indexes with btree only. A schema() casing other than snake or camel is this code too.",
-    fix: "Use a value the error lists as accepted. Remove .unique() from a gin or gist index, or use btree. Pass snake or camel for casing, or leave it out.",
+      "A column definition has a bad length, precision, scale, array rank, interval qualifier, or an empty or repeated picklist or enum. A schema() casing other than snake or camel is this code too.",
+    fix: "Use a value the error lists as accepted. Pass snake or camel for casing, or leave it out.",
   },
   {
     code: "OKM1061",
@@ -816,8 +816,9 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   {
     code: "OKM1822",
     title: "Concurrent refresh",
-    summary: "REFRESH CONCURRENTLY was declared without a unique index on the materialized view.",
-    fix: "Add a unique index, or refresh without CONCURRENTLY.",
+    summary:
+      "REFRESH CONCURRENTLY was declared without a unique index on plain columns. An expression index or a partial index does not qualify.",
+    fix: "Add a unique index with no expression and no predicate, or refresh without CONCURRENTLY.",
   },
   {
     code: "OKM1823",
@@ -1181,6 +1182,37 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     since: "0.10",
   },
   {
+    code: "OKM1900",
+    title: "View cycle",
+    summary: "Two views list each other in tables, so neither can be created first.",
+    fix: "Remove one view from the other's tables.",
+    since: "0.10",
+  },
+  {
+    code: "OKM1901",
+    title: "Null view column",
+    summary:
+      "A view column declared not null came back NULL. PostgreSQL does not store view nullability, so the declaration is checked when the row is read.",
+    fix: "Declare the column with .nullable(), or stop the query from returning NULL.",
+    since: "0.10",
+  },
+  {
+    code: "OKM1902",
+    title: "Invoker privilege",
+    summary:
+      "A security-invoker view reads a base table this role cannot select. The view fails at read time for this role.",
+    fix: "Grant SELECT on the base table, or declare the view with security: { definer: reason }.",
+    since: "0.10",
+  },
+  {
+    code: "OKM1903",
+    title: "Index shape",
+    summary:
+      "An index uses an option its access method does not support. Unique, descending, and nulls order are btree. Include is btree, gist, or spgist, and only plain columns.",
+    fix: "Change the method, or remove the option the message names.",
+    since: "0.10",
+  },
+  {
     code: "OKM2200",
     title: "Observer buffer overflow",
     summary:
@@ -1230,7 +1262,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   // Reserved, not registered (no raising path): version OKM1804–OKM1809,
   // extension OKM1815–OKM1819, feature refusal OKM1861 and OKM1868–OKM1879,
   // adapter capability refusal OKM1880 and OKM1889. OKM1881–OKM1888 (agent files) and
-  // OKM1890–OKM1899 are registered.
+  // OKM1890–OKM1903 are registered.
   // OKM1140–OKM1179 stay reserved (D291).
 ];
 

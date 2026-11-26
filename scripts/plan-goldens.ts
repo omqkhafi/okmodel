@@ -132,6 +132,13 @@ function coverageRequests(): readonly PlanRequest[] {
     { before: catalog([]), after: catalog([seq]), name: "create-sequence" },
     { before: catalog([seq]), after: catalog([]), name: "drop-sequence" },
     {
+      before: catalog([]),
+      after: schema({
+        tables: [defineTable("notes", { id: t.integer().primaryKey() }, { comment: "Kept" })],
+      }).catalog,
+      name: "comment-table",
+    },
+    {
       before: schema({ tables: [defineTable("jobs", { n: t.bigint().primaryKey() })] }).catalog,
       after: schema({ tables: [defineTable("jobs", { n: t.identity() })] }).catalog,
       name: "add-identity",

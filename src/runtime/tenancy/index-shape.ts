@@ -25,6 +25,10 @@ export type IndexShapeCall = {
   readonly tenantScoped?: boolean;
   /** SQL name from `.name()`. Absent means the column list names the index. */
   readonly sqlName?: string;
+  /** Access method other than the btree default. A non-btree method is not prefixed. */
+  readonly method?: string;
+  /** Key list when order, nulls, or an opclass is set. Prefixed with the columns. */
+  readonly elements?: readonly { readonly column: string }[];
 };
 
 type HandleMap = Readonly<Record<string, { readonly name: string }>>;
@@ -120,10 +124,14 @@ function shapeOne<T extends IndexShapeCall>(
 ): T {
   const needed = call.isUnique === true ? tenantSql : tenantSql.slice(0, 1);
   const leads = needed.every((name, index) => call.columns[index] === name);
-  const using = call.expression?.startsWith("using ") === true;
+  const using =
+    call.expression?.startsWith("using ") === true ||
+    (call.method !== undefined && call.method !== "btree");
   if (wantsPrefix(call, policy) && !using) {
     const columns = placeKeys(call.columns, needed);
-    return columns === call.columns ? call : { ...call, columns };
+    const elements = call.elements === undefined ? undefined : placeElements(call.elements, needed);
+    if (columns === call.columns && elements === call.elements) return call;
+    return { ...call, columns, ...(elements !== undefined ? { elements } : {}) };
   }
   if (!leads && call.tenantGlobal === undefined) {
     if (using) {
@@ -133,7 +141,7 @@ function shapeOne<T extends IndexShapeCall>(
         {
           fix: {
             summary:
-              'index().global("reason") opts this index out. Putting the tenant key first does not prefix a using tail.',
+              'index().global("reason") opts this index out, or install btree_gin. Putting the tenant key first does not prefix a using tail.',
           },
         },
       );
@@ -163,6 +171,24 @@ function shapeOne<T extends IndexShapeCall>(
  * @param needed - Tenant SQL names this index must lead with
  * @returns The catalog column list
  */
+function placeElements<E extends { readonly column: string }>(
+  elements: readonly E[],
+  needed: readonly string[],
+): readonly E[] {
+  const placed = placeKeys(
+    elements.map((element) => element.column),
+    needed,
+  );
+  if (
+    placed.length === elements.length &&
+    placed.every((name, index) => name === elements[index]?.column)
+  ) {
+    return elements;
+  }
+  const byName = new Map(elements.map((element) => [element.column, element]));
+  return placed.map((column) => byName.get(column) ?? ({ column } as E));
+}
+
 function placeKeys(columns: readonly string[], needed: readonly string[]): readonly string[] {
   const leads = needed.every((name, index) => columns[index] === name);
   if (leads && needed.every((name) => columns.includes(name))) return columns;

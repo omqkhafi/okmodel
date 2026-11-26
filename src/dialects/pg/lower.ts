@@ -19,6 +19,7 @@ import type {
   FunctionObject,
   IndexObject,
   SequenceObject,
+  TableObject,
   MaterializedViewObject,
   PolicyObject,
   TriggerObject,
@@ -119,6 +120,8 @@ function lowerChange(change: LogicalChange): readonly DdlStep[] {
     case "drop-column":
     case "drop-constraint":
       return dropRelation(change.object, change.schema, dropKind(change.op));
+    case "comment":
+      return commentChange(change.object, change.schema, change.text);
     case "create-table":
       return [
         ddlStep(
@@ -127,17 +130,34 @@ function lowerChange(change: LogicalChange): readonly DdlStep[] {
           "ddl",
           ACCESS,
         ),
+        ...foldedComments(change.table, change.catalog, change.schema),
       ];
     case "add-column":
-      return addColumn(change.column, change.schema, change.tableIsNew);
+      return withObjectComment(
+        addColumn(change.column, change.schema, change.tableIsNew),
+        change.column,
+        change.schema,
+      );
     case "add-constraint":
-      return addConstraint(change.constraint, change.schema);
+      return withObjectComment(
+        addConstraint(change.constraint, change.schema),
+        change.constraint,
+        change.schema,
+      );
     case "create-index":
-      return createIndex(change.index, change.schema, change.onExistingTable);
+      return withObjectComment(
+        createIndex(change.index, change.schema, change.onExistingTable),
+        change.index,
+        change.schema,
+      );
     case "drop-index":
       return dropIndex(change.index, change.schema, change.onExistingTable);
     case "create-type":
-      return createType(change.object, change.schema);
+      return withObjectComment(
+        createType(change.object, change.schema),
+        change.object,
+        change.schema,
+      );
     case "drop-type":
       return dropType(change.object, change.schema);
     case "add-enum-values":
@@ -155,23 +175,56 @@ function lowerChange(change: LogicalChange): readonly DdlStep[] {
     case "update-extension":
       return updateExtension(change.name, change.version);
     case "create-function":
-      return createRoutine(change.object, change.schema, "create-function");
+      return withObjectComment(
+        createRoutine(change.object, change.schema, "create-function"),
+        change.object,
+        change.schema,
+      );
     case "drop-function":
       return dropRoutine(change.object, change.schema, "drop-function");
     case "replace-function":
-      return replaceRoutine(functionSql(change.object, change.schema, true), "replace-function");
+      return withObjectComment(
+        replaceRoutine(functionSql(change.object, change.schema, true), "replace-function"),
+        change.object,
+        change.schema,
+      );
     case "create-trigger":
-      return createRoutine(change.object, change.schema, "create-trigger");
+      return withObjectComment(
+        createRoutine(change.object, change.schema, "create-trigger"),
+        change.object,
+        change.schema,
+      );
     case "drop-trigger":
       return dropRoutine(change.object, change.schema, "drop-trigger");
     case "create-view":
-      return createRoutine(change.object, change.schema, "create-view");
+      return withObjectComment(
+        createRoutine(change.object, change.schema, "create-view"),
+        change.object,
+        change.schema,
+      );
     case "drop-view":
       return dropRoutine(change.object, change.schema, "drop-view");
     case "replace-view":
-      return replaceRoutine(viewSql(change.object, change.schema, true), "replace-view");
+      return withObjectComment(
+        replaceRoutine(viewSql(change.object, change.schema, true), "replace-view"),
+        change.object,
+        change.schema,
+      );
+    case "rename-view-column":
+      return [
+        ddlStep(
+          `alter view ${qualify(change.schema, change.object.identity.name)} rename column ${quoteIdent(change.from)} to ${quoteIdent(change.to)}`,
+          "rename-view-column",
+          "ddl",
+          ACCESS,
+        ),
+      ];
     case "create-matview":
-      return createRoutine(change.object, change.schema, "create-matview");
+      return withObjectComment(
+        createRoutine(change.object, change.schema, "create-matview"),
+        change.object,
+        change.schema,
+      );
     case "drop-matview":
       return dropRoutine(change.object, change.schema, "drop-matview");
     case "refresh-matview":
@@ -184,7 +237,11 @@ function lowerChange(change: LogicalChange): readonly DdlStep[] {
         ),
       ];
     case "create-policy":
-      return policySteps(policyCreatePlan(change.object, change.schema), change.object);
+      return withObjectComment(
+        policySteps(policyCreatePlan(change.object, change.schema), change.object),
+        change.object,
+        change.schema,
+      );
     case "drop-policy":
       return policySteps(policyDropPlan(change.object, change.schema), change.object);
     case "privileges":
@@ -196,7 +253,11 @@ function lowerChange(change: LogicalChange): readonly DdlStep[] {
         change.recreated,
       );
     case "create-sequence":
-      return createRoutine(change.object, change.schema, "create-sequence");
+      return withObjectComment(
+        createRoutine(change.object, change.schema, "create-sequence"),
+        change.object,
+        change.schema,
+      );
     case "drop-sequence":
       return dropRoutine(change.object, change.schema, "drop-sequence");
     case "rename-sequence":
@@ -216,6 +277,91 @@ function lowerChange(change: LogicalChange): readonly DdlStep[] {
       return alterColumn(change.before, change.after, change.schema, change.catalogs);
     default:
       return unmet(change);
+  }
+}
+
+function withObjectComment(
+  steps: readonly DdlStep[],
+  object: CatalogObject,
+  schema: string,
+): readonly DdlStep[] {
+  if (object.comment === undefined) return steps;
+  return [...steps, ...commentChange(object, schema, object.comment)];
+}
+
+function commentChange(
+  object: CatalogObject,
+  schema: string,
+  text: string | null,
+): readonly DdlStep[] {
+  const target = commentTarget(object, schema);
+  if (target === undefined) return [];
+  const value = text === null ? "null" : quoteLiteral(text);
+  return [ddlStep(`comment on ${target} is ${value}`, "comment", "ddl", SHARE_UPDATE)];
+}
+
+/**
+ * Comments for objects created inside `CREATE TABLE`.
+ *
+ * Columns and identity sequences have no step of their own on a new table.
+ *
+ * @param table - Table just created
+ * @param catalog - Catalog the plan is building
+ * @param schema - Schema name
+ * @returns Comment steps, in catalog order
+ */
+function foldedComments(table: TableObject, catalog: Catalog, schema: string): readonly DdlStep[] {
+  const steps: DdlStep[] = [];
+  if (table.comment !== undefined) steps.push(...commentChange(table, schema, table.comment));
+  for (const object of catalog.objects) {
+    if (object.comment === undefined) continue;
+    if (object.kind === "column" && object.identity.parent.name === table.identity.name) {
+      steps.push(...commentChange(object, schema, object.comment));
+    }
+    if (
+      object.kind === "sequence" &&
+      object.dependencies.some(
+        (edge) => edge.target.kind === "table" && edge.target.name === table.identity.name,
+      )
+    ) {
+      steps.push(...commentChange(object, schema, object.comment));
+    }
+  }
+  return steps;
+}
+
+function commentTarget(object: CatalogObject, schema: string): string | undefined {
+  switch (object.kind) {
+    case "table":
+      return `table ${qualify(schema, object.identity.name)}`;
+    case "column":
+      return `column ${qualify(schema, object.identity.parent.name)}.${quoteIdent(object.identity.name)}`;
+    case "index":
+      return `index ${qualify(schema, object.identity.name)}`;
+    case "view":
+      return `view ${qualify(schema, object.identity.name)}`;
+    case "materializedView":
+      return `materialized view ${qualify(schema, object.identity.name)}`;
+    case "function":
+      return `function ${qualify(schema, object.identity.name)}(${object.identity.argTypes.join(", ")})`;
+    case "trigger":
+      return `trigger ${quoteIdent(object.identity.name)} on ${qualify(schema, object.identity.parent.name)}`;
+    case "sequence":
+      return `sequence ${qualify(schema, object.identity.name)}`;
+    case "type":
+      return `type ${qualify(schema, object.identity.name)}`;
+    case "constraint":
+      if (
+        object.definition.constraintKind !== "check" &&
+        object.definition.constraintKind !== "foreignKey"
+      ) {
+        return undefined;
+      }
+      return `constraint ${quoteIdent(object.identity.name)} on ${qualify(schema, object.identity.parent.name)}`;
+    case "policy":
+      return `policy ${quoteIdent(object.identity.name)} on ${qualify(schema, object.identity.parent.name)}`;
+    default:
+      return undefined;
   }
 }
 

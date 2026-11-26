@@ -37,6 +37,20 @@ export const POSTGRES_FEATURES = {
   "type.domain": native("proof:type.domain"),
   "index.partial": native("proof:index.partial"),
   "index.expression": native("proof:index.expression"),
+  "index.covering": native("proof:index.covering"),
+  "index.ordering": native("proof:index.ordering"),
+  "index.nullsNotDistinct": native("proof:index.nullsNotDistinct", { since: "15" }),
+  "index.storage": native("proof:index.storage"),
+  "comment.table": native("proof:comment.table"),
+  "comment.column": native("proof:comment.column"),
+  "comment.index": native("proof:comment.index"),
+  "comment.view": native("proof:comment.view"),
+  "comment.matview": native("proof:comment.matview"),
+  "comment.function": native("proof:comment.function"),
+  "comment.trigger": native("proof:comment.trigger"),
+  "comment.sequence": native("proof:comment.sequence"),
+  "comment.type": native("proof:comment.type"),
+  "comment.constraint": native("proof:comment.constraint"),
   "column.generated": native("proof:column.generated"),
   namespace: native("proof:namespace"),
   extension: native("proof:extension"),
@@ -125,6 +139,22 @@ export const POSTGRES_FEATURES = {
   "queryObserver.timing": native("proof:queryObserver.timing", {
     cost: "query|decode",
   }),
+  /** A view body is `find` or `aggregate`, printed without executing. */
+  "view.typed": native("proof:view.typed"),
+  /** A materialized view is the same body, created with no data, then populated. */
+  "view.materialized": native("proof:view.materialized"),
+  /** Invoker is the default. Definer sets security_barrier. */
+  "view.security": native("proof:view.security"),
+  /** `WITH LOCAL` or `WITH CASCADED CHECK OPTION` is DDL only. */
+  "view.checkOption": native("proof:view.checkOption"),
+  /** Concurrent refresh needs a plain unique index. */
+  "matview.refresh": native("proof:matview.refresh"),
+  /** Creation order follows the declared tables and views. A cycle is OKM1900. */
+  "view.dependencyOrder": native("proof:view.dependencyOrder"),
+  /** `expr.as(name)` is a select column. */
+  "query.exprSelect": native("proof:query.exprSelect"),
+  /** `"relation.column"` in select, where, groupBy, and orderBy is a join. */
+  "query.toOnePath": native("proof:query.toOnePath"),
 } as const satisfies Registry;
 
 /** One Postgres feature key. */

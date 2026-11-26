@@ -62,6 +62,28 @@ function note(used: Set<string>, object: CatalogObject): void {
   if (object.kind === "index") {
     if (object.definition.predicate !== undefined) used.add("index.partial");
     if (object.definition.expression !== undefined) used.add("index.expression");
+    if (object.definition.include !== undefined && object.definition.include.length > 0) {
+      used.add("index.covering");
+    }
+    if (
+      object.definition.elements?.some(
+        (element) =>
+          element.order !== undefined ||
+          element.nulls !== undefined ||
+          element.opclass !== undefined,
+      ) === true
+    ) {
+      used.add("index.ordering");
+    }
+    if (object.definition.nullsNotDistinct === true) used.add("index.nullsNotDistinct");
+    if (object.definition.storage !== undefined) used.add("index.storage");
+  }
+  if (object.comment !== undefined) noteComment(used, object);
+  if (
+    (object.kind === "view" || object.kind === "materializedView") &&
+    object.definition.columns.some((column) => column.comment !== undefined)
+  ) {
+    used.add(object.kind === "view" ? "comment.view" : "comment.matview");
   }
   if (object.kind === "extension") used.add("extension");
   if (object.kind === "policy") {
@@ -77,6 +99,30 @@ function note(used: Set<string>, object: CatalogObject): void {
   ) {
     used.add("namespace");
   }
+}
+
+function noteComment(used: Set<string>, object: CatalogObject): void {
+  const kind = object.kind;
+  if (object.kind === "constraint") {
+    const constraintKind = object.definition.constraintKind;
+    if (constraintKind === "check" || constraintKind === "foreignKey")
+      used.add("comment.constraint");
+    return;
+  }
+  const key =
+    kind === "materializedView"
+      ? "comment.matview"
+      : kind === "table" ||
+          kind === "column" ||
+          kind === "index" ||
+          kind === "view" ||
+          kind === "function" ||
+          kind === "trigger" ||
+          kind === "sequence" ||
+          kind === "type"
+        ? `comment.${kind}`
+        : undefined;
+  if (key !== undefined) used.add(key);
 }
 
 /**

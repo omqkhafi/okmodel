@@ -86,6 +86,8 @@ export type ProductionFacts = {
   readonly minimum: Refusal | undefined;
   readonly roleConfig: Refusal | undefined | "not-set";
   readonly extensions: ExtensionFacts;
+  /** Security-invoker views whose base tables the session role cannot select. */
+  readonly invokerGaps: readonly string[];
 };
 
 /** Required extensions and what the server has. */
@@ -472,6 +474,7 @@ export function buildReport(input: ProductionInput, facts: ProductionFacts): Pro
     ...timeoutFindings(input.config, facts.sessionLockMs, facts.sessionStatementMs),
     serverFinding(facts.serverMajor, facts.minimum),
     extensionFinding(facts.extensions),
+    invokerFinding(facts.invokerGaps),
   );
   return { target: input.target.name, summary: countOf(findings), findings };
 }
@@ -664,6 +667,46 @@ async function readFacts(
     minimum: await refusal(() => assertMajorAgainstPool(runner, opened.built), input.target.url),
     roleConfig: await roleConfigOf(runner, opened, input),
     extensions: await extensionFacts(runner, opened, input),
+    invokerGaps: await invokerGaps(runner),
+  };
+}
+
+const INVOKER_GAPS = `select v.relname
+  from pg_class v
+  join pg_namespace n on n.oid = v.relnamespace
+  where v.relkind = 'v'
+    and coalesce(array_to_string(v.reloptions, ','), '') like '%security_invoker=true%'
+    and exists (
+      select 1
+      from pg_rewrite r
+      join pg_depend d on d.objid = r.oid and d.classid = 'pg_rewrite'::regclass and d.refclassid = 'pg_class'::regclass
+      join pg_class base on base.oid = d.refobjid
+      where r.ev_class = v.oid
+        and base.relkind = 'r'
+        and not has_table_privilege(session_user, base.oid, 'SELECT')
+    )
+  order by v.relname`;
+
+async function invokerGaps(runner: StatementRunner): Promise<readonly string[]> {
+  const rows = await runner.execute(INVOKER_GAPS);
+  return rows.rows.map((row) => cellText(row[0])).filter((name) => name.length > 0);
+}
+
+function invokerFinding(gaps: readonly string[]): ProductionFinding {
+  if (gaps.length === 0) {
+    return {
+      id: "view-invoker",
+      severity: "ok",
+      summary: "No security-invoker view hides a table this role cannot select.",
+      fix: OK_FIX,
+    };
+  }
+  return {
+    id: "view-invoker",
+    severity: "warn",
+    code: "OKM1902",
+    summary: `Security invoker view ${gaps.join(", ")} needs SELECT on its base tables. A definer view would run as the owner.`,
+    fix: 'Declare the view with security: { definer: "reason" }, or grant SELECT on the base tables.',
   };
 }
 

@@ -90,7 +90,7 @@ export async function openOrPending(url: string) {
 
 ### bound
 
-`gte` is a predicate, the same as a fixed value.
+`gte` is a predicate, the same as a fixed value. A preset compiles to bound parameters. It does not inline the constant into the SQL text. A partial index whose predicate column is also a preset field can be missed by the generic plan (OKM2106). Inlining those constants is a later decision.
 
 ```ts title="bound.ts"
 import { connect } from "okmodel/pg/postgresjs";

@@ -164,6 +164,32 @@ export function assertStoredText(value: string, role: string): void {
   }
 }
 
+/**
+ * Rejects an empty comment and control characters other than newline and tab.
+ *
+ * Newline, carriage return, and tab are stored. The text is not trimmed.
+ *
+ * @param value - Comment text
+ * @param role - What the text refers to
+ */
+export function assertCommentText(value: string, role: string): void {
+  if (value.length === 0) {
+    catalogError("OKM1122", `${role} is empty.`);
+  }
+  if (hasCommentControl(value)) {
+    catalogError("OKM1122", `${role} contains a control character.`);
+  }
+}
+
+function hasCommentControl(value: string): boolean {
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code === 0x09 || code === 0x0a || code === 0x0d) continue;
+    if (code < 0x20 || code === 0x7f || (code >= 0x80 && code <= 0x9f)) return true;
+  }
+  return false;
+}
+
 function fnv1a(text: string): number {
   let hash = 0x811c9dc5;
   for (let index = 0; index < text.length; index++) {

@@ -18,7 +18,13 @@ An empty call is `Index on notes needs a column.` A value that is not a handle i
 
 ### Index
 
-`index(...)` takes column handles, in index order. It needs at least one. You do not pass a predicate or a `using` method. Each argument is `columns.field`. The first argument is the first column of the index. The index is named `{table}_{columns}_idx`, using the SQL column names joined by `_`. `.name("lookup_title")` stores that SQL name instead. `okm pull` writes `.name()` when the database name is not the generated one, including on a partial index. A predicate or expression is set on that same call. A non-default btree operator class, such as `text_pattern_ops`, is kept as `using btree (...)`.
+`index(...)` takes column handles, in index order. One argument may instead be an expression from `okmodel/expr`, or `sql` when the expression has no typed form. Each column argument is `columns.field`. The first argument is the first key of the index. The index is named `{table}_{columns}_idx`, using the SQL column names joined by `_`. `.name("lookup_title")` stores that SQL name instead. A name longer than 63 bytes is OKM1122 when the plan is built. `okm pull` writes `.name()` when the database name is not the generated one.
+
+`.where()` is a partial index. The argument is a where object, an expression, or `sql`. `.using("gin" | "gist" | "brin" | "hash" | "spgist")` sets the access method. btree is the default and is not stored. `.include(columns.id)` adds covering columns. `columns.email.desc()`, `.nullsFirst()`, `.nullsLast()`, and `.ops("text_pattern_ops")` set order and the operator class. `.unique({ nullsNotDistinct: true })` is the Postgres 15 form. `.with({ fillfactor: 90 })` sets storage parameters. The keys are typed for btree, gin, gist, and brin. An extension method such as hnsw accepts a record. `.comment("...")` is the index comment.
+
+The planner owns `CONCURRENTLY`. There is no `.concurrently()` on the chain. A new table adds the index with `create index`. A table that already exists adds it with `create index concurrently`. A storage-parameter change rebuilds the index: create a new one concurrently under a temporary name, drop the old one, and rename. `ALTER INDEX ... SET` changes reloptions only and does not rebuild.
+
+`okm check` refuses a non-immutable predicate or expression (OKM1848), including `now()`, `current_date`, `random()`, and a function declared stable or volatile. Unique, descending, and nulls order are btree only. Include is btree, gist, or spgist, and only plain columns. Those method restrictions are OKM1903. A partial index does not satisfy a foreign key (OKM2101). It satisfies a filter column only when a preset's `where()` includes the predicate (OKM2103). `filters()` does not, because it names fields and not values. An expression index is undecidable. A duplicate index is OKM2104. A shorter plain index that is a prefix of another is OKM2105. Unique, partial, and expression indexes are redundant only on a full match. When a partial-index predicate column is also a `filters()` field or a preset field, OKM2106 warns: those filters compile to bound parameters, so a generic plan may ignore the index. Inlining those constants is a later decision.
 
 #### one
 
@@ -131,7 +137,7 @@ A new table adds the index with `create index`. A table that already exists adds
 
 `.unique()` marks that index unique. The columns and their order stay the ones you passed to `index()`.
 
-Only a btree index can be unique. `.unique()` on a `gin` or `gist` index, such as `trgm.gin(columns.title.name).unique()`, fails when the schema is built with OKM1060 and names the index and its method.
+Only a btree index can be unique. `.unique()` on a `gin` or `gist` index, such as `trgm.gin(columns.title.name).unique()`, is OKM1903 when the plan is built. The message names the index and its method. For case-insensitive uniqueness, prefer [`citext`](/docs/schema/text-columns#citext). `index(sql\`lower(email)\`)` is for uniqueness of the lowered value, not for case-insensitive lookup.
 
 #### one
 

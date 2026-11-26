@@ -116,6 +116,11 @@ export async function sealViews(runner: CatalogQuery, source: Catalog): Promise<
           provenance: object.provenance,
           dependencies,
           ...(object.definition.securityInvoker === true ? { securityInvoker: true as const } : {}),
+          ...(object.definition.securityBarrier === true ? { securityBarrier: true as const } : {}),
+          ...(object.definition.checkOption !== undefined
+            ? { checkOption: object.definition.checkOption }
+            : {}),
+          ...(object.comment !== undefined ? { comment: object.comment } : {}),
         });
       }
       return materializedViewObject({
@@ -127,6 +132,13 @@ export async function sealViews(runner: CatalogQuery, source: Catalog): Promise<
         provenance: object.provenance,
         dependencies,
         ...(object.definition.refresh !== undefined ? { refresh: object.definition.refresh } : {}),
+        ...(object.definition.populate === "later" ? { populate: "later" as const } : {}),
+        ...(object.definition.using !== undefined ? { using: object.definition.using } : {}),
+        ...(object.definition.storage !== undefined ? { storage: object.definition.storage } : {}),
+        ...(object.definition.tablespace !== undefined
+          ? { tablespace: object.definition.tablespace }
+          : {}),
+        ...(object.comment !== undefined ? { comment: object.comment } : {}),
       });
     });
     return catalog(next);

@@ -7,7 +7,7 @@
  */
 
 import { catalogError } from "../error.js";
-import { identitySequenceName } from "./identifier.js";
+import { assertCommentText, identitySequenceName } from "./identifier.js";
 import { sha256 } from "../sha256.js";
 import { canonicalJson, type Json } from "./json.js";
 import { replaceIdentifier } from "./rewrite.js";
@@ -38,6 +38,7 @@ import type {
   ConstraintObject,
   DependencyEdge,
   GrantObjectRef,
+  IndexElement,
   IndexObject,
   MaterializedViewObject,
   Namespace,
@@ -359,6 +360,16 @@ function rewriteRenamed(
   fromKey: string,
   toIdentity: ObjectIdentity,
 ): CatalogObject {
+  const next = rewriteRenamedObject(object, change, fromKey, toIdentity);
+  return object.comment === undefined ? next : { ...next, comment: object.comment };
+}
+
+function rewriteRenamedObject(
+  object: CatalogObject,
+  change: { readonly parent: ObjectRef; readonly from: string; readonly to: string },
+  fromKey: string,
+  toIdentity: ObjectIdentity,
+): CatalogObject {
   const dependencies = retarget(object.dependencies, fromKey, toIdentity);
   switch (object.kind) {
     case "table":
@@ -521,6 +532,25 @@ function rewriteIndex(
     ...(definition.expression !== undefined
       ? { expression: rewriteExpr(definition.expression, change, local) }
       : {}),
+    ...(definition.include !== undefined
+      ? {
+          include: local
+            ? renameList(definition.include, change.from, change.to)
+            : [...definition.include],
+        }
+      : {}),
+    ...(definition.elements !== undefined
+      ? {
+          elements: definition.elements.map((element) =>
+            !local || element.column === undefined
+              ? element
+              : {
+                  ...element,
+                  column: element.column === change.from ? change.to : element.column,
+                },
+          ),
+        }
+      : {}),
   });
 }
 
@@ -532,6 +562,8 @@ function indexAgain(
     readonly columns: readonly string[];
     readonly predicate?: string;
     readonly expression?: string;
+    readonly include?: readonly string[];
+    readonly elements?: IndexObject["definition"]["elements"];
   },
 ): IndexObject {
   const onView = dependencies.some(
@@ -549,6 +581,12 @@ function indexAgain(
       dependencies,
       ...(patch.predicate !== undefined ? { predicate: patch.predicate } : {}),
       ...(patch.expression !== undefined ? { expression: patch.expression } : {}),
+      ...(object.definition.method !== undefined ? { method: object.definition.method } : {}),
+      ...(patch.include !== undefined ? { include: patch.include } : {}),
+      ...(patch.elements !== undefined ? { elements: patch.elements } : {}),
+      ...(object.definition.storage !== undefined ? { storage: object.definition.storage } : {}),
+      ...(object.definition.nullsNotDistinct === true ? { nullsNotDistinct: true } : {}),
+      ...(object.comment !== undefined ? { comment: object.comment } : {}),
     });
   }
   return index({
@@ -562,6 +600,12 @@ function indexAgain(
     dependencies,
     ...(patch.predicate !== undefined ? { predicate: patch.predicate } : {}),
     ...(patch.expression !== undefined ? { expression: patch.expression } : {}),
+    ...(object.definition.method !== undefined ? { method: object.definition.method } : {}),
+    ...(patch.include !== undefined ? { include: patch.include } : {}),
+    ...(patch.elements !== undefined ? { elements: patch.elements } : {}),
+    ...(object.definition.storage !== undefined ? { storage: object.definition.storage } : {}),
+    ...(object.definition.nullsNotDistinct === true ? { nullsNotDistinct: true } : {}),
+    ...(object.comment !== undefined ? { comment: object.comment } : {}),
   });
 }
 
@@ -622,11 +666,21 @@ function rewriteView(
     return materializedViewObject({
       ...input,
       ...(object.definition.refresh !== undefined ? { refresh: object.definition.refresh } : {}),
+      ...(object.definition.populate === "later" ? { populate: "later" as const } : {}),
+      ...(object.definition.using !== undefined ? { using: object.definition.using } : {}),
+      ...(object.definition.storage !== undefined ? { storage: object.definition.storage } : {}),
+      ...(object.definition.tablespace !== undefined
+        ? { tablespace: object.definition.tablespace }
+        : {}),
     });
   }
   return viewObject({
     ...input,
     ...(object.definition.securityInvoker === true ? { securityInvoker: true as const } : {}),
+    ...(object.definition.securityBarrier === true ? { securityBarrier: true as const } : {}),
+    ...(object.definition.checkOption !== undefined
+      ? { checkOption: object.definition.checkOption }
+      : {}),
   });
 }
 
@@ -1001,6 +1055,7 @@ function dependencyJson(edges: readonly DependencyEdge[]): Json[] {
 function objectToJson(object: CatalogObject): Json {
   const dependencies = dependencyJson(object.dependencies);
   return {
+    ...(object.comment !== undefined ? { comment: object.comment } : {}),
     definition: definitionToJson(object),
     dependencies,
     identity: identityToJson(object.identity),
@@ -1051,8 +1106,13 @@ function definitionToJson(object: CatalogObject): Json {
         columns: definition.columns,
         nameKey: definition.nameKey,
         unique: definition.unique,
+        ...(definition.elements !== undefined ? { elements: definition.elements } : {}),
         ...(definition.expression !== undefined ? { expression: definition.expression } : {}),
+        ...(definition.include !== undefined ? { include: definition.include } : {}),
+        ...(definition.method !== undefined ? { method: definition.method } : {}),
+        ...(definition.nullsNotDistinct === true ? { nullsNotDistinct: true } : {}),
         ...(definition.predicate !== undefined ? { predicate: definition.predicate } : {}),
+        ...(definition.storage !== undefined ? { storage: definition.storage } : {}),
       };
     }
     case "constraint": {
@@ -1137,9 +1197,14 @@ function definitionToJson(object: CatalogObject): Json {
         columns: object.definition.columns.map((column) => ({
           dataType: column.dataType,
           name: column.name,
+          ...(column.comment !== undefined ? { comment: column.comment } : {}),
         })),
         query: object.definition.query,
         ...(object.definition.securityInvoker === true ? { securityInvoker: true } : {}),
+        ...(object.definition.securityBarrier === true ? { securityBarrier: true } : {}),
+        ...(object.definition.checkOption !== undefined
+          ? { checkOption: object.definition.checkOption }
+          : {}),
       };
     case "policy":
       return {
@@ -1152,9 +1217,18 @@ function definitionToJson(object: CatalogObject): Json {
         columns: object.definition.columns.map((column) => ({
           dataType: column.dataType,
           name: column.name,
+          ...(column.comment !== undefined ? { comment: column.comment } : {}),
         })),
         query: object.definition.query,
         ...(object.definition.refresh !== undefined ? { refresh: object.definition.refresh } : {}),
+        ...(object.definition.populate === "later" ? { populate: "later" as const } : {}),
+        ...(object.definition.using !== undefined ? { using: object.definition.using } : {}),
+        ...(object.definition.storage !== undefined
+          ? { storage: object.definition.storage.map((pair) => [pair[0], pair[1]]) }
+          : {}),
+        ...(object.definition.tablespace !== undefined
+          ? { tablespace: object.definition.tablespace }
+          : {}),
       };
     case "role":
       return { inherit: object.definition.inherit, login: object.definition.login };
@@ -1170,7 +1244,7 @@ function parseObject(value: unknown): CatalogObject {
   const record = requireRecord(value, "catalog object");
   rejectUnknown(
     record,
-    ["definition", "dependencies", "identity", "kind", "owner", "provenance"],
+    ["comment", "definition", "dependencies", "identity", "kind", "owner", "provenance"],
     "catalog object",
   );
   const kind = requireString(record.kind, "kind");
@@ -1189,6 +1263,27 @@ function parseObject(value: unknown): CatalogObject {
   const provenance = parseProvenance(record.provenance);
   const dependencies = parseDependencies(record.dependencies);
   const definition = requireRecord(record.definition, "definition");
+  return withParsedComment(
+    parseBuilt(kind, identity, definition, owner, provenance, dependencies),
+    record.comment,
+  );
+}
+
+function withParsedComment(object: CatalogObject, comment: unknown): CatalogObject {
+  if (comment === undefined) return object;
+  const text = requireString(comment, "comment");
+  assertCommentText(text, "comment");
+  return { ...object, comment: text };
+}
+
+function parseBuilt(
+  kind: Exclude<CatalogObject["kind"], "policy">,
+  identity: ObjectIdentity,
+  definition: Record<string, unknown>,
+  owner: Owner,
+  provenance: Provenance,
+  dependencies: readonly ObjectIdentity[],
+): CatalogObject {
   switch (kind) {
     case "table":
       return parseTable(identity, definition, owner, provenance, dependencies);
@@ -1292,6 +1387,46 @@ function parseColumn(
     : withUnvalidatedNotNull(built, requireString(mark, "unvalidated NOT NULL"));
 }
 
+function parseIndexElements(value: unknown): readonly IndexElement[] {
+  if (!Array.isArray(value)) catalogError("OKM1020", "Index elements must be a list.");
+  return value.map((item) => {
+    const record = requireRecord(item, "index element");
+    rejectUnknown(record, ["column", "expression", "nulls", "opclass", "order"], "index element");
+    const order =
+      record.order === undefined ? undefined : requireString(record.order, "index order");
+    if (order !== undefined && order !== "desc") {
+      catalogError("OKM1020", `Index order ${order} must be desc.`);
+    }
+    const nulls =
+      record.nulls === undefined ? undefined : requireString(record.nulls, "index nulls");
+    if (nulls !== undefined && nulls !== "first" && nulls !== "last") {
+      catalogError("OKM1020", `Index nulls ${nulls} must be first or last.`);
+    }
+    return {
+      ...(record.column === undefined
+        ? {}
+        : { column: requireString(record.column, "index element column") }),
+      ...(record.expression === undefined
+        ? {}
+        : { expression: requireString(record.expression, "index element expression") }),
+      ...(order === undefined ? {} : { order }),
+      ...(nulls === undefined ? {} : { nulls }),
+      ...(record.opclass === undefined
+        ? {}
+        : { opclass: requireString(record.opclass, "index opclass") }),
+    };
+  });
+}
+
+function parseIndexStorage(value: unknown): Readonly<Record<string, string>> {
+  const record = requireRecord(value, "index storage");
+  const storage: Record<string, string> = {};
+  for (const key of Object.keys(record).sort()) {
+    storage[key] = requireString(record[key], "index storage");
+  }
+  return storage;
+}
+
 function parseIndex(
   identity: ObjectIdentity,
   definition: Record<string, unknown>,
@@ -1304,7 +1439,18 @@ function parseIndex(
   }
   rejectUnknown(
     definition,
-    ["columns", "expression", "nameKey", "predicate", "unique"],
+    [
+      "columns",
+      "elements",
+      "expression",
+      "include",
+      "method",
+      "nameKey",
+      "nullsNotDistinct",
+      "predicate",
+      "storage",
+      "unique",
+    ],
     "index definition",
   );
   const shared = {
@@ -1322,6 +1468,19 @@ function parseIndex(
     ...(definition.expression === undefined
       ? {}
       : { expression: requireString(definition.expression, "expression") }),
+    ...(definition.method === undefined
+      ? {}
+      : { method: requireString(definition.method, "index method") }),
+    ...(definition.include === undefined
+      ? {}
+      : { include: requireStrings(definition.include, "index include") }),
+    ...(definition.elements === undefined
+      ? {}
+      : { elements: parseIndexElements(definition.elements) }),
+    ...(definition.storage === undefined ? {} : { storage: parseIndexStorage(definition.storage) }),
+    ...(definition.nullsNotDistinct === undefined
+      ? {}
+      : { nullsNotDistinct: requireBoolean(definition.nullsNotDistinct, "nulls not distinct") }),
   };
   const onView = dependencies.some(
     (edge) => edge.kind === "view" || edge.kind === "materializedView",
@@ -1588,7 +1747,9 @@ function parseView(
     catalogError("OKM1020", `View object identity is ${identity.kind}, not a ${kind}.`);
   }
   const fields =
-    kind === "view" ? ["columns", "query", "securityInvoker"] : ["columns", "query", "refresh"];
+    kind === "view"
+      ? ["columns", "query", "securityInvoker", "securityBarrier", "checkOption"]
+      : ["columns", "query", "refresh", "populate", "using", "storage", "tablespace"];
   rejectUnknown(definition, fields, "view definition");
   const columns = parseViewColumns(definition.columns);
   const query = requireString(definition.query, "view query");
@@ -1609,15 +1770,72 @@ function parseView(
     return materializedViewObject({
       ...input,
       ...(refresh === "concurrently" ? { refresh: "concurrently" as const } : {}),
+      ...parsePopulate(definition.populate, identity.name),
+      ...parseUsing(definition.using, identity.name),
+      ...parseStorage(definition.storage, identity.name),
+      ...parseTablespace(definition.tablespace, identity.name),
     });
   }
   if (definition.securityInvoker !== undefined && definition.securityInvoker !== true) {
     catalogError("OKM1020", `View ${identity.name} securityInvoker must be true when set.`);
   }
+  if (definition.securityBarrier !== undefined && definition.securityBarrier !== true) {
+    catalogError("OKM1020", `View ${identity.name} securityBarrier must be true when set.`);
+  }
+  const checkOption = definition.checkOption;
+  if (checkOption !== undefined && checkOption !== "local" && checkOption !== "cascaded") {
+    catalogError("OKM1020", `View ${identity.name} checkOption must be local or cascaded.`);
+  }
   return viewObject({
     ...input,
     ...(definition.securityInvoker === true ? { securityInvoker: true as const } : {}),
+    ...(definition.securityBarrier === true ? { securityBarrier: true as const } : {}),
+    ...(checkOption === "local" || checkOption === "cascaded" ? { checkOption } : {}),
   });
+}
+
+function parsePopulate(value: unknown, name: string): { readonly populate?: "later" } {
+  if (value === undefined) return {};
+  if (value !== "later")
+    catalogError("OKM1020", `Materialized view ${name} populate must be later.`);
+  return { populate: "later" };
+}
+
+function parseUsing(value: unknown, name: string): { readonly using?: string } {
+  if (value === undefined) return {};
+  if (typeof value !== "string" || value.length === 0) {
+    catalogError("OKM1020", `Materialized view ${name} using must be text.`);
+  }
+  return { using: value };
+}
+
+function parseStorage(
+  value: unknown,
+  name: string,
+): { readonly storage?: readonly (readonly [string, string])[] } {
+  if (value === undefined) return {};
+  if (!Array.isArray(value))
+    catalogError("OKM1020", `Materialized view ${name} storage must be pairs.`);
+  const storage = value.map((pair) => {
+    if (
+      !Array.isArray(pair) ||
+      pair.length !== 2 ||
+      typeof pair[0] !== "string" ||
+      typeof pair[1] !== "string"
+    ) {
+      catalogError("OKM1020", `Materialized view ${name} storage must be pairs of text.`);
+    }
+    return [pair[0], pair[1]] as const;
+  });
+  return { storage };
+}
+
+function parseTablespace(value: unknown, name: string): { readonly tablespace?: string } {
+  if (value === undefined) return {};
+  if (typeof value !== "string" || value.length === 0) {
+    catalogError("OKM1020", `Materialized view ${name} tablespace must be text.`);
+  }
+  return { tablespace: value };
 }
 
 function parsePolicy(record: Record<string, unknown>): CatalogObject {
@@ -1650,10 +1868,13 @@ function parseViewColumns(value: unknown): { readonly name: string; readonly dat
   if (!Array.isArray(value)) catalogError("OKM1020", "View columns must be a list.");
   return value.map((item) => {
     const record = requireRecord(item, "view column");
-    rejectUnknown(record, ["dataType", "name"], "view column");
+    rejectUnknown(record, ["comment", "dataType", "name"], "view column");
     return {
       name: requireString(record.name, "view column"),
       dataType: requireString(record.dataType, "view column type"),
+      ...(record.comment === undefined
+        ? {}
+        : { comment: requireString(record.comment, "view column comment") }),
     };
   });
 }
