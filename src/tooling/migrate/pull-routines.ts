@@ -10,6 +10,7 @@
  */
 
 import { identityKey, staticNamespace } from "../../contracts/catalog/identity.js";
+import { viewColumnField } from "../../dialects/pg/view/compile.js";
 import type {
   Catalog,
   CatalogObject,
@@ -73,6 +74,8 @@ export type PlannedView = {
   readonly binding: string;
   /** Indexes `materializedView()` can store. Expression indexes are skipped. */
   readonly indexes: readonly IndexObject[];
+  /** Table bindings the body lists. A view source is its binding when one exists. */
+  readonly tables: readonly string[];
 };
 
 /**
@@ -96,6 +99,8 @@ export type RenderedRoutines = {
   readonly functions: readonly string[];
   readonly triggers: readonly string[];
   readonly views: readonly string[];
+  /** A materialized view index callback needs `index` from `okmodel/pg`. */
+  readonly needsIndex: boolean;
 };
 
 const BINDING_SEED = ["schema", "extension", "fn", "trigger", "view", "materializedView"];
@@ -227,17 +232,6 @@ export function planRoutines(
   for (const object of [...views].sort((left, right) =>
     compare(left.identity.name, right.identity.name),
   )) {
-    if (object.kind === "view" && object.definition.securityInvoker === true) {
-      skipped.push(
-        skip(
-          object,
-          object.identity.name,
-          "view() sets security_invoker from tenancy, and pull does not declare tenancy",
-          object.definition.query,
-        ),
-      );
-      continue;
-    }
     const owned = indexes.filter((index) => index.identity.parent.name === object.identity.name);
     const kept: IndexObject[] = [];
     if (object.kind === "materializedView") {
@@ -276,10 +270,15 @@ export function planRoutines(
       if (identityKey(identity) !== self) edges.push(identity);
     }
     if (edges.length > 0) orderEdges.set(self, edges);
+    const tableBindings = matched.tables.flatMap((item) => {
+      const binding = tableExports.get(item);
+      return binding === undefined ? [] : [binding];
+    });
     plannedViews.push({
       object,
       binding: freshBinding(object.identity.name, used),
       indexes: kept,
+      tables: tableBindings,
     });
   }
 
@@ -348,6 +347,7 @@ export function renderRoutines(
     functions: plan.functions.map((item) => item.binding),
     triggers: plan.triggers.map((item) => item.binding),
     views: plan.views.map((item) => item.binding),
+    needsIndex: plan.views.some((item) => item.indexes.length > 0),
   };
 }
 
@@ -518,28 +518,85 @@ function triggerSource(item: PlannedTrigger): string {
 
 function viewSource(item: PlannedView): string {
   const definition = item.object.definition;
+  const security =
+    item.object.kind === "view"
+      ? [
+          item.object.definition.securityInvoker === true
+            ? ""
+            : `security: { definer: "pulled from a security definer view" }`,
+          item.object.definition.securityInvoker === true &&
+          item.object.definition.securityBarrier === true
+            ? "barrier: true"
+            : "",
+          item.object.definition.checkOption !== undefined
+            ? `checkOption: ${JSON.stringify(item.object.definition.checkOption)}`
+            : "",
+        ]
+      : [];
   const columns = definition.columns
     .map(
       (column) =>
-        `{ name: ${JSON.stringify(column.name)}, type: ${JSON.stringify(column.dataType)} }`,
+        `{ name: ${JSON.stringify(column.name)}, type: ${typeExpr(column.dataType)}.nullable() }`,
     )
     .join(", ");
-  const fields = [`columns: [${columns}]`, `query: ${JSON.stringify(definition.query)}`];
-  if (item.object.kind === "materializedView" && item.indexes.length > 0) {
-    const indexes = item.indexes
-      .map((index) => {
-        const parts = [
-          `name: ${JSON.stringify(index.identity.name)}`,
-          `columns: [${index.definition.columns.map((column) => JSON.stringify(column)).join(", ")}]`,
-        ];
-        if (index.definition.unique) parts.push("unique: true");
-        return `{ ${parts.join(", ")} }`;
-      })
-      .join(", ");
-    fields.push(`indexes: [${indexes}]`);
-  }
+  const query = `q.sql({\n    columns: [${columns}],\n    query: ${JSON.stringify(definition.query)},\n  })`;
+  const fields = [`tables: [${item.tables.join(", ")}]`, ...security, indexFields(item)];
+  const options = fields.filter((field) => field.length > 0).join(",\n  ");
   const call = item.object.kind === "materializedView" ? "materializedView" : "view";
-  return `const ${item.binding} = ${call}(${JSON.stringify(item.object.identity.name)}, {\n  ${fields.join(",\n  ")},\n});`;
+  return [
+    "// PostgreSQL does not store view nullability. Every column is .nullable().",
+    `const ${item.binding} = ${call}(${JSON.stringify(item.object.identity.name)}, {\n  ${options},\n}, (q) => ${query});`,
+  ].join("\n");
+}
+
+function indexFields(item: PlannedView): string {
+  if (item.object.kind !== "materializedView" || item.indexes.length === 0) return "";
+  const indexes = item.indexes
+    .map((index) => {
+      const columns = index.definition.columns.map((column) => columnHandle(column)).join(", ");
+      const unique = index.definition.unique ? ".unique()" : "";
+      const named = `.name(${JSON.stringify(index.identity.name)})`;
+      return `index(${columns})${unique}${named}`;
+    })
+    .join(", ");
+  return `indexes: (columns) => [${indexes}]`;
+}
+
+function columnHandle(name: string): string {
+  const field = viewColumnField(name);
+  if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(field)) return `columns.${field}`;
+  return `columns[${JSON.stringify(field)}]`;
+}
+
+/**
+ * A `t` builder for a `format_type` string.
+ *
+ * Unknown types stay `t.text()`. The column is still `.nullable()`, and the
+ * name in the source is the database's.
+ *
+ * @param dataType - Catalog type text
+ * @returns A `t` call, without `.nullable()`
+ */
+function typeExpr(dataType: string): string {
+  const known: Readonly<Record<string, string>> = {
+    text: "t.text()",
+    integer: "t.integer()",
+    bigint: "t.bigint()",
+    smallint: "t.smallint()",
+    boolean: "t.boolean()",
+    uuid: "t.uuid()",
+    numeric: "t.numeric()",
+    real: "t.real()",
+    "double precision": "t.double()",
+    bytea: "t.bytea()",
+    json: "t.json()",
+    jsonb: "t.jsonb()",
+    date: "t.date()",
+    "timestamp without time zone": "t.timestamp()",
+    "timestamp with time zone": "t.timestamptz()",
+    tsvector: "t.tsvector()",
+  };
+  return known[dataType] ?? "t.text()";
 }
 
 function commentFor(verdict: RoutineVerdict | undefined, kind: RoutineVerdict["kind"]): string {

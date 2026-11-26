@@ -184,13 +184,15 @@ test("view keys are camelCased on the client", async () => {
   const { schema, table, t } = await import("../src/dialects/pg/index.js");
   const { view } = await import("../src/dialects/pg/view/index.js");
   const notes = table("notes", { id: t.text().primaryKey(), title: t.text() });
-  const active = view("active_notes", {
-    columns: [
-      { name: "id", type: "text" },
-      { name: "title", type: "text" },
-    ],
-    query: "select id, title from notes",
-  });
+  const active = view("active_notes", { tables: [] }, (q) =>
+    q.sql({
+      columns: [
+        { name: "id", type: t.text() },
+        { name: "title", type: t.text() },
+      ],
+      query: "select id, title from notes",
+    }),
+  );
   const app = schema({ tables: [notes], views: [active] });
   const pool = await open();
   try {

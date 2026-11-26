@@ -70,6 +70,7 @@ const EXPECTED = [
   ["create-view", "expand"],
   ["drop-view", "contract"],
   ["replace-view", "expand"],
+  ["rename-view-column", "contract"],
   ["create-matview", "expand"],
   ["drop-matview", "contract"],
   ["refresh-matview", "expand"],

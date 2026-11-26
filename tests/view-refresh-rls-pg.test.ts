@@ -32,14 +32,16 @@ const app = schema({
   tenancy: rlsTenancy({ key: "tenantId", type: "uuid" }),
   tables: [notes],
   views: [
-    materializedView("daily_totals", {
-      columns: [
-        { name: "tenant_id", type: "uuid" },
-        { name: "id", type: "uuid" },
-        { name: "title", type: "text" },
-      ],
-      query: "select tenant_id, id, title from notes",
-    }),
+    materializedView("daily_totals", { tables: [] }, (q) =>
+      q.sql({
+        columns: [
+          { name: "tenant_id", type: uuid() },
+          { name: "id", type: uuid() },
+          { name: "title", type: text() },
+        ],
+        query: "select tenant_id, id, title from notes",
+      }),
+    ),
   ],
 });
 

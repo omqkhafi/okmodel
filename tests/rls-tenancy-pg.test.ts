@@ -57,14 +57,16 @@ const countries = table(
   { id: id({ default: "none" }), name: text() },
   { tenancy: global("shared") },
 );
-const openNotes = view("open_notes", {
-  columns: [
-    { name: "id", type: "uuid" },
-    { name: "tenant_id", type: "uuid" },
-    { name: "title", type: "text" },
-  ],
-  query: "select id, tenant_id, title from notes",
-});
+const openNotes = view("open_notes", { tables: [] }, (q) =>
+  q.sql({
+    columns: [
+      { name: "id", type: uuid() },
+      { name: "tenant_id", type: uuid() },
+      { name: "title", type: text() },
+    ],
+    query: "select id, tenant_id, title from notes",
+  }),
+);
 
 const built = schema({
   casing: "snake",
@@ -597,7 +599,7 @@ function writeRlsSchema(cwd: string): void {
       `import { global, rlsTenancy } from ${source("src/runtime/tenancy/index.ts")};`,
       'const notes = table("notes", { id: t.id({ default: "none" }), title: t.text() });',
       'const countries = table("countries", { id: t.id({ default: "none" }), name: t.text() }, { tenancy: global("shared") });',
-      'const openNotes = view("open_notes", { columns: [{ name: "id", type: "uuid" }, { name: "tenant_id", type: "uuid" }], query: "select id, tenant_id from notes" });',
+      'const openNotes = view("open_notes", { tables: [] }, (q) => q.sql({ columns: [{ name: "id", type: t.uuid() }, { name: "tenant_id", type: t.uuid() }], query: "select id, tenant_id from notes" }));',
       'export const app = schema({ casing: "snake", tenancy: rlsTenancy({ key: "tenantId", type: "uuid" }), tables: [notes, countries], views: [openNotes] });',
       "",
     ].join("\n"),

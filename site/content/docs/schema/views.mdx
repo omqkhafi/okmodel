@@ -1,19 +1,19 @@
 ---
 title: "Views"
-description: "Views and materialized views."
+description: "Views and materialized views built with the query API."
 ---
-`views` is a list of `view()` and `materializedView()` from `okmodel/view`. You declare the output columns and the query. The query is stored as written. `schema()` does not check it against the tables, except for tenancy. An omitted list, an empty list, and a value that is not a list add no view.
+`views` is one list of `view()` and `materializedView()` from `okmodel/view`. The body is the query API. `q` has only the tables and views named in `tables`. Reading any other name is a type error, and a cycle in that list is OKM1900.
 
-`db.views` is the read handle. The client name is the camelCase of the view name, so `open_notes` is `openNotes`. Every output column is decoded as text. Each field is `string | null`. A plain view has `find`, `one`, `count`, and `exists`. A materialized view also has `refresh()`.
+`db.views` is the read handle for both kinds. The client name is the camelCase of the view name, so `open_notes` is `openNotes`. A plain view has `find`, `one`, `count`, and `exists`. A materialized view also has `refresh()`. There is no insert or update.
 
-`columns`, `query` are required on the SQL form. The builder form is `view(name, (q) => q.from(table))`. A column list projects those fields. Omit it to select every field. `.where(sql`...`)` appends that text. `.tenancy(global("reason"))` opts out. The builder form is `public` only. It has no schema option. `materializedView()` stays the SQL form. On the SQL form, `schema` defaults to `public`. `tenancy` opts a view out with `global("reason")`.
+Column type and nullability come from the expression or the column builder. PostgreSQL stores neither for a view. A column left non-null throws OKM1901 when a row comes back NULL. `okm pull` writes `q.sql` and `.nullable()` on every column for that reason.
+
+Every view is `security_invoker` unless you pass `{ definer: "reason" }`. A definer view also sets `security_barrier`. The reason is not stored. `checkOption` is `local` or `cascaded` and is enforced by the database. `orderBy` without `limit` is OKM1120.
 
 ### view
 
-`view()` stores the query. `find` needs a `limit`, or `.all(reason)`.
-
 ```ts title="view.ts"
-import { schema, sql, table, t } from "okmodel/pg";
+import { not, schema, table, t } from "okmodel/pg";
 import { view } from "okmodel/view";
 
 const notes = table("notes", {
@@ -21,121 +21,94 @@ const notes = table("notes", {
   title: t.text(),
 });
 
-const openNotes = view("openNotes", {
-  columns: [
-    { name: "id", type: "bigint" }, // [!code focus]
-    { name: "title", type: "text" }, // [!code focus]
-  ],
-  query: sql`select id, title from notes`, // [!code focus]
-});
+const openNotes = view("open_notes", { tables: [notes] }, (q) =>
+  q.notes.find({
+    select: ["id", "title"],
+    where: { title: not(null) },
+  }),
+);
 
 export default schema({
   tables: [notes],
-  views: [openNotes], // [!code focus]
+  views: [openNotes],
 });
+```
+
+`q.sql` is the fallback for a union, a CTE, `LATERAL`, or a recursive view.
+
+```ts title="sql-view.ts"
+import { schema, sql, table, t } from "okmodel/pg";
+import { view } from "okmodel/view";
+
+const notes = table("notes", { id: t.identity(), title: t.text() });
+
+const titled = view("titled", { tables: [notes] }, (q) =>
+  q.sql({
+    columns: [
+      { name: "id", type: t.bigint() },
+      { name: "title", type: t.text().nullable() },
+    ],
+    query: sql`select id, title from notes`,
+  }),
+);
+
+export default schema({ tables: [notes], views: [titled] });
 ```
 
 ### materialized
 
-`materializedView()` is created `with no data`. Populate is a later plan step. Omitted `refresh` still populates, without `concurrently`. `db.views.noteCounts.refresh()` runs `refresh materialized view "noteCounts"`. The call sets `app.unscoped` for that statement and is not tenant-scoped.
+`materializedView()` is created `with no data`. `populate: "now"` (the default) refreshes it in the plan. `populate: "later"` does not. `refresh: "concurrently"` needs a unique index on plain columns: no expression and no predicate, or the declaration is OKM1822. `indexes` is the same `index()` call a table uses. `using`, `with`, and `tablespace` are stored when they are not the database default.
 
 ```ts title="materialized.ts"
 import { connect } from "okmodel/pg/postgresjs";
-import { schema, sql, table, t } from "okmodel/pg";
+import { index, schema, table, t } from "okmodel/pg";
 import { materializedView } from "okmodel/view";
 
-const notes = table("notes", {
-  id: t.identity(),
-  title: t.text(),
-});
+const notes = table("notes", { id: t.identity(), title: t.text() });
 
-const noteCounts = materializedView("noteCounts", {
-  columns: [{ name: "n", type: "bigint" }],
-  query: sql`select count(*)::bigint as n from notes`,
-});
+const noteCounts = materializedView(
+  "note_counts",
+  {
+    tables: [notes],
+    refresh: "concurrently",
+    indexes: (columns) => [index(columns.title).unique()],
+  },
+  (q) => q.notes.aggregate({ groupBy: ["title"], select: { n: { count: true } }, limit: 100 }),
+);
 
-const app = schema({
-  tables: [notes],
-  views: [noteCounts],
-});
+const app = schema({ tables: [notes], views: [noteCounts] });
 
 export async function reload(url: string) {
   await using db = connect(url, { schema: app });
-  await db.views.noteCounts.refresh(); // [!code focus]
+  await db.views.noteCounts.refresh();
   return await db.views.noteCounts.find({ limit: 1 });
 }
 ```
 
-<Callout type="error" title="OKM1111">
-A driver that cannot reserve a connection is `Refresh needs a driver that can reserve a connection.`
-</Callout>
+Postgres does not store `refresh` or `populate`. Introspection leaves them unset, and a later plan does not recreate the view only because they were declared.
 
-### concurrently
+### security
 
-`refresh: "concurrently"` plans `refresh materialized view concurrently` once the view has been populated. The first populate is not concurrent. Postgres rejects `concurrently` until a unique index exists, so the declaration needs one. Any other refresh value is refused. Postgres does not store the refresh mode: introspection leaves it unset, and plan equality ignores it, so a later plan does not recreate the view only because the mode was declared. A populated materialized view is not row-level-security protected; it is guarded by the column predicate and by OKM1820 when the query hides the tenant key.
-
-```ts title="concurrently.ts"
-import { schema, sql, table, t } from "okmodel/pg";
-import { materializedView } from "okmodel/view";
-
-const notes = table("notes", {
-  id: t.identity(),
-  title: t.text(),
-});
-
-const noteCounts = materializedView("noteCounts", {
-  columns: [{ name: "title", type: "text" }],
-  query: sql`select title from notes`,
-  indexes: [{ columns: ["title"], unique: true }], // [!code focus]
-  refresh: "concurrently", // [!code focus]
-});
-
-export default schema({
-  tables: [notes],
-  views: [noteCounts],
-});
-```
-
-<Callout type="error" title="OKM1822">
-`Materialized view noteCounts refreshes concurrently and has no unique index.`
-</Callout>
-
-<Callout type="error" title="OKM1120">
-Another refresh value is `Materialized view noteCounts refresh must be "concurrently".`
-</Callout>
-
-<Callout type="error" title="OKM1020">
-An index column the view does not declare is `Index on noteCounts names column missing, which the materialized view does not have.`
-</Callout>
+The default is `with (security_invoker = true)`, including under column tenancy. `{ definer: "reason" }` omits the invoker option and sets `security_barrier`. `okm doctor` warns OKM1902 when the session role cannot select a base table of a security-invoker view.
 
 ### tenancy
 
-A view that reads a tenant table has to expose the tenant key, or pass `global("reason")`. The reason is stored for `inspect()` and is not part of the catalog hash. Under `rlsTenancy`, a view that exposes the key is created `with (security_invoker = true)`.
+A view that reads a tenant table has to expose the tenant key, or pass `global("reason")`. The reason is stored for `inspect()` and is not part of the catalog hash.
 
 ```ts title="tenancy.ts"
 import { columnTenancy, global } from "okmodel/tenancy";
-import { schema, sql, table, t } from "okmodel/pg";
+import { schema, table, t } from "okmodel/pg";
 import { view } from "okmodel/view";
 
-const notes = table("notes", {
-  id: t.identity(),
-  title: t.text(),
-});
+const notes = table("notes", { id: t.identity(), title: t.text() });
 
-const openNotes = view("openNotes", {
-  columns: [
-    { name: "id", type: "bigint" },
-    { name: "title", type: "text" },
-    { name: "tenantId", type: "uuid" }, // [!code focus]
-  ],
-  query: sql`select id, title, "tenantId" from notes`,
-});
+const openNotes = view("open_notes", { tables: [notes] }, (q) =>
+  q.notes.find({ select: ["id", "title", "tenantId"] }),
+);
 
-const shared = view("shared", {
-  columns: [{ name: "n", type: "bigint" }],
-  query: sql`select count(*)::bigint as n from notes`,
-  tenancy: global("counts are shared"), // [!code focus]
-});
+const shared = view("shared", { tables: [notes], tenancy: global("counts are shared") }, (q) =>
+  q.notes.aggregate({ select: { n: { count: true } } }),
+);
 
 export default schema({
   tables: [notes],
@@ -145,86 +118,19 @@ export default schema({
 ```
 
 <Callout type="error" title="OKM1820">
-A tenant view that hides the key is `View openNotes reads a tenant table and does not expose tenantId.`
+A tenant view that hides the key is `View open_notes reads a tenant table and does not expose tenantId.`
 </Callout>
 
-<Callout type="error" title="OKM1020">
-Anything other than `global("reason")` is `View openNotes tenancy must be global("reason").` Two output columns that camelCase to one field are `View column tenant_id repeats tenantId.`
-</Callout>
+### planning
 
-<Callout type="error" title="OKM1023">
-The same client name as a table is `View notes uses the client name notes.` The same SQL name as a table is `View notes uses the name of a table.`
-</Callout>
+`CREATE OR REPLACE` is used only when the new columns are the old columns plus appended ones, and the statement restates every option. A replace resets an option that was not restated. A pure column rename is `ALTER VIEW RENAME COLUMN`. Anything else drops and recreates dependents in dependency order. A base column type change drops dependent views and materialized views, alters the column, and recreates them.
 
-### schema
+### recipes
 
-`schema` is the install schema. The default is `public`.
+These three are not emitted. Each needs a proof on the server you run before it becomes a plan step.
 
-```ts title="install.ts"
-import { schema, sql, table, t } from "okmodel/pg";
-import { view } from "okmodel/view";
+**Side-by-side rebuild.** When a materialized view's query changes and nothing else depends on it, build the new query under a temporary name, populate it, then rename the old one aside and the new one into place in one short transaction. If a view depends on it, drop that chain and recreate it in dependency order instead. The rename swap is not atomic with readers of the old name across the two renames, so keep the transaction short.
 
-const notes = table("notes", {
-  id: t.identity(),
-  title: t.text(),
-});
+**Scheduled refresh.** `refresh: { mode: "concurrently", every: "*/5 * * * *" }` is OKM1120. On a server that has the pg_cron pack, schedule `refresh materialized view concurrently` as the database owner. Jobs show up in `cron.job` and `cron.job_run_details`. The view still needs a plain unique index.
 
-const openNotes = view("openNotes", {
-  schema: "app", // [!code focus]
-  columns: [
-    { name: "id", type: "bigint" },
-    { name: "title", type: "text" },
-  ],
-  query: sql`select id, title from notes`,
-});
-
-export default schema({
-  tables: [notes],
-  views: [openNotes],
-});
-```
-
-### together
-
-A tenant view exposes `tenantId`. A materialized view opts out, refreshes concurrently, and is read after `refresh()`.
-
-```ts title="together.ts"
-import { connect } from "okmodel/pg/postgresjs";
-import { columnTenancy, global } from "okmodel/tenancy";
-import { schema, sql, table, t } from "okmodel/pg";
-import { materializedView, view } from "okmodel/view";
-
-const notes = table("notes", {
-  id: t.identity(),
-  title: t.text(),
-});
-
-const openNotes = view("openNotes", {
-  columns: [
-    { name: "id", type: "bigint" },
-    { name: "title", type: "text" },
-    { name: "tenantId", type: "uuid" },
-  ],
-  query: sql`select id, title, "tenantId" from notes`,
-});
-
-const noteCounts = materializedView("noteCounts", {
-  columns: [{ name: "title", type: "text" }],
-  query: sql`select title from notes`,
-  indexes: [{ columns: ["title"], unique: true }],
-  refresh: "concurrently",
-  tenancy: global("counts are shared"),
-});
-
-const app = schema({
-  tables: [notes],
-  tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
-  views: [openNotes, noteCounts],
-});
-
-export async function reload(url: string, tenantId: string) {
-  await using db = connect(url, { schema: app });
-  await db.views.noteCounts.refresh();
-  return await db.for({ tenantId }).views.openNotes.find({ limit: 1 }); // [!code focus]
-}
-```
+**INSTEAD OF.** A trigger with `timing: "instead"` prints `INSTEAD OF`, and it belongs on a view. `trigger({ on })` takes a table today. Declare the trigger in SQL with `q.sql` left unused, or add the view to `on` in a later change once a real server has run an `INSTEAD OF` row trigger against that view.

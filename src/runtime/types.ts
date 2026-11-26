@@ -2389,11 +2389,18 @@ type CamelName<N extends string> = N extends `_${infer Rest}`
     ? `${Head}${Capitalize<CamelName<Tail>>}`
     : N;
 
-/** One view row. Every column is decoded as text, so each field is a string or null. */
+/** One view column's TypeScript value. A column with no declared type stays text. */
+type ViewField<Col> = Col extends { readonly value: infer V; readonly nullable: infer N }
+  ? [N] extends [false]
+    ? V
+    : V | null
+  : string | null;
+
+/** One view row. Nullability comes from the declaration. PostgreSQL does not store it. */
 type ViewRow<D> = D extends {
   readonly "~columns"?: infer C extends readonly { readonly name: string }[];
 }
-  ? { readonly [Col in C[number] as CamelName<Col["name"]>]: string | null }
+  ? { readonly [Col in C[number] as CamelName<Col["name"]>]: ViewField<Col> }
   : never;
 
 /** Options `find` and `one` take on a view. */

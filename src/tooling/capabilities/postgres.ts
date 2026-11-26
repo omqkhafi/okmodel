@@ -119,6 +119,22 @@ export const POSTGRES_FEATURES = {
   "queryObserver.timing": native("proof:queryObserver.timing", {
     cost: "query|decode",
   }),
+  /** A view body is `find` or `aggregate`, printed without executing. */
+  "view.typed": native("proof:view.typed"),
+  /** A materialized view is the same body, created with no data, then populated. */
+  "view.materialized": native("proof:view.materialized"),
+  /** Invoker is the default. Definer sets security_barrier. */
+  "view.security": native("proof:view.security"),
+  /** `WITH LOCAL` or `WITH CASCADED CHECK OPTION` is DDL only. */
+  "view.checkOption": native("proof:view.checkOption"),
+  /** Concurrent refresh needs a plain unique index. */
+  "matview.refresh": native("proof:matview.refresh"),
+  /** Creation order follows the declared tables and views. A cycle is OKM1900. */
+  "view.dependencyOrder": native("proof:view.dependencyOrder"),
+  /** `expr.as(name)` is a select column. */
+  "query.exprSelect": native("proof:query.exprSelect"),
+  /** `"relation.column"` in select, where, groupBy, and orderBy is a join. */
+  "query.toOnePath": native("proof:query.toOnePath"),
 } as const satisfies Registry;
 
 /** One Postgres feature key. */

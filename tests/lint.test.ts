@@ -92,19 +92,23 @@ test("destructive drops are errors and a create is not", () => {
   expect(codes(plans(withFn, withoutFn))).toContain("OKM1515");
   expect(codes(plans(schema({ tables: [] }), withFn))).not.toContain("OKM1515");
 
-  const listed = view("titles", {
-    columns: [{ name: "title", type: "text" }],
-    query: "select title from tasks",
-  });
+  const listed = view("titles", { tables: [] }, (q) =>
+    q.sql({
+      columns: [{ name: "title", type: t.text() }],
+      query: "select title from tasks",
+    }),
+  );
   expect(
     codes(plans(schema({ tables: [tasks()], views: [listed] }), schema({ tables: [tasks()] }))),
   ).toContain("OKM1516");
   expect(codes(fromEmpty(schema({ tables: [tasks()], views: [listed] })))).not.toContain("OKM1516");
 
-  const stored = materializedView("titles", {
-    columns: [{ name: "title", type: "text" }],
-    query: "select title from tasks",
-  });
+  const stored = materializedView("titles", { tables: [] }, (q) =>
+    q.sql({
+      columns: [{ name: "title", type: t.text() }],
+      query: "select title from tasks",
+    }),
+  );
   expect(
     codes(plans(schema({ tables: [tasks()], views: [stored] }), schema({ tables: [tasks()] }))),
   ).toContain("OKM1518");
@@ -919,10 +923,12 @@ test("a generated create with an index, a unique, and a foreign key lints clean"
   const app = schema({
     tables: [users, owned],
     views: [
-      view("titles", {
-        columns: [{ name: "title", type: "text" }],
-        query: "select title from tasks",
-      }),
+      view("titles", { tables: [] }, (q) =>
+        q.sql({
+          columns: [{ name: "title", type: t.text() }],
+          query: "select title from tasks",
+        }),
+      ),
     ],
   });
   const planned = fromEmpty(app);

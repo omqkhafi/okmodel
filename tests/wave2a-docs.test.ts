@@ -57,6 +57,7 @@ test("the doctor sample is formatReport for the documented database", () => {
     minimum: undefined,
     roleConfig: "not-set",
     extensions: { required: [], versions: new Map(), refusal: undefined },
+    invokerGaps: [],
   };
   const config: MigrateConfig = { schema: "./schema.ts" };
   const report = buildReport(
@@ -79,11 +80,11 @@ test("the doctor sample is formatReport for the documented database", () => {
   );
   const packaged = page("docs/production.md");
   const packagedStart = packaged.indexOf("target `production`\n");
-  const packagedEnd = packaged.indexOf("0 fail, 3 warn, 6 ok\n");
+  const packagedEnd = packaged.indexOf("0 fail, 3 warn, 7 ok\n");
   if (packagedStart < 0 || packagedEnd < 0) throw new Error("package doctor sample moved");
   const packagedSample = packaged.slice(
     packagedStart,
-    packagedEnd + "0 fail, 3 warn, 6 ok\n".length,
+    packagedEnd + "0 fail, 3 warn, 7 ok\n".length,
   );
   expect(printed).toBe(packagedSample);
   expect(handbook.endsWith("\n") ? handbook : `${handbook}\n`).toBe(printed);

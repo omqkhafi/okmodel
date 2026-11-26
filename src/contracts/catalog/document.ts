@@ -622,11 +622,21 @@ function rewriteView(
     return materializedViewObject({
       ...input,
       ...(object.definition.refresh !== undefined ? { refresh: object.definition.refresh } : {}),
+      ...(object.definition.populate === "later" ? { populate: "later" as const } : {}),
+      ...(object.definition.using !== undefined ? { using: object.definition.using } : {}),
+      ...(object.definition.storage !== undefined ? { storage: object.definition.storage } : {}),
+      ...(object.definition.tablespace !== undefined
+        ? { tablespace: object.definition.tablespace }
+        : {}),
     });
   }
   return viewObject({
     ...input,
     ...(object.definition.securityInvoker === true ? { securityInvoker: true as const } : {}),
+    ...(object.definition.securityBarrier === true ? { securityBarrier: true as const } : {}),
+    ...(object.definition.checkOption !== undefined
+      ? { checkOption: object.definition.checkOption }
+      : {}),
   });
 }
 
@@ -1140,6 +1150,10 @@ function definitionToJson(object: CatalogObject): Json {
         })),
         query: object.definition.query,
         ...(object.definition.securityInvoker === true ? { securityInvoker: true } : {}),
+        ...(object.definition.securityBarrier === true ? { securityBarrier: true } : {}),
+        ...(object.definition.checkOption !== undefined
+          ? { checkOption: object.definition.checkOption }
+          : {}),
       };
     case "policy":
       return {
@@ -1155,6 +1169,14 @@ function definitionToJson(object: CatalogObject): Json {
         })),
         query: object.definition.query,
         ...(object.definition.refresh !== undefined ? { refresh: object.definition.refresh } : {}),
+        ...(object.definition.populate === "later" ? { populate: "later" as const } : {}),
+        ...(object.definition.using !== undefined ? { using: object.definition.using } : {}),
+        ...(object.definition.storage !== undefined
+          ? { storage: object.definition.storage.map((pair) => [pair[0], pair[1]]) }
+          : {}),
+        ...(object.definition.tablespace !== undefined
+          ? { tablespace: object.definition.tablespace }
+          : {}),
       };
     case "role":
       return { inherit: object.definition.inherit, login: object.definition.login };
@@ -1588,7 +1610,9 @@ function parseView(
     catalogError("OKM1020", `View object identity is ${identity.kind}, not a ${kind}.`);
   }
   const fields =
-    kind === "view" ? ["columns", "query", "securityInvoker"] : ["columns", "query", "refresh"];
+    kind === "view"
+      ? ["columns", "query", "securityInvoker", "securityBarrier", "checkOption"]
+      : ["columns", "query", "refresh", "populate", "using", "storage", "tablespace"];
   rejectUnknown(definition, fields, "view definition");
   const columns = parseViewColumns(definition.columns);
   const query = requireString(definition.query, "view query");
@@ -1609,15 +1633,72 @@ function parseView(
     return materializedViewObject({
       ...input,
       ...(refresh === "concurrently" ? { refresh: "concurrently" as const } : {}),
+      ...parsePopulate(definition.populate, identity.name),
+      ...parseUsing(definition.using, identity.name),
+      ...parseStorage(definition.storage, identity.name),
+      ...parseTablespace(definition.tablespace, identity.name),
     });
   }
   if (definition.securityInvoker !== undefined && definition.securityInvoker !== true) {
     catalogError("OKM1020", `View ${identity.name} securityInvoker must be true when set.`);
   }
+  if (definition.securityBarrier !== undefined && definition.securityBarrier !== true) {
+    catalogError("OKM1020", `View ${identity.name} securityBarrier must be true when set.`);
+  }
+  const checkOption = definition.checkOption;
+  if (checkOption !== undefined && checkOption !== "local" && checkOption !== "cascaded") {
+    catalogError("OKM1020", `View ${identity.name} checkOption must be local or cascaded.`);
+  }
   return viewObject({
     ...input,
     ...(definition.securityInvoker === true ? { securityInvoker: true as const } : {}),
+    ...(definition.securityBarrier === true ? { securityBarrier: true as const } : {}),
+    ...(checkOption === "local" || checkOption === "cascaded" ? { checkOption } : {}),
   });
+}
+
+function parsePopulate(value: unknown, name: string): { readonly populate?: "later" } {
+  if (value === undefined) return {};
+  if (value !== "later")
+    catalogError("OKM1020", `Materialized view ${name} populate must be later.`);
+  return { populate: "later" };
+}
+
+function parseUsing(value: unknown, name: string): { readonly using?: string } {
+  if (value === undefined) return {};
+  if (typeof value !== "string" || value.length === 0) {
+    catalogError("OKM1020", `Materialized view ${name} using must be text.`);
+  }
+  return { using: value };
+}
+
+function parseStorage(
+  value: unknown,
+  name: string,
+): { readonly storage?: readonly (readonly [string, string])[] } {
+  if (value === undefined) return {};
+  if (!Array.isArray(value))
+    catalogError("OKM1020", `Materialized view ${name} storage must be pairs.`);
+  const storage = value.map((pair) => {
+    if (
+      !Array.isArray(pair) ||
+      pair.length !== 2 ||
+      typeof pair[0] !== "string" ||
+      typeof pair[1] !== "string"
+    ) {
+      catalogError("OKM1020", `Materialized view ${name} storage must be pairs of text.`);
+    }
+    return [pair[0], pair[1]] as const;
+  });
+  return { storage };
+}
+
+function parseTablespace(value: unknown, name: string): { readonly tablespace?: string } {
+  if (value === undefined) return {};
+  if (typeof value !== "string" || value.length === 0) {
+    catalogError("OKM1020", `Materialized view ${name} tablespace must be text.`);
+  }
+  return { tablespace: value };
 }
 
 function parsePolicy(record: Record<string, unknown>): CatalogObject {

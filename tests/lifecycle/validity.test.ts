@@ -17,6 +17,41 @@ import { renderSchema } from "./render.js";
 
 const root = repoRoot();
 
+test("a spaced table name is a bracket key on q", () => {
+  const text = renderSchema(
+    {
+      casing: "omit",
+      tenancy: false,
+      trgm: false,
+      tables: [
+        {
+          key: "tasks",
+          name: "to do",
+          columns: [
+            {
+              key: "id",
+              name: "id",
+              type: "identity",
+              nullable: false,
+              primaryKey: true,
+              unique: false,
+              defaultKind: "none",
+            },
+          ],
+          indexes: [],
+          checks: [],
+          archive: false,
+          versioned: false,
+        },
+      ],
+      triggers: [],
+      views: [{ name: "task_ids", tableKey: "tasks", columns: ["id"] }],
+    },
+    root,
+  );
+  expect(text).toContain('q["to do"].find({ select: ["id"] })');
+});
+
 test("the grammar draws snake, camel, collisions, and names over 63 bytes", () => {
   const casings = new Set<string>();
   const stresses = new Set<string>();

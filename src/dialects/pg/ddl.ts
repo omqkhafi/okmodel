@@ -269,9 +269,18 @@ export function functionSql(object: FunctionObject, schema: string, replace: boo
  */
 export function viewSql(object: ViewObject, schema: string, replace: boolean): string {
   const verb = replace ? "create or replace view" : "create view";
-  const invoker =
-    object.definition.securityInvoker === true ? " with (security_invoker = true)" : "";
-  return `${verb} ${qualify(schema, object.identity.name)}${invoker} as ${object.definition.query}`;
+  const options: string[] = [];
+  if (object.definition.securityInvoker === true) options.push("security_invoker = true");
+  if (object.definition.securityBarrier === true) options.push("security_barrier = true");
+  const withOptions = options.length > 0 ? ` with (${options.join(", ")})` : "";
+  const check = object.definition.checkOption;
+  const tail =
+    check === "local"
+      ? " with local check option"
+      : check === "cascaded"
+        ? " with cascaded check option"
+        : "";
+  return `${verb} ${qualify(schema, object.identity.name)}${withOptions} as ${object.definition.query}${tail}`;
 }
 
 /** One policy statement and the planner kind that classifies it. */
@@ -339,7 +348,18 @@ export function policyDropPlan(object: PolicyObject, schema: string): readonly P
  * @returns The statement
  */
 export function materializedViewSql(object: MaterializedViewObject, schema: string): string {
-  return `create materialized view ${qualify(schema, object.identity.name)} as ${object.definition.query} with no data`;
+  const definition = object.definition;
+  const using =
+    definition.using !== undefined && definition.using !== "heap"
+      ? ` using ${definition.using}`
+      : "";
+  const storage =
+    definition.storage !== undefined && definition.storage.length > 0
+      ? ` with (${definition.storage.map(([key, value]) => `${key} = ${value}`).join(", ")})`
+      : "";
+  const tablespace =
+    definition.tablespace !== undefined ? ` tablespace ${quoteIdent(definition.tablespace)}` : "";
+  return `create materialized view ${qualify(schema, object.identity.name)}${using}${storage}${tablespace} as ${definition.query} with no data`;
 }
 
 /**

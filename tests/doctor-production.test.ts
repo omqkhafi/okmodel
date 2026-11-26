@@ -220,6 +220,7 @@ const quiet: ProductionFacts = {
   minimum: undefined,
   roleConfig: "not-set",
   extensions: { required: [], versions: new Map(), refusal: undefined },
+  invokerGaps: [],
 };
 
 test("the report has a fixed order, ids, and counts", () => {
@@ -245,13 +246,14 @@ test("the report has a fixed order, ids, and counts", () => {
     "statement-timeout",
     "server-version",
     "extensions",
+    "view-invoker",
   ]);
-  expect(report.summary).toEqual({ fail: 1, warn: 0, ok: 8 });
+  expect(report.summary).toEqual({ fail: 1, warn: 0, ok: 9 });
   expect(report.target).toBe("production");
   const text = formatReport(report);
   expect(text.startsWith("target `production`\n")).toBe(true);
   expect(text).toContain("fail  target-protection");
-  expect(text).toContain("1 fail, 0 warn, 8 ok");
+  expect(text).toContain("1 fail, 0 warn, 9 ok");
   for (const secret of ["zq_user", "zq_pass", "zq-host", "zq_db", "postgres://"]) {
     expect(text).not.toContain(secret);
     expect(JSON.stringify(report)).not.toContain(secret);

@@ -63,13 +63,15 @@ test("rls emits enable, force, and two policies, and skips global tables", () =>
 
 test("a view over tenant tables is security_invoker and a view without the key is OKM1820", () => {
   const notes = table("notes", { id: id({ default: "none" }), title: text() });
-  const open = view("open_notes", {
-    columns: [
-      { name: "id", type: "uuid" },
-      { name: "tenant_id", type: "uuid" },
-    ],
-    query: "select id, tenant_id from notes",
-  });
+  const open = view("open_notes", { tables: [] }, (q) =>
+    q.sql({
+      columns: [
+        { name: "id", type: uuid() },
+        { name: "tenant_id", type: uuid() },
+      ],
+      query: "select id, tenant_id from notes",
+    }),
+  );
   const built = schema({
     casing: "snake",
     tenancy: rlsTenancy({ key: "tenantId", type: "uuid" }),
@@ -83,10 +85,12 @@ test("a view over tenant tables is security_invoker and a view without the key i
     "with (security_invoker = true)",
   );
 
-  const hidden = view("hidden_notes", {
-    columns: [{ name: "id", type: "uuid" }],
-    query: "select id from notes",
-  });
+  const hidden = view("hidden_notes", { tables: [] }, (q) =>
+    q.sql({
+      columns: [{ name: "id", type: uuid() }],
+      query: "select id from notes",
+    }),
+  );
   expect(() =>
     schema({
       casing: "snake",
@@ -130,15 +134,17 @@ test("via() and a key list are refused", () => {
   expect(() => rlsTenancy(listed)).toThrow(/not supported yet/);
 });
 
-test("a view under column tenancy is not security_invoker", () => {
+test("a view under column tenancy is security_invoker", () => {
   const notes = table("notes", { id: id({ default: "none" }), title: text() });
-  const open = view("open_notes", {
-    columns: [
-      { name: "id", type: "uuid" },
-      { name: "tenant_id", type: "uuid" },
-    ],
-    query: "select id, tenant_id from notes",
-  });
+  const open = view("open_notes", { tables: [] }, (q) =>
+    q.sql({
+      columns: [
+        { name: "id", type: uuid() },
+        { name: "tenant_id", type: uuid() },
+      ],
+      query: "select id, tenant_id from notes",
+    }),
+  );
   const built = schema({
     casing: "snake",
     tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
@@ -147,6 +153,6 @@ test("a view under column tenancy is not security_invoker", () => {
   });
   const listed = built.catalog.objects.find((object) => object.kind === "view");
   if (listed?.kind !== "view") throw new Error("expected a view");
-  expect(listed.definition.securityInvoker).toBeUndefined();
-  expect(renderCatalog(built.catalog, "app").join("\n")).not.toContain("security_invoker");
+  expect(listed.definition.securityInvoker).toBe(true);
+  expect(renderCatalog(built.catalog, "app").join("\n")).toContain("security_invoker");
 });

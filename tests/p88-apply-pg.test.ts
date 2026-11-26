@@ -380,47 +380,50 @@ export const app = schema({
 }
 
 function matviewSchema(): string {
-  return `import { schema, table, text } from ${pg};
+  return `import { index, schema, table, text } from ${pg};
 import { materializedView } from ${view};
 const tasks = table("tasks", { id: text().primaryKey(), title: text() });
-const columns = [
-  { name: "id", type: "text" },
-  { name: "title", type: "text" },
-];
 export const app = schema({
   tables: [tasks],
   views: [
     materializedView("sums", {
-      columns,
-      query: "SELECT id, title FROM tasks",
+      tables: [],
       refresh: "concurrently",
-      indexes: [
-        { columns: ["id"], unique: true },
-        { columns: ["title"], unique: false },
-        { columns: ["id", "title"], unique: true },
-        { columns: ["title", "id"], unique: false },
+      indexes: (columns) => [
+        index(columns.id).unique(),
+        index(columns.title),
+        index(columns.id, columns.title).unique(),
+        index(columns.title, columns.id),
       ],
-    }),
+    }, (q) => q.sql({
+      columns: [
+        { name: "id", type: text() },
+        { name: "title", type: text() },
+      ],
+      query: "SELECT id, title FROM tasks",
+    })),
   ],
 });
 `;
 }
 
 function rolesSchema(): string {
-  return `import { schema, table, text } from ${pg};
+  return `import { index, schema, table, text } from ${pg};
 import { materializedView } from ${view};
 const tasks = table("tasks", { id: text().primaryKey(), title: text() });
 export const app = schema({
   tables: [tasks],
   views: [
     materializedView("sums", {
+      tables: [],
+      indexes: (columns) => [index(columns.id).unique()],
+    }, (q) => q.sql({
       columns: [
-        { name: "id", type: "text" },
-        { name: "title", type: "text" },
+        { name: "id", type: text() },
+        { name: "title", type: text() },
       ],
       query: "SELECT id, title FROM tasks",
-      indexes: [{ columns: ["id"], unique: true }],
-    }),
+    })),
   ],
 });
 `;

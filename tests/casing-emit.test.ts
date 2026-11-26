@@ -168,7 +168,7 @@ describe.each(PAIRS)("%s", (casing, accounts, orgUnit, tenant, email, line2) => 
       return found?.kind === "view" ? found.definition.query : "";
     };
     expect(query("status_list")).toBe(
-      `select "${spell(casing, "codeID")}", "label" from "${spell(casing, "statusCodes")}"`,
+      `select t."${spell(casing, "codeID")}" as "${spell(casing, "codeID")}", t."label" as "label" from "${spell(casing, "statusCodes")}" t`,
     );
     const model = app.model as unknown as Readonly<
       Record<

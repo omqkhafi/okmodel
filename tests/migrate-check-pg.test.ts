@@ -629,7 +629,7 @@ postgresTest(
           `const tasks = table("tasks", { id: t.identity(), status: t.text() });`,
           "export const app = schema({",
           "  tables: [tasks],",
-          `  views: [view("open_tasks", { columns: [{ name: "id", type: "bigint" }], query: ${JSON.stringify(" SELECT id\n   FROM tasks\n  WHERE status <> 'done'::text;")} })],`,
+          `  views: [view("open_tasks", { tables: [] }, (q) => q.sql({ columns: [{ name: "id", type: t.bigint() }], query: ${JSON.stringify(" SELECT id\n   FROM tasks\n  WHERE status <> 'done'::text;")} }))],`,
           "});",
         ].join("\n"),
       );
@@ -678,7 +678,7 @@ postgresTest(
           "export const app = schema({",
           "  tables: [tasks],",
           "  functions: [isOpen],",
-          `  views: [view("open_tasks", { columns: [{ name: "id", type: "bigint" }], query: ${JSON.stringify(" SELECT id\n   FROM tasks\n  WHERE is_open(status);")} })],`,
+          `  views: [view("open_tasks", { tables: [] }, (q) => q.sql({ columns: [{ name: "id", type: t.bigint() }], query: ${JSON.stringify(" SELECT id\n   FROM tasks\n  WHERE is_open(status);")} }))],`,
           "});",
         ].join("\n"),
       );

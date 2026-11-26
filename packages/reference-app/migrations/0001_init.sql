@@ -215,7 +215,7 @@ create function "public"."task_is_open"("status" task_status) returns boolean la
 -- kind: create-view
 -- action: ddl
 -- lock: ACCESS EXCLUSIVE
-create view "public"."active_projects" as SELECT workspace_id,
+create view "public"."active_projects" with (security_invoker = true) as SELECT workspace_id,
     id,
     name
    FROM projects
@@ -225,7 +225,7 @@ create view "public"."active_projects" as SELECT workspace_id,
 -- kind: create-view
 -- action: ddl
 -- lock: ACCESS EXCLUSIVE
-create view "public"."open_tasks" as SELECT workspace_id,
+create view "public"."open_tasks" with (security_invoker = true) as SELECT workspace_id,
     project_id,
     count(*) AS open_tasks
    FROM tasks

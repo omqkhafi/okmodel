@@ -9,17 +9,11 @@
  */
 
 import { OkmError } from "../../contracts/error.js";
-import { quoteIdent } from "../../dialects/pg/ddl.js";
-import {
-  isExpr,
-  nodeOf,
-  type Cond,
-  type Expr,
-  type Node,
-  type SettingTypes,
-} from "../../dialects/pg/expr/index.js";
+import { printNode } from "../../dialects/pg/expr/print.js";
+import { isExpr, nodeOf, type Cond, type Expr, type Node } from "../../dialects/pg/expr/index.js";
 import type { QuerySchema } from "../../dialects/pg/model.js";
 import { isOperator, operatorName, operatorValue, tag } from "../../dialects/pg/operators.js";
+import { quoteIdent } from "../../dialects/pg/ddl.js";
 import { quoteLiteral } from "../../dialects/pg/quote.js";
 import { emitWhere, indexes, type Indexed, type Sink } from "../../runtime/plan.js";
 
@@ -148,51 +142,11 @@ function literal(encoded: unknown, swapped: readonly string[]): string {
 }
 
 function nodeSql(node: Node, on: PrintTable | undefined): string {
-  switch (node.k) {
-    case "col":
-      return quoteIdent(columnName(node.name, on));
-    case "lit":
-      return literalSql(node.v);
-    case "op":
-      return `(${nodeSql(node.a, on)} ${node.op} ${nodeSql(node.b, on)})`;
-    case "fn":
-      return `${node.name}(${node.args.map((arg) => nodeSql(arg, on)).join(", ")})`;
-    case "concat":
-      return `(${node.args.map((arg) => `coalesce(${nodeSql(arg, on)}, '')`).join(" || ")})`;
-    case "cast":
-      return `(${nodeSql(node.e, on)})::${node.to}`;
-    case "json":
-      return `(${nodeSql(node.e, on)} ->> ${quoteLiteral(node.key)})`;
-    case "extract":
-      return `extract(${node.field} from ${nodeSql(node.e, on)})`;
-    case "tz":
-      return `(${nodeSql(node.e, on)} at time zone ${quoteLiteral(node.zone)})`;
-    case "case": {
-      const arms = node.branches.map(
-        ([when, then]) => `when ${condSql(when, on)} then ${nodeSql(then, on)}`,
-      );
-      return `case ${arms.join(" ")} else ${nodeSql(node.otherwise, on)} end`;
-    }
-    case "setting":
-      return settingSql(node.name, node.type);
-    case "and":
-      return node.parts
-        .map((part) => `(${isNode(part) ? nodeSql(part, on) : condSql(part, on)})`)
-        .join(" and ");
-  }
-}
-
-function settingSql(name: string, type: keyof SettingTypes): string {
-  const read = `current_setting(${quoteLiteral(name)}, true)`;
-  if (type.endsWith("[]")) {
-    // The cast sits outside the subselect: a cast inside it fails with 42883 under `= any(...)`.
-    return `((select coalesce(nullif(${read}, ''), '{}'))::${type})`;
-  }
-  return `(select nullif(${read}, '')::${type})`;
-}
-
-function isNode(value: Cond | Node): value is Node {
-  return typeof (value as { k?: unknown }).k === "string";
+  return printNode(
+    node,
+    (name) => quoteIdent(columnName(name, on)),
+    (part) => condSql(part, on),
+  );
 }
 
 function condSql(where: Cond, on: PrintTable | undefined): string {
@@ -211,12 +165,4 @@ function condSql(where: Cond, on: PrintTable | undefined): string {
 function columnName(name: string, on: PrintTable | undefined): string {
   if (on === undefined) return name;
   return indexes(on.schema).get(on.table)?.columns.get(name)?.sql ?? name;
-}
-
-function literalSql(value: string | number | bigint | boolean | null): string {
-  if (value === null) return "null";
-  if (typeof value === "string") return literal(value, []);
-  if (typeof value === "boolean") return value ? "true" : "false";
-  const text = String(value);
-  return text.startsWith("-") ? `(${text})` : text;
 }

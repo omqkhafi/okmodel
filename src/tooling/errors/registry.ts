@@ -816,8 +816,9 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   {
     code: "OKM1822",
     title: "Concurrent refresh",
-    summary: "REFRESH CONCURRENTLY was declared without a unique index on the materialized view.",
-    fix: "Add a unique index, or refresh without CONCURRENTLY.",
+    summary:
+      "REFRESH CONCURRENTLY was declared without a unique index on plain columns. An expression index or a partial index does not qualify.",
+    fix: "Add a unique index with no expression and no predicate, or refresh without CONCURRENTLY.",
   },
   {
     code: "OKM1823",
@@ -1142,6 +1143,29 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     since: "0.10",
   },
   {
+    code: "OKM1900",
+    title: "View cycle",
+    summary: "Two views list each other in tables, so neither can be created first.",
+    fix: "Remove one view from the other's tables.",
+    since: "0.10",
+  },
+  {
+    code: "OKM1901",
+    title: "Null view column",
+    summary:
+      "A view column declared not null came back NULL. PostgreSQL does not store view nullability, so the declaration is checked when the row is read.",
+    fix: "Declare the column with .nullable(), or stop the query from returning NULL.",
+    since: "0.10",
+  },
+  {
+    code: "OKM1902",
+    title: "Invoker privilege",
+    summary:
+      "A security-invoker view reads a base table this role cannot select. The view fails at read time for this role.",
+    fix: "Grant SELECT on the base table, or declare the view with security: { definer: reason }.",
+    since: "0.10",
+  },
+  {
     code: "OKM2200",
     title: "Observer buffer overflow",
     summary:
@@ -1191,7 +1215,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   // Reserved, not registered (no raising path): version OKM1804–OKM1809,
   // extension OKM1815–OKM1819, feature refusal OKM1861 and OKM1868–OKM1879,
   // adapter capability refusal OKM1880 and OKM1889. OKM1881–OKM1888 (agent files) and
-  // OKM1890–OKM1899 are registered.
+  // OKM1890–OKM1902 are registered.
   // OKM1140–OKM1179 stay reserved (D291).
 ];
 

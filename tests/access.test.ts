@@ -211,13 +211,15 @@ test("the reporting role gets select, and a hidden column only when named", () =
 
 test("a listed column grant replaces select on a view", () => {
   const people = table("people", { id: t.text().primaryKey(), secret: t.text() });
-  const notes = view("notes", {
-    columns: [
-      { name: "id", type: "text" },
-      { name: "secret", type: "text" },
-    ],
-    query: "select id, secret from people",
-  });
+  const notes = view("notes", { tables: [] }, (q) =>
+    q.sql({
+      columns: [
+        { name: "id", type: t.text() },
+        { name: "secret", type: t.text() },
+      ],
+      query: "select id, secret from people",
+    }),
+  );
   const declared = schema({ tables: [people], views: [notes] }).catalog;
   const after = attachRoles(declared, {
     ...roles,

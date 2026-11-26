@@ -253,14 +253,13 @@ export const HERO_SCENARIOS: ReadonlyArray<HeroMigrateSpec> = [
       {
         find: 'import { schema, table, t } from "okmodel/pg";',
         replace:
-          'import { schema, sql, table, t } from "okmodel/pg";\nimport { view } from "okmodel/view";',
+          'import { not, schema, table, t } from "okmodel/pg";\nimport { view } from "okmodel/view";',
       },
       {
         find: "export default schema({ tables: [authors, notes] });",
-        replace: `const titled = view("titled", {
-  columns: [{ name: "id", type: "bigint" }, { name: "title", type: "text" }],
-  query: sql\`select id, title from notes where title is not null\`,
-});
+        replace: `const titled = view("titled", { tables: [notes] }, (q) =>
+  q.notes.find({ select: ["id", "title"], where: { title: not(null) } }),
+);
 
 export default schema({ tables: [authors, notes], views: [titled] });`,
       },

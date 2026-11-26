@@ -144,6 +144,7 @@ export const NEEDS_DATABASE = [
   "OKM1858",
   "OKM1554",
   "OKM1555",
+  "OKM1901",
 ] as const;
 
 /**
@@ -505,18 +506,45 @@ thrown(
 thrown(
   "OKM1822",
   () => {
-    materializedView("titles", {
-      columns: [{ name: "title", type: "text" }],
-      query: "select title from notes",
-      refresh: "concurrently",
-    });
+    materializedView("titles", { tables: [], refresh: "concurrently" }, (q) =>
+      q.sql({
+        columns: [{ name: "title", type: t.text() }],
+        query: "select title from notes",
+      }),
+    );
   },
   () => {
-    materializedView("titles", {
-      columns: [{ name: "title", type: "text" }],
-      query: "select title from notes",
-    });
+    materializedView("titles", { tables: [] }, (q) =>
+      q.sql({
+        columns: [{ name: "title", type: t.text() }],
+        query: "select title from notes",
+      }),
+    );
   },
+);
+
+thrown(
+  "OKM1900",
+  () => {
+    const peers: { readonly name: string }[] = [];
+    const left = view("cycle_left", { tables: peers as never }, ((q: {
+      readonly cycle_right: { find: () => unknown };
+    }) => q.cycle_right.find()) as never);
+    const right = view("cycle_right", { tables: peers as never }, ((q: {
+      readonly cycle_left: { find: () => unknown };
+    }) => q.cycle_left.find()) as never);
+    peers.push(left, right);
+    return schema({ tables: [], views: [left, right] }).catalog;
+  },
+  () =>
+    schema({
+      tables: [],
+      views: [
+        view("cycle_left", { tables: [] }, (q) =>
+          q.sql({ columns: [{ name: "id", type: t.text() }], query: "select 1 as id" }),
+        ),
+      ],
+    }).catalog,
 );
 
 thrown(
@@ -774,20 +802,24 @@ reported(
 reported(
   "OKM1516",
   () => {
-    const listed = view("titles", {
-      columns: [{ name: "title", type: "text" }],
-      query: "select title from tasks",
-    });
+    const listed = view("titles", { tables: [] }, (q) =>
+      q.sql({
+        columns: [{ name: "title", type: t.text() }],
+        query: "select title from tasks",
+      }),
+    );
     return schemaCodes(
       schema({ tables: [tasks()], views: [listed] }),
       schema({ tables: [tasks()] }),
     );
   },
   () => {
-    const listed = view("titles", {
-      columns: [{ name: "title", type: "text" }],
-      query: "select title from tasks",
-    });
+    const listed = view("titles", { tables: [] }, (q) =>
+      q.sql({
+        columns: [{ name: "title", type: t.text() }],
+        query: "select title from tasks",
+      }),
+    );
     return schemaCodes(schema({ tables: [] }), schema({ tables: [tasks()], views: [listed] }));
   },
 );
@@ -809,20 +841,24 @@ reported(
 reported(
   "OKM1518",
   () => {
-    const stored = materializedView("titles", {
-      columns: [{ name: "title", type: "text" }],
-      query: "select title from tasks",
-    });
+    const stored = materializedView("titles", { tables: [] }, (q) =>
+      q.sql({
+        columns: [{ name: "title", type: t.text() }],
+        query: "select title from tasks",
+      }),
+    );
     return schemaCodes(
       schema({ tables: [tasks()], views: [stored] }),
       schema({ tables: [tasks()] }),
     );
   },
   () => {
-    const stored = materializedView("titles", {
-      columns: [{ name: "title", type: "text" }],
-      query: "select title from tasks",
-    });
+    const stored = materializedView("titles", { tables: [] }, (q) =>
+      q.sql({
+        columns: [{ name: "title", type: t.text() }],
+        query: "select title from tasks",
+      }),
+    );
     return schemaCodes(schema({ tables: [] }), schema({ tables: [tasks()], views: [stored] }));
   },
 );
@@ -869,6 +905,7 @@ const quiet = {
   minimum: undefined,
   roleConfig: "not-set",
   extensions: { required: [], versions: new Map<string, string>(), refusal: undefined },
+  invokerGaps: [],
 } as const;
 
 function productionCodes(protection: "open" | "project", config: MigrateConfig): readonly string[] {
@@ -894,6 +931,24 @@ reported(
   "OKM2202",
   () => productionCodes("open", plain),
   () => productionCodes("project", plain),
+);
+
+function invokerCodes(gaps: readonly string[]): readonly string[] {
+  const report = buildReport(
+    {
+      target: { name: "production", protection: "project", url: directUrl },
+      config: plain,
+      allowPooler: false,
+    },
+    { ...quiet, invokerGaps: gaps },
+  );
+  return report.findings.flatMap((item) => (item.code === undefined ? [] : [item.code]));
+}
+
+reported(
+  "OKM1902",
+  () => invokerCodes(["notes"]),
+  () => invokerCodes([]),
 );
 
 reported(
@@ -1866,10 +1921,12 @@ thrown(
       tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
       tables: [table("tasks", { id: t.identity(), title: t.text() })],
       views: [
-        view("titles", {
-          columns: [{ name: "title", type: "text" }],
-          query: "select title from tasks",
-        }),
+        view("titles", { tables: [] }, (q) =>
+          q.sql({
+            columns: [{ name: "title", type: t.text() }],
+            query: "select title from tasks",
+          }),
+        ),
       ],
     });
   },
@@ -1879,13 +1936,15 @@ thrown(
       tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
       tables: [table("tasks", { id: t.identity(), title: t.text() })],
       views: [
-        view("titles", {
-          columns: [
-            { name: "tenant_id", type: "uuid" },
-            { name: "title", type: "text" },
-          ],
-          query: "select tenant_id, title from tasks",
-        }),
+        view("titles", { tables: [] }, (q) =>
+          q.sql({
+            columns: [
+              { name: "tenant_id", type: t.uuid() },
+              { name: "title", type: t.text() },
+            ],
+            query: "select tenant_id, title from tasks",
+          }),
+        ),
       ],
     });
   },

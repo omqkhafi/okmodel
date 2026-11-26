@@ -388,6 +388,14 @@ test("refusal:writeObserver.unit", () => refuse("writeObserver.unit"));
 test("refusal:writeObserver.keys", () => refuse("writeObserver.keys"));
 test("refusal:writeObserver.rowCount", () => refuse("writeObserver.rowCount"));
 test("refusal:queryObserver.timing", () => refuse("queryObserver.timing"));
+test("refusal:view.typed", () => refuse("view.typed"));
+test("refusal:view.materialized", () => refuse("view.materialized"));
+test("refusal:view.security", () => refuse("view.security"));
+test("refusal:view.checkOption", () => refuse("view.checkOption"));
+test("refusal:matview.refresh", () => refuse("matview.refresh"));
+test("refusal:view.dependencyOrder", () => refuse("view.dependencyOrder"));
+test("refusal:query.exprSelect", () => refuse("query.exprSelect"));
+test("refusal:query.toOnePath", () => refuse("query.toOnePath"));
 
 test("closed profile keeps the most restrictive observer costs", () => {
   const closed = closedRegistry();

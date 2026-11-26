@@ -294,6 +294,10 @@ export function planMigration(
     | { readonly kind: "function"; readonly before: FunctionObject; readonly after: FunctionObject }
     | { readonly kind: "view"; readonly before: ViewObject; readonly after: ViewObject }
   )[] = [];
+  const viewRenames: {
+    readonly object: ViewObject;
+    readonly columns: readonly { readonly from: string; readonly to: string }[];
+  }[] = [];
   const alters: { readonly before: ColumnObject; readonly after: ColumnObject }[] = [];
   const enforcement: { readonly before: ConstraintObject; readonly after: ConstraintObject }[] = [];
   for (const item of beforeList) {
@@ -327,6 +331,11 @@ export function planMigration(
     if (previous.kind === "view" && item.object.kind === "view") {
       if (columnsAppended(previous.definition.columns, item.object.definition.columns)) {
         replaces.push({ kind: "view", before: previous, after: item.object });
+        continue;
+      }
+      const renamed = renamedViewColumns(previous, item.object);
+      if (renamed !== undefined) {
+        viewRenames.push({ object: item.object, columns: renamed });
         continue;
       }
     }
@@ -645,6 +654,21 @@ export function planMigration(
       steps.push(...take(dialect.lower({ op: "replace-view", object: change.after, schema })));
     }
   }
+  for (const rename of viewRenames) {
+    for (const column of rename.columns) {
+      steps.push(
+        ...take(
+          dialect.lower({
+            op: "rename-view-column",
+            object: rename.object,
+            schema,
+            from: column.from,
+            to: column.to,
+          }),
+        ),
+      );
+    }
+  }
   for (const kind of ["function", "trigger", "view", "materializedView"] as const) {
     for (const object of creationOrder(request.after)) {
       if (object.kind !== kind) continue;
@@ -675,6 +699,7 @@ export function planMigration(
     if (object.kind !== "materializedView") continue;
     const key = identityKey(object.identity);
     if (!createKeys.has(key)) continue;
+    if (object.definition.populate === "later") continue;
     assertConcurrentRefresh(object, request.after);
     steps.push(...take(dialect.lower({ op: "refresh-matview", object, schema })));
   }
@@ -1440,14 +1465,20 @@ function recreateDependents(
   createKeys: Set<string>,
   picklists: readonly PicklistChange[],
 ): void {
-  const changed = new Set(
-    alters
-      .filter(
-        (item) =>
-          canonicalTypeName(item.before.definition.dataType) !==
-          canonicalTypeName(item.after.definition.dataType),
-      )
-      .map((item) => identityKey(item.after.identity)),
+  const typed = alters.filter(
+    (item) =>
+      canonicalTypeName(item.before.definition.dataType) !==
+      canonicalTypeName(item.after.definition.dataType),
+  );
+  const changed = new Set(typed.map((item) => identityKey(item.after.identity)));
+  const tables = new Set(
+    typed.map((item) =>
+      identityKey({
+        kind: "table",
+        namespace: item.after.identity.parent.namespace,
+        name: item.after.identity.parent.name,
+      }),
+    ),
   );
   if (changed.size === 0) return;
   const deferred = new Set(picklists.map((change) => identityKey(change.before.identity)));
@@ -1455,7 +1486,7 @@ function recreateDependents(
   for (const item of beforeList) {
     const key = identityKey(item.object.identity);
     if (deferred.has(key) || !afterBy.has(key)) continue;
-    if (!dependsOnChanged(item.object, changed)) continue;
+    if (!dependsOnChanged(item.object, changed, tables)) continue;
     dropKeys.add(key);
     createKeys.add(key);
   }
@@ -1526,7 +1557,11 @@ function refuseRoutineDrops(
   }
 }
 
-function dependsOnChanged(object: CatalogObject, columns: ReadonlySet<string>): boolean {
+function dependsOnChanged(
+  object: CatalogObject,
+  columns: ReadonlySet<string>,
+  tables: ReadonlySet<string>,
+): boolean {
   if (
     object.kind !== "index" &&
     object.kind !== "constraint" &&
@@ -1535,7 +1570,14 @@ function dependsOnChanged(object: CatalogObject, columns: ReadonlySet<string>): 
   ) {
     return false;
   }
-  return object.dependencies.some((edge) => columns.has(identityKey(edge.target)));
+  return object.dependencies.some((edge) => {
+    if (columns.has(identityKey(edge.target))) return true;
+    return (
+      (object.kind === "view" || object.kind === "materializedView") &&
+      edge.target.kind === "table" &&
+      tables.has(identityKey(edge.target))
+    );
+  });
 }
 
 function recreateViewDependents(
@@ -1584,13 +1626,62 @@ function assertConcurrentRefresh(object: MaterializedViewObject, source: Catalog
     (item) =>
       item.kind === "index" &&
       item.definition.unique &&
+      item.definition.expression === undefined &&
+      item.definition.predicate === undefined &&
+      item.definition.columns.length > 0 &&
       item.identity.parent.name === object.identity.name,
   );
   if (unique) return;
   throw new OkmError(
     "OKM1822",
-    `Materialized view ${object.identity.name} refreshes concurrently and has no unique index.`,
-    { fix: { summary: "Add a unique index, or refresh without CONCURRENTLY." } },
+    `Materialized view ${object.identity.name} refreshes concurrently and has no unique index on plain columns.`,
+    {
+      fix: {
+        summary:
+          "Add a unique index with no expression and no predicate, or refresh without CONCURRENTLY.",
+      },
+    },
+  );
+}
+
+/**
+ * A pure output-column rename: same types, same query, same options, names moved.
+ *
+ * A new name that is still another column's name needs two steps that can
+ * collide, so that case is a drop and create instead.
+ *
+ * @param before - View in the database
+ * @param after - View in the schema
+ * @returns The renames, or `undefined` when this is not a pure rename
+ */
+function renamedViewColumns(
+  before: ViewObject,
+  after: ViewObject,
+): readonly { readonly from: string; readonly to: string }[] | undefined {
+  const left = before.definition.columns;
+  const right = after.definition.columns;
+  if (left.length !== right.length || left.length === 0) return undefined;
+  if (before.definition.query !== after.definition.query) return undefined;
+  if (!sameViewOptions(before, after)) return undefined;
+  const renames: { from: string; to: string }[] = [];
+  const oldNames = new Set(left.map((column) => column.name));
+  for (let index = 0; index < left.length; index += 1) {
+    const from = left[index];
+    const to = right[index];
+    if (from === undefined || to === undefined) return undefined;
+    if (canonicalTypeName(from.dataType) !== canonicalTypeName(to.dataType)) return undefined;
+    if (from.name === to.name) continue;
+    if (oldNames.has(to.name)) return undefined;
+    renames.push({ from: from.name, to: to.name });
+  }
+  return renames.length > 0 ? renames : undefined;
+}
+
+function sameViewOptions(before: ViewObject, after: ViewObject): boolean {
+  return (
+    before.definition.securityInvoker === after.definition.securityInvoker &&
+    before.definition.securityBarrier === after.definition.securityBarrier &&
+    before.definition.checkOption === after.definition.checkOption
   );
 }
 
@@ -2207,7 +2298,10 @@ function sameDefinition(
     return (
       stable(canonicalColumns(left.definition.columns)) ===
         stable(canonicalColumns(right.definition.columns)) &&
-      left.definition.query === right.definition.query
+      left.definition.query === right.definition.query &&
+      left.definition.using === right.definition.using &&
+      left.definition.tablespace === right.definition.tablespace &&
+      stable(left.definition.storage ?? []) === stable(right.definition.storage ?? [])
     );
   }
   return stable(forComparison(left, schemas)) === stable(forComparison(right, schemas));

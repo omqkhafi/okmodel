@@ -9,6 +9,9 @@
 
 import { throwNamed } from "../contracts/error.js";
 import type { ColumnModel, QuerySchema } from "../dialects/pg/model.js";
+import { EXPR_AS, isExpr, nodeOf } from "../dialects/pg/expr/index.js";
+import { printNode } from "../dialects/pg/expr/print.js";
+import { quoteIdent } from "../dialects/pg/ddl.js";
 import { readSelectFragment, type FragmentPart } from "../dialects/pg/ops/fragment.js";
 import { isWindow, type WindowCall } from "../dialects/pg/ops/window.js";
 import {
@@ -258,6 +261,37 @@ function readSpec(table: Indexed, select: unknown): Spec {
       const column = columnOn(table, entry, "select");
       names.add(column.field);
       items.push({ kind: "column", column });
+      continue;
+    }
+    if (isExpr(entry)) {
+      const as = (entry as { readonly [EXPR_AS]?: string })[EXPR_AS];
+      if (typeof as !== "string" || as.length === 0) {
+        fail(
+          "OKM1120",
+          "An expression in select needs .as(name).",
+          "Call .as(name) on the expression.",
+        );
+      }
+      if (names.has(as) || table.columns.has(as)) {
+        fail(
+          "OKM1120",
+          `expression as ${as} clashes with a column of ${table.model.name}.`,
+          "Pick another name.",
+        );
+      }
+      const sql = printNode(
+        nodeOf(entry),
+        (key) => quoteIdent(columnOn(table, key, "select").sql),
+        () =>
+          fail(
+            "OKM1120",
+            "A where object inside an expression is not printed in select.",
+            "Use a fragment, or q.sql on a view.",
+          ),
+      );
+      names.add(as);
+      ordinals.set(as, String(items.length + 1));
+      items.push({ kind: "sql", as, parts: [{ k: "t", s: sql }], textual: true });
       continue;
     }
     const sql = readSelectFragment(entry);

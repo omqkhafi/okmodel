@@ -120,6 +120,7 @@ export { lte } from "./ops/lte.js";
 export { none } from "./ops/none.js";
 export { not } from "./ops/not.js";
 export { notIn } from "./ops/notIn.js";
+export { and } from "./ops/and.js";
 export { or } from "./ops/or.js";
 export { overlaps } from "./ops/overlaps.js";
 export { path } from "./ops/path.js";

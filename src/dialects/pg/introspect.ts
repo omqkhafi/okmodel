@@ -537,8 +537,22 @@ export async function introspectSchema(
     const query = normaliseViewQuery(text(row, "query"));
     const name = text(row, "name");
     const invoker = kind === "view" && securityInvokerOption(text(row, "options"));
+    const parsed = viewOptionsOf(text(row, "options"));
     if (kind === "materializedView") {
-      objects.push(materializedViewObject({ namespace, name, columns, query, provenance }));
+      const method = text(row, "access_method");
+      const space = text(row, "tablespace");
+      objects.push(
+        materializedViewObject({
+          namespace,
+          name,
+          columns,
+          query,
+          provenance,
+          ...(method.length > 0 && method !== "heap" ? { using: method } : {}),
+          ...(parsed.storage.length > 0 ? { storage: parsed.storage } : {}),
+          ...(space.length > 0 ? { tablespace: space } : {}),
+        }),
+      );
     } else {
       objects.push(
         viewObject({
@@ -548,6 +562,8 @@ export async function introspectSchema(
           query,
           provenance,
           ...(invoker ? { securityInvoker: true as const } : {}),
+          ...(parsed.barrier ? { securityBarrier: true as const } : {}),
+          ...(parsed.checkOption !== undefined ? { checkOption: parsed.checkOption } : {}),
         }),
       );
     }
@@ -589,6 +605,12 @@ export async function introspectSchema(
             ...(object.definition.securityInvoker === true
               ? { securityInvoker: true as const }
               : {}),
+            ...(object.definition.securityBarrier === true
+              ? { securityBarrier: true as const }
+              : {}),
+            ...(object.definition.checkOption !== undefined
+              ? { checkOption: object.definition.checkOption }
+              : {}),
           })
         : materializedViewObject({
             namespace,
@@ -597,6 +619,19 @@ export async function introspectSchema(
             query: object.definition.query,
             provenance,
             dependencies,
+            ...(object.definition.refresh !== undefined
+              ? { refresh: object.definition.refresh }
+              : {}),
+            ...(object.definition.populate !== undefined
+              ? { populate: object.definition.populate }
+              : {}),
+            ...(object.definition.using !== undefined ? { using: object.definition.using } : {}),
+            ...(object.definition.storage !== undefined
+              ? { storage: object.definition.storage }
+              : {}),
+            ...(object.definition.tablespace !== undefined
+              ? { tablespace: object.definition.tablespace }
+              : {}),
           });
   }
   if (options?.managedRoles !== undefined) {
@@ -2115,6 +2150,8 @@ const TRIGGERS = `
 const VIEWS = `
   select c.relname as name, c.relkind as kind, pg_get_viewdef(c.oid, true) as query,
     coalesce(array_to_string(c.reloptions, ','), '') as options,
+    coalesce(am.amname, '') as access_method,
+    case when c.reltablespace = 0 then '' else coalesce(ts.spcname, '') end as tablespace,
     (
       select coalesce(string_agg(
         a.attname || '|' || format_type(a.atttypid, a.atttypmod),
@@ -2125,6 +2162,8 @@ const VIEWS = `
     ) as columns
   from pg_class c
   join pg_namespace n on n.oid = c.relnamespace
+  left join pg_am am on am.oid = c.relam
+  left join pg_tablespace ts on ts.oid = c.reltablespace
   where n.nspname = $1
     and c.relkind in ('v', 'm')
     and ${CHILD}
@@ -2167,9 +2206,42 @@ const POLICIES = `
 `;
 
 function securityInvokerOption(options: string): boolean {
-  return options
-    .split(",")
-    .some((item) => item === "security_invoker=true" || item === "security_invoker=on");
+  return viewOptionsOf(options).invoker;
+}
+
+/**
+ * Reads view and materialized-view reloptions.
+ *
+ * Security and check options belong to views. Everything else is matview storage.
+ *
+ * @param options - `array_to_string(reloptions, ',')`
+ * @returns The flags and the storage pairs
+ */
+function viewOptionsOf(options: string): {
+  readonly invoker: boolean;
+  readonly barrier: boolean;
+  readonly checkOption: "local" | "cascaded" | undefined;
+  readonly storage: readonly (readonly [string, string])[];
+} {
+  let invoker = false;
+  let barrier = false;
+  let checkOption: "local" | "cascaded" | undefined;
+  const storage: (readonly [string, string])[] = [];
+  if (options.length === 0) return { invoker, barrier, checkOption, storage };
+  for (const item of options.split(",")) {
+    const split = item.indexOf("=");
+    const key = split < 0 ? item : item.slice(0, split);
+    const value = split < 0 ? "" : item.slice(split + 1);
+    if (key === "security_invoker" && (value === "true" || value === "on")) invoker = true;
+    else if (key === "security_barrier" && (value === "true" || value === "on" || value === "")) {
+      barrier = true;
+    } else if (key === "check_option" && (value === "local" || value === "cascaded")) {
+      checkOption = value;
+    } else if (key.length > 0 && !key.startsWith("security_") && key !== "check_option") {
+      storage.push([key, value]);
+    }
+  }
+  return { invoker, barrier, checkOption, storage };
 }
 
 function policyCommand(command: string): "all" | "select" | undefined {

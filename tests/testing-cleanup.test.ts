@@ -14,7 +14,15 @@ import { OkmError } from "../src/contracts/error.js";
 import type { DriverPool } from "../src/contracts/driver.js";
 import { open as openPglite } from "../src/adapters/pg/pglite.js";
 import { stampOwnership } from "../src/dialects/pg/owner.js";
-import { enum as enumColumn, id, schema, table, text, uuid } from "../src/dialects/pg/index.js";
+import {
+  index,
+  enum as enumColumn,
+  id,
+  schema,
+  table,
+  text,
+  uuid,
+} from "../src/dialects/pg/index.js";
 import { fn } from "../src/dialects/pg/fn/index.js";
 import { materializedView, view } from "../src/dialects/pg/view/index.js";
 import { global, rlsTenancy } from "../src/runtime/tenancy/index.js";
@@ -80,23 +88,31 @@ test("a view, matview, enum, function, and policy drop in dependency order", asy
       }),
     ],
     views: [
-      view("open_notes", {
-        columns: [
-          { name: "id", type: "uuid" },
-          { name: "title", type: "text" },
-        ],
-        query: "select id, title from notes where status = 'open'",
-        tenancy: global("open notes"),
-      }),
-      materializedView("note_titles", {
-        columns: [
-          { name: "id", type: "uuid" },
-          { name: "title", type: "text" },
-        ],
-        query: "select id, title from notes",
-        indexes: [{ columns: ["id"], unique: true }],
-        tenancy: global("titles"),
-      }),
+      view("open_notes", { tables: [], tenancy: global("open notes") }, (q) =>
+        q.sql({
+          columns: [
+            { name: "id", type: uuid() },
+            { name: "title", type: text() },
+          ],
+          query: "select id, title from notes where status = 'open'",
+        }),
+      ),
+      materializedView(
+        "note_titles",
+        {
+          tables: [],
+          indexes: (columns) => [index(columns.id).unique()],
+          tenancy: global("titles"),
+        },
+        (q) =>
+          q.sql({
+            columns: [
+              { name: "id", type: uuid() },
+              { name: "title", type: text() },
+            ],
+            query: "select id, title from notes",
+          }),
+      ),
     ],
   });
   const log: string[] = [];

@@ -1105,11 +1105,16 @@ function schemaText(
     readonly functions: readonly string[];
     readonly triggers: readonly string[];
     readonly views: readonly string[];
+    readonly needsIndex: boolean;
   },
   importExt: PullImportExt,
   casing: Casing | undefined,
 ): string {
-  const lines = ['import { schema } from "okmodel/pg";'];
+  const pgNames = ["schema"];
+  if (routines.views.length > 0) pgNames.push("t");
+  if (routines.needsIndex) pgNames.push("index");
+  pgNames.sort();
+  const lines = [`import { ${pgNames.join(", ")} } from "okmodel/pg";`];
   if (extensions.length > 0) lines.push('import { extension } from "okmodel/ext";');
   for (const line of routines.imports) lines.push(line);
   const sorted = [...imports].sort((left, right) => compare(left.name, right.name));
