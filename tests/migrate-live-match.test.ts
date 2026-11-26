@@ -140,7 +140,7 @@ test("a unique gin or gist index is refused before a plan (N-107)", () => {
     }
     expect(caught).toBeInstanceOf(OkmError);
     const error = caught as OkmError;
-    expect(error.code).toBe("OKM1900");
+    expect(error.code).toBe("OKM1903");
     expect(error.message).toContain("notes_title_idx");
     expect(error.message).toContain(`unique on ${method}`);
   }

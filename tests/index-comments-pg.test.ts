@@ -288,16 +288,21 @@ function declared(fillfactor: number) {
   return schema({
     tables: [notes, table("users", { id: t.identity() })],
     views: [
-      view("note_emails", {
-        columns: [{ name: "email", type: "text", comment: "View mail" }],
-        query: "select email from notes",
-        comment: "Emails",
-      }),
-      materializedView("note_kinds", {
-        columns: [{ name: "email", type: "text" }],
-        query: "select email from notes",
-        comment: "Kinds",
-      }),
+      view(
+        "note_emails",
+        { tables: [notes], comment: "Emails", comments: { email: "View mail" } },
+        (q) =>
+          q.sql({
+            columns: [{ name: "email", type: t.text() }],
+            query: "select email from notes",
+          }),
+      ),
+      materializedView("note_kinds", { tables: [notes], comment: "Kinds" }, (q) =>
+        q.sql({
+          columns: [{ name: "email", type: t.text() }],
+          query: "select email from notes",
+        }),
+      ),
     ],
     functions: [touch],
     triggers: [

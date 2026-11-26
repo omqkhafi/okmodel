@@ -111,8 +111,8 @@
     "code": "OKM1060",
     "kind": "invalid",
     "category": "input",
-    "summary": "A column definition has a bad length, precision, scale, array rank, interval qualifier, or an empty or repeated picklist or enum. .unique() on a gin or gist index is this code too: Postgres builds unique indexes with btree only. A schema() casing other than snake or camel is this code too.",
-    "fix": "Use a value the error lists as accepted. Remove .unique() from a gin or gist index, or use btree. Pass snake or camel for casing, or leave it out.",
+    "summary": "A column definition has a bad length, precision, scale, array rank, interval qualifier, or an empty or repeated picklist or enum. A schema() casing other than snake or camel is this code too.",
+    "fix": "Use a value the error lists as accepted. Pass snake or camel for casing, or leave it out.",
     "retryable": false,
     "docs": "docs/errors/OKM1060.md"
   },
@@ -1826,6 +1826,94 @@
     ]
   },
   {
+    "code": "OKM2104",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "Two indexes on one table have the same columns, method, uniqueness, and predicate.",
+    "fix": "Drop one of the indexes.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Drop one of the indexes.",
+        "docs": "docs/errors/OKM2104.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2104.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2104.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM2105",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "An index is a column prefix of another index on the same table. Unique, partial, and expression indexes are redundant only when they match completely.",
+    "fix": "Drop the shorter index, or keep it when the longer one is unique, partial, or an expression.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Drop the shorter index.",
+        "docs": "docs/errors/OKM2105.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2105.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2105.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM2106",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A partial index predicate column is also filtered by filters() or a preset. Those compile to bound parameters, so a generic plan may not use the index.",
+    "fix": "Keep the predicate as a constant in SQL, or accept a scan. Inlining preset constants is a later decision.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Filter that column with a SQL predicate that repeats the index predicate.",
+        "docs": "docs/errors/OKM2106.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2106.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2106.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM2107",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The database has a comment the schema does not declare. OKM leaves it in place. okm pull writes it into the schema.",
+    "fix": "okm pull writes the comment into the schema, or the schema declares it.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "okm pull copies the comment into the schema.",
+        "docs": "docs/errors/OKM2107.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2107.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2107.md#escape"
+      }
+    ]
+  },
+  {
     "code": "OKM1891",
     "kind": "invalid",
     "category": "input",
@@ -1932,6 +2020,15 @@
     "fix": "Grant SELECT on the base table, or declare the view with security: { definer: reason }.",
     "retryable": false,
     "docs": "docs/errors/OKM1902.md"
+  },
+  {
+    "code": "OKM1903",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "An index uses an option its access method does not support. Unique, descending, and nulls order are btree. Include is btree, gist, or spgist, and only plain columns.",
+    "fix": "Change the method, or remove the option the message names.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1903.md"
   },
   {
     "code": "OKM2200",

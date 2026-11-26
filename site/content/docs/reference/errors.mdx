@@ -236,7 +236,7 @@ Codes are in numeric order. Ranges are schema `OKM1000`, queries and capabilitie
 | <a id="okm1040" />[`OKM1040`](#okm1040) | `invalid` | A preset uses the name of a client method or a reserved name, or a table and its traits (or two traits) define the same preset. | `docs/errors/OKM1040.md` |
 | <a id="okm1051" />[`OKM1051`](#okm1051) | `invalid` | A foreign key into a table-strategy archivable table uses CASCADE, SET NULL, or SET DEFAULT and is not listed in cascade. | `docs/errors/OKM1051.md` |
 | <a id="okm1052" />[`OKM1052`](#okm1052) | `invalid` | archive or restore was called on a table that is not archivable. | `docs/errors/OKM1052.md` |
-| <a id="okm1060" />[`OKM1060`](#okm1060) | `invalid` | A column definition has a bad length, precision, scale, array rank, interval qualifier, or an empty or repeated picklist or enum. .unique() on a gin or gist index is this code too: Postgres builds unique indexes with btree only. A schema() casing other than snake or camel is this code too. | `docs/errors/OKM1060.md` |
+| <a id="okm1060" />[`OKM1060`](#okm1060) | `invalid` | A column definition has a bad length, precision, scale, array rank, interval qualifier, or an empty or repeated picklist or enum. A schema() casing other than snake or camel is this code too. | `docs/errors/OKM1060.md` |
 | <a id="okm1061" />[`OKM1061`](#okm1061) | `invalid` | The option exists in the types but this version does not implement it. | `docs/errors/OKM1061.md` |
 | <a id="okm1101" />[`OKM1101`](#okm1101) | `invalid` | find, descendants, or ancestors was called without a limit, or a limit is above limits.max. connect(\{ limits \}) can set a default for find, descendants, ancestors, page, and groupBy. | `docs/errors/OKM1101.md` |
 | <a id="okm1102" />[`OKM1102`](#okm1102) | `invalid` | A write with no effective predicate, including undefined values, is OKM1102. | `docs/errors/OKM1102.md` |
@@ -382,6 +382,10 @@ Codes are in numeric order. Ranges are schema `OKM1000`, queries and capabilitie
 | <a id="okm2101" />[`OKM2101`](#okm2101) | `invalid` | No index starts with the columns of this foreign key, so a parent delete or key change scans the child table. | `docs/errors/OKM2101.md` |
 | <a id="okm2102" />[`OKM2102`](#okm2102) | `invalid` | A table with no primary key has no stable row identity for updates and deletes. | `docs/errors/OKM2102.md` |
 | <a id="okm2103" />[`OKM2103`](#okm2103) | `invalid` | Callers can filter or sort by this column and no index starts with it, so each read scans the table. | `docs/errors/OKM2103.md` |
+| <a id="okm2104" />[`OKM2104`](#okm2104) | `invalid` | Two indexes on one table have the same columns, method, uniqueness, and predicate. | `docs/errors/OKM2104.md` |
+| <a id="okm2105" />[`OKM2105`](#okm2105) | `invalid` | An index is a column prefix of another index on the same table. Unique, partial, and expression indexes are redundant only when they match completely. | `docs/errors/OKM2105.md` |
+| <a id="okm2106" />[`OKM2106`](#okm2106) | `invalid` | A partial index predicate column is also filtered by filters() or a preset. Those compile to bound parameters, so a generic plan may not use the index. | `docs/errors/OKM2106.md` |
+| <a id="okm2107" />[`OKM2107`](#okm2107) | `invalid` | The database has a comment the schema does not declare. OKM leaves it in place. okm pull writes it into the schema. | `docs/errors/OKM2107.md` |
 | <a id="okm1891" />[`OKM1891`](#okm1891) | `invalid` | Two okmodel.config.ts files are the same distance from the working directory. | `docs/errors/OKM1891.md` |
 | <a id="okm1892" />[`OKM1892`](#okm1892) | `invalid` | okm init needs a workspace and this invocation is not interactive. | `docs/errors/OKM1892.md` |
 | <a id="okm1893" />[`OKM1893`](#okm1893) | `invalid` | Two packages use the same migrations directory. | `docs/errors/OKM1893.md` |
@@ -394,6 +398,7 @@ Codes are in numeric order. Ranges are schema `OKM1000`, queries and capabilitie
 | <a id="okm1900" />[`OKM1900`](#okm1900) | `invalid` | Two views list each other in tables, so neither can be created first. | `docs/errors/OKM1900.md` |
 | <a id="okm1901" />[`OKM1901`](#okm1901) | `invalid` | A view column declared not null came back NULL. PostgreSQL does not store view nullability, so the declaration is checked when the row is read. | `docs/errors/OKM1901.md` |
 | <a id="okm1902" />[`OKM1902`](#okm1902) | `invalid` | A security-invoker view reads a base table this role cannot select. The view fails at read time for this role. | `docs/errors/OKM1902.md` |
+| <a id="okm1903" />[`OKM1903`](#okm1903) | `invalid` | An index uses an option its access method does not support. Unique, descending, and nulls order are btree. Include is btree, gist, or spgist, and only plain columns. | `docs/errors/OKM1903.md` |
 | <a id="okm2200" />[`OKM2200`](#okm2200) | `invalid` | The write-observer buffer dropped the oldest unit because it exceeded the pending-event ceiling. | `docs/errors/OKM2200.md` |
 | <a id="okm2201" />[`OKM2201`](#okm2201) | `invalid` | okm doctor --production found a lock_timeout or statement_timeout of 0. Apply or a statement can then wait without limit. The finding is a warning: nothing is refused. | `docs/errors/OKM2201.md` |
 | <a id="okm2202" />[`OKM2202`](#okm2202) | `invalid` | okm doctor --production selected a target that does not set protected: true in the config. A name such as production and NODE_ENV are never read. A fingerprint in this machine's store does not count: it protects one machine. | `docs/errors/OKM2202.md` |

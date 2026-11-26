@@ -44,6 +44,6 @@ export const users = table(
 
 ### Other objects
 
-A view or materialized view takes `comment` on the options, and `comment` on each column of the explicit columns form. A function and a trigger take `comment` on their options. An enum takes the comment on `t.enum(name, values, comment)`. A domain takes it on `t.domain(name, base, check, comment)`. A check and a foreign key take `comment` on the object form.
+A view or materialized view takes `comment` on the options, and `comments` for output columns by name. A function and a trigger take `comment` on their options. An enum takes the comment on `t.enum(name, values, comment)`. A domain takes it on `t.domain(name, base, check, comment)`. A check and a foreign key take `comment` on the object form.
 
 Unique constraints, primary keys, extensions, roles, and schemas do not take a comment.
