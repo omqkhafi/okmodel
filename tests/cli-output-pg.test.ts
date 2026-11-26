@@ -59,7 +59,12 @@ function configText(database: string): string {
 }
 
 function normalize(text: string, cwd: string): string {
-  return text.replaceAll(realpathSync(cwd), "<project>").replaceAll(cwd, "<project>");
+  return text
+    .replaceAll(realpathSync(cwd), "<project>")
+    .replaceAll(cwd, "<project>")
+    .replace(/\bpid \d+/g, "pid <pid>")
+    .replace(/\bover [\d.]+ (?:ms|s)\b/g, "over <time>")
+    .replace(/\bfor [\d.]+ (?:ms|s|min)(?: \d+ s)?\b/g, "for <age>");
 }
 
 function golden(ran: Ran, cwd: string): Golden {
@@ -119,8 +124,19 @@ async function walk(env: Record<string, string>): Promise<Record<string, Golden>
     try {
       await locker.unsafe("begin");
       await locker.unsafe("lock table tasks in access exclusive mode");
-      step("migrate.apply.locktimeout", ["migrate", "apply", "--lock-timeout", "300"]);
-      const json = okm(cwd, ["migrate", "apply", "--lock-timeout", "300", "--json"], env);
+      step("migrate.apply.locktimeout", [
+        "migrate",
+        "apply",
+        "--lock-timeout",
+        "300",
+        "--lock-wait",
+        "0",
+      ]);
+      const json = okm(
+        cwd,
+        ["migrate", "apply", "--lock-timeout", "300", "--lock-wait", "0", "--json"],
+        env,
+      );
       const body = JSON.parse(json.stdout) as {
         errors: { retryable: boolean; fix: string }[];
       };
@@ -174,7 +190,10 @@ postgresTest(
       const colored = pretty[name] as Golden;
       expect(flat.stdout + flat.stderr, name).not.toContain(ESC);
       expect(stripAnsi(colored.stdout), name).toBe(flat.stdout);
-      expect(stripAnsi(colored.stderr), name).toBe(flat.stderr);
+      // The one line that is not the same words: a holder's query text is for a terminal only.
+      const queries = /^pid <pid> query: .*\n/gm;
+      expect(stripAnsi(colored.stderr).replace(queries, ""), name).toBe(flat.stderr);
+      expect(queries.test(flat.stderr), name).toBe(false);
       expect(colored.exit, name).toBe(flat.exit);
       actual[`${name}.plain`] = flat;
       actual[`${name}.pretty`] = colored;

@@ -28,6 +28,7 @@ import {
   type StepJournal,
   type StepMarker,
 } from "../src/tooling/migrate/step-engine.js";
+import { ONCE } from "../src/tooling/migrate/lock-wait.js";
 
 const step: CommittedStep = {
   migrationId: "0001_init",
@@ -78,7 +79,7 @@ for (const state of states) {
     test(`${state} and ${probe} follows the resume table`, async () => {
       const world = harness({ state, probe, probed: true });
       const run = resumeCommittedStep(step, world.journal, world.engine, {
-        retries: 0,
+        wait: ONCE,
         wrap: (error) => new OkmError("invalid", error instanceof Error ? error.message : "failed"),
       });
       if (state !== "retry" && probe === "unknown") {
@@ -113,7 +114,7 @@ for (const state of states) {
 test("no marker runs the step and does not probe", async () => {
   const world = harness({ probe: "absent", probed: true });
   await resumeCommittedStep(step, world.journal, world.engine, {
-    retries: 0,
+    wait: ONCE,
     wrap: () => new OkmError("invalid", "failed"),
   });
   expect(world.calls).toEqual(["start", "run", "complete"]);
@@ -129,7 +130,7 @@ test("a hash mismatch refuses before SQL", async () => {
   });
   const error = await rejection(
     resumeCommittedStep(step, world.journal, world.engine, {
-      retries: 0,
+      wait: ONCE,
       wrap: () => new OkmError("invalid", "failed"),
     }),
   );
@@ -141,7 +142,7 @@ test("a hash mismatch refuses before SQL", async () => {
 test("retry with no probe runs the step", async () => {
   const world = harness({ state: "retry", probe: "unknown", probed: false });
   await resumeCommittedStep(step, world.journal, world.engine, {
-    retries: 0,
+    wait: ONCE,
     wrap: () => new OkmError("invalid", "failed"),
   });
   expect(world.calls).toEqual(["probe", "start", "run", "complete"]);
@@ -151,7 +152,7 @@ test("a failed run records failed and names the next apply", async () => {
   const world = harness({ probe: "absent", probed: true, runError: new Error("duplicate key") });
   const error = await rejection(
     resumeCommittedStep(step, world.journal, world.engine, {
-      retries: 0,
+      wait: ONCE,
       wrap: (caught) =>
         new OkmError(
           "invalid",
@@ -181,7 +182,7 @@ test("cleanup failure keeps the INVALID index text", async () => {
   });
   const error = await rejection(
     resumeCommittedStep(step, world.journal, world.engine, {
-      retries: 0,
+      wait: ONCE,
       wrap: (caught) =>
         new OkmError(
           "invalid",
@@ -204,7 +205,7 @@ for (const boundary of boundaries) {
     const world = harness({ probe: "absent", probed: true });
     const stopped = await rejection(
       resumeCommittedStep(step, world.journal, world.engine, {
-        retries: 0,
+        wait: ONCE,
         failAt: boundary,
         wrap: () => new OkmError("invalid", "failed"),
       }),
@@ -223,7 +224,7 @@ for (const boundary of boundaries) {
     world.calls.length = 0;
     world.engine = engineFor(world, "applied", true);
     await resumeCommittedStep(step, world.journal, world.engine, {
-      retries: 0,
+      wait: ONCE,
       wrap: () => new OkmError("invalid", "failed"),
     });
     expect(world.history).toBe(true);

@@ -35,6 +35,8 @@ export type MigrateOptions = {
   readonly lockTimeoutMs?: number;
   /** Same as `--statement-timeout`. */
   readonly statementTimeoutMs?: number;
+  /** Same as `--lock-wait`. Only `apply` reads it. */
+  readonly lockWaitMs?: number;
 };
 
 /** Options for {@link plan}. */
@@ -192,6 +194,7 @@ function invokeOf(options: MigrateOptions): InvokeFlags {
     ...(options.statementTimeoutMs !== undefined
       ? { statementTimeoutMs: options.statementTimeoutMs }
       : {}),
+    ...(options.lockWaitMs !== undefined ? { lockWaitMs: options.lockWaitMs } : {}),
   };
 }
 

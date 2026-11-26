@@ -40,7 +40,7 @@ import {
   ownSchema,
   stepFailureFix,
 } from "./runner.js";
-import { isLockTimeout } from "./step-engine.js";
+import { isLockTimeout } from "./lock-wait.js";
 import { snapshotDifference } from "./snapshot.js";
 import { replaceSchemaName, sqlStatements } from "./sql-lex.js";
 

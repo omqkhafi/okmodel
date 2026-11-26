@@ -216,7 +216,6 @@ async function acceptApplied(
     {
       kind: step.kind,
       sql: step.sql,
-      lockTimeoutMs: 5_000,
       ...(probe !== undefined ? { probe } : {}),
     },
     () => Promise.resolve(),

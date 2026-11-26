@@ -146,7 +146,7 @@ export function constraintDefinitionVerdict(
  * Probe, cleanup, and run for one Postgres step.
  *
  * @param connection - Reserved connection, search path already set
- * @param step - Kind, statement, and the lock timeout cleanup uses
+ * @param step - Kind, statement, and an optional declared probe
  * @param run - Runs the statement after roles are in place
  * @returns The engine the resume state machine calls
  */
@@ -155,7 +155,6 @@ export function postgresStepEngine(
   step: {
     readonly kind: string;
     readonly sql: string;
-    readonly lockTimeoutMs: number;
     /** Declared `-- probe:` text. A built-in probe for `kind` still wins. */
     readonly probe?: string;
   },
@@ -324,7 +323,7 @@ async function probeEnum(connection: DriverConnection, sql: string): Promise<Pro
 
 async function cleanupStep(
   connection: DriverConnection,
-  step: { readonly kind: string; readonly sql: string; readonly lockTimeoutMs: number },
+  step: { readonly kind: string; readonly sql: string },
 ): Promise<void> {
   if (step.kind !== "create-index") return;
   const parsed = parseCreateIndex(step.sql);
@@ -337,9 +336,6 @@ async function cleanupStep(
   const quoted = quoteIdent(parsed.name);
   const repair = indexRepair(qualifiedName(parsed.schema, parsed.name));
   if (await indexBuildInProgress(connection, parsed)) throw waitForIndex(quoted);
-  await connection.execute("select set_config('lock_timeout', $1, false)", [
-    String(step.lockTimeoutMs),
-  ]);
   try {
     if (await indexBuildInProgress(connection, parsed)) throw waitForIndex(quoted);
     await connection.execute(

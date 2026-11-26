@@ -156,7 +156,7 @@ test("role-config reports the refusal the role health check raised", () => {
 test("timeouts: apply's own lock_timeout is the one reported, and zero warns", () => {
   const [lock, statement] = timeoutFindings(plain, 0, 30_000);
   expect(lock).toMatchObject({ id: "lock-timeout", severity: "ok" });
-  expect(lock?.summary).toContain("okm migrate apply sets lock_timeout to 5000 ms (default)");
+  expect(lock?.summary).toContain("okm migrate apply sets lock_timeout to 1000 ms (default)");
   expect(statement).toMatchObject({ id: "statement-timeout", severity: "ok" });
   const configured = timeoutFindings(
     { ...plain, timeouts: { lock: 9_000, statement: 60_000 } },

@@ -33,7 +33,7 @@ postgresTest(
         ]) {
           await postgresStepEngine(
             opened.connection,
-            { kind: "create-index", sql: statement, lockTimeoutMs: 1_000 },
+            { kind: "create-index", sql: statement },
             () => Promise.resolve(),
           ).cleanup();
         }

@@ -10,6 +10,12 @@
   "properties": {
     "text": {
       "type": "string"
+    },
+    "attempts": {
+      "type": "number"
+    },
+    "waitedMs": {
+      "type": "number"
     }
   }
 }

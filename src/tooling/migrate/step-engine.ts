@@ -12,6 +12,7 @@
 import { sha256 } from "../../contracts/sha256.js";
 import { OkmError } from "../../contracts/error.js";
 import { errorDoc } from "../errors/registry.js";
+import type { LockWaiter } from "./lock-wait.js";
 
 /** What a probe can say about a committed step. */
 export type ProbeResult = "applied" | "absent" | "partial" | "unknown";
@@ -129,8 +130,6 @@ export class PartialCleanupError extends Error {
     if (cause !== undefined) this.cause = cause;
   }
 }
-
-const LOCK_BACKOFF_MS = 50;
 
 /**
  * SHA-256 of a statement normalised to LF and trimmed.
@@ -275,14 +274,14 @@ function sentence(text: string): string {
  * @param step - The file's step
  * @param journal - Marker and history writes
  * @param engine - Dialect probe, cleanup, and statement
- * @param options - Lock retries, an optional crash boundary, and how a driver error is wrapped
+ * @param options - The lock waiter, an optional crash boundary, and how a driver error is wrapped
  */
 export async function resumeCommittedStep(
   step: CommittedStep,
   journal: StepJournal,
   engine: StepEngine,
   options: {
-    readonly retries: number;
+    readonly wait: LockWaiter;
     readonly failAt?: StepBoundary;
     readonly wrap: (error: unknown) => OkmError;
   },
@@ -303,7 +302,7 @@ async function dispatch(
   journal: StepJournal,
   engine: StepEngine,
   options: {
-    readonly retries: number;
+    readonly wait: LockWaiter;
     readonly failAt?: StepBoundary;
   },
 ): Promise<void> {
@@ -319,7 +318,7 @@ async function dispatch(
     return;
   }
   if (probe === "applied") {
-    await withLockRetry(options.retries, () => journal.complete(step));
+    await options.wait.run(() => journal.complete(step), true);
     return;
   }
   if (probe === "absent") {
@@ -339,15 +338,15 @@ async function execute(
   journal: StepJournal,
   engine: StepEngine,
   marker: StepMarker | undefined,
-  options: { readonly retries: number; readonly failAt?: StepBoundary },
+  options: { readonly wait: LockWaiter; readonly failAt?: StepBoundary },
 ): Promise<void> {
   if (options.failAt === "before-started") throw new StepBoundaryStop("before-started");
   const attempt = (marker?.attempt ?? 0) + 1;
-  await withLockRetry(options.retries, () => journal.start(step, attempt));
+  await options.wait.run(() => journal.start(step, attempt));
   if (options.failAt === "after-started") throw new StepBoundaryStop("after-started");
-  await withLockRetry(options.retries, () => engine.run());
+  await options.wait.run(() => engine.run());
   if (options.failAt === "after-ddl") throw new StepBoundaryStop("after-ddl");
-  await withLockRetry(options.retries, () => journal.complete(step));
+  await options.wait.run(() => journal.complete(step), true);
 }
 
 async function handleRunFailure(
@@ -477,30 +476,4 @@ function stripPrefix(message: string): string {
 function causeOf(error: unknown): string {
   if (error instanceof Error) return error.message;
   return "The step failed.";
-}
-
-/** True when a failure is a lock timeout (SQLSTATE 55P03 or message text). */
-export function isLockTimeout(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  if ("sqlstate" in error && error.sqlstate === "55P03") return true;
-  const message = error instanceof Error ? error.message : "";
-  return message.includes("lock timeout");
-}
-
-async function withLockRetry(retries: number, work: () => Promise<void>): Promise<void> {
-  for (let attempt = 0; attempt <= retries; attempt += 1) {
-    try {
-      await work();
-      return;
-    } catch (error) {
-      if (!isLockTimeout(error) || attempt === retries) throw error;
-      await delay(LOCK_BACKOFF_MS * 2 ** attempt);
-    }
-  }
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
 }

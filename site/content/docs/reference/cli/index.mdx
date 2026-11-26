@@ -63,7 +63,7 @@ I stopped before changing anything. Add .renamedFrom("title") on name, or drop t
 Details: okm help OKM1530
 ```
 
-A failure that `okm` did not expect prints one line. Set `OKM_DEBUG=1`, or pass `--verbose`, to see where it happened. A lock timeout in `migrate apply` is `retryable: true` in `--json`, and its fix line says that running the command again is safe. Drift stays exit 1; the exit codes below do not change.
+A failure that `okm` did not expect prints one line. Set `OKM_DEBUG=1`, or pass `--verbose`, to see where it happened. A lock that stays taken for the whole `--lock-wait` is `retryable: true` in `--json`, with `attempts`, `waitedMs`, and `blockedBy`, and its fix line says that running the command again is safe. Drift stays exit 1; the exit codes below do not change.
 
 ## Commands
 
@@ -115,8 +115,9 @@ Every command parses the flags in this table. An unknown flag is a usage error, 
 | `--allow-protected` | `migrate apply`, `migrate resolve`, `migrate baseline`, `push`, and `seed`. One invocation. Blocked work is [Protection](/docs/reference/config-database#protection). `migrate check` ignores the flag. |
 | `--allow-pooler` | `migrate apply`, `migrate resolve`, `migrate baseline`, `push`, `seed`, `migrate check`, `raw sync`, and `check` when it compares a database. On `doctor --production` it marks a pooler URL as a fail instead of a warning, and changes no connection. Same opt-in as [allowPooler](/docs/reference/config#pooler). Either one is enough. |
 | `--allow-data-loss` | `push`. Applies a plan that drops columns and tables that hold rows. One invocation. No short form. Not read from the environment. |
-| `--lock-timeout <milliseconds>` | `migrate apply` and `raw sync`. Overrides [timeouts.lock](/docs/reference/config#timeouts). `0` disables it. |
-| `--statement-timeout <milliseconds>` | `migrate apply` and `raw sync`. Overrides [timeouts.statement](/docs/reference/config#timeouts). |
+| `--lock-timeout <duration>` | `migrate apply` and `raw sync`. How long one attempt waits for a lock. Overrides [timeouts.lock](/docs/reference/config#timeouts). `0` disables it. |
+| `--lock-wait <duration>` | `migrate apply`. How long a blocked step keeps retrying. Default `2m`. `0` tries once. See [waiting for locks](/docs/migrations/waiting-for-locks). |
+| `--statement-timeout <duration>` | `migrate apply` and `raw sync`. Overrides [timeouts.statement](/docs/reference/config#timeouts). |
 | `--check` | `raw sync`. Writes nothing and exits 1 when the lock or the generated types would change. |
 | `--json` | Every command. Prints one `okm.cli/1` document. The command's previous JSON is `data`. |
 | `--out <file>`, `-o <file>` | With `--json`, writes `data` to the file unless the command already owns `--out`. `-` keeps `data` on stdout. |
@@ -130,5 +131,5 @@ Every command parses the flags in this table. An unknown flag is a usage error, 
 | `--out <directory>`, `--out=<directory>` | `pull` and `import drizzle`. Writes `schema.ts` and `tables/` there. Without it, the command uses the schema path and the tables directory from the config, or `schema.ts` and `tables/` when `import drizzle` has no config yet. |
 | `--import-ext ts\|js\|none` | `pull`. Extension on relative imports. The default is `ts`. `js` is for `nodenext`. `none` is for bundler resolution that does not allow a `.ts` import. The files on disk stay `.ts`. |
 
-A missing `--target` name is OKM1853: `--target needs a name.` A missing `--replace` value is OKM1541: `--replace needs table.column.old=new.` Both exit 2. `--lock-timeout` and `--statement-timeout` need a finite number of milliseconds that is not negative. The message names the flag. `--allow-protected`, `--allow-pooler`, `--allow-data-loss`, and `--replace` have no short form and are not read from the environment. `-f` is not a flag. Only boolean shorts combine (`-vn`). `-h` is help. `-V` is version. `-v` is verbose.
+A missing `--target` name is OKM1853: `--target needs a name.` A missing `--replace` value is OKM1541: `--replace needs table.column.old=new.` Both exit 2. `--lock-timeout`, `--lock-wait`, and `--statement-timeout` need a duration such as `500`, `30s`, or `2m`. The message names the flag. `--allow-protected`, `--allow-pooler`, `--allow-data-loss`, and `--replace` have no short form and are not read from the environment. `-f` is not a flag. Only boolean shorts combine (`-vn`). `-h` is help. `-V` is version. `-v` is verbose.
 

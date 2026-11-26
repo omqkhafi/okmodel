@@ -81,7 +81,7 @@ ok    okm-meta                    okm_meta exists. The check cannot see connect(
 ok    role-privilege              The login role is not a superuser and does not have BYPASSRLS.
 warn  role-owns-tables   OKM1707  The login role owns 3 of the schema's tables. That is fine for the migrator and wrong for the app role: an owner is not bound by row-level security.
                                   fix: Run the app as a role that does not own the tables (docs/roles.md).
-ok    lock-timeout                okm migrate apply sets lock_timeout to 5000 ms (default) and that value applies to migrations. The role's session value is 0 (no limit) and applies to everything else.
+ok    lock-timeout                okm migrate apply sets lock_timeout to 1000 ms (default) and that value applies to migrations. The role's session value is 0 (no limit) and applies to everything else.
 warn  statement-timeout  OKM2201  statement_timeout is 0 for this role in a fresh session, so a statement runs without limit. okm migrate apply sets 30000 ms (default) for migrations only.
                                   fix: Run ALTER ROLE <app role> SET statement_timeout = '30s' (or the limit you want).
 ok    server-version              The server is PostgreSQL 17, inside the supported window 15-19.

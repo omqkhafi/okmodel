@@ -98,7 +98,7 @@ postgresTest(
             step(`alter table ${q(schemaName)}.held add column note integer`),
           ]),
         ],
-        { lockTimeoutMs: 80, retries: 6 },
+        { lockTimeoutMs: 80, lockWaitMs: 10_000 },
       );
       await Bun.sleep(250);
       await sql.unsafe("commit");
@@ -558,7 +558,7 @@ function applyTo(
     readonly protected?: boolean;
     readonly onLocked?: () => void;
     readonly lockTimeoutMs?: number;
-    readonly retries?: number;
+    readonly lockWaitMs?: number;
   },
 ) {
   return applyTarget({
@@ -569,7 +569,7 @@ function applyTo(
     migrations,
     ...(options?.onLocked !== undefined ? { onLocked: options.onLocked } : {}),
     ...(options?.lockTimeoutMs !== undefined ? { lockTimeoutMs: options.lockTimeoutMs } : {}),
-    ...(options?.retries !== undefined ? { retries: options.retries } : {}),
+    ...(options?.lockWaitMs !== undefined ? { lockWaitMs: options.lockWaitMs } : {}),
   });
 }
 

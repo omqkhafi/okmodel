@@ -70,7 +70,7 @@ Each finding has a stable id, a severity (`fail`, `warn`, `ok`), and a one-line 
 | `role-privilege` | the login role is a superuser or has `BYPASSRLS` (OKM1707) | never |
 | `role-owns-tables` | never | the login role owns the catalog tables (OKM1707) |
 | `role-config` | the role check for `roles` fails | never |
-| `lock-timeout` | never | apply's `lock_timeout` is 0 (OKM2201). Apply sets its own value, 5000 ms by default, and that is the one reported |
+| `lock-timeout` | never | apply's `lock_timeout` is 0 (OKM2201). Apply sets its own value, 1000 ms by default, and that is the one reported |
 | `statement-timeout` | never | the role's `statement_timeout` is 0 in a fresh session (OKM2201) |
 | `server-version` | the major is below 15 or below `minPostgres` (OKM1802, OKM1803) | never. A major newer than the tested range 15 to 19 is an ok line: `newer than the tested range 15 to 19; accepted` |
 | `extensions` | a required extension is not installed (OKM1811) | never |

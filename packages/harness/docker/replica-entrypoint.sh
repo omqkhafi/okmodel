@@ -61,4 +61,4 @@ EOF
   chmod 0700 "$PGDATA"
 fi
 
-exec postgres -c listen_addresses='*' -c hot_standby=on
+exec postgres -c listen_addresses='*' -c hot_standby=on -c max_prepared_transactions=5

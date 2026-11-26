@@ -27,6 +27,7 @@ import {
   type PlanStep,
 } from "../src/tooling/migrate/plan.js";
 import { stepSqlHash } from "../src/tooling/migrate/step-engine.js";
+import { ONCE } from "../src/tooling/migrate/lock-wait.js";
 
 const empty = schema({ tables: [] }).catalog;
 
@@ -180,7 +181,7 @@ test("a built-in probe wins over a declared one and a declared probe has no clea
     {
       kind: "raw-sql",
       sql: "create index concurrently idx on items (id)",
-      lockTimeoutMs: 1_000,
+
       probe: "select true",
     },
     () => Promise.resolve(),
@@ -224,7 +225,7 @@ test("cleanup matches this index and not another build on the same table", async
     batch: () => Promise.resolve([]),
     release: () => Promise.resolve(),
   } as DriverConnection;
-  await postgresStepEngine(connection, { kind: "create-index", sql, lockTimeoutMs: 1_000 }, () =>
+  await postgresStepEngine(connection, { kind: "create-index", sql }, () =>
     Promise.resolve(),
   ).cleanup();
   expect(seen.some((text) => text.startsWith("drop index concurrently"))).toBe(true);
@@ -238,9 +239,7 @@ test("cleanup matches this index and not another build on the same table", async
     release: () => Promise.resolve(),
   } as DriverConnection;
   const stopped = await rejection(
-    postgresStepEngine(blocked, { kind: "create-index", sql, lockTimeoutMs: 1_000 }, () =>
-      Promise.resolve(),
-    ).cleanup(),
+    postgresStepEngine(blocked, { kind: "create-index", sql }, () => Promise.resolve()).cleanup(),
   );
   expect(stopped).toBeInstanceOf(PartialCleanupError);
   if (stopped instanceof PartialCleanupError) {
@@ -264,7 +263,7 @@ test("cleanup waits when only pg_stat_progress_create_index shows the build", as
     release: () => Promise.resolve(),
   } as DriverConnection;
   const stopped = await rejection(
-    postgresStepEngine(connection, { kind: "create-index", sql, lockTimeoutMs: 1_000 }, () =>
+    postgresStepEngine(connection, { kind: "create-index", sql }, () =>
       Promise.resolve(),
     ).cleanup(),
   );
@@ -292,7 +291,7 @@ test("cleanup checks again immediately before the drop", async () => {
     release: () => Promise.resolve(),
   } as DriverConnection;
   const stopped = await rejection(
-    postgresStepEngine(connection, { kind: "create-index", sql, lockTimeoutMs: 1_000 }, () =>
+    postgresStepEngine(connection, { kind: "create-index", sql }, () =>
       Promise.resolve(),
     ).cleanup(),
   );
@@ -340,11 +339,11 @@ test("another session's index build is one sentence, once", async () => {
         async fail() {},
         async complete() {},
       },
-      postgresStepEngine(connection, { kind: "create-index", sql, lockTimeoutMs: 1_000 }, () =>
+      postgresStepEngine(connection, { kind: "create-index", sql }, () =>
         Promise.reject(new Error('could not create index "mine"')),
       ),
       {
-        retries: 0,
+        wait: ONCE,
         wrap: (caught) =>
           new OkmError(
             "invalid",
@@ -403,11 +402,11 @@ test("a concurrent index failure ends the driver sentence with a period", async 
         async fail() {},
         async complete() {},
       },
-      postgresStepEngine(connection, { kind: "create-index", sql, lockTimeoutMs: 1_000 }, () =>
+      postgresStepEngine(connection, { kind: "create-index", sql }, () =>
         Promise.reject(new Error(cause)),
       ),
       {
-        retries: 0,
+        wait: ONCE,
         wrap: (caught) =>
           new OkmError("invalid", `Migration 0002_idx failed at step 1: ${cause}`, {
             cause: caught,
@@ -452,11 +451,9 @@ test("a lost connection during create index concurrently names the index", async
         async fail() {},
         async complete() {},
       },
-      postgresStepEngine(connection, { kind: "create-index", sql, lockTimeoutMs: 1_000 }, () =>
-        Promise.reject(closed),
-      ),
+      postgresStepEngine(connection, { kind: "create-index", sql }, () => Promise.reject(closed)),
       {
-        retries: 0,
+        wait: ONCE,
         wrap: (caught) => {
           const lost = sessionFailure(caught);
           if (lost !== undefined) {
@@ -492,7 +489,7 @@ async function dropSql(sql: string): Promise<string> {
     batch: () => Promise.resolve([]),
     release: () => Promise.resolve(),
   } as DriverConnection;
-  await postgresStepEngine(connection, { kind: "create-index", sql, lockTimeoutMs: 1_000 }, () =>
+  await postgresStepEngine(connection, { kind: "create-index", sql }, () =>
     Promise.resolve(),
   ).cleanup();
   const drop = calls.find((text) => text.startsWith("drop index"));
@@ -546,7 +543,7 @@ function scripted(reply: () => ExecuteResult): {
     calls,
     engine: postgresStepEngine(
       connection,
-      { kind: "raw-sql", sql: "vacuum analyze notes", lockTimeoutMs: 1_000, probe: "select true" },
+      { kind: "raw-sql", sql: "vacuum analyze notes", probe: "select true" },
       () => Promise.resolve(),
     ),
   };

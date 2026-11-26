@@ -92,12 +92,12 @@
   "migrate.apply.locktimeout.plain": {
     "exit": 1,
     "stdout": "",
-    "stderr": "error invalid: Migration 0003_add_other failed at step 1: canceling statement due to lock timeout\nI could not get a lock in time and stopped at this step. Run okm migrate apply again when that lock is free. Finished steps are not repeated, so running it again is safe.\nconfig: <project>/okmodel.config.ts\n"
+    "stderr": "error invalid: Migration 0003_add_other failed at step 1: I could not get a lock after 1 attempt over <time>.\nHeld by pid <pid> (postgres.js), idle in a transaction for <age>.\nI did not touch any of them.\nNothing was changed.\nI could not get a lock in time and stopped at this step. Run okm migrate apply again when that lock is free. Finished steps are not repeated, so running it again is safe.\nconfig: <project>/okmodel.config.ts\n"
   },
   "migrate.apply.locktimeout.pretty": {
     "exit": 1,
     "stdout": "",
-    "stderr": "\u001b[31merror\u001b[0m \u001b[31minvalid\u001b[0m: Migration 0003_add_other failed at step 1: canceling statement due to lock timeout\nI could not get a lock in time and stopped at this step. Run okm migrate apply again when that lock is free. Finished steps are not repeated, so running it again is safe.\n\u001b[2mconfig: <project>/okmodel.config.ts\u001b[0m\n"
+    "stderr": "\u001b[31merror\u001b[0m \u001b[31minvalid\u001b[0m: Migration 0003_add_other failed at step 1: I could not get a lock after 1 attempt over <time>.\nHeld by pid <pid> (postgres.js), idle in a transaction for <age>.\nI did not touch any of them.\nNothing was changed.\npid <pid> query: lock table tasks in access exclusive mode\nI could not get a lock in time and stopped at this step. Run okm migrate apply again when that lock is free. Finished steps are not repeated, so running it again is safe.\n\u001b[2mconfig: <project>/okmodel.config.ts\u001b[0m\n"
   },
   "url.unreachable.plain": {
     "exit": 5,
