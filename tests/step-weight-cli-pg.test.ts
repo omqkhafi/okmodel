@@ -56,8 +56,10 @@ postgresTest(
 
       writeFileSync(join(cwd, "schema.ts"), schemaText(["note"]));
       expect(okm(cwd, ["generate", "add_note"]).code).toBe(0);
-      const file = readdirSync(join(cwd, "migrations")).find((name) => name.includes("add_note"));
-      if (file === undefined || !file.endsWith(".sql")) throw new Error("no migration file");
+      const file = readdirSync(join(cwd, "migrations")).find(
+        (name) => name.includes("add_note") && name.endsWith(".sql"),
+      );
+      if (file === undefined) throw new Error("no migration file");
       const path = join(cwd, "migrations", file);
       const text = readFileSync(path, "utf8");
       expect(text).toContain("-- lock: ");
