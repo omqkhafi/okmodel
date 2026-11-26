@@ -57,7 +57,7 @@ export async function provision(
       only: true,
     },
     ...(config.roles !== undefined
-      ? { migrationRole: config.roles.migration, appRole: config.roles.app }
+      ? { migrationRole: config.roles.migration.name, appRole: config.roles.app.name }
       : {}),
     lintDirectory: directory,
   });

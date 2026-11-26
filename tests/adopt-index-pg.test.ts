@@ -42,8 +42,8 @@ postgresTest(
       expect(source).toContain("index(columns.id)");
       expect(source).not.toContain('.name("tasks_id_idx")');
       expect(source).toContain('index(columns.title).name("lookup_title")');
-      expect(source).toContain(
-        "index(columns.title).where(sql`(title <> ''::text)`).name(\"open_title\")",
+      expect(source).toMatch(
+        /index\(columns\.title\)\s*\.where\(sql`\(title <> ''::text\)`\)\s*\.name\("open_title"\)/,
       );
       expect(source).not.toContain("predicate:");
       expect(source).not.toContain("unique() { return this; }");

@@ -1,8 +1,8 @@
 /**
- * Roles, grants, and default privileges on Postgres.
+ * Roles and grants on Postgres.
  *
- * The application role is not the owner. Later objects are reachable through
- * default privileges. A missing `CREATEROLE` stops apply before any statement.
+ * The application role is not the owner. Objects created later by raw SQL are
+ * not granted. A missing role stops apply before any statement.
  */
 
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -44,21 +44,22 @@ const IS_OPEN = [
 
 postgresTest(
   gate,
-  "default privileges reach later objects and the second plan is empty",
+  "declared grants reach the planned table and later objects stay denied",
   async () => {
     const mig = roleName("mig");
     const app = roleName("app");
     const database = await createIsolatedDatabase();
     const sql = openPostgres(database.url);
     try {
+      await sql.unsafe(`create role ${quoteIdent(mig)} nologin`);
+      await sql.unsafe(`grant create, usage on schema public to ${quoteIdent(mig)}`);
       await sql.unsafe(
         `create role ${quoteIdent(app)} login password 'secret' nosuperuser nocreatedb nocreaterole`,
       );
       const tasks = table("tasks", { id: t.text().primaryKey(), title: t.text() });
       const declared = attachRoles(schema({ tables: [tasks] }).catalog, {
-        migration: mig,
-        app,
-        managed: [{ name: mig }],
+        migration: { name: mig },
+        app: { name: app },
       });
       const report = await applyTarget({
         url: database.url,
@@ -116,23 +117,31 @@ postgresTest(
       await sql.unsafe(`set role ${quoteIdent(app)}`);
       const written = await sql<{ title: string }[]>`select title from tasks where id = '1'`;
       expect(written[0]?.title).toBe("a");
-      const view = await sql<{ title: string }[]>`select title from later_v`;
-      expect(Number(view.length)).toBe(0);
-      await sql.unsafe(`insert into later (id, title) values ('2', 'b')`);
-      const again = await sql<{ title: string }[]>`select title from later where id = '2'`;
-      expect(again[0]?.title).toBe("b");
+      let denied = 0;
+      for (const statement of [
+        "select title from later_v",
+        "insert into later (id, title) values ('2', 'b')",
+        "select later_f()",
+      ]) {
+        try {
+          await sql.unsafe(statement);
+        } catch {
+          denied += 1;
+        }
+      }
+      expect(denied).toBe(2);
       const marked = await sql<{ later_f: string }[]>`select later_f() as later_f`;
       expect(marked[0]?.later_f).toBe("ok");
       await sql.unsafe(`reset role`);
       await sql.unsafe(`create table secret (id text)`);
       await sql.unsafe(`set role ${quoteIdent(app)}`);
-      let denied = false;
+      let secretDenied = false;
       try {
         await sql.unsafe(`select * from secret`);
       } catch (error) {
-        denied = error instanceof Error;
+        secretDenied = error instanceof Error;
       }
-      expect(denied).toBe(true);
+      expect(secretDenied).toBe(true);
       await sql.unsafe(`reset role`);
     } finally {
       await sql.end({ timeout: 5 });
@@ -197,7 +206,7 @@ postgresTest(
 
 postgresTest(
   gate,
-  "a role without CREATEROLE blocks apply before any statement",
+  "a missing role blocks apply before any statement",
   async () => {
     const limited = roleName("limited");
     const mig = roleName("mig");
@@ -214,18 +223,18 @@ postgresTest(
       const declared = attachRoles(
         schema({ tables: [table("tasks", { id: t.text().primaryKey() })] }).catalog,
         {
-          migration: mig,
-          app: limited,
-          managed: [{ name: mig }],
+          migration: { name: mig },
+          app: { name: limited },
         },
       );
       let caught: unknown;
       try {
         await applyTarget({
-          url: urlAs(database.url, limited, "secret"),
+          url: database.url,
           target: "default",
           protected: false,
           migrationRole: mig,
+          roles: { migration: { name: mig }, app: { name: limited } },
           migrations: [
             {
               id: "0001_roles",
@@ -238,7 +247,8 @@ postgresTest(
         caught = error;
       }
       expect(caught).toBeInstanceOf(OkmError);
-      expect((caught as OkmError).message).toContain("CREATEROLE");
+      expect((caught as OkmError).code).toBe("OKM1911");
+      expect((caught as OkmError).message).toContain("okm roles apply");
       const roles = await sql<
         { rolname: string }[]
       >`select rolname from pg_roles where rolname = ${mig}`;
@@ -412,10 +422,13 @@ postgresTest(
     const sql = openPostgres(database.url);
     const cwd = mkdtempSync(join(tmpdir(), "okm-roles-guide-"));
     try {
-      // Guide: okm_app is external — create it first (or list it in managed).
+      await sql.unsafe(`create role ${quoteIdent(migrate)} nologin`);
+      await sql.unsafe(`grant create, usage on schema public to ${quoteIdent(migrate)}`);
+      await sql.unsafe(`alter schema public owner to ${quoteIdent(migrate)}`);
       await sql.unsafe(
         `create role ${quoteIdent(app)} login password 'secret' nosuperuser nocreatedb nocreaterole`,
       );
+      await sql.unsafe(`create role ${quoteIdent(report)} nologin`);
       const source = (path: string): string => JSON.stringify(join(root, path));
       writeFileSync(
         join(cwd, "schema.ts"),
@@ -437,11 +450,9 @@ postgresTest(
           '  migrations: "./migrations",',
           `  database: ${JSON.stringify(database.url)},`,
           "  roles: {",
-          `    migration: ${JSON.stringify(migrate)},`,
-          `    app: ${JSON.stringify(app)},`,
-          `    reporting: ${JSON.stringify(report)},`,
-          `    managed: [{ name: ${JSON.stringify(migrate)} }, { name: ${JSON.stringify(report)}, login: true }],`,
-          `    columns: [{ role: ${JSON.stringify(report)}, on: "tasks", select: ["title"] }],`,
+          `    migration: { name: ${JSON.stringify(migrate)} },`,
+          `    app: { name: ${JSON.stringify(app)} },`,
+          `    reporting: { name: ${JSON.stringify(report)} },`,
           "  },",
           "});",
           "",
@@ -456,7 +467,7 @@ postgresTest(
       const pub = await sql<{ p: boolean }[]>`
         select has_function_privilege('public', 'is_open(text)', 'execute') as p
       `;
-      expect(pub[0]?.p).toBe(false);
+      expect(pub[0]?.p).toBe(true);
       const owner = await sql<{ n: string }[]>`
         select pg_get_userbyid(nspowner)::text as n
         from pg_namespace where nspname = 'public'
@@ -481,6 +492,12 @@ postgresTest(
     try {
       for (let round = 0; round < 4; round += 1) {
         await dropRoles([app]);
+        const admin = openPostgres();
+        try {
+          await admin.unsafe(`create role ${quoteIdent(app)} nologin`);
+        } finally {
+          await admin.end({ timeout: 5 });
+        }
         const cwd = mkdtempSync(join(tmpdir(), "okm-roles-"));
         const databases = await Promise.all([
           createIsolatedDatabase(),
@@ -493,9 +510,8 @@ postgresTest(
           if (!first || !second || !third || !fourth) throw new Error("four databases expected");
           const migration = decodeURIComponent(new URL(first).username);
           const declared = attachRoles(tasksSchema().catalog, {
-            migration,
-            app,
-            managed: [{ name: app }],
+            migration: { name: migration },
+            app: { name: app },
           });
           const steps = planMigration({
             before: catalog([]),
@@ -553,7 +569,7 @@ postgresTest(
 
 postgresTest(
   gate,
-  "a CREATE ROLE that loses the race still runs the ALTER ROLE after it",
+  "an external role keeps its login when the config records an env",
   async () => {
     const app = roleName("app");
     const database = await createIsolatedDatabase();
@@ -562,33 +578,20 @@ postgresTest(
     try {
       const migration = decodeURIComponent(new URL(database.url).username);
       const declared = attachRoles(tasksSchema().catalog, {
-        migration,
-        app,
-        managed: [{ name: app }],
+        migration: { name: migration },
+        app: { name: app },
       });
       const login = attachRoles(tasksSchema().catalog, {
-        migration,
-        app,
-        managed: [{ name: app, login: true }],
+        migration: { name: migration },
+        app: { name: app, env: "APP_DATABASE_URL" },
       });
       const altered = planMigration({ before: declared, after: login, name: "login" }).steps;
-      expect(altered.map((step) => step.sql)).toEqual([expect.stringMatching(/^alter role/)]);
+      expect(altered.map((step) => step.sql).some((sql) => sql.startsWith("alter role"))).toBe(
+        false,
+      );
 
-      let release = (): void => {};
-      const released = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      let created = (): void => {};
-      const holding = new Promise<void>((resolve) => {
-        created = resolve;
-      });
-      const held = holder.begin(async (tx) => {
-        await tx.unsafe(`create role ${quoteIdent(app)} nologin`);
-        created();
-        await released;
-      });
-      await holding;
-      const applying = applyTarget({
+      await holder.unsafe(`create role ${quoteIdent(app)} nologin`);
+      await applyTarget({
         url: database.url,
         target: "default",
         protected: false,
@@ -602,23 +605,10 @@ postgresTest(
           { id: "0002_login", catalogHash: "login", steps: altered },
         ],
       });
-      const deadline = performance.now() + 10_000;
-      for (;;) {
-        const waiting = await watcher<{ count: number }[]>`
-          select count(*)::int as count from pg_stat_activity
-           where wait_event_type = 'Lock' and query like 'do $okm$ begin create role%'
-        `;
-        if ((waiting[0]?.count ?? 0) > 0) break;
-        if (performance.now() > deadline) throw new Error("CREATE ROLE never waited on the lock");
-        await Bun.sleep(20);
-      }
-      release();
-      await held;
-      await applying;
       const rows = await watcher<{ rolcanlogin: boolean }[]>`
         select rolcanlogin from pg_roles where rolname = ${app}
       `;
-      expect(rows[0]?.rolcanlogin).toBe(true);
+      expect(rows[0]?.rolcanlogin).toBe(false);
     } finally {
       await holder.end({ timeout: 5 });
       await watcher.end({ timeout: 5 });
@@ -661,7 +651,7 @@ function project(
       "export default defineConfig({",
       '  schema: "./schema.ts",',
       `  database: ${JSON.stringify(url)},`,
-      `  roles: { migration: ${JSON.stringify(roles.migration)}, app: ${JSON.stringify(roles.app)} },`,
+      `  roles: { migration: { name: ${JSON.stringify(roles.migration)} }, app: { name: ${JSON.stringify(roles.app)} } },`,
       "});",
       "",
     ].join("\n"),
@@ -684,6 +674,7 @@ async function withRolesProject(
   const sql = openPostgres(database.url);
   const cwd = mkdtempSync(join(tmpdir(), "okm-roles-"));
   try {
+    await sql.unsafe(`create role ${quoteIdent(app)} nologin`);
     writeProject(cwd, database.url, { app }, schemaBody, options);
     await body({ cwd, url: database.url, sql });
   } finally {
@@ -724,7 +715,7 @@ function writeProject(
       '  schema: "./schema.ts",',
       '  migrations: "./migrations",',
       `  database: ${database},`,
-      `  roles: { migration: ${JSON.stringify(migration)}, app: ${JSON.stringify(roles.app)}, managed: [{ name: ${JSON.stringify(roles.app)} }] },`,
+      `  roles: { migration: { name: ${JSON.stringify(migration)} }, app: { name: ${JSON.stringify(roles.app)} } },`,
       "});",
       "",
     ].join("\n"),

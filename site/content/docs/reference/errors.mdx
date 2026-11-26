@@ -394,6 +394,11 @@ Codes are in numeric order. Ranges are schema `OKM1000`, queries and capabilitie
 | <a id="okm1896" />[`OKM1896`](#okm1896) | `invalid` | A check, picklist, domain check, generated column, or btree index expression is reprinted on a temporary table. This connection is read-only, or the role cannot create temporary tables. | `docs/errors/OKM1896.md` |
 | <a id="okm1897" />[`OKM1897`](#okm1897) | `invalid` | okm push would drop a column or constraint that okm pull listed under not pulled yet. | `docs/errors/OKM1897.md` |
 | <a id="okm1898" />[`OKM1898`](#okm1898) | `invalid` | okm push would drop columns and tables that hold rows. | `docs/errors/OKM1898.md` |
+| <a id="okm1910" />[`OKM1910`](#okm1910) | `invalid` | roles is missing, still uses a name string, names an unknown role, or a grant says all. | `docs/errors/OKM1910.md` |
+| <a id="okm1911" />[`OKM1911`](#okm1911) | `invalid` | A role named by the config does not exist yet. | `docs/errors/OKM1911.md` |
+| <a id="okm1912" />[`OKM1912`](#okm1912) | `invalid` | The password command refused a weak password, an unencoded URL character, a secret file, or a server that will not take a client SCRAM verifier. | `docs/errors/OKM1912.md` |
+| <a id="okm1913" />[`OKM1913`](#okm1913) | `invalid` | A REVOKE left the privilege in place because another role granted it. PostgreSQL treats that revoke as a no-op. | `docs/errors/OKM1913.md` |
+| <a id="okm1914" />[`OKM1914`](#okm1914) | `invalid` | A managed role is a superuser, has CREATEROLE, has BYPASSRLS without a reason, owns a table, or membership options were asked on PostgreSQL 15. A CREATEROLE role that is not a superuser cannot alter a role it did not create. | `docs/errors/OKM1914.md` |
 | <a id="okm1899" />[`OKM1899`](#okm1899) | `invalid` | A migration ledger name already belongs to another table. | `docs/errors/OKM1899.md` |
 | <a id="okm1900" />[`OKM1900`](#okm1900) | `invalid` | Two views list each other in tables, so neither can be created first. | `docs/errors/OKM1900.md` |
 | <a id="okm1901" />[`OKM1901`](#okm1901) | `invalid` | A view column declared not null came back NULL. PostgreSQL does not store view nullability, so the declaration is checked when the row is read. | `docs/errors/OKM1901.md` |

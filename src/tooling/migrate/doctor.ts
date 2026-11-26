@@ -18,6 +18,9 @@ import { OkmError } from "../../contracts/error.js";
 import { tagOutcome } from "../cli/outcome.js";
 import type { CatalogObject } from "../../contracts/catalog/types.js";
 import { assertRoleHealth } from "../../dialects/pg/role/check.js";
+import { migrationUrl } from "./purpose-url.js";
+import { detectPooler, poolerMessage } from "./pooler.js";
+import { probeConcurrent } from "./pooler-probe.js";
 import { assertSupported, formatEmulation } from "../capabilities/check.js";
 import { POSTGRES_FEATURES } from "../capabilities/postgres.js";
 import { featuresUsed } from "../capabilities/used.js";
@@ -83,9 +86,15 @@ export async function doctorProject(
   if (opened.config.roles !== undefined) {
     const target = selectTarget(opened.config, flags?.target);
     assertTargetPolicy(target, "check", flags?.allowProtected ?? false);
-    const pool = open({ url: driverUrl(target.url), max: 1 });
+    const url = migrationUrl(opened.config, target);
+    let pooled = detectPooler({ url });
+    if (!pooled.pooled) pooled = await probeConcurrent(url);
+    if (pooled.pooled) notice += `${poolerMessage(pooled)}\n`;
+    const pool = open({ url: driverUrl(url), max: 1 });
     try {
       await assertRoleHealth(pool, opened.config.roles, objects);
+      const { roleDoctorNotes } = await import("./roles-cmd.js");
+      notice += await roleDoctorNotes(pool, opened.config.roles.app.name);
     } catch (error) {
       throw sessionFailure(error) ?? error;
     } finally {

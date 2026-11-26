@@ -6,10 +6,18 @@
  */
 
 import { OkmError } from "../../contracts/error.js";
-import { tagOutcome } from "../cli/outcome.js";
 import type { MigrateConfig, TargetInput } from "./config.js";
 import { hostDbFingerprint, postgresEndpoint } from "./fingerprint.js";
 import { protectedStorePath, readProtectedStore } from "./protected-store.js";
+import {
+  assertDirectConnection,
+  poolerSignal,
+  probePooler,
+  type PoolerSignal,
+  type StableBackendOptions,
+} from "./pooler.js";
+
+export { assertDirectConnection, poolerSignal, type PoolerSignal, type StableBackendOptions };
 
 /** An operation the policy table allows or blocks. */
 export type PolicyOperation =
@@ -268,69 +276,10 @@ export function assertTargetAlias(targets: readonly TargetRecord[]): void {
 }
 
 /**
- * Refuses a known pooler URL.
- *
- * Apply needs one session for the advisory lock. A transaction-mode pooler
- * does not keep that session. `--allow-pooler` is the override.
- *
- * @param url - Target URL
- * @param allowPooler - The invocation opted in
- */
-export function assertDirectConnection(url: string, allowPooler: boolean): void {
-  if (allowPooler) return;
-  if (poolerSignal(url) !== undefined) {
-    throw tagOutcome(
-      new OkmError(
-        "invalid",
-        `Refusing pooler host ${endpointOf(url).host}. Apply needs a direct connection.`,
-        { fix: { summary: "Use a direct connection." } },
-      ),
-      "unreachable",
-    );
-  }
-}
-
-/** Which part of a target URL looks like a pooler. */
-export type PoolerSignal = "host" | "port" | "parameter";
-
-/**
- * Reads the URL patterns {@link assertDirectConnection} refuses.
- *
- * Only the URL is read. No connection is made, and the result names the part,
- * not its value.
- *
- * @param url - Target URL
- * @returns The first matching part, or `undefined` for a direct-looking URL
- */
-export function poolerSignal(url: string): PoolerSignal | undefined {
-  const endpoint = endpointOf(url);
-  const host = endpoint.host;
-  if (host.includes("pooler") || host.includes("pgbouncer") || host.includes("-pooler")) {
-    return "host";
-  }
-  if (endpoint.port === "6543" || endpoint.port === "6432") return "port";
-  if (new URL(url).searchParams.get("pgbouncer") === "true") return "parameter";
-  return undefined;
-}
-
-/** Options for {@link assertStableBackend}. */
-export type StableBackendOptions = {
-  /**
-   * Holds another backend between pid reads so a LIFO transaction-mode
-   * pooler cannot hand the next read the same server. Resolves to a release
-   * function that ends the hold.
-   */
-  readonly holdBackend?: () => Promise<() => Promise<void>>;
-};
-
-/**
  * Refuses a session whose backend pid changes across eight statements.
  *
- * The reads are separate round trips and are not wrapped in a transaction.
- * A transaction-mode pooler can hand back a different backend. Two reads
- * miss a default PgBouncer with `server_round_robin=0` (LIFO); eight reads
- * plus an optional hold between them catch that case. A direct session
- * keeps one pid. `--allow-pooler` skips the probe.
+ * The signal list lives in {@link probePooler}. This wrapper has no URL of
+ * its own, so it probes a direct-looking placeholder and only the pid can fire.
  *
  * @param readPid - Reads `pg_backend_pid()` on the session under test
  * @param allowPooler - The invocation opted in
@@ -341,34 +290,7 @@ export async function assertStableBackend(
   allowPooler: boolean,
   options?: StableBackendOptions,
 ): Promise<void> {
-  if (allowPooler) return;
-  const seen = new Set<string>();
-  let first = "";
-  let release: (() => Promise<void>) | undefined;
-  try {
-    for (let i = 0; i < 8; i += 1) {
-      const pid = await readPid();
-      if (first.length === 0) first = pid;
-      seen.add(pid);
-      if (seen.size >= 2) {
-        const second = [...seen].find((value) => value !== first) ?? pid;
-        throw new OkmError(
-          "OKM1854",
-          `The backend pid changed from ${first} to ${second}. A pooler is handing out a new session between statements.`,
-          { fix: { summary: "Use a direct connection." } },
-        );
-      }
-      if (release !== undefined) {
-        await release();
-        release = undefined;
-      }
-      if (i < 7 && options?.holdBackend !== undefined) {
-        release = await options.holdBackend();
-      }
-    }
-  } finally {
-    if (release !== undefined) await release().catch(() => undefined);
-  }
+  await probePooler("postgres://localhost/okm", readPid, allowPooler, options);
 }
 
 /**

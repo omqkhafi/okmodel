@@ -40,6 +40,8 @@ import { assertValidation, writeWouldValidate } from "../../runtime/validate/pla
 import { schemaDeclarations, type DeclaredRename } from "../../dialects/pg/declarations.js";
 import { emitRowTypes, jsonColumnTypes } from "../../dialects/pg/emit.js";
 import { stampOwnership, tableOwner } from "../../dialects/pg/owner.js";
+import { grantsNeedRoles } from "../../dialects/pg/role/grants.js";
+import { readGrants } from "../../dialects/pg/role/grant-slot.js";
 import { attachRoles, type RolesInput, type TableExposure } from "../../dialects/pg/role/index.js";
 import type { BuiltSchema } from "../../dialects/pg/schema.js";
 import type { AnyTable } from "../../dialects/pg/table.js";
@@ -920,8 +922,20 @@ function withRoles(built: Built, config: MigrateConfig, cwd: string): Built {
     externalNamespaceMap(loadSnapshots(cwd, config)),
   );
   const roles = config.roles;
+  const grants = tableGrantMap(built);
+  if ((grants.size > 0 || catalogRememberedGrants(placed)) && roles === undefined) {
+    throw grantsNeedRoles("the schema");
+  }
   const catalog =
-    roles === undefined ? placed : attachRoles(placed, roles, exposureFor(built, roles));
+    roles === undefined
+      ? placed
+      : attachRoles(
+          placed,
+          roles,
+          exposureFor(built, roles),
+          grants,
+          postgresFloor(built.requires?.postgres),
+        );
   if (catalog === built.catalog) return built;
   return { ...built, catalog };
 }
@@ -945,13 +959,44 @@ function ownershipMarks(built: Built): ReadonlyMap<string, "external" | "ignored
   return marks;
 }
 
-function exposureFor(built: Built, roles: RolesInput): readonly TableExposure[] | undefined {
-  if (
-    roles.reporting === undefined &&
-    (roles.columns === undefined || roles.columns.length === 0)
-  ) {
-    return undefined;
+function postgresFloor(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const match = /(\d+)/.exec(value);
+  if (match === null) return undefined;
+  const major = Number(match[1]);
+  return Number.isInteger(major) ? major : undefined;
+}
+
+function catalogRememberedGrants(source: Catalog): boolean {
+  for (const object of source.objects) {
+    if (
+      object.kind !== "view" &&
+      object.kind !== "materializedView" &&
+      object.kind !== "function"
+    ) {
+      continue;
+    }
+    const namespace = object.identity.namespace;
+    const schema = namespace.form === "static" ? namespace.name : undefined;
+    if (schema === undefined) continue;
+    if (readGrants(object.kind, schema, object.identity.name) !== undefined) return true;
   }
+  return false;
+}
+
+function tableGrantMap(built: Built): ReadonlyMap<string, unknown> {
+  const map = new Map<string, unknown>();
+  const models = built.model as Readonly<Record<string, { readonly sql: string }>>;
+  for (const table of built.tables) {
+    const options = (table as { readonly options?: { readonly grants?: unknown } }).options;
+    if (options?.grants === undefined) continue;
+    map.set(models[table.name]?.sql ?? table.name, options.grants);
+  }
+  return map;
+}
+
+function exposureFor(built: Built, roles: RolesInput): readonly TableExposure[] | undefined {
+  if (roles.reporting === undefined) return undefined;
   return Object.values(built.model).map((model) => ({
     table: model.sql,
     columns: model.columns.map((column) => ({

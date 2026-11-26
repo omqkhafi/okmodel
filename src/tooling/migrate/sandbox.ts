@@ -224,7 +224,7 @@ export async function proveCheckSnapshot(
       sql,
       connection,
       provided,
-      config.roles?.migration,
+      config.roles === undefined ? undefined : config.roles.migration.name,
       {
         id: "snapshot",
         catalog: head.catalog,
@@ -325,7 +325,11 @@ async function inCheckTransaction<T>(
     await reserved.unsafe(`set local search_path to ${quoteIdent(scratch)}`);
     await setLocalTimeout(reserved, "lock_timeout", config.timeouts?.lock);
     await setLocalTimeout(reserved, "statement_timeout", config.timeouts?.statement);
-    await ownScratch(reserved, scratch, config.roles?.migration);
+    await ownScratch(
+      reserved,
+      scratch,
+      config.roles === undefined ? undefined : config.roles.migration.name,
+    );
     await ensureMigrationTables((text) => reserved.unsafe(text));
     value = await run(reserved);
     const after = await readXid(reserved).catch((error: unknown) => {
@@ -479,7 +483,7 @@ async function replayMigration(
     sql,
     connection,
     scratch,
-    config.roles?.migration,
+    config.roles === undefined ? undefined : config.roles.migration.name,
     { ...migration, steps: retargetSteps(migration.steps, scratch, config.namespace ?? "public") },
     session,
     skips,

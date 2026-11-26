@@ -306,6 +306,13 @@ export type TableOptions<TColumns> = {
   readonly validate?: unknown;
   readonly validation?: unknown;
   /**
+   * Privileges for declared roles. Keys are `roles` keys.
+   *
+   * `"read"` is select. `"write"` is select, insert, update, and delete.
+   * An object with this option replaces the baseline for managed roles.
+   */
+  readonly grants?: Readonly<Record<string, unknown>>;
+  /**
    * Traits added to this table.
    *
    * Schema default traits are added as well, unless `omitDefaults` is set.
@@ -505,6 +512,7 @@ export type UpdateFrom<TColumns, TKey extends string = never> = {
 const TABLE_KNOWN = new Set([
   "checks",
   "comment",
+  "grants",
   "indexes",
   "omitDefaults",
   "presets",
@@ -528,7 +536,7 @@ const TABLE_KNOWN = new Set([
  */
 const TABLE_LATER: Readonly<Record<string, string>> = {
   computed: "Declare it in schema({ computed }).",
-  policies: "It arrives later.",
+  policies: "arrives later",
 };
 
 /**

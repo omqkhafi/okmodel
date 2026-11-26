@@ -1142,14 +1142,11 @@ if (url === undefined || url.length === 0) throw new Error("DATABASE_URL is not 
 export default defineConfig({
   schema: "./schema.ts",
   database: url,
-  // Apply uses the migration role. The app uses the app role.
-  // okm_app is external here: create it first, or list it in managed.
+  // The config holds names. Passwords live in the URL variables.
   roles: {
-    migration: "okm_migrate",
-    app: "okm_app",
-    reporting: "okm_report",
-    managed: [{ name: "okm_migrate" }, { name: "okm_report", login: true }],
-    columns: [{ role: "okm_report", on: "tasks", select: ["title"] }],
+    migration: { name: "okm_migrate", env: "MIGRATE_DATABASE_URL" },
+    app: { name: "okm_app", env: "APP_DATABASE_URL" },
+    reporting: { name: "okm_report", env: "REPORTING_DATABASE_URL" },
   },
 });
 ```

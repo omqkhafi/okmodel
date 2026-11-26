@@ -53,13 +53,22 @@ postgresTest(
     const declared = attachRoles(
       built.catalog,
       {
-        migration: mig,
-        app,
-        reporting: report,
-        managed: [{ name: mig }],
-        columns: [{ role: reader, on: "people", select: ["email"] }],
+        migration: { name: mig },
+        app: { name: app },
+        reporting: { name: report },
+        reader: { name: reader },
       },
       exposure,
+      new Map([
+        [
+          "people",
+          {
+            app: "write",
+            reader: { select: ["email"] },
+            reporting: { select: ["email"] },
+          },
+        ],
+      ]),
     );
     try {
       await sql.unsafe(`create role ${quoteIdent(mig)} nosuperuser nocreatedb nocreaterole`);
@@ -146,10 +155,10 @@ postgresTest(
           await assertRoleHealth(
             pool,
             {
-              migration: mig,
-              app,
-              reporting: report,
-              columns: [{ role: reader, on: "people", select: ["email"] }],
+              migration: { name: mig },
+              app: { name: app },
+              reporting: { name: report },
+              reader: { name: reader },
             },
             declared.objects,
           );
@@ -205,7 +214,8 @@ function project(
     join(cwd, "schema.ts"),
     [
       `import { schema, table, t } from ${source};`,
-      `export const app = schema({ tables: [table("people", { email: t.text(), secret: t.text().hidden() })] });`,
+      `const people = table("people", { email: t.text(), secret: t.text().hidden() }, { grants: { app: "write", reporting: { select: ["email"] }, reader: { select: ["email"] } } });`,
+      "export const app = schema({ tables: [people] });",
       "",
     ].join("\n"),
   );
@@ -217,10 +227,10 @@ function project(
       '  schema: "./schema.ts",',
       `  database: ${JSON.stringify(url)},`,
       "  roles: {",
-      `    migration: ${JSON.stringify(roles.migration)},`,
-      `    app: ${JSON.stringify(roles.app)},`,
-      `    reporting: ${JSON.stringify(roles.reporting)},`,
-      `    columns: [{ role: ${JSON.stringify(roles.reader)}, on: "people", select: ["email"] }],`,
+      `    migration: { name: ${JSON.stringify(roles.migration)} },`,
+      `    app: { name: ${JSON.stringify(roles.app)} },`,
+      `    reporting: { name: ${JSON.stringify(roles.reporting)} },`,
+      `    reader: { name: ${JSON.stringify(roles.reader)} },`,
       "  },",
       "});",
       "",

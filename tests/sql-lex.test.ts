@@ -342,7 +342,7 @@ test("reference-app migrations keep their step counts", () => {
     counts[file] = parsePlan(readFileSync(join(directory, file), "utf8")).steps.length;
   }
   expect(counts).toEqual({
-    "0001_init.sql": 58,
+    "0001_init.sql": 50,
     "0002_public_id.sql": 7,
     "0003_drop_share_token.sql": 1,
     "0004_sql_names.sql": 8,

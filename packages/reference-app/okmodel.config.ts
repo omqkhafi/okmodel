@@ -14,8 +14,7 @@ export default defineConfig({
   targets,
   backfill: { batchSize: 500 },
   roles: {
-    migration: "okm",
-    app: "ref_app",
-    managed: [{ name: "ref_app", login: true }],
+    migration: { name: "okm", env: "MIGRATE_DATABASE_URL" },
+    app: { name: "ref_app", env: "APP_DATABASE_URL" },
   },
 });

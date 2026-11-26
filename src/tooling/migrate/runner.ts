@@ -97,10 +97,13 @@ export type TargetRun = {
   /** `lock_timeout` for one attempt. */
   readonly lockTimeoutMs: number;
   /**
-   * Backend pid of a connection that passed the direct check. Unset behind
-   * `--allow-pooler`: a step outside a transaction is refused there.
+   * Backend pid of a connection proven direct. Unset when a pooler signal
+   * matched or the pid probe did not prove a direct session. A step outside
+   * a transaction is refused there.
    */
   readonly directPid?: string;
+  /** Which pooler signal blocked the session setting. No URL and no secret. */
+  readonly poolerReason?: string;
   /** Names who holds a lock a step gave up on. Unset when the connection is not direct. */
   readonly observer?: LockObserver;
   readonly statementTimeoutMs: number;
@@ -492,7 +495,7 @@ async function runCommitted(
   session: RunSession,
   lock: LockRun,
 ): Promise<void> {
-  if (run.directPid === undefined) throw outsideTransaction(unit, item.index);
+  if (run.directPid === undefined) throw outsideTransaction(unit, item.index, run.poolerReason);
   const step = committedOf(unit, item);
   await resumeCommittedStep(
     step,
@@ -557,7 +560,9 @@ async function executePlanStep(
   if (created === undefined) {
     const ensure = ensureExtensionSchemaSql(item.step.sql, run.schema ?? "public");
     if (ensure !== undefined) await connection.execute(ensure);
+    assertPublicGrant(item.step.sql, run.policy.allowProtected === true);
     await connection.execute(item.step.sql);
+    await assertRevokeLanded(connection, item.step.sql);
     await rememberExtensionSchema(
       connection,
       item.step.sql,
@@ -851,10 +856,15 @@ export async function assertSchemaUsageLanded(
   });
 }
 
-function outsideTransaction(unit: RunnableUnit, index: number): OkmError {
+function outsideTransaction(
+  unit: RunnableUnit,
+  index: number,
+  reason: string | undefined,
+): OkmError {
+  const which = reason ?? "the connection is not proven direct";
   return new OkmError(
     "OKM1854",
-    `Migration ${unit.migrationId} step ${String(index + 1)} runs outside a transaction, and with --allow-pooler I cannot give it a lock timeout that stays on one connection. I stopped before running it.`,
+    `Migration ${unit.migrationId} step ${String(index + 1)} runs outside a transaction. ${which}. A session setting would not stay on one connection. I stopped before running it. Use a direct URL for migrations.`,
     { fix: { summary: "Use a direct connection, without --allow-pooler, for this migration." } },
   );
 }
@@ -986,6 +996,85 @@ function assertUnitPolicy(policy: RunPolicy, unit: RunnableUnit): void {
     operation,
     policy.allowProtected === true,
   );
+}
+
+function assertPublicGrant(sql: string, allowProtected: boolean): void {
+  if (allowProtected) return;
+  if (!/\b(grant|revoke)\b/i.test(sql)) return;
+  if (!/\b(to|from)\s+public\b/i.test(sql)) return;
+  // CONNECT on a table is not a privilege. The server rejects it, and that
+  // error text contains CONNECT, which must stay a database error.
+  if (/\bgrant\s+connect\s+on\s+table\b/i.test(sql)) return;
+  if (/\brevoke\b/i.test(sql) && /\bokm_refresh_[a-z0-9_]+"?\s*\(/i.test(sql)) return;
+  throw new OkmError(
+    "OKM1850",
+    "This statement grants or revokes PUBLIC. It needs --allow-protected.",
+    { fix: { summary: "Pass --allow-protected, or remove the public grant." } },
+  );
+}
+
+async function assertRevokeLanded(connection: DriverConnection, sql: string): Promise<void> {
+  const parsed = parseRevoke(sql);
+  if (parsed === undefined || parsed.role === "public") return;
+  const left =
+    parsed.kind === "schema"
+      ? await connection.execute(
+          `select o.rolname from pg_namespace n
+           cross join lateral aclexplode(n.nspacl) a
+           join pg_roles g on g.oid = a.grantee
+           join pg_roles o on o.oid = a.grantor
+           where n.nspname = $1 and g.rolname = $2 and a.privilege_type = $3`,
+          [parsed.name, parsed.role, parsed.privilege],
+        )
+      : await connection.execute(
+          `select o.rolname from pg_class c
+           join pg_namespace n on n.oid = c.relnamespace
+           cross join lateral aclexplode(c.relacl) a
+           join pg_roles g on g.oid = a.grantee
+           join pg_roles o on o.oid = a.grantor
+           where n.nspname = $1 and c.relname = $2 and g.rolname = $3 and a.privilege_type = $4`,
+          [parsed.schema, parsed.name, parsed.role, parsed.privilege],
+        );
+  const grantor = left.rows[0]?.[0];
+  if (grantor === undefined || grantor === null) return;
+  throw new OkmError(
+    "OKM1913",
+    `REVOKE of ${parsed.privilege} on ${parsed.name} from ${parsed.role} left the privilege in place. The grantor is ${String(grantor)}. Run as that grantor, or use GRANTED BY with the needed membership.`,
+    {
+      kind: "forbidden",
+      fix: {
+        summary:
+          "Run the revoke as the grantor, or GRANT that role to the migration role with ADMIN OPTION and revoke GRANTED BY the grantor.",
+      },
+    },
+  );
+}
+
+function parseRevoke(sql: string):
+  | {
+      readonly privilege: string;
+      readonly kind: string;
+      readonly schema: string;
+      readonly name: string;
+      readonly role: string;
+    }
+  | undefined {
+  const text = sql.trim();
+  if (!/^revoke\s/i.test(text)) return undefined;
+  const match =
+    /^revoke\s+([a-z_]+)(?:\s*\([^)]*\))?\s+on\s+(table|sequence|function|schema)\s+(.+?)\s+from\s+("[^"]+"|[a-z_][\w$]*)$/i.exec(
+      text,
+    );
+  if (match === null) return undefined;
+  const privilege = (match[1] ?? "").toUpperCase();
+  const kind = (match[2] ?? "").toLowerCase();
+  const target = match[3] ?? "";
+  const role = unquote(match[4] ?? "");
+  const names = target.split(".").map((part) => unquote(part));
+  const name = names[names.length - 1] ?? "";
+  const schema = names.length > 1 ? (names[0] ?? "public") : "public";
+  if (name.length === 0 || role.length === 0) return undefined;
+  return { privilege, kind, schema, name, role };
 }
 
 function delay(ms: number): Promise<void> {

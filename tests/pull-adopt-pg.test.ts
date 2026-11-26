@@ -296,8 +296,8 @@ postgresTest(
       await cli(cwd, ["pull"]);
       const source = readFileSync(join(cwd, "tables", "tasks.ts"), "utf8");
       expect(source).not.toContain("unique() { return this; }");
-      expect(source).toContain(
-        "index(columns.title).where(sql`(title <> ''::text)`).name(\"open_title\")",
+      expect(source).toMatch(
+        /index\(columns\.title\)\s*\.where\(sql`\(title <> ''::text\)`\)\s*\.name\("open_title"\)/,
       );
       expect(source).not.toContain("predicate:");
       expect(source).toContain('index(columns.title, sql`lower(title)`).name("folded_title")');

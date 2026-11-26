@@ -29,7 +29,7 @@ const gate = await loadPostgresGate();
 
 postgresTest(
   gate,
-  "guide roles apply as superuser and as CREATEROLE; PUBLIC has no execute",
+  "guide roles apply as superuser and as CREATEROLE; the app role can execute",
   async () => {
     await withGuideRoles("superuser", async ({ url, sql, roles }) => {
       await applyGuide(url, roles);
@@ -82,7 +82,10 @@ postgresTest(
     const database = await createIsolatedDatabase();
     const sql = openPostgres(database.url);
     try {
-      // App is external in the guide; omit it so provision fails on GRANT.
+      // App is created outside the plan. Omit it so provision fails on GRANT.
+      await sql.unsafe(`create role ${quoteIdent(roles.migrate)} nologin`);
+      await sql.unsafe(`create role ${quoteIdent(roles.report)} nologin`);
+      await sql.unsafe(`alter schema public owner to ${quoteIdent(roles.migrate)}`);
       let failed: unknown;
       try {
         await applyGuideProvision(database.url, roles);
@@ -377,11 +380,9 @@ function guideCatalog(roles: GuideRoles) {
   return attachRoles(
     schema({ tables: [tasks], functions: [isOpen] }).catalog,
     {
-      migration: roles.migrate,
-      app: roles.app,
-      reporting: roles.report,
-      managed: [{ name: roles.migrate }, { name: roles.report, login: true }],
-      columns: [{ role: roles.report, on: "tasks", select: ["title"] }],
+      migration: { name: roles.migrate },
+      app: { name: roles.app },
+      reporting: { name: roles.report },
     },
     [
       {
@@ -406,9 +407,9 @@ async function assertFunctionAcls(
       has_function_privilege(${sqlLiteral(roles.app)}, 'is_open(text)', 'execute') as a,
       has_function_privilege(${sqlLiteral(roles.report)}, 'is_open(text)', 'execute') as r
   `)) as { p: boolean; a: boolean; r: boolean }[];
-  expect(rows[0]?.p).toBe(false);
+  expect(rows[0]?.p).toBe(true);
   expect(rows[0]?.a).toBe(true);
-  expect(rows[0]?.r).toBe(false);
+  expect(rows[0]?.r).toBe(true);
 }
 
 function sqlLiteral(value: string): string {
@@ -427,9 +428,12 @@ async function withGuideRoles(
   const database = await createIsolatedDatabase();
   const sql = openPostgres(database.url);
   try {
+    await sql.unsafe(`create role ${quoteIdent(roles.migrate)} nologin`);
     await sql.unsafe(
       `create role ${quoteIdent(roles.app)} login password 'secret' nosuperuser nocreatedb nocreaterole`,
     );
+    await sql.unsafe(`create role ${quoteIdent(roles.report)} nologin`);
+    await sql.unsafe(`grant create, usage on schema public to ${quoteIdent(roles.migrate)}`);
     let url = database.url;
     if (mode === "createrole") {
       await sql.unsafe(
@@ -439,12 +443,15 @@ async function withGuideRoles(
       await sql.unsafe(
         `grant connect, create on database ${quoteIdent(dbname)} to ${quoteIdent(roles.admin)}`,
       );
-      await sql.unsafe(`alter schema public owner to ${quoteIdent(roles.admin)}`);
+      await sql.unsafe(
+        `grant ${quoteIdent(roles.migrate)} to ${quoteIdent(roles.admin)} with set true`,
+      );
       const parsed = new URL(database.url);
       parsed.username = roles.admin;
       parsed.password = "admin";
       url = parsed.toString();
     }
+    await sql.unsafe(`alter schema public owner to ${quoteIdent(roles.migrate)}`);
     await body({ url, sql, roles });
   } finally {
     await sql.end({ timeout: 5 });

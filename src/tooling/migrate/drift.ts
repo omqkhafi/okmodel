@@ -35,6 +35,7 @@ import {
   type ReprintType,
 } from "../../dialects/pg/introspect.js";
 import { sealViews } from "../../dialects/pg/view/scratch.js";
+import { normalizeRoles } from "../../dialects/pg/role/config.js";
 import type { RolesInput } from "../../dialects/pg/role/index.js";
 import { extensionSchemaPath } from "./extensions.js";
 import { planMigration } from "./plan.js";
@@ -829,7 +830,7 @@ export function managedRoleOptions(roles: RolesInput | undefined): IntrospectOpt
     ? undefined
     : {
         managedRoles: names,
-        ...(roles?.reporting !== undefined ? { reportingRole: roles.reporting } : {}),
+        ...(roles?.reporting !== undefined ? { reportingRole: roles.reporting.name } : {}),
       };
 }
 
@@ -882,8 +883,5 @@ function metaReg(schema: string): string {
 
 function managedRoleNames(roles: RolesInput | undefined): readonly string[] | undefined {
   if (roles === undefined) return undefined;
-  const names = new Set<string>([roles.migration, roles.app]);
-  if (roles.reporting !== undefined) names.add(roles.reporting);
-  for (const role of roles.managed ?? []) names.add(role.name);
-  return [...names];
+  return normalizeRoles(roles).map((entry) => entry.name);
 }

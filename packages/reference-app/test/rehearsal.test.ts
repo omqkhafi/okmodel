@@ -13,7 +13,7 @@ import { expect } from "bun:test";
 import { loadPostgresGate, postgresTest } from "../../harness/src/postgres-test.js";
 import { createIsolatedDatabase, openPostgres } from "../../harness/src/postgres.js";
 import { CHECK_REPLAY_LIMIT } from "../../../src/tooling/migrate/check.js";
-import { okm, okmOk, projectAt, removeProject, schemaChecked } from "./support.js";
+import { ensureAppRole, okm, okmOk, projectAt, removeProject, schemaChecked } from "./support.js";
 
 const gate = await loadPostgresGate();
 
@@ -97,6 +97,7 @@ async function withOriginal(body: (url: string) => Promise<void>): Promise<void>
   const original = await createIsolatedDatabase();
   const project = projectAt(1);
   try {
+    await ensureAppRole(original.url);
     expect(
       await okmOk(["migrate", "apply", "--target", "dev"], { DATABASE_URL: original.url }, project),
     ).toContain("applied provisioned@0001_init");

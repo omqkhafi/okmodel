@@ -23,6 +23,7 @@ import type { Names } from "../casing.js";
 import { ColumnBuilder, type ColumnFlags, type ColumnRowOf } from "../column.js";
 import type { Expr } from "../expr/index.js";
 import type { SchemaHook } from "../model.js";
+import { beginGrantBatch, rememberGrants } from "../role/grant-slot.js";
 import type { IndexCall, SqlText } from "../table.js";
 import { viewClient, type ViewInstall } from "./client.js";
 import { compileView, type CapturedBody, type CompiledView, type ViewTenant } from "./compile.js";
@@ -45,6 +46,8 @@ type CommonOptions<Sources extends readonly Named[]> = {
   readonly schema?: string;
   /** Opts the view out of tenancy. The reason is not stored in the catalog. */
   readonly tenancy?: unknown;
+  /** Privileges keyed by `roles` keys. A materialized view accepts read or maintain. */
+  readonly grants?: Readonly<Record<string, unknown>>;
   /** Comment on the view. Absent means unmanaged. */
   readonly comment?: string;
   /** Comments on output columns, by output name. Absent means unmanaged. */
@@ -404,6 +407,13 @@ function declare<const Sources extends readonly Named[]>(
     ): readonly CatalogObject[] {
       rememberNames(box, names);
       assertCycle(peers);
+      if (typeof built === "object" && built !== null) beginGrantBatch(built);
+      rememberGrants(
+        kind === "materialized" ? "materializedView" : "view",
+        options.schema ?? "public",
+        name,
+        options.grants,
+      );
       const compiled = render(names);
       const namespace = staticNamespace(options.schema ?? "public");
       const provenance: Provenance = { origin: "file", name };

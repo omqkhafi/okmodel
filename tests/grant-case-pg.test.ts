@@ -40,6 +40,9 @@ postgresTest(
       await sql.unsafe(
         `create role ${quoteIdent(mig)} nosuperuser nobypassrls nocreatedb createrole`,
       );
+      await sql.unsafe(`create role ${quoteIdent(app)} nologin`);
+      await sql.unsafe(`create role ${quoteIdent(report)} nologin`);
+      await sql.unsafe(`create role ${quoteIdent(reader)} nologin`);
       await sql.unsafe(`grant ${quoteIdent(mig)} to ${SCHEMA_OWNER}`);
       await sql.unsafe(`alter schema public owner to ${quoteIdent(mig)}`);
       writeProject(cwd, url, "rls", { mig, app, report, reader });
@@ -101,7 +104,10 @@ function writeProject(
           '  label: t.text().sqlName("Mixed Case"),',
           "  note_body: t.text(),",
           "  secret: t.text().hidden(),",
-          "});",
+          "}, { grants: {",
+          '  reporting: { select: ["tenantId", "Mixed Case", "note_body"] },',
+          '  reader: { select: ["tenantId", "Mixed Case", "note_body"], update: ["tenantId", "note_body"] },',
+          "} });",
           "export const app = schema({",
           '  tenancy: rlsTenancy({ key: "tenantId", type: "uuid" }),',
           "  tables: [rows],",
@@ -127,21 +133,10 @@ function writeProject(
       ? []
       : [
           "  roles: {",
-          `    migration: ${JSON.stringify(roles.mig)},`,
-          `    app: ${JSON.stringify(roles.app)},`,
-          `    reporting: ${JSON.stringify(roles.report)},`,
-          "    managed: [",
-          `      { name: ${JSON.stringify(roles.mig)} },`,
-          `      { name: ${JSON.stringify(roles.app)}, login: true },`,
-          `      { name: ${JSON.stringify(roles.report)}, login: true },`,
-          `      { name: ${JSON.stringify(roles.reader)}, login: true },`,
-          "    ],",
-          "    columns: [{",
-          `      role: ${JSON.stringify(roles.reader)},`,
-          '      on: "rows",',
-          '      select: ["tenantId", "Mixed Case", "note_body"],',
-          '      update: ["tenantId", "note_body"],',
-          "    }],",
+          `    migration: { name: ${JSON.stringify(roles.mig)} },`,
+          `    app: { name: ${JSON.stringify(roles.app)} },`,
+          `    reporting: { name: ${JSON.stringify(roles.report)} },`,
+          `    reader: { name: ${JSON.stringify(roles.reader)} },`,
           "  },",
         ];
   writeFileSync(

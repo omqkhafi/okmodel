@@ -230,7 +230,7 @@ postgresTest(
         const error = await replayCheckHistory(
           url,
           schemaName(),
-          { schema: "schema.ts", roles: { migration: role, app: role } },
+          { schema: "schema.ts", roles: { migration: { name: role }, app: { name: role } } },
           false,
           [migration("alter type public.citext set schema public")],
         ).then(

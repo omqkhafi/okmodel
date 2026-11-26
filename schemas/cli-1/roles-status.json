@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://okmodel.dev/schemas/cli-1/roles-status.json",
+  "title": "okm roles status data",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "roles",
+    "failed"
+  ],
+  "properties": {
+    "failed": {
+      "type": "boolean"
+    },
+    "roles": {
+      "type": "array"
+    }
+  }
+}

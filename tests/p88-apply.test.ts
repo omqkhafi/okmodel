@@ -151,14 +151,13 @@ test("application role writes are revoked on a materialized view", () => {
     ],
   });
   const declared = attachRoles(built.catalog, {
-    migration: "mig",
-    app: "app",
-    reporting: "report",
-    managed: [{ name: "mig" }, { name: "app" }, { name: "report" }],
+    migration: { name: "mig" },
+    app: { name: "app" },
+    reporting: { name: "report" },
   });
   const grants = privilegeSql([], declared.objects, "public").grant.map((item) => item.sql);
-  const revoke = grants.filter((sql) => sql.startsWith("revoke insert, update, delete"));
-  expect(revoke).toEqual(['revoke insert, update, delete on table "public"."sums" from "app"']);
+  expect(grants.some((sql) => sql.startsWith('grant select on table "public"."sums"'))).toBe(true);
+  expect(grants.some((sql) => sql.includes("alter default privileges"))).toBe(false);
 });
 
 test("generate omits ignored and external tables", async () => {

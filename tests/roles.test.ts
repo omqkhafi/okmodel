@@ -30,37 +30,31 @@ test("the startup hash leaves roles out, and a catalog without roles hashes as b
   expect(startupHash(declared)).toBe(before);
   expect(startupCatalog(declared)).toBe(declared);
   const withRoles = attachRoles(declared, {
-    migration: "mig",
-    app: "app",
-    managed: [{ name: "app" }],
+    migration: { name: "mig" },
+    app: { name: "app" },
   });
   expect(catalogHash(withRoles)).not.toBe(before);
   expect(startupHash(withRoles)).toBe(before);
 });
 
-test("a managed role is created without IF NOT EXISTS and is never dropped", () => {
+test("grants follow the table and the plan does not create roles", () => {
   const tasks = table("tasks", { id: t.text().primaryKey() });
   const declared = schema({ tables: [tasks] });
   const after = attachRoles(declared.catalog, {
-    migration: "mig",
-    app: "app",
-    managed: [{ name: "mig" }],
+    migration: { name: "mig" },
+    app: { name: "app" },
   });
   const plan = planMigration({ before: catalog([]), after, name: "roles" });
   const sql = plan.steps.map((step) => step.sql);
-  expect(sql.some((step) => step.startsWith('create role "mig"'))).toBe(true);
-  expect(sql.some((step) => /if not exists/i.test(step))).toBe(false);
+  expect(sql.some((step) => step.startsWith("create role"))).toBe(false);
+  expect(sql.some((step) => /alter default privileges/i.test(step))).toBe(false);
   expect(sql.some((step) => /drop role/i.test(step))).toBe(false);
   expect(sql.some((step) => /set role/i.test(step))).toBe(false);
-  expect(sql.some((step) => step.includes('alter default privileges for role "mig"'))).toBe(true);
   expect(
     sql.some((step) => step.startsWith('grant select on table "public"."tasks" to "app"')),
   ).toBe(true);
-  const createRole = sql.findIndex((step) => step.startsWith("create role"));
   const createTable = sql.findIndex((step) => step.startsWith("create table"));
   const grant = sql.findIndex((step) => step.startsWith("grant select"));
-  expect(createRole).toBeGreaterThanOrEqual(0);
-  expect(createRole).toBeLessThan(createTable);
   expect(grant).toBeGreaterThan(createTable);
 });
 

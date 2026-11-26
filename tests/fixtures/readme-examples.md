@@ -475,7 +475,7 @@ if (url === undefined || url.length === 0) throw new Error("DATABASE_URL is not 
 export default defineConfig({
   schema: "./schema.ts",
   database: url,
-  roles: { migration: "okm_migrate", app: "okm_app", managed: [{ name: "okm_migrate" }] },
+  roles: { migration: { name: "okm_migrate", env: "MIGRATE_DATABASE_URL" }, app: { name: "okm_app", env: "APP_DATABASE_URL" } },
 });
 ```
 

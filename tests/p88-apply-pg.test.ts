@@ -139,6 +139,8 @@ postgresTest(
     const cwd = project(database.url, rolesSchema(), rolesConfig(mig, app, report));
     try {
       await sql.unsafe(`create role ${quoteIdent(mig)} nosuperuser nocreatedb createrole`);
+      await sql.unsafe(`create role ${quoteIdent(app)} nologin`);
+      await sql.unsafe(`create role ${quoteIdent(report)} nologin`);
       await sql.unsafe(`alter schema public owner to ${quoteIdent(mig)}`);
       await cycle(cwd);
       const rows = await sql<{ acl: string }[]>`
@@ -183,10 +185,9 @@ postgresTest(
       const declared = attachRoles(
         schema({ tables: [table("people", { email: text() })] }).catalog,
         {
-          migration: mig,
-          app,
-          reporting: report,
-          managed: [{ name: mig }, { name: app }, { name: report }],
+          migration: { name: mig },
+          app: { name: app },
+          reporting: { name: report },
         },
       );
       const steps = planMigration({ before: catalog([]), after: declared, name: "init" }).steps;
@@ -289,11 +290,7 @@ postgresTest(gate, "a superuser satisfies the CREATEROLE preflight", async () =>
     url.password = "secret";
     const acting = open({ url: url.href, max: 1 });
     try {
-      await assertRoleHealth(
-        acting,
-        { migration: superuser, app: superuser, managed: [{ name: superuser }] },
-        [],
-      );
+      await assertRoleHealth(acting, { migration: { name: superuser }, app: { name: plain } }, []);
     } finally {
       await acting.close();
     }
@@ -431,14 +428,9 @@ export const app = schema({
 
 function rolesConfig(mig: string, app: string, report: string): string {
   return `roles: {
-    migration: ${JSON.stringify(mig)},
-    app: ${JSON.stringify(app)},
-    reporting: ${JSON.stringify(report)},
-    managed: [
-      { name: ${JSON.stringify(mig)} },
-      { name: ${JSON.stringify(app)} },
-      { name: ${JSON.stringify(report)} },
-    ],
+    migration: { name: ${JSON.stringify(mig)} },
+    app: { name: ${JSON.stringify(app)} },
+    reporting: { name: ${JSON.stringify(report)} },
   },`;
 }
 
