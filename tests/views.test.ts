@@ -425,6 +425,26 @@ test("materializedView refuses a refresh value other than concurrently", () => {
   expect(error.message).toContain('must be "concurrently"');
 });
 
+test("a view over a tenant table can select the tenant key", () => {
+  const notes = table("notes", { id: t.text().primaryKey(), title: t.text() });
+  const app = schema({
+    casing: "snake",
+    tenancy: columnTenancy({ key: "tenantId", type: "uuid" }),
+    tables: [notes],
+    views: [
+      view("open_notes", { tables: [notes] }, (q) =>
+        q.notes.find({ select: ["tenantId", "title"] }),
+      ),
+    ],
+  });
+  const found = app.catalog.objects.find(
+    (object) => object.kind === "view" && object.identity.name === "open_notes",
+  );
+  expect(found?.kind === "view" ? found.definition.query : "").toBe(
+    'select t."tenant_id" as "tenant_id", t."title" as "title" from "notes" t',
+  );
+});
+
 function indexOf(sql: readonly string[], prefix: string): number {
   const found = sql.findIndex((step) => step.startsWith(prefix));
   if (found < 0) throw new Error(`missing ${prefix} in ${sql.join(" | ")}`);

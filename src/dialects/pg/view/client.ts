@@ -319,7 +319,8 @@ function checkNulls(value: unknown, strict: readonly string[], one: boolean): un
 function scan(rows: readonly Record<string, unknown>[], strict: readonly string[]): void {
   for (const row of rows) {
     for (const field of strict) {
-      if (row[field] == null) {
+      // A find that selects a subset omits the other keys. A selected NULL is present.
+      if (Object.hasOwn(row, field) && row[field] == null) {
         throw new OkmError(
           "OKM1901",
           `View column ${field} is declared not null and the database returned NULL.`,
@@ -344,7 +345,7 @@ function columnModels(
   const models: ColumnModel[] = [];
   const strict: string[] = [];
   for (const column of columns) {
-    const field = fieldName(column.source ?? column.name, tenancy, names);
+    const field = fieldOf(column, tenancy, names);
     if (seen.has(field)) {
       throw new OkmError("OKM1020", `View column ${column.name} repeats ${field}.`, {
         fix: { summary: "Declare each output column once." },
@@ -381,9 +382,7 @@ function exposesKey(
   names: Names,
 ): boolean {
   if (tenancy === undefined) return false;
-  return columns.some(
-    (column) => fieldName(column.source ?? column.name, tenancy, names) === tenancy.key,
-  );
+  return columns.some((column) => fieldOf(column, tenancy, names) === tenancy.key);
 }
 
 function readsTenant(
@@ -424,14 +423,42 @@ function isGlobalMark(
   );
 }
 
-function fieldName(column: string, tenancy: ColumnTenancy | undefined, names: Names): string {
-  const field = camelCase(column);
-  if (
-    tenancy !== undefined &&
-    (column === tenancy.key || field === tenancy.key || column === names.name(tenancy.key))
-  )
+/**
+ * Client field for one output column.
+ *
+ * `source` is the table field a `find` column reads. A `q.sql` column has no
+ * source, so the SQL name is matched against the tenant key as the schema
+ * spells it. `tenant_id` is `tenantID` when that is the key.
+ *
+ * @param column - Declared output column
+ * @param tenancy - Column tenancy, when the schema set it
+ * @param names - Schema casing
+ * @returns The client key
+ */
+function fieldOf(column: SourceColumn, tenancy: ColumnTenancy | undefined, names: Names): string {
+  const source = column.source ?? column.name;
+  const field = camelCase(source);
+  if (tenancy !== undefined && isTenantKey(source, column.name, field, tenancy, names)) {
     return tenancy.key;
+  }
   return field;
+}
+
+function isTenantKey(
+  source: string,
+  sql: string,
+  field: string,
+  tenancy: ColumnTenancy,
+  names: Names,
+): boolean {
+  const spelled = names.name(tenancy.key);
+  return (
+    source === tenancy.key ||
+    sql === tenancy.key ||
+    field === tenancy.key ||
+    source === spelled ||
+    sql === spelled
+  );
 }
 
 function camelCase(name: string): string {

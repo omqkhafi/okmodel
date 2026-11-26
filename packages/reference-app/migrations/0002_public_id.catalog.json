@@ -2609,7 +2609,8 @@
           { "dataType": "uuid", "name": "id" },
           { "dataType": "text", "name": "name" }
         ],
-        "query": "SELECT workspace_id,\n    id,\n    name\n   FROM projects\n  WHERE archived_at IS NULL"
+        "query": "SELECT workspace_id,\n    id,\n    name\n   FROM projects\n  WHERE archived_at IS NULL",
+        "securityInvoker": true
       },
       "dependencies": [],
       "identity": {
@@ -2628,7 +2629,8 @@
           { "dataType": "uuid", "name": "project_id" },
           { "dataType": "bigint", "name": "open_tasks" }
         ],
-        "query": "SELECT workspace_id,\n    project_id,\n    count(*) AS open_tasks\n   FROM tasks\n  WHERE task_is_open(status) AND archived_at IS NULL\n  GROUP BY workspace_id, project_id"
+        "query": "SELECT workspace_id,\n    project_id,\n    count(*) AS open_tasks\n   FROM tasks\n  WHERE task_is_open(status) AND archived_at IS NULL\n  GROUP BY workspace_id, project_id",
+        "securityInvoker": true
       },
       "dependencies": [],
       "identity": {

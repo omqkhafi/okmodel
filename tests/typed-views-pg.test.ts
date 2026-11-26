@@ -445,6 +445,41 @@ postgresTest(
   30_000,
 );
 
+postgresTest(
+  gate,
+  "a select that omits a non-null column does not report it as null",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const sql = openPostgres(database.url);
+    try {
+      const notes = table("notes", { id: t.text().primaryKey(), title: t.text() });
+      const declared = schema({
+        tables: [notes],
+        views: [
+          view("titled", { tables: [notes] }, (q) => q.notes.find({ select: ["id", "title"] })),
+        ],
+      });
+      const sealed = await sealViews(queryOf(sql), declared.catalog);
+      await apply(sql, catalog([]), sealed);
+      await sql.unsafe(`insert into notes (id, title) values ('1', 'Launch')`);
+      const { connect } = await import("../src/runtime/pg/postgresjs.js");
+      const db = connect(database.url, { schema: declared, max: 1 });
+      try {
+        await db.connected;
+        expect(await db.views.titled.find({ select: ["title"], limit: 10 })).toEqual([
+          { title: "Launch" },
+        ]);
+      } finally {
+        await db.close();
+      }
+    } finally {
+      await sql.end({ timeout: 5 });
+      await database.close();
+    }
+  },
+  30_000,
+);
+
 async function apply(sql: Sql, before: Catalog, after: Catalog): Promise<void> {
   const plan = planMigration({ before, after, name: "apply" });
   await applySteps(

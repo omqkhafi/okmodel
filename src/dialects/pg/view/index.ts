@@ -25,7 +25,7 @@ import type { Expr } from "../expr/index.js";
 import type { SchemaHook } from "../model.js";
 import type { IndexCall, SqlText } from "../table.js";
 import { viewClient, type ViewInstall } from "./client.js";
-import { compileView, type CapturedBody, type CompiledView } from "./compile.js";
+import { compileView, type CapturedBody, type CompiledView, type ViewTenant } from "./compile.js";
 
 /** A column the view type remembers. `value` and `nullable` are type-only. */
 export type ViewColumnPhantom = {
@@ -290,6 +290,8 @@ type Box = {
   compiled: CompiledView | undefined;
   casing: Names["casing"] | "missing";
   compiling: boolean;
+  /** Set in `install`, before the first compile. A nested compile may pass it down. */
+  tenant: ViewTenant | undefined;
 };
 
 function declare<const Sources extends readonly Named[]>(
@@ -322,24 +324,35 @@ function declare<const Sources extends readonly Named[]>(
     compiled: undefined,
     casing: "missing",
     compiling: false,
+    tenant: undefined,
   };
-  const render = (names: Names): CompiledView => {
+  const render = (names: Names, tenant?: ViewTenant): CompiledView => {
     if (box.compiling) cycle([...renderStack, name]);
     if (box.compiled !== undefined && box.casing === names.casing) return box.compiled;
+    const active = box.tenant ?? tenant;
     box.compiling = true;
     renderStack.push(name);
     try {
       box.body ??= capture(name, sources, build as (q: ViewQuery<readonly Named[]>) => unknown);
-      box.compiled = compileView(name, box.body, sources, names, (source) => {
-        const nested = source as { readonly render?: (names: Names) => CompiledView };
-        if (nested.render === undefined) {
-          fail(
-            "OKM1120",
-            `View ${name} reads ${sourceName(source)}, which is not a table or a view.`,
-          );
-        }
-        return nested.render(names);
-      });
+      box.compiled = compileView(
+        name,
+        box.body,
+        sources,
+        names,
+        (source) => {
+          const nested = source as {
+            readonly render?: (names: Names, tenant?: ViewTenant) => CompiledView;
+          };
+          if (nested.render === undefined) {
+            fail(
+              "OKM1120",
+              `View ${name} reads ${sourceName(source)}, which is not a table or a view.`,
+            );
+          }
+          return nested.render(names, active);
+        },
+        active,
+      );
       box.casing = names.casing;
       return box.compiled;
     } finally {
@@ -374,6 +387,7 @@ function declare<const Sources extends readonly Named[]>(
       names: Parameters<ViewInstall>[3],
       scoped: Parameters<ViewInstall>[4],
     ) {
+      box.tenant = viewTenant(tenancy);
       rememberNames(box, names);
       client.install(model, tenancy, tables, names, scoped);
     },
@@ -464,6 +478,21 @@ function lastNames(box: Box): Names {
       column: (_item, field) => field,
     }
   );
+}
+
+/**
+ * The tenant column the compiler should see.
+ *
+ * @param tenancy - Column tenancy from `schema()`, when the schema set it
+ * @returns The key and its column, or `undefined` when the schema has no tenancy
+ */
+function viewTenant(tenancy: Parameters<ViewInstall>[1]): ViewTenant | undefined {
+  if (tenancy === undefined) return undefined;
+  return {
+    key: tenancy.key,
+    column: () => tenancy.column(),
+    isPath: (table: string) => tenancy.isPath?.(table) === true,
+  };
 }
 
 function queryText(name: string, query: string | SqlText): string {

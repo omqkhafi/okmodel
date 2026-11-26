@@ -1238,8 +1238,8 @@
     "code": "OKM1822",
     "kind": "invalid",
     "category": "input",
-    "summary": "REFRESH CONCURRENTLY was declared without a unique index on the materialized view.",
-    "fix": "Add a unique index, or refresh without CONCURRENTLY.",
+    "summary": "REFRESH CONCURRENTLY was declared without a unique index on plain columns. An expression index or a partial index does not qualify.",
+    "fix": "Add a unique index with no expression and no predicate, or refresh without CONCURRENTLY.",
     "retryable": false,
     "docs": "docs/errors/OKM1822.md"
   },
@@ -1905,6 +1905,33 @@
     "fix": "Rename that table, or drop it. okm keeps its migration ledger under this name.",
     "retryable": false,
     "docs": "docs/errors/OKM1899.md"
+  },
+  {
+    "code": "OKM1900",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "Two views list each other in tables, so neither can be created first.",
+    "fix": "Remove one view from the other's tables.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1900.md"
+  },
+  {
+    "code": "OKM1901",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A view column declared not null came back NULL. PostgreSQL does not store view nullability, so the declaration is checked when the row is read.",
+    "fix": "Declare the column with .nullable(), or stop the query from returning NULL.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1901.md"
+  },
+  {
+    "code": "OKM1902",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A security-invoker view reads a base table this role cannot select. The view fails at read time for this role.",
+    "fix": "Grant SELECT on the base table, or declare the view with security: { definer: reason }.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1902.md"
   },
   {
     "code": "OKM2200",

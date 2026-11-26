@@ -144,6 +144,7 @@ export const NEEDS_DATABASE = [
   "OKM1858",
   "OKM1554",
   "OKM1555",
+  "OKM1901",
 ] as const;
 
 /**
@@ -520,6 +521,30 @@ thrown(
       }),
     );
   },
+);
+
+thrown(
+  "OKM1900",
+  () => {
+    const peers: { readonly name: string }[] = [];
+    const left = view("cycle_left", { tables: peers as never }, ((q: {
+      readonly cycle_right: { find: () => unknown };
+    }) => q.cycle_right.find()) as never);
+    const right = view("cycle_right", { tables: peers as never }, ((q: {
+      readonly cycle_left: { find: () => unknown };
+    }) => q.cycle_left.find()) as never);
+    peers.push(left, right);
+    return schema({ tables: [], views: [left, right] }).catalog;
+  },
+  () =>
+    schema({
+      tables: [],
+      views: [
+        view("cycle_left", { tables: [] }, (q) =>
+          q.sql({ columns: [{ name: "id", type: t.text() }], query: "select 1 as id" }),
+        ),
+      ],
+    }).catalog,
 );
 
 thrown(
@@ -906,6 +931,24 @@ reported(
   "OKM2202",
   () => productionCodes("open", plain),
   () => productionCodes("project", plain),
+);
+
+function invokerCodes(gaps: readonly string[]): readonly string[] {
+  const report = buildReport(
+    {
+      target: { name: "production", protection: "project", url: directUrl },
+      config: plain,
+      allowPooler: false,
+    },
+    { ...quiet, invokerGaps: gaps },
+  );
+  return report.findings.flatMap((item) => (item.code === undefined ? [] : [item.code]));
+}
+
+reported(
+  "OKM1902",
+  () => invokerCodes(["notes"]),
+  () => invokerCodes([]),
 );
 
 reported(

@@ -70,6 +70,7 @@ type ColumnRef = {
  * @param sources - Tables and views the callback may read
  * @param names - Schema casing
  * @param renderSource - Compiles a view the body reads
+ * @param tenant - Schema tenancy, when the view is compiled inside `schema()`
  * @returns The query and its output columns
  */
 export function compileView(
@@ -78,11 +79,33 @@ export function compileView(
   sources: readonly object[],
   names: Names,
   renderSource: (source: object) => CompiledView,
+  tenant?: ViewTenant,
 ): CompiledView {
-  if (body.op === "sql") return compileSql(name, body);
-  if (body.op === "aggregate") return compileAggregate(name, body, sources, names, renderSource);
-  return compileFind(name, body, sources, names, renderSource);
+  const previous = viewTenant;
+  viewTenant = tenant;
+  try {
+    if (body.op === "sql") return compileSql(name, body);
+    if (body.op === "aggregate") return compileAggregate(name, body, sources, names, renderSource);
+    return compileFind(name, body, sources, names, renderSource);
+  } finally {
+    viewTenant = previous;
+  }
 }
+
+/**
+ * The tenant column `schema({ tenancy })` adds to a tenant table.
+ *
+ * The view callback holds the table from `tables`, which is the table before
+ * that rewrite. The compiler adds the column when the body names the key.
+ */
+export type ViewTenant = {
+  readonly key: string;
+  readonly column: () => object;
+  readonly isPath?: (table: string) => boolean;
+};
+
+/** Set for the view being compiled, including a view it reads. */
+let viewTenant: ViewTenant | undefined;
 
 function compileSql(
   name: string,
@@ -227,6 +250,7 @@ function openFrom(
       if (state.hidden === true) continue;
       output.push(columnOut(field, columnName, state));
     }
+    appendTenant(source, columns, output, names, "t", false);
     return { table: source, from: `${quoteIdent(sql)} t`, columns, output };
   }
   const compiled = renderSource(source);
@@ -597,7 +621,43 @@ function joinRelation(
     if (state.hidden === true) continue;
     output.push({ ...columnOut(field, columnName, state), nullable: true, strict: false });
   }
+  appendTenant(target, columns, output, names, alias, true);
   return { table: target, from: from.from, columns, output };
+}
+
+/**
+ * Adds the schema tenant column when the table does not already declare it.
+ *
+ * A global table and a path table do not have the column. A left join leaves
+ * it nullable, the same as every other joined column.
+ *
+ * @param table - Source table
+ * @param columns - Columns the body can name
+ * @param output - Columns a bare `find` selects
+ * @param names - Schema casing
+ * @param alias - SQL alias of this source
+ * @param left - The source was reached through a left join
+ */
+function appendTenant(
+  table: AnyTable,
+  columns: Map<string, ColumnRef>,
+  output: CompiledColumn[],
+  names: Names,
+  alias: string,
+  left: boolean,
+): void {
+  const tenant = viewTenant;
+  if (tenant === undefined || columns.has(tenant.key)) return;
+  if (tenant.isPath?.(table.name) === true) return;
+  const mark = (table.options as { readonly tenancy?: { readonly kind?: unknown } } | undefined)
+    ?.tenancy;
+  if (mark?.kind === "global") return;
+  const built = tenant.column();
+  if (!(built instanceof ColumnBuilder)) return;
+  const sql = names.column(table, tenant.key);
+  columns.set(tenant.key, { sql, alias, state: built.state });
+  const out = columnOut(tenant.key, sql, built.state);
+  output.push(left ? { ...out, nullable: true, strict: false } : out);
 }
 
 function columnSql(
