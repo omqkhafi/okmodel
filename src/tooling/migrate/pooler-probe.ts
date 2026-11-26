@@ -1,18 +1,19 @@
 /**
- * Pid probe for transaction-mode poolers (B-41).
+ * Pid probes for transaction-mode poolers (B-41, D344).
  *
- * Eight separate `pg_backend_pid()` reads on the caller's session. Two or
- * more distinct pids mean a pooler handed out a new backend. A direct
- * session keeps one pid. A rotating pooler (`server_round_robin=1`) is
- * refused on any port. Default LIFO PgBouncer on a non-heuristic port can
- * keep one pid for all eight reads; mark that URL with `?pgbouncer=true`
- * (or a `pooler` / `pgbouncer` host) so the URL guard refuses it.
+ * {@link probeConcurrent} opens eight clients at once. Each reads
+ * `pg_backend_pid()` a few times while the others run. Apply uses it when a
+ * step cannot share a transaction. Doctor and an unclassified login use it
+ * too. One stable pid per client is direct. A pid change, or fewer backends
+ * than clients, is pooled.
+ *
+ * {@link probeStableBackend} still reads eight times on one session. Check,
+ * seed, baseline, resolve, and migrate check use that loop. Two pids there
+ * are OKM1854. A stable pid is not proof of a direct connection.
  *
  * Warm-and-hold for LIFO needs extra connections and deadlocks a
- * single-connection target (PGlite wire) when apply/seed already hold
- * `max: 1`. That path stays in the PgBouncer test via the optional
- * `holdBackend` option; production keeps URL heuristics plus these eight
- * reads.
+ * single-connection target (PGlite wire). That path stays in the PgBouncer
+ * test via `holdBackend` on the single-session loop.
  */
 
 import { open } from "../../adapters/pg/postgresjs.js";

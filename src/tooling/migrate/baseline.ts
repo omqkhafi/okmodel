@@ -30,6 +30,7 @@ import {
   liveIntrospectOptions,
   sealStoredChecks,
   sealTriggerWhens,
+  unmanagedComments,
 } from "./drift.js";
 import { catalogNamespace } from "./export.js";
 import { loadHeadSnapshot } from "./files.js";
@@ -299,8 +300,10 @@ async function compareLive(
       }),
     };
     const invalid = await invalidIndexReport(runner, namespace);
+    const sealedLive = await sealStoredChecks(runner, managedLive);
+    // A comment the model did not record is unmanaged (D345).
     const plan = planMigration({
-      before: await sealStoredChecks(runner, managedLive),
+      before: unmanagedComments(sealedLive, authorOnServer, model).catalog,
       after: authorOnServer,
       name: "baseline",
       schema: namespace,

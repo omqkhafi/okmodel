@@ -21,7 +21,13 @@ import { changesRole, createdRoleName, createRoleOnce } from "../../dialects/pg/
 import { migrationJournalGrants } from "./managed.js";
 import { ensureMigrationTables } from "./apply.js";
 import type { MigrateConfig } from "./config.js";
-import { catalogQuery, managedRoleOptions, sealAuthored, sealStoredChecks } from "./drift.js";
+import {
+  catalogQuery,
+  managedRoleOptions,
+  sealAuthored,
+  sealStoredChecks,
+  unmanagedComments,
+} from "./drift.js";
 import { assertUuidV7Available } from "./engine.js";
 import {
   ensureExtensionSchemaSql,
@@ -141,8 +147,11 @@ export async function replayCheckHistory(
       // generate is empty (B-37, D128). The live catalog is sealed too: author
       // SQL stores the first printer pass, and that pass is not always stable.
       const sealed = await sealAuthored(runner, migration.catalog);
+      const sealedLive = await sealStoredChecks(runner, live);
+      // A comment the previous snapshot did not record is unmanaged (D345).
+      const previous = index === 0 ? undefined : history[index - 1]?.catalog;
       const back = planMigration({
-        before: await sealStoredChecks(runner, live),
+        before: unmanagedComments(sealedLive, sealed, previous).catalog,
         after: sealed,
         name: migration.id,
         postgres,

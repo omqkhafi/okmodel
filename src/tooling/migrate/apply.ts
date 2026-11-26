@@ -64,6 +64,7 @@ import {
   liveIntrospectOptions,
   sealAuthored,
   sealStoredChecks,
+  unmanagedComments,
 } from "./drift.js";
 import {
   assertDirectConnection,
@@ -585,6 +586,9 @@ async function runApply(
  * applies under a fresh `push-<n>` id from `okm_history`, and re-stamps
  * `okm_meta` when the schema hash moved with no DDL (B-29, B-21).
  *
+ * A comment on that live catalog is removed only when the previous migration
+ * snapshot recorded it (D345). A comment OKM did not write stays.
+ *
  * @param project - Project directory or {@link ProjectContext}
  * @param flags - Target and protection flags
  * @returns Text for stdout
@@ -610,6 +614,7 @@ export async function pushProject(
     allowBlocking: flags.allowBlocking === true,
     ...backfillTiming(config.backfill),
     after: head.catalog,
+    commentAuthority: head.previous,
     renames: head.renames,
     catalogHash,
     ...(config.roles !== undefined
@@ -642,6 +647,8 @@ type PushRequest = {
   readonly allowPooler?: boolean;
   readonly allowBlocking?: boolean;
   readonly after: Catalog;
+  /** Previous migration snapshot. A comment it did not record is unmanaged. */
+  readonly commentAuthority: Catalog;
   readonly renames: readonly DeclaredRename[];
   readonly catalogHash: string;
   readonly migrationRole?: string;
@@ -733,7 +740,7 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
         });
       }
       const input = {
-        before: live,
+        before: unmanagedComments(live, author, request.commentAuthority).catalog,
         after: author,
         renames: request.renames,
         name: pushId,
