@@ -20,7 +20,7 @@ import { testing } from "../src/tooling/testing/index.js";
 import { applyTarget } from "../src/tooling/migrate/apply.js";
 import { aboutRows, annotateLock, readRowEstimates } from "../src/tooling/migrate/estimate.js";
 import type { PlanStep } from "../src/tooling/migrate/plan.js";
-import { assertStableBackend } from "../src/tooling/migrate/policy.js";
+import { resolvePooler } from "../src/tooling/migrate/pooler-probe.js";
 
 const gate = await loadPostgresGate();
 const root = repoRoot();
@@ -34,21 +34,11 @@ const tenantApp = schema({
 
 postgresTest(gate, "QA-M6: a direct connection keeps one backend pid", async () => {
   const database = await createIsolatedDatabase();
-  const pool = open({ url: database.url, max: 1 });
   try {
-    const connection = await pool.reserve?.();
-    if (connection === undefined) throw new Error("reserve");
-    try {
-      await assertStableBackend(async () => {
-        const result = await connection.execute("select pg_backend_pid()::text");
-        const cell = result.rows[0]?.[0];
-        return cell === null || cell === undefined ? "" : String(cell);
-      }, false);
-    } finally {
-      await connection.release();
-    }
+    const found = await resolvePooler(database.url);
+    expect(found.provenDirect).toBe(true);
+    expect(found.pooled).toBe(false);
   } finally {
-    await pool.close();
     await database.close();
   }
 });

@@ -38,7 +38,8 @@ import { finishQuiet, sessionFailure } from "./lost.js";
 import { lintReprints, type Finding } from "./lint.js";
 import { planMigration, type MigrationPlan, type PlanStep } from "./plan.js";
 import { driverUrl } from "./driver-url.js";
-import { probeStableBackend } from "./pooler-probe.js";
+import { refusePooler } from "./pooler.js";
+import { resolvePooler } from "./pooler-probe.js";
 import {
   assumeRole,
   assertSchemaUsageLanded,
@@ -297,6 +298,7 @@ async function inCheckTransaction<T>(
   allowPooler: boolean,
   run: (sql: Sql) => Promise<T>,
 ): Promise<T> {
+  refusePooler(await resolvePooler(url, allowPooler), allowPooler);
   const sql = postgres(driverUrl(url), {
     max: 1,
     connect_timeout: 5,
@@ -317,15 +319,6 @@ async function inCheckTransaction<T>(
   let rolledBack = false;
   let xid = "";
   try {
-    await probeStableBackend(
-      url,
-      async () => {
-        const rows = await reserved.unsafe("select pg_backend_pid()::text as pid");
-        const pid = cell(rows[0], "pid");
-        return pid ?? "";
-      },
-      allowPooler,
-    );
     await reserved.unsafe("begin");
     open = true;
     xid = await readXid(reserved);

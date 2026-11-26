@@ -19,8 +19,8 @@ import { tagOutcome } from "../cli/outcome.js";
 import type { CatalogObject } from "../../contracts/catalog/types.js";
 import { assertRoleHealth } from "../../dialects/pg/role/check.js";
 import { migrationUrl } from "./purpose-url.js";
-import { detectPooler, poolerMessage } from "./pooler.js";
-import { probeConcurrent } from "./pooler-probe.js";
+import { poolerMessage } from "./pooler.js";
+import { resolvePooler } from "./pooler-probe.js";
 import { assertSupported, formatEmulation } from "../capabilities/check.js";
 import { POSTGRES_FEATURES } from "../capabilities/postgres.js";
 import { featuresUsed } from "../capabilities/used.js";
@@ -87,8 +87,7 @@ export async function doctorProject(
     const target = selectTarget(opened.config, flags?.target);
     assertTargetPolicy(target, "check", flags?.allowProtected ?? false);
     const url = migrationUrl(opened.config, target);
-    let pooled = detectPooler({ url });
-    if (!pooled.pooled) pooled = await probeConcurrent(url);
+    const pooled = await resolvePooler(url);
     if (pooled.pooled) notice += `${poolerMessage(pooled)}\n`;
     const pool = open({ url: driverUrl(url), max: 1 });
     try {

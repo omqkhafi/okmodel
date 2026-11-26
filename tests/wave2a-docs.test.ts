@@ -128,8 +128,9 @@ test("the four corrected statements are what the pages say", () => {
   expect(production).toContain(connection);
   expect(checklist).toContain(connection);
   expect(doctor).toContain(connection);
-  expect(pooler).toContain("The probe does not hold another backend between reads.");
-  expect(pooler).not.toContain("hold another backend between reads so");
+  expect(pooler).toContain("A stable idle pid is not proof of a direct connection.");
+  expect(pooler).toContain("opens eight clients at once");
+  expect(pooler).not.toContain("eight times on the reserved session");
   expect(decisions).toContain(
     "**Amended by D320 (a failed connection may append a driver token).**",
   );
@@ -137,8 +138,10 @@ test("the four corrected statements are what the pages say", () => {
   expect(decisions).not.toContain("with no driver text");
   expect(backfill).toContain(timeout);
   expect(backfillPage).toContain(timeout);
-  expect(database).toContain("also read `pg_backend_pid()` eight times (`assertStableBackend`)");
-  expect(checklist).toContain("eight reads");
+  expect(database).toContain("A stable idle pid is not proof of a direct connection.");
+  expect(database).toContain("eight clients read `pg_backend_pid()`");
+  expect(checklist).toContain("A stable idle pid is not proof of a direct connection.");
+  expect(checklist).toContain("opens eight clients at once");
   for (const text of [production, checklist, backfill, backfillPage, database]) {
     expect(text).not.toContain("only lints and prints");
     expect(text).not.toContain("no driver text");

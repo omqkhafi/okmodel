@@ -21,7 +21,7 @@ import type { DriverPool } from "../../contracts/driver.js";
 import { OkmError } from "../../contracts/error.js";
 import type { MigrateConfig } from "./config.js";
 import { detectPooler } from "./pooler.js";
-import { probeConcurrent } from "./pooler-probe.js";
+import { resolvePooler } from "./pooler-probe.js";
 import { durationPhrase, estimateMs } from "./weight.js";
 import { ask } from "../prompt.js";
 import { scramVerifier } from "./scram.js";
@@ -259,7 +259,7 @@ export async function probeLogin(url: string): Promise<LoginOutcome> {
     await pool.close().catch(() => undefined);
   }
   if (outcome.result !== "unknown" || hinted.pooled) return outcome;
-  const active = await probeConcurrent(url).catch(() => hinted);
+  const active = await resolvePooler(url).catch(() => hinted);
   if (!active.pooled) return outcome;
   return { result: "unknown", detail: "cannot verify through a pooler" };
 }

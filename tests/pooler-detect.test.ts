@@ -10,6 +10,7 @@ import {
   detectPooler,
   poolerSignal,
 } from "../src/tooling/migrate/pooler.js";
+import { resolvePooler } from "../src/tooling/migrate/pooler-probe.js";
 
 test("proof:pooler.detect", () => {
   expect(detectPooler({ url: "postgres://u@ep-cool-pooler.region.aws.neon.tech/db" }).signal).toBe(
@@ -28,12 +29,6 @@ test("proof:pooler.detect", () => {
   const quiet = detectPooler({ url: "postgres://u@db.example:5432/db" });
   expect(quiet.pooled).toBe(false);
   expect(quiet.provenDirect).toBe(false);
-  expect(
-    detectPooler({ url: "postgres://u@db.example:5432/db", pidChanged: false }).provenDirect,
-  ).toBe(false);
-  expect(detectPooler({ url: "postgres://u@db.example:5432/db", pidChanged: false }).pooled).toBe(
-    false,
-  );
   const shared = detectPooler({
     url: "postgres://u@db.example:5432/db",
     concurrent: { clients: 8, distinct: 4, changed: false },
@@ -61,7 +56,6 @@ test("proof:pooler.detect", () => {
   expect(urlWins.signal).toBe("port");
   const idlePool = detectPooler({
     url: "postgres://u@ep-cool-pooler.region.aws.neon.tech/db",
-    pidChanged: false,
   });
   expect(idlePool.pooled).toBe(true);
   expect(idlePool.provenDirect).toBe(false);
@@ -69,6 +63,15 @@ test("proof:pooler.detect", () => {
     "config",
   );
   expect(poolerSignal("postgres://u@db.pooler.example/app")).toBe("host");
+});
+
+test("a URL signal and allowPooler skip the eight clients", async () => {
+  const port = await resolvePooler("postgres://u@db.example:6543/db");
+  expect(port.signal).toBe("port");
+  expect(port.provenDirect).toBe(false);
+  const marked = await resolvePooler("postgres://u@db.example:5432/db", true);
+  expect(marked.signal).toBe("config");
+  expect(marked.provenDirect).toBe(false);
 });
 
 test("a session URL that matches a pooler signal is refused", () => {

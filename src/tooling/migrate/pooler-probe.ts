@@ -1,29 +1,17 @@
 /**
- * Pid probes for transaction-mode poolers (B-41, D344).
+ * Eight-client probe for {@link detectPooler} (B-41, D344).
  *
- * {@link probeConcurrent} opens eight clients at once. Each reads
- * `pg_backend_pid()` a few times while the others run. Apply uses it when a
- * step cannot share a transaction. Doctor and an unclassified login use it
- * too. One stable pid per client is direct. A pid change, or fewer backends
- * than clients, is pooled.
- *
- * {@link probeStableBackend} still reads eight times on one session. Check,
- * seed, baseline, resolve, and migrate check use that loop. Two pids there
- * are OKM1854. A stable pid is not proof of a direct connection.
- *
- * Warm-and-hold for LIFO needs extra connections and deadlocks a
- * single-connection target (PGlite wire). That path stays in the PgBouncer
- * test via `holdBackend` on the single-session loop.
+ * {@link resolvePooler} reads URL signals and `allowPooler` first and opens
+ * no client. Eight clients run only when nothing matched and the caller still
+ * has to decide. Each reads `pg_backend_pid()` a few times while the others
+ * run. One stable pid per client is proven direct. A pid change, or fewer
+ * backends than clients, is pooled. A stable idle pid on one session is not
+ * a signal and is not proof of a direct connection.
  */
 
 import { open } from "../../adapters/pg/postgresjs.js";
 import { driverUrl } from "./driver-url.js";
-import {
-  detectPooler,
-  probePooler,
-  type PoolerDetection,
-  type StableBackendOptions,
-} from "./pooler.js";
+import { detectPooler, type PoolerDetection } from "./pooler.js";
 
 /** Clients opened together. */
 const CONCURRENT_CLIENTS = 8;
@@ -31,12 +19,30 @@ const CONCURRENT_CLIENTS = 8;
 const CONCURRENT_STATEMENTS = 3;
 
 /**
+ * Decides with the URL first, then eight clients when the URL did not.
+ *
+ * `allowPooler` is a config signal and skips the clients. A URL that already
+ * matches a host, port, or `pgbouncer=true` does too. A quiet URL is not
+ * direct until the clients prove it.
+ *
+ * @param url - Target URL. Not copied into the result
+ * @param allowPooler - The invocation opted in
+ * @returns The detector result
+ */
+export async function resolvePooler(url: string, allowPooler = false): Promise<PoolerDetection> {
+  const hinted = detectPooler({ url, marker: allowPooler });
+  if (hinted.pooled || allowPooler) return hinted;
+  return probeConcurrent(url);
+}
+
+/**
  * Opens eight clients at once and reads `pg_backend_pid()` on each.
  *
  * Each client runs a few statements while the others run. A pid change on one
  * client, or fewer distinct backends than clients, is pooled. One stable pid
  * per client is proven direct. A URL that already matches a signal is returned
- * without opening a client.
+ * without opening a client. Prefer {@link resolvePooler} when `allowPooler`
+ * can also skip the clients.
  *
  * @param url - Target URL. Not copied into the result
  * @returns The detector result
@@ -71,21 +77,4 @@ export async function probeConcurrent(url: string): Promise<PoolerDetection> {
   } finally {
     await Promise.all(pools.map((pool) => pool.close().catch(() => undefined)));
   }
-}
-
-/**
- * Refuses a session whose backend pid changes across eight reads.
- *
- * @param _url - Target URL (unused; kept for call-site stability)
- * @param readPid - Reads `pg_backend_pid()` on the session under test
- * @param allowPooler - The invocation opted in
- * @param options - Optional hold between reads (PgBouncer tests)
- */
-export async function probeStableBackend(
-  url: string,
-  readPid: () => Promise<string>,
-  allowPooler: boolean,
-  options?: StableBackendOptions,
-): Promise<void> {
-  await probePooler(url, readPid, allowPooler, options);
 }

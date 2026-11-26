@@ -18,14 +18,10 @@ import { loadMigrations } from "./files.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { ensureMigrationTables, lockKey, lockTarget } from "./apply.js";
 import { asProject, projectPath, type ProjectContext } from "./paths.js";
-import {
-  assertDirectConnection,
-  assertTargetPolicy,
-  selectTarget,
-  type InvokeFlags,
-} from "./policy.js";
+import { assertTargetPolicy, selectTarget, type InvokeFlags } from "./policy.js";
+import { refusePooler } from "./pooler.js";
+import { resolvePooler } from "./pooler-probe.js";
 import { postgresStepEngine } from "./pg-probe.js";
-import { probeStableBackend } from "./pooler-probe.js";
 import { loadConfig } from "./project.js";
 import type { PlanStep } from "./plan.js";
 import { postgresStepJournal } from "./step-journal.js";
@@ -144,7 +140,7 @@ async function resolveOnTarget(input: {
   readonly action: "applied" | "retry";
   readonly acceptUnverified: boolean;
 }): Promise<ResolveResult> {
-  assertDirectConnection(input.url, input.allowPooler);
+  refusePooler(await resolvePooler(input.url, input.allowPooler), input.allowPooler);
   const pool = open({
     url: driverUrl(input.url),
     max: 1,
@@ -159,7 +155,6 @@ async function resolveOnTarget(input: {
   const connection = await pool.reserve();
   let locked = false;
   try {
-    await probeStableBackend(input.url, () => backendPid(connection), input.allowPooler);
     await connection.execute("select set_config('lock_timeout', '5000', false)");
     await lockTarget(connection, input.target);
     locked = true;
@@ -262,9 +257,4 @@ function committed(input: {
 
 function registryFix(code: string): string {
   return errorDoc(code)?.fix ?? "Inspect the step and try again.";
-}
-
-async function backendPid(connection: DriverConnection): Promise<string> {
-  const result = await connection.execute("select pg_backend_pid()::text");
-  return result.rows[0]?.[0] ?? "";
 }

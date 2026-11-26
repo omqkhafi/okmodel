@@ -76,7 +76,7 @@ import {
   type ProtectionMatch,
 } from "./policy.js";
 import { detectPooler, type PoolerDetection } from "./pooler.js";
-import { probeConcurrent } from "./pooler-probe.js";
+import { resolvePooler } from "./pooler-probe.js";
 import {
   APPLY_APPLICATION,
   counted,
@@ -1098,9 +1098,7 @@ export async function openDirectSession(
   },
   url: string,
 ): Promise<DirectAttempt> {
-  const hinted = detectPooler({ url: request.url, marker: request.allowPooler === true });
-  if (hinted.pooled || request.allowPooler === true) return { detection: hinted };
-  const detection = await probeConcurrent(request.url);
+  const detection = await resolvePooler(request.url, request.allowPooler === true);
   if (!detection.provenDirect) return { detection };
   const pid = await backendPid(connection);
   const before = (await connection.execute(READ_TIMEOUTS)).rows[0] ?? [];

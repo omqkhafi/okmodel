@@ -15,13 +15,9 @@ import { OkmError } from "../../contracts/error.js";
 import { open } from "../../adapters/pg/postgresjs.js";
 import { createdOf } from "../testing/factories.js";
 import { testing } from "../testing/index.js";
-import {
-  assertDirectConnection,
-  assertTargetPolicy,
-  selectTarget,
-  type InvokeFlags,
-} from "./policy.js";
-import { probeStableBackend } from "./pooler-probe.js";
+import { assertTargetPolicy, selectTarget, type InvokeFlags } from "./policy.js";
+import { refusePooler } from "./pooler.js";
+import { resolvePooler } from "./pooler-probe.js";
 import { driverUrl } from "./driver-url.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { loadConfig, loadSchema } from "./project.js";
@@ -53,27 +49,11 @@ export async function seedProject(
     });
   }
   const allowPooler = flags.allowPooler || config.allowPooler === true;
-  assertDirectConnection(target.url, allowPooler);
+  refusePooler(await resolvePooler(target.url, allowPooler), allowPooler);
   const schema = await loadSchema(cwd, config.schema);
   const pool = open({ url: driverUrl(target.url), max: 1 });
   let harness: Awaited<ReturnType<typeof testing>> | undefined;
   try {
-    const held = await pool.reserve?.();
-    if (held !== undefined) {
-      try {
-        await probeStableBackend(
-          target.url,
-          async () => {
-            const result = await held.execute("select pg_backend_pid()::text");
-            const cell = result.rows[0]?.[0];
-            return cell === null || cell === undefined ? "" : String(cell);
-          },
-          allowPooler,
-        );
-      } finally {
-        await finishQuiet(() => held.release());
-      }
-    }
     harness = await testing(schema, { driver: pool, migrate: false });
     const imported = await importSeed(file, path);
     const seed = isRecord(imported) ? imported.default : undefined;
