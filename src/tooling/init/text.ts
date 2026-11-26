@@ -112,8 +112,8 @@ export function baseText(): string {
 export const settings = {
   lint: { migrations: "strict" },
   roles: {
-    migration: { name: "migration", env: "MIGRATE_DATABASE_URL" },
-    app: { name: "app", env: "APP_DATABASE_URL" },
+    migration: { name: "migration", env: "OKM_MIGRATE_URL" },
+    app: { name: "app", env: "OKM_APP_URL" },
   },
 };
 `;

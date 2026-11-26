@@ -224,10 +224,11 @@ function tightenColumnSelect(
 }
 
 /**
- * Revokes `EXECUTE` from `PUBLIC` when the plan grants it to the app role.
+ * Revokes every privilege from `PUBLIC` on a matview refresh helper.
  *
- * Postgres grants `EXECUTE` to `PUBLIC` on new functions. With `roles` set,
- * only the application role should execute managed functions.
+ * Postgres grants `EXECUTE` to `PUBLIC` on a new function. The helper is
+ * `SECURITY DEFINER`, so `PUBLIC` must not keep it. Other functions keep the
+ * default `EXECUTE` grant.
  */
 function revokePublicExecute(object: GrantObject, schema: string): PrivilegeStatement | undefined {
   const target = object.identity.object;

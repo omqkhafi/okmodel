@@ -15,7 +15,62 @@
  * reads.
  */
 
-import { probePooler, type StableBackendOptions } from "./pooler.js";
+import { open } from "../../adapters/pg/postgresjs.js";
+import { driverUrl } from "./driver-url.js";
+import {
+  detectPooler,
+  probePooler,
+  type PoolerDetection,
+  type StableBackendOptions,
+} from "./pooler.js";
+
+/** Clients opened together. */
+const CONCURRENT_CLIENTS = 8;
+/** Statements each client runs while the others run. */
+const CONCURRENT_STATEMENTS = 3;
+
+/**
+ * Opens eight clients at once and reads `pg_backend_pid()` on each.
+ *
+ * Each client runs a few statements while the others run. A pid change on one
+ * client, or fewer distinct backends than clients, is pooled. One stable pid
+ * per client is proven direct. A URL that already matches a signal is returned
+ * without opening a client.
+ *
+ * @param url - Target URL. Not copied into the result
+ * @returns The detector result
+ */
+export async function probeConcurrent(url: string): Promise<PoolerDetection> {
+  const hinted = detectPooler({ url });
+  if (hinted.pooled) return hinted;
+  const pools = Array.from({ length: CONCURRENT_CLIENTS }, () =>
+    open({ url: driverUrl(url), max: 1 }),
+  );
+  try {
+    const sets = await Promise.all(
+      pools.map(async (pool) => {
+        const seen = new Set<string>();
+        for (let i = 0; i < CONCURRENT_STATEMENTS; i += 1) {
+          const result = await pool.execute("select pg_backend_pid()::text");
+          const pid = String(result.rows[0]?.[0] ?? "");
+          if (pid.length > 0) seen.add(pid);
+        }
+        return seen;
+      }),
+    );
+    const distinct = new Set(sets.flatMap((set) => [...set]));
+    return detectPooler({
+      url,
+      concurrent: {
+        clients: CONCURRENT_CLIENTS,
+        distinct: distinct.size,
+        changed: sets.some((set) => set.size > 1),
+      },
+    });
+  } finally {
+    await Promise.all(pools.map((pool) => pool.close().catch(() => undefined)));
+  }
+}
 
 /**
  * Refuses a session whose backend pid changes across eight reads.

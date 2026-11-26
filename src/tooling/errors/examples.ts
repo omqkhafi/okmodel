@@ -113,6 +113,8 @@ import { refuseDataLoss } from "../migrate/data-loss.js";
 import { ledgerRequiredColumns, refuseForeignLedger } from "../migrate/ledger.js";
 import { refuseUnpulledDrops } from "../migrate/unpulled.js";
 import { parseCli } from "../cli/parse.js";
+import { normalizeRoles } from "../../dialects/pg/role/config.js";
+import { generateRoles } from "../migrate/roles-cmd.js";
 
 /** Codes whose producer reads a live server. */
 export const NEEDS_DATABASE = [
@@ -144,6 +146,9 @@ export const NEEDS_DATABASE = [
   "OKM1858",
   "OKM1554",
   "OKM1555",
+  "OKM1911",
+  "OKM1913",
+  "OKM1914",
 ] as const;
 
 /**
@@ -2346,6 +2351,30 @@ reported(
           ),
         ],
       }),
+    ),
+);
+
+thrown(
+  "OKM1910",
+  () => normalizeRoles({ migration: { name: "" }, app: { name: "app" } }),
+  () => normalizeRoles({ migration: { name: "okm" }, app: { name: "app" } }),
+);
+
+thrown(
+  "OKM1912",
+  () =>
+    generateRoles(
+      { schema: "schema.ts", roles: { migration: { name: "m" }, app: { name: "a" } } },
+      { json: true },
+      true,
+      ".",
+    ),
+  () =>
+    generateRoles(
+      { schema: "schema.ts", roles: { migration: { name: "m" }, app: { name: "a" } } },
+      {},
+      true,
+      ".",
     ),
 );
 

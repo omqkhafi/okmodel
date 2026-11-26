@@ -6,12 +6,17 @@ description: "Roles, logins, and keyed grants. The config holds names, never a p
 `roles` names the migration role, the application role, and any other role. Keys are free. `migration`, `app`, and `reporting` keep their meaning. The config holds no password and no URL.
 
 ```ts
-roles: {
-  migration: { name: "okm_migrate", env: "MIGRATE_DATABASE_URL" },
-  app: { name: "okm_app", env: "APP_DATABASE_URL", connectionLimit: 20 },
-  reporting: { name: "okm_read", env: "REPORTING_DATABASE_URL" },
-  worker: { name: "okm_worker", env: "WORKER_DATABASE_URL" },
-}
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  roles: {
+    migration: { name: "okm_migrate", env: "MIGRATE_DATABASE_URL" },
+    app: { name: "okm_app", env: "APP_DATABASE_URL", connectionLimit: 20 },
+    reporting: { name: "okm_read", env: "REPORTING_DATABASE_URL" },
+    worker: { name: "okm_worker", env: "WORKER_DATABASE_URL" },
+  },
+});
 ```
 
 `env` is the name of the variable that holds that role's URL. With `env`, `okm roles apply` creates a login role when the name is missing. Without `env`, it creates a `NOLOGIN` group. An existing role keeps the database's login flag and its password.
@@ -35,16 +40,26 @@ A password under 16 characters, or a password that is the same half twice, asks 
 Grants sit on the object. Keys are role keys.
 
 ```ts
-table("docs", {
-  id: t.text().primaryKey(),
-  title: t.text(),
-}, {
-  grants: {
-    app: "write",
-    reporting: { select: ["id", "title"] },
-    audit: ["select"],
-  },
-})
+import { schema, t, table } from "okmodel/pg";
+
+export const app = schema({
+  tables: [
+    table(
+      "docs",
+      {
+        id: t.text().primaryKey(),
+        title: t.text(),
+      },
+      {
+        grants: {
+          app: "write",
+          reporting: { select: ["id", "title"] },
+          audit: ["select"],
+        },
+      },
+    ),
+  ],
+});
 ```
 
 `"read"` is select. `"write"` is select, insert, update, and delete. A materialized view is `"read"` or `"maintain"`. `"all"` is refused. Objects without `grants` keep the baseline: `app` receives DML, and `reporting` receives select. Objects this catalog does not manage, and roles it does not declare, are not changed. `PUBLIC` is explicit and needs `--allow-protected`. There is no `WITH GRANT OPTION`.

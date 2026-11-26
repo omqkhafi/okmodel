@@ -9,16 +9,9 @@
  * pooled either way, and the eight clients are not opened then.
  */
 
-import { open } from "../../adapters/pg/postgresjs.js";
 import { OkmError } from "../../contracts/error.js";
 import { tagOutcome } from "../cli/outcome.js";
-import { driverUrl } from "./driver-url.js";
 import { postgresEndpoint } from "./fingerprint.js";
-
-/** Clients opened together by {@link probeConcurrent}. */
-const CONCURRENT_CLIENTS = 8;
-/** Statements each of those clients runs, overlapping the others. */
-const CONCURRENT_STATEMENTS = 3;
 
 /** Which signal decided the connection is pooled. */
 export type PoolerSignal = "host" | "port" | "parameter" | "config" | "pid";
@@ -26,7 +19,7 @@ export type PoolerSignal = "host" | "port" | "parameter" | "config" | "pid";
 /**
  * Result of {@link detectPooler}.
  *
- * `provenDirect` is true only after {@link probeConcurrent} saw one stable
+ * `provenDirect` is true only after the concurrent probe saw one stable
  * backend pid per client and no URL or config signal matched. A quiet URL,
  * and a single idle client that kept one pid, are not proof.
  */
@@ -136,7 +129,7 @@ export function poolerSignal(url: string): PoolerSignal | undefined {
  */
 export function poolerMessage(detection: PoolerDetection): string {
   const which = detection.detail ?? detection.signal ?? "a pooler signal";
-  return `The migration URL is pooled (${which}). Use a direct URL for migrations.`;
+  return `The migration URL is a pooler (${which}). Use a direct URL for migrations.`;
 }
 
 /**
@@ -214,49 +207,6 @@ export async function probePooler(
   return detectPooler({ url, pidChanged: false });
 }
 
-/**
- * Opens eight clients at once and reads `pg_backend_pid()` on each.
- *
- * Each client runs a few statements while the others run. A pid change on one
- * client, or fewer distinct backends than clients, is pooled. One stable pid
- * per client is proven direct. A URL that already matches a signal is returned
- * without opening a client.
- *
- * @param url - Target URL. Not copied into the result
- * @returns The detector result
- */
-export async function probeConcurrent(url: string): Promise<PoolerDetection> {
-  const hinted = detectPooler({ url });
-  if (hinted.pooled) return hinted;
-  const pools = Array.from({ length: CONCURRENT_CLIENTS }, () =>
-    open({ url: driverUrl(url), max: 1 }),
-  );
-  try {
-    const sets = await Promise.all(
-      pools.map(async (pool) => {
-        const seen = new Set<string>();
-        for (let i = 0; i < CONCURRENT_STATEMENTS; i += 1) {
-          const result = await pool.execute("select pg_backend_pid()::text");
-          const pid = String(result.rows[0]?.[0] ?? "");
-          if (pid.length > 0) seen.add(pid);
-        }
-        return seen;
-      }),
-    );
-    const distinct = new Set(sets.flatMap((set) => [...set]));
-    return detectPooler({
-      url,
-      concurrent: {
-        clients: CONCURRENT_CLIENTS,
-        distinct: distinct.size,
-        changed: sets.some((set) => set.size > 1),
-      },
-    });
-  } finally {
-    await Promise.all(pools.map((pool) => pool.close().catch(() => undefined)));
-  }
-}
-
 function concurrentSignal(concurrent: ConcurrentPids | undefined): "pooled" | "direct" | undefined {
   if (concurrent === undefined) return undefined;
   if (concurrent.changed || concurrent.distinct < concurrent.clients) return "pooled";
@@ -279,7 +229,7 @@ function urlSignal(url: string): { signal: PoolerSignal; detail: string } | unde
     return { signal: "host", detail: "the host name contains .pooler.supabase.com" };
   }
   if (host.includes("pooler") || host.includes("pgbouncer")) {
-    return { signal: "host", detail: "the host name" };
+    return { signal: "host", detail: "a pooler host" };
   }
   if (endpoint.port === "6543" || endpoint.port === "6432") {
     return { signal: "port", detail: "the port (6543 or 6432)" };

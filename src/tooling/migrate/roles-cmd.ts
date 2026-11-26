@@ -20,7 +20,8 @@ import {
 import type { DriverPool } from "../../contracts/driver.js";
 import { OkmError } from "../../contracts/error.js";
 import type { MigrateConfig } from "./config.js";
-import { detectPooler, probeConcurrent } from "./pooler.js";
+import { detectPooler } from "./pooler.js";
+import { probeConcurrent } from "./pooler-probe.js";
 import { durationPhrase, estimateMs } from "./weight.js";
 import { ask } from "../prompt.js";
 import { scramVerifier } from "./scram.js";

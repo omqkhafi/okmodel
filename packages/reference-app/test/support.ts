@@ -120,10 +120,30 @@ export async function okmOk(
  */
 export async function previewDatabase() {
   const database = await createIsolatedDatabase();
+  await ensureAppRole(database.url);
   const applied = await okmOk(["migrate", "apply", "--target", "preview"], {
     PREVIEW_DATABASE_URL: database.url,
   });
   return { database, applied };
+}
+
+/**
+ * Creates the application role when this cluster does not have it yet.
+ *
+ * Roles are cluster objects. `okm migrate apply` checks they exist before any
+ * migration statement. A concurrent create is a duplicate and is ignored.
+ *
+ * @param url - A superuser URL on the cluster
+ */
+export async function ensureAppRole(url: string): Promise<void> {
+  const sql = openPostgres(url);
+  try {
+    await sql.unsafe(
+      `do $$ begin create role ${APP_ROLE} with nosuperuser nocreatedb nocreaterole inherit login; exception when duplicate_object then null; end $$`,
+    );
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
 }
 
 /**

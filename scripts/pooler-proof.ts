@@ -4,7 +4,9 @@
  * Starts pgbouncer (binary on PATH) fronting the topology primary with
  * `server_round_robin`, warms two backends concurrently so sequential
  * statements strictly alternate servers, then runs `applyTarget` through the
- * pooler and requires OKM1854. The pooler listens on 127.0.0.1:6433, which
+ * pooler and requires OKM1854. The migration includes `CREATE INDEX
+ * CONCURRENTLY`, which needs a session. A transactional-only migration is
+ * allowed through this port. The pooler listens on 127.0.0.1:6433, which
  * the static pooler check does not flag, so only the pid probe can refuse.
  *
  *   REQUIRE_DOCKER=1 bun ./scripts/pooler-proof.ts
@@ -258,6 +260,13 @@ async function expectPidRefusal(): Promise<void> {
         action: "ddl",
         lock: "ACCESS EXCLUSIVE",
         transactional: true,
+      },
+      {
+        sql: `create index concurrently ${schemaName}_items_id on ${schemaName}.items (id)`,
+        class: "expand",
+        action: "ddl",
+        lock: "SHARE",
+        transactional: false,
       },
     ],
   };

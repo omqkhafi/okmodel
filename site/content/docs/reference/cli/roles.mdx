@@ -1,0 +1,50 @@
+---
+title: "Roles and access"
+description: "okm roles apply, set-password, status, generate, and okm access."
+---
+## roles apply
+
+`okm roles apply` creates a role that the config names and the cluster does not have yet. It aligns `connectionLimit` and `validUntil`. It does not change a password and it does not drop a role. The admin URL is `--admin-env <NAME>`. The name is an environment variable. The URL is not an argument.
+
+`--plain` sends the password as plaintext when the server refuses a client SCRAM verifier. `--accept-weak-password` accepts a password under 16 characters or a password that is the same half twice. `--generate` replaces a weak password with a random one. `--env-file <path>` writes role URLs to a file that git ignores. The file mode is 0600.
+
+```sh
+okm roles apply --admin-env ADMIN_DATABASE_URL
+okm roles apply --admin-env ADMIN_DATABASE_URL --plain --generate --env-file .okm/roles.env
+okm roles apply --admin-env ADMIN_DATABASE_URL --accept-weak-password
+```
+
+## roles set-password
+
+`okm roles set-password <role>` sets one role password from that role's URL. The password is a client SCRAM verifier unless `--plain` is set. It uses the same `--admin-env`, `--plain`, `--accept-weak-password`, `--generate`, and `--env-file` flags as `roles apply`.
+
+```sh
+okm roles set-password app --admin-env ADMIN_DATABASE_URL
+okm roles set-password app --admin-env ADMIN_DATABASE_URL --plain --generate --env-file .okm/roles.env --accept-weak-password
+```
+
+## roles status
+
+`okm roles status` reads attributes, one login each, and unmanaged roles. JSON has no secrets.
+
+```sh
+okm roles status
+```
+
+## roles generate
+
+`okm roles generate` prints random role URLs once. `--env-file <path>` writes them to a git-ignored file with mode 0600 instead of printing them. `--json` is refused.
+
+```sh
+okm roles generate
+okm roles generate --env-file .okm/roles.env
+```
+
+## access
+
+`okm access <table|role>` reads grants, grantors, and memberships for a table or a role.
+
+```sh
+okm access docs
+okm access app
+```

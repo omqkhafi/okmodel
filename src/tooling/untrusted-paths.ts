@@ -105,4 +105,9 @@ export const UNTRUSTED_PATHS: readonly UntrustedPath[] = [
     treatment: "object",
     origin: "package.json",
   },
+  { command: "roles apply", path: "data", treatment: "none" },
+  { command: "roles set-password", path: "data", treatment: "none" },
+  { command: "roles generate", path: "data", treatment: "none" },
+  { command: "roles status", path: "data.rows[].name", treatment: "text" },
+  { command: "access", path: "data.grants[].object", treatment: "text" },
 ];

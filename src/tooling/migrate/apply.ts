@@ -74,7 +74,8 @@ import {
   type InvokeFlags,
   type ProtectionMatch,
 } from "./policy.js";
-import { detectPooler, probeConcurrent, type PoolerDetection } from "./pooler.js";
+import { detectPooler, type PoolerDetection } from "./pooler.js";
+import { probeConcurrent } from "./pooler-probe.js";
 import {
   APPLY_APPLICATION,
   counted,
@@ -395,11 +396,9 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
     const history = await readHistory(connection);
     const done = expandProvisioned(request.migrations, history.done, history.ids);
     const units = request.migrations.flatMap((migration) => applyUnits(migration, done));
-    if (units.some((unit) => !unit.transactional)) {
-      const attempt = await openDirectSession(connection, request, url);
-      direct = attempt.session;
-      poolerDetail = attempt.detection.detail;
-    }
+    const armed = await armDirect(connection, request, url, units);
+    direct = armed.direct;
+    poolerDetail = armed.detail;
     const report = await runTarget(
       connection,
       {
@@ -785,11 +784,9 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
     await assertExtensionsAvailable(connection, [migration]);
     await assertUuidV7Available(connection, [migration]);
     const units = applyUnits(migration, new Set());
-    if (units.some((unit) => !unit.transactional)) {
-      const attempt = await openDirectSession(connection, request, url);
-      direct = attempt.session;
-      poolerDetail = attempt.detection.detail;
-    }
+    const armed = await armDirect(connection, request, url, units);
+    direct = armed.direct;
+    poolerDetail = armed.detail;
     await refuseBlocking(
       (text, params) => connection.execute(text, params),
       schema,
@@ -1145,18 +1142,87 @@ export async function directSession(
 const READ_TIMEOUTS =
   "select current_setting('lock_timeout'), current_setting('statement_timeout')";
 
+/**
+ * Attaches the lock observer on every apply, and the eight-client probe only
+ * when a step cannot run inside a transaction.
+ *
+ * A transactional apply on a direct URL keeps the observer and does not open
+ * the eight clients. An empty pid is not proof, so the non-transactional step
+ * still refuses when the probe did not prove a direct connection.
+ *
+ * @param connection - Reserved connection
+ * @param request - Pooler opt-in and the timeouts
+ * @param url - Driver URL
+ * @param units - Steps about to run
+ * @returns The session to close, and the refusal detail when a session step is pending
+ */
+async function armDirect(
+  connection: DriverConnection,
+  request: {
+    readonly url: string;
+    readonly allowPooler?: boolean;
+    readonly lockTimeoutMs?: number;
+    readonly statementTimeoutMs?: number;
+  },
+  url: string,
+  units: readonly { readonly transactional: boolean }[],
+): Promise<{ readonly direct?: DirectSession; readonly detail?: string }> {
+  const needsDirect = units.some((unit) => !unit.transactional);
+  if (needsDirect) {
+    const attempt = await openDirectSession(connection, request, url);
+    if (attempt.session !== undefined) return { direct: attempt.session };
+    return { detail: attempt.detection.detail ?? "the connection is not proven direct" };
+  }
+  if (request.allowPooler === true) return {};
+  return { direct: await watchSession(connection, url) };
+}
+
+/**
+ * One extra client that names lock holders.
+ *
+ * The pid is the reserved connection's backend, so a lock timeout can name
+ * the holder. It is one idle read. It is not the eight-client proof, and this
+ * path runs only when every step is transactional.
+ *
+ * @param connection - Reserved connection
+ * @param url - Driver URL
+ * @returns A session the caller closes
+ */
+async function watchSession(connection: DriverConnection, url: string): Promise<DirectSession> {
+  const pid = await backendPid(connection);
+  const observer = lockObserver(() => open({ url, max: 1 }));
+  return {
+    pid,
+    observer,
+    async end() {
+      await finishQuiet(() => observer.close());
+      return true;
+    },
+  };
+}
+
 function directFields(
   direct: DirectSession | undefined,
   request: { readonly url: string; readonly allowPooler?: boolean },
   detail?: string,
 ):
   | { readonly directPid: string; readonly observer: LockObserver }
-  | { readonly poolerReason: string } {
-  if (direct !== undefined) return { directPid: direct.pid, observer: direct.observer };
+  | { readonly observer: LockObserver }
+  | { readonly observer: LockObserver; readonly poolerReason: string }
+  | { readonly poolerReason: string }
+  | Record<string, never> {
+  if (direct !== undefined && direct.pid.length > 0) {
+    return { directPid: direct.pid, observer: direct.observer };
+  }
+  if (detail === undefined) {
+    return direct?.observer !== undefined ? { observer: direct.observer } : {};
+  }
   const found = detectPooler({ url: request.url, marker: request.allowPooler === true });
-  return {
-    poolerReason: detail ?? found.detail ?? "the connection is not proven direct",
-  };
+  const poolerReason =
+    detail.length > 0 ? detail : (found.detail ?? "the connection is not proven direct");
+  return direct?.observer !== undefined
+    ? { observer: direct.observer, poolerReason }
+    : { poolerReason };
 }
 
 export async function lockTarget(connection: DriverConnection, target: string): Promise<void> {

@@ -62,7 +62,7 @@ export const SITE_DOC_SOURCES = {
   "observer-events.md": "reference/observer-events.mdx",
   "production.md": "operate/production-checklist.mdx",
   "protection.md": "operate/protected-targets-and-roles.mdx",
-  "roles.md": "reference/config-roles.mdx",
+  "roles.md": "operate/protected-targets-and-roles.mdx",
   "testing.md": "operate/testing.mdx",
   "threat-model.md": "concepts/the-safety-model.mdx",
   "topology.md": "operate/replicas-and-topology.mdx",

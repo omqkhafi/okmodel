@@ -19,7 +19,7 @@ import { attachRoles } from "../src/dialects/pg/role/index.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
 import { applyTarget } from "../src/tooling/migrate/apply.js";
-import { probeConcurrent } from "../src/tooling/migrate/pooler.js";
+import { probeConcurrent } from "../src/tooling/migrate/pooler-probe.js";
 import type { MigrateConfig } from "../src/tooling/migrate/config.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
 import { applyRoles, roleStatus, setRolePassword } from "../src/tooling/migrate/roles-cmd.js";
@@ -458,7 +458,16 @@ async function loginPostgresJs(url: string): Promise<void> {
 }
 
 async function loginNodePostgres(url: string): Promise<void> {
-  const client = new pg.Client({ connectionString: url });
+  const Client = (
+    pg as unknown as {
+      Client: new (config: { connectionString: string }) => {
+        connect(): Promise<void>;
+        query(sql: string): Promise<unknown>;
+        end(): Promise<void>;
+      };
+    }
+  ).Client;
+  const client = new Client({ connectionString: url });
   await client.connect();
   try {
     await client.query("select 1");

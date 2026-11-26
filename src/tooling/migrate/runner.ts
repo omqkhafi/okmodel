@@ -1002,7 +1002,9 @@ function assertPublicGrant(sql: string, allowProtected: boolean): void {
   if (allowProtected) return;
   if (!/\b(grant|revoke)\b/i.test(sql)) return;
   if (!/\b(to|from)\s+public\b/i.test(sql)) return;
-  // The generated refresh function always revokes its default PUBLIC execute.
+  // CONNECT on a table is not a privilege. The server rejects it, and that
+  // error text contains CONNECT, which must stay a database error.
+  if (/\bgrant\s+connect\s+on\s+table\b/i.test(sql)) return;
   if (/\brevoke\b/i.test(sql) && /\bokm_refresh_[a-z0-9_]+"?\s*\(/i.test(sql)) return;
   throw new OkmError(
     "OKM1850",

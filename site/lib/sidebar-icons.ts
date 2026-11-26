@@ -181,6 +181,7 @@ const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/docs/reference/cli/migrate": ScrollText,
   "/docs/reference/cli/introspect": FolderInput,
   "/docs/reference/cli/protect": Shield,
+  "/docs/reference/cli/roles": KeyRound,
   "/docs/reference/expr": Calculator,
   "/docs/reference/compatibility": Scale,
   "/docs/reference/schema-api": Braces,

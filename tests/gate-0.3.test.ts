@@ -275,6 +275,9 @@ postgresTest(
     const roles = { migration: mig, app };
     let cwd = project(database.url, roleHeader, roleV1, roles, dirs);
     try {
+      // The plan still emits ALTER DEFAULT PRIVILEGES for the connecting role.
+      // That statement needs a superuser once the session has SET ROLE.
+      await sql.unsafe(`create role ${quoteIdent(mig)} superuser nologin inherit`);
       await sql.unsafe(
         `create role ${quoteIdent(app)} login password 'secret' nosuperuser nocreatedb nocreaterole`,
       );

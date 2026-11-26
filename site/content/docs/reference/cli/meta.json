@@ -6,6 +6,7 @@
     "check",
     "migrate",
     "introspect",
-    "protect"
+    "protect",
+    "roles"
   ]
 }
