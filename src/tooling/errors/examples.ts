@@ -101,6 +101,7 @@ import {
   refuseWorkspaceChoice,
 } from "../init/guards.js";
 import { ONCE } from "../migrate/lock-wait.js";
+import { checkScratch } from "../migrate/scratch-check.js";
 import { resumeCommittedStep, stepSqlHash } from "../migrate/step-engine.js";
 import type { CommittedStep, StepEngine, StepJournal } from "../migrate/step-engine.js";
 import type { PageExample } from "./page.js";
@@ -135,6 +136,7 @@ export const NEEDS_DATABASE = [
   "OKM1843",
   "OKM1844",
   "OKM1846",
+  "OKM1847",
   "OKM1851",
   "OKM1855",
   "OKM1856",
@@ -315,6 +317,24 @@ function schemaCodes(
   const plan = planMigration({ before: before.catalog, after: after.catalog, name: "example" });
   return lintPlan(plan, before.catalog, after.catalog).map((item) => item.code);
 }
+
+thrown(
+  "OKM1848",
+  async () => {
+    const verdict = await checkScratch([
+      "create table notes (title text)",
+      "create index notes_now on notes ((now()))",
+    ]);
+    if (!verdict.ok) throw verdict.error;
+  },
+  async () => {
+    const verdict = await checkScratch([
+      "create table notes (title text)",
+      "create index notes_lower on notes ((lower(title)))",
+    ]);
+    if (!verdict.ok) throw verdict.error;
+  },
+);
 
 thrown(
   "OKM1012",

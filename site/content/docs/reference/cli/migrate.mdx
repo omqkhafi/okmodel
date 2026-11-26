@@ -82,6 +82,8 @@ backfill <migration> step <index> batch <n> rows <n> key <last>
 
 `key` is the committed boundary, or `-` when that batch has none.
 
+A step marked `-- weight: blocking` or `-- weight: rewrite` on a table of over 100,000 rows stops apply before its first step until `--allow-blocking`. See [Large tables](/docs/migrations/waiting-for-locks#large-tables).
+
 A protected target allows expand, reference rows, and provision of an empty database. Contract, unclassified SQL, a backfill, and a history repair that changes a row are OKM1850 until `--allow-protected`. An empty database, a database that already has objects and no history, and a provision that stopped part-way are on [Database](/docs/reference/config-database#an-empty-database). Reference rows are on [Reference rows](/docs/schema/required-rows). Timeouts are on [Timeouts](/docs/reference/config#timeouts). Batch size, pause, and the batch statement timeout are on [Backfill](/docs/reference/config#backfill). Roles are on [Roles](/docs/reference/config-roles).
 
 A schema module that does not export a `schema()` still lets apply run. It installs no reference rows. The message is on [Schema](/docs/reference/config#schema).

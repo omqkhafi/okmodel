@@ -26,7 +26,13 @@ import type {
   ViewObject,
 } from "../contracts/catalog/types.js";
 import { OkmError } from "../contracts/error.js";
-import { classOf, STEP_CLASS, type MigrationClass, type StepKind } from "./step-class.js";
+import {
+  classOf,
+  STEP_CLASS,
+  type MigrationClass,
+  type StepKind,
+  type StepWeight,
+} from "./step-class.js";
 
 /** How a dialect provides a feature. Matches the feature registry. */
 export type DdlSupport = "native" | "emulated" | "refused";
@@ -91,6 +97,13 @@ export type DdlStep = {
    * Display only. A migration file does not record it.
    */
   readonly safeRewrite?: true;
+  /**
+   * `blocking` or `rewrite` when the step means downtime on a large table.
+   *
+   * A migration file records it as `-- weight:`. Apply stops over 100,000
+   * rows unless `--allow-blocking` is passed.
+   */
+  readonly weight?: StepWeight;
   readonly transactional: boolean;
   /**
    * Set when the statement is a batched backfill.

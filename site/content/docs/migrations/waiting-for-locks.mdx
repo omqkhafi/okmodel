@@ -57,3 +57,35 @@ Fail fast with `--lock-wait 0`:
 ```bash
 bunx okm migrate apply --lock-wait 0
 ```
+
+## Large tables
+
+Some steps do more than wait for a lock. A `blocking` step holds a lock that keeps readers and writers out for the whole build and has no online form. A `rewrite` step rewrites the table under `ACCESS EXCLUSIVE`. A migration file marks such a step with a `-- weight:` line:
+
+```sql
+-- class: expand
+-- name: tasks_id_exclusive
+
+-- class: expand
+-- kind: add-constraint
+-- action: ddl
+-- lock: ACCESS EXCLUSIVE
+-- weight: blocking
+alter table "public"."tasks" add constraint tasks_id_exclusive exclude using btree (id with =);
+```
+
+On a table of up to 100,000 rows nothing changes. Over that, `okm migrate apply` and `okm push` stop before their first step, with `Nothing was changed.`, and print the estimate, unless you pass `--allow-blocking`:
+
+```bash
+bunx okm migrate apply --allow-blocking
+```
+
+The flag means downtime, not data loss. It is not `--allow-protected`, which is about steps that can lose data, and one does not imply the other.
+
+The row count is taken on the target when apply starts, not when the plan was printed, so a table that grew in between is counted as it is. Postgres counts at most 100,001 rows in 2 seconds, so a bigger table reads as `100,001 or more` and its estimate says `at least`. `okm migrate plan` prints the same estimate on the lock line, from `pg_class.reltuples`, or the bounded count when the table has never been analyzed.
+
+The duration is an estimate, good to an order of magnitude: about 45 seconds per million rows for `blocking`, and about 1.3 seconds per million rows for a `rewrite` that changes a column type. It was measured on real servers and is not a promise for yours.
+
+`--lock-timeout` and `--lock-wait` cover getting the lock. They do not cover the build that follows, which runs under `--statement-timeout`.
+
+In `--json`, a step has `weight`, and with a target it also has `estimatedRows` and `estimateMs`. The refusal is `OKM1847`, with `retryable: false` and exit code 4.

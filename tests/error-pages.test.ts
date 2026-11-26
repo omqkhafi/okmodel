@@ -66,6 +66,7 @@ test("every code is an offline pair, needs a database, or is not thrown", async 
     "OKM1843",
     "OKM1844",
     "OKM1846",
+    "OKM1847",
     "OKM1851",
     "OKM1855",
     "OKM1856",

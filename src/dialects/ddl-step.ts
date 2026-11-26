@@ -55,7 +55,7 @@ export function ddlStep(
  * @param extra - Tables the SQL does not name, such as the parent of a dropped index
  * @returns Names in first-seen order, without duplicates
  */
-function touchedTables(
+export function touchedTables(
   sql: string,
   lock: string,
   extra: readonly string[] | undefined,

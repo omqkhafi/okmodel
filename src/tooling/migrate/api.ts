@@ -31,6 +31,8 @@ export type MigrateOptions = {
   readonly allowProtected?: boolean;
   /** Same as `--allow-pooler`. */
   readonly allowPooler?: boolean;
+  /** Same as `--allow-blocking`. Only `apply` and `push` read it. */
+  readonly allowBlocking?: boolean;
   /** Same as `--lock-timeout`. */
   readonly lockTimeoutMs?: number;
   /** Same as `--statement-timeout`. */
@@ -190,6 +192,7 @@ function invokeOf(options: MigrateOptions): InvokeFlags {
     ...(options.target !== undefined ? { target: options.target } : {}),
     allowProtected: options.allowProtected === true,
     allowPooler: options.allowPooler === true,
+    ...(options.allowBlocking === true ? { allowBlocking: true } : {}),
     ...(options.lockTimeoutMs !== undefined ? { lockTimeoutMs: options.lockTimeoutMs } : {}),
     ...(options.statementTimeoutMs !== undefined
       ? { statementTimeoutMs: options.statementTimeoutMs }

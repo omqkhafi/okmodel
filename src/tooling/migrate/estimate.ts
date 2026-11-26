@@ -23,7 +23,7 @@ export type RowEstimate =
   | { readonly kind: "rows"; readonly reltuples: number }
   | { readonly kind: "unknown" };
 
-const ESTIMATE_SQL = `
+export const ESTIMATE_SQL = `
   select c.relname, c.reltuples::float8::text as reltuples
   from pg_class c
   join pg_namespace n on n.oid = c.relnamespace

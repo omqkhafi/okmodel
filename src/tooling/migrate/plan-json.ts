@@ -13,6 +13,7 @@ import {
   type MigrationClass,
   type OperationClass,
   type StepKind,
+  type StepWeight,
 } from "./classify.js";
 import type { Finding } from "./lint.js";
 import type { MigrationPlan, PlanStep } from "./plan.js";
@@ -23,6 +24,20 @@ export type PlanStepJson = {
   readonly operationClass: OperationClass;
   readonly lock: string;
   readonly sql: string;
+  /**
+   * `blocking` or `rewrite` when the step means downtime on a large table.
+   *
+   * Absent on any other step. Apply stops over 100,000 rows without
+   * `--allow-blocking`.
+   */
+  readonly weight?: StepWeight;
+  /**
+   * Rows the estimate used, when a target answered: a count, or the text
+   * `100,001 or more` when the count stopped at its bound.
+   */
+  readonly estimatedRows?: number | string;
+  /** Estimated duration in milliseconds. An estimate, not a measurement. */
+  readonly estimateMs?: number;
   /**
    * Declared `-- probe:` text.
    *
@@ -40,6 +55,20 @@ export type PlanStepJson = {
     readonly fill?: string;
   };
 };
+
+/** What a plan says about a weighted step when a target answered. */
+export type WeightEstimate = {
+  readonly estimatedRows: number | string;
+  readonly estimateMs: number;
+};
+
+function weightFields(
+  step: PlanStep,
+  weighed: ((step: PlanStep) => WeightEstimate | undefined) | undefined,
+): Partial<WeightEstimate> {
+  if (step.weight === undefined || weighed === undefined) return {};
+  return weighed(step) ?? {};
+}
 
 /** One destructive step in a plan document. */
 export type DestructiveOperation = {
@@ -101,6 +130,7 @@ export function planDocument(
   lockText?: (step: PlanStep) => string,
   identity?: PlanIdentity,
   data?: readonly ({ readonly emptyRows: number | string; readonly fill?: string } | undefined)[],
+  weighed?: (step: PlanStep) => WeightEstimate | undefined,
 ): PlanDocument {
   const dialect = identity?.dialect ?? "postgres";
   const fromCatalogHash = identity?.fromCatalogHash ?? "";
@@ -114,6 +144,8 @@ export function planDocument(
       sql: step.sql,
       kind,
       name: nameOf(step),
+      ...(step.weight !== undefined ? { weight: step.weight } : {}),
+      ...weightFields(step, weighed),
       ...(step.probe !== undefined && step.probe.length > 0 ? { probe: step.probe } : {}),
     };
   });
@@ -153,6 +185,9 @@ export function planDocument(
       operationClass: step.operationClass,
       lock: step.lock,
       sql: step.sql,
+      ...(step.weight !== undefined ? { weight: step.weight } : {}),
+      ...(step.estimatedRows !== undefined ? { estimatedRows: step.estimatedRows } : {}),
+      ...(step.estimateMs !== undefined ? { estimateMs: step.estimateMs } : {}),
       ...(step.probe !== undefined ? { probe: step.probe } : {}),
       ...(data?.[index] === undefined ? {} : { data: data[index] }),
     })),
@@ -209,8 +244,9 @@ export function formatPlanJson(
   lockText?: (step: PlanStep) => string,
   identity?: PlanIdentity,
   data?: readonly ({ readonly emptyRows: number | string; readonly fill?: string } | undefined)[],
+  weighed?: (step: PlanStep) => WeightEstimate | undefined,
 ): string {
-  return `${JSON.stringify(planDocument(plan, findings, lockText, identity, data))}\n`;
+  return `${JSON.stringify(planDocument(plan, findings, lockText, identity, data, weighed))}\n`;
 }
 
 /**

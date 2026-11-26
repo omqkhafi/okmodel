@@ -103,6 +103,12 @@ const allowPooler: FlagSpec = {
   hint: "This invocation only. No short form.",
 };
 
+const allowBlocking: FlagSpec = {
+  name: "allow-blocking",
+  type: "boolean",
+  hint: "Run a step that keeps a table of over 100,000 rows from being used. This invocation only.",
+};
+
 const allowDataLoss: FlagSpec = {
   name: "allow-data-loss",
   type: "boolean",
@@ -198,7 +204,15 @@ export const COMMANDS: readonly CommandSpec[] = [
     maxOperands: 0,
     usesDatabase: true,
     ownOut: false,
-    flags: [target, allowProtected, allowPooler, lockTimeout, lockWait, statementTimeout],
+    flags: [
+      target,
+      allowProtected,
+      allowPooler,
+      allowBlocking,
+      lockTimeout,
+      lockWait,
+      statementTimeout,
+    ],
   }),
   spec({
     id: "migrate status",
@@ -474,7 +488,7 @@ export const COMMANDS: readonly CommandSpec[] = [
     maxOperands: 0,
     usesDatabase: true,
     ownOut: false,
-    flags: [target, allowProtected, allowPooler, allowDataLoss],
+    flags: [target, allowProtected, allowPooler, allowBlocking, allowDataLoss],
   }),
   spec({
     id: "pull",

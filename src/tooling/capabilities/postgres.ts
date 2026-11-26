@@ -90,6 +90,10 @@ export const POSTGRES_FEATURES = {
   ),
   "tooling.pull": native("pull emitter uses export names in references and keeps sqlName"),
   "tooling.scratchReplay": native("proof:tooling.scratchReplay"),
+  "tooling.scratchCheck": native("proof:tooling.scratchCheck"),
+  "expr.core": native("proof:expr.core"),
+  "expr.where": native("proof:expr.where"),
+  "step.blocking": native("proof:step.blocking"),
   "tooling.testing": native("factories create, reuse a ref, fill defaults, and replay a seed"),
   "tooling.describe": native("proof:tooling.describe"),
   /** Unit kinds the write observer covers: transaction and batch. */

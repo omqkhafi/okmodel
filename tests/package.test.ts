@@ -29,6 +29,7 @@ test("package exports resolve under node and bun", async () => {
       'import * as ext from "okmodel/ext";',
       'import * as fn from "okmodel/fn";',
       'import * as view from "okmodel/view";',
+      'import * as expr from "okmodel/expr";',
       'import * as otel from "okmodel/otel";',
       'import * as citext from "okmodel/pg/citext";',
       'import * as pgTrgm from "okmodel/pg/pg_trgm";',
@@ -40,7 +41,7 @@ test("package exports resolve under node and bun", async () => {
       'import * as fuzzystrmatch from "okmodel/pg/fuzzystrmatch";',
       'import * as pgcrypto from "okmodel/pg/pgcrypto";',
       bunImport.trimEnd(),
-      `const kinds = [okmodel, internal, pg, migrate, postgresjs, pglite, nodePostgres, neon, ids, safety, traits, tenancy, session, ext, fn, view, citext, pgTrgm, unaccent, hstore, ltree, btreeGist, btreeGin, fuzzystrmatch, pgcrypto, otel${bunName}].map((entry) => typeof entry);`,
+      `const kinds = [okmodel, internal, pg, migrate, postgresjs, pglite, nodePostgres, neon, ids, safety, traits, tenancy, session, ext, fn, view, expr, citext, pgTrgm, unaccent, hstore, ltree, btreeGist, btreeGin, fuzzystrmatch, pgcrypto, otel${bunName}].map((entry) => typeof entry);`,
       "if (kinds.some((kind) => kind !== 'object')) throw new Error(kinds.join(','));",
       "console.log('ok');",
     ]

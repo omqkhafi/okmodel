@@ -969,6 +969,148 @@
       "kind": "stable"
     }
   ],
+  "okmodel/expr": [
+    {
+      "name": "CastTypes",
+      "kind": "stable"
+    },
+    {
+      "name": "Cond",
+      "kind": "stable"
+    },
+    {
+      "name": "DateText",
+      "kind": "stable"
+    },
+    {
+      "name": "Expr",
+      "kind": "stable"
+    },
+    {
+      "name": "ExtractField",
+      "kind": "stable"
+    },
+    {
+      "name": "ImmutableExpr",
+      "kind": "stable"
+    },
+    {
+      "name": "Node",
+      "kind": "stable"
+    },
+    {
+      "name": "SettingTypes",
+      "kind": "stable"
+    },
+    {
+      "name": "StableExpr",
+      "kind": "stable"
+    },
+    {
+      "name": "Timestamp",
+      "kind": "stable"
+    },
+    {
+      "name": "Timestamptz",
+      "kind": "stable"
+    },
+    {
+      "name": "Volatility",
+      "kind": "stable"
+    },
+    {
+      "name": "add",
+      "kind": "stable"
+    },
+    {
+      "name": "and",
+      "kind": "stable"
+    },
+    {
+      "name": "atTimeZone",
+      "kind": "stable"
+    },
+    {
+      "name": "caseWhen",
+      "kind": "stable"
+    },
+    {
+      "name": "cast",
+      "kind": "stable"
+    },
+    {
+      "name": "coalesce",
+      "kind": "stable"
+    },
+    {
+      "name": "col",
+      "kind": "stable"
+    },
+    {
+      "name": "concat",
+      "kind": "stable"
+    },
+    {
+      "name": "div",
+      "kind": "stable"
+    },
+    {
+      "name": "extract",
+      "kind": "stable"
+    },
+    {
+      "name": "isExpr",
+      "kind": "stable"
+    },
+    {
+      "name": "jsonText",
+      "kind": "stable"
+    },
+    {
+      "name": "length",
+      "kind": "stable"
+    },
+    {
+      "name": "lower",
+      "kind": "stable"
+    },
+    {
+      "name": "mod",
+      "kind": "stable"
+    },
+    {
+      "name": "mul",
+      "kind": "stable"
+    },
+    {
+      "name": "nodeOf",
+      "kind": "stable"
+    },
+    {
+      "name": "now",
+      "kind": "stable"
+    },
+    {
+      "name": "nullif",
+      "kind": "stable"
+    },
+    {
+      "name": "setting",
+      "kind": "stable"
+    },
+    {
+      "name": "settingList",
+      "kind": "stable"
+    },
+    {
+      "name": "sub",
+      "kind": "stable"
+    },
+    {
+      "name": "upper",
+      "kind": "stable"
+    }
+  ],
   "okmodel/pg/citext": [
     {
       "name": "citext",

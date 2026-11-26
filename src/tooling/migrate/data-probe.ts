@@ -128,6 +128,8 @@ export type ProbeRequest = {
   readonly column?: string;
   /** `rows` counts the table. The others count a column. */
   readonly which: "null" | "notNull" | "blank" | "rows";
+  /** Rows the subquery reads before the count stops being exact. Defaults to {@link PROBE_LIMIT}. */
+  readonly limit?: number;
 };
 
 /** One answer from {@link probeTarget}. */
@@ -169,7 +171,7 @@ export async function probeTarget(
         for (const request of requests) {
           try {
             const rows = await tx.unsafe<{ c: string | null }[]>(probeSql(schema, request));
-            hits.push({ ...request, count: parseCount(rows[0]?.c ?? null) });
+            hits.push({ ...request, count: parseCount(rows[0]?.c ?? null, request.limit) });
           } catch (error) {
             if (!isTimeout(error)) throw error;
             aborted = [
@@ -239,7 +241,7 @@ export function probeSql(schema: string, request: ProbeRequest): string {
         : request.which === "notNull"
           ? `${quoteIdent(request.column)} is not null`
           : `${quoteIdent(request.column)} = ''`;
-  return `select count(*)::text as c from (select 1 from ${table} where ${where} limit ${String(PROBE_LIMIT + 1)}) as okm_n`;
+  return `select count(*)::text as c from (select 1 from ${table} where ${where} limit ${String((request.limit ?? PROBE_LIMIT) + 1)}) as okm_n`;
 }
 
 /**
@@ -279,7 +281,7 @@ async function readHits(
       try {
         const rows = await query(probeSql(schema, request));
         await query("release savepoint okm_probe");
-        hits.push({ ...request, count: parseCount(rows[0]?.[0] ?? null) });
+        hits.push({ ...request, count: parseCount(rows[0]?.[0] ?? null, request.limit) });
       } catch (error) {
         await query("rollback to savepoint okm_probe").catch(() => undefined);
         if (isTimeout(error)) {
@@ -305,10 +307,10 @@ async function readHits(
   return hits;
 }
 
-function parseCount(raw: string | null): ProbeCount {
+function parseCount(raw: string | null, limit = PROBE_LIMIT): ProbeCount {
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 0) return { kind: "unknown" };
-  if (n > PROBE_LIMIT) return { kind: "least" };
+  if (n > limit) return { kind: "least" };
   return { kind: "exact", n };
 }
 

@@ -888,6 +888,20 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     fix: "Raise timeouts.acquire, or stop holding connections. The wait does not spill into another pool.",
   },
   {
+    code: "OKM1847",
+    title: "Blocking step",
+    summary:
+      "A step holds a lock that blocks readers and writers while it runs, or rewrites the table, and the table has more than 100,000 estimated rows.",
+    fix: "Apply it in a maintenance window with --allow-blocking, or change the plan so the step is not needed.",
+    escapeHatches: [hatch("OKM1847", "--allow-blocking")],
+  },
+  {
+    code: "OKM1848",
+    title: "Expression refused",
+    summary: "Postgres refused a statement or expression in a scratch database.",
+    fix: "Change the expression to what the message says Postgres needs, for example an immutable function.",
+  },
+  {
     code: "OKM1850",
     title: "Protected target",
     summary: "The operation is blocked on a protected target.",

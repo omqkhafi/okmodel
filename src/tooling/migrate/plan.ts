@@ -47,7 +47,14 @@ import {
   resolveBatchSize,
   type BackfillSpec,
 } from "./backfill.js";
-import { isStepKind, strictestClass, type MigrationClass, type StepKind } from "./classify.js";
+import {
+  isStepKind,
+  readWeight,
+  strictestClass,
+  type MigrationClass,
+  type StepKind,
+  type StepWeight,
+} from "./classify.js";
 import { extensionAlterSteps } from "./extensions.js";
 import { omitManagedObjects } from "./managed.js";
 import { bareCheck, enforcementSteps, stepsForExistingTable, type SafeStep } from "./safe.js";
@@ -99,6 +106,8 @@ export type PlanStep = {
    * Display only. A migration file does not record it.
    */
   readonly safeRewrite?: true;
+  /** `blocking` or `rewrite`. Written to the file as `-- weight:`. Absent when neither. */
+  readonly weight?: StepWeight;
   readonly transactional: boolean;
   /**
    * Set when the statement is a batched backfill.
@@ -836,6 +845,7 @@ export function formatPlan(plan: MigrationPlan, lockText?: (step: PlanStep) => s
     if (item.kind !== undefined) lines.push(`-- kind: ${item.kind}`);
     lines.push(`-- action: ${item.action}`);
     lines.push(`-- lock: ${lockText === undefined ? item.lock : lockText(item)}`);
+    if (item.weight !== undefined) lines.push(`-- weight: ${item.weight}`);
     if (item.backfill !== undefined) lines.push(formatBackfillHeader(item.backfill));
     if (!item.transactional) lines.push("-- transactional: false");
     if (item.path !== undefined) lines.push(`-- path: ${item.path}`);
@@ -888,6 +898,7 @@ export function parsePlan(text: string): MigrationPlan {
     let stepKind: StepKind | undefined;
     let action: PlanStep["action"] = "ddl";
     let lock = "";
+    let weight: StepWeight | undefined;
     let transactional = true;
     let backfill: BackfillSpec | undefined;
     let path: PlanStep["path"];
@@ -913,6 +924,8 @@ export function parsePlan(text: string): MigrationPlan {
       } else if (line.startsWith("-- action: "))
         action = line.endsWith("backfill") ? "backfill" : "ddl";
       else if (line.startsWith("-- lock: ")) lock = line.slice("-- lock: ".length);
+      else if (line.startsWith("-- weight: "))
+        weight = readWeight(line.slice("-- weight: ".length));
       else if (line.startsWith("-- backfill ")) backfill = parseBackfillHeader(line);
       else if (line === "-- transactional: false") transactional = false;
       else if (line === "-- path: unverified") path = "unverified";
@@ -935,6 +948,7 @@ export function parsePlan(text: string): MigrationPlan {
         ...(kind !== undefined ? { kind } : {}),
         action,
         lock,
+        ...(weight !== undefined ? { weight } : {}),
         transactional,
         ...(backfill !== undefined ? { backfill } : {}),
         ...(path !== undefined ? { path } : {}),
