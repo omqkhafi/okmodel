@@ -219,7 +219,16 @@ function renderView(view: ViewModel, model: SchemaModel): string {
   if (table === undefined) throw new Error(`view ${view.name} has no table`);
   const cols = view.columns.map((name) => JSON.stringify(name)).join(", ");
   const tenancy = model.tenancy ? `, tenancy: global("projection omits the tenant key")` : "";
-  return `const ${viewKey(view.name)} = view(${JSON.stringify(view.name)}, { tables: [${view.tableKey}]${tenancy} }, (q) => q.${table.name}.find({ select: [${cols}] }));`;
+  return `const ${viewKey(view.name)} = view(${JSON.stringify(view.name)}, { tables: [${view.tableKey}]${tenancy} }, (q) => q${member(table.name)}.find({ select: [${cols}] }));`;
+}
+
+/**
+ * A `q` property. A spaced or quoted table name is not a dot identifier.
+ *
+ * @param name - Table name, which is the key on `q`
+ */
+function member(name: string): string {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) ? `.${name}` : `[${JSON.stringify(name)}]`;
 }
 
 function triggerKey(name: string): string {

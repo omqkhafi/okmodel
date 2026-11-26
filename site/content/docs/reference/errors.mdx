@@ -333,7 +333,7 @@ Codes are in numeric order. Ranges are schema `OKM1000`, queries and capabilitie
 | <a id="okm1814" />[`OKM1814`](#okm1814) | `invalid` | The plan would downgrade an extension, move a non-relocatable one, or drop one that still has dependents. A NOSUPERUSER migration role that does not own the extension hits the same code when a step would alter that extension or one of its types. | `docs/errors/OKM1814.md` |
 | <a id="okm1820" />[`OKM1820`](#okm1820) | `invalid` | A view over tenant tables does not expose the tenant key and is not marked global. | `docs/errors/OKM1820.md` |
 | <a id="okm1821" />[`OKM1821`](#okm1821) | `invalid` | An incompatible replace would have to recreate dependents. CASCADE is never used. | `docs/errors/OKM1821.md` |
-| <a id="okm1822" />[`OKM1822`](#okm1822) | `invalid` | REFRESH CONCURRENTLY was declared without a unique index on the materialized view. | `docs/errors/OKM1822.md` |
+| <a id="okm1822" />[`OKM1822`](#okm1822) | `invalid` | REFRESH CONCURRENTLY was declared without a unique index on plain columns. An expression index or a partial index does not qualify. | `docs/errors/OKM1822.md` |
 | <a id="okm1823" />[`OKM1823`](#okm1823) | `invalid` | A SECURITY DEFINER function has no search_path. | `docs/errors/OKM1823.md` |
 | <a id="okm1824" />[`OKM1824`](#okm1824) | `invalid` | A plpgsql function has no dependsOn. Postgres does not record dependencies inside the body. | `docs/errors/OKM1824.md` |
 | <a id="okm1825" />[`OKM1825`](#okm1825) | `forbidden` | A role lacks a privilege on a managed object. | `docs/errors/OKM1825.md` |
@@ -391,6 +391,9 @@ Codes are in numeric order. Ranges are schema `OKM1000`, queries and capabilitie
 | <a id="okm1897" />[`OKM1897`](#okm1897) | `invalid` | okm push would drop a column or constraint that okm pull listed under not pulled yet. | `docs/errors/OKM1897.md` |
 | <a id="okm1898" />[`OKM1898`](#okm1898) | `invalid` | okm push would drop columns and tables that hold rows. | `docs/errors/OKM1898.md` |
 | <a id="okm1899" />[`OKM1899`](#okm1899) | `invalid` | A migration ledger name already belongs to another table. | `docs/errors/OKM1899.md` |
+| <a id="okm1900" />[`OKM1900`](#okm1900) | `invalid` | Two views list each other in tables, so neither can be created first. | `docs/errors/OKM1900.md` |
+| <a id="okm1901" />[`OKM1901`](#okm1901) | `invalid` | A view column declared not null came back NULL. PostgreSQL does not store view nullability, so the declaration is checked when the row is read. | `docs/errors/OKM1901.md` |
+| <a id="okm1902" />[`OKM1902`](#okm1902) | `invalid` | A security-invoker view reads a base table this role cannot select. The view fails at read time for this role. | `docs/errors/OKM1902.md` |
 | <a id="okm2200" />[`OKM2200`](#okm2200) | `invalid` | The write-observer buffer dropped the oldest unit because it exceeded the pending-event ceiling. | `docs/errors/OKM2200.md` |
 | <a id="okm2201" />[`OKM2201`](#okm2201) | `invalid` | okm doctor --production found a lock_timeout or statement_timeout of 0. Apply or a statement can then wait without limit. The finding is a warning: nothing is refused. | `docs/errors/OKM2201.md` |
 | <a id="okm2202" />[`OKM2202`](#okm2202) | `invalid` | okm doctor --production selected a target that does not set protected: true in the config. A name such as production and NODE_ENV are never read. A fingerprint in this machine's store does not count: it protects one machine. | `docs/errors/OKM2202.md` |
