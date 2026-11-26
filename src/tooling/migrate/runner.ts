@@ -34,6 +34,14 @@ import {
 import { postgresStepJournal } from "./step-journal.js";
 import {
   isLockTimeout,
+  lockFailure,
+  lockWaiter,
+  readLock,
+  type LockObserver,
+  type LockTally,
+  type LockWaiter,
+} from "./lock-wait.js";
+import {
   resumeCommittedStep,
   StepBoundaryStop,
   stepSqlHash,
@@ -80,12 +88,21 @@ export type RunPolicy = {
   readonly protection?: ProtectionMatch;
 };
 
-/** One target's units, retries, and checkpoints. */
+/** One target's units, lock wait, and checkpoints. */
 export type TargetRun = {
   readonly policy: RunPolicy;
   readonly units: readonly RunnableUnit[];
-  readonly retries: number;
+  /** `--lock-wait`: how long a blocked step keeps retrying. 0 is one attempt. */
+  readonly lockWaitMs: number;
+  /** `lock_timeout` for one attempt. */
   readonly lockTimeoutMs: number;
+  /**
+   * Backend pid of a connection that passed the direct check. Unset behind
+   * `--allow-pooler`: a step outside a transaction is refused there.
+   */
+  readonly directPid?: string;
+  /** Names who holds a lock a step gave up on. Unset when the connection is not direct. */
+  readonly observer?: LockObserver;
   readonly statementTimeoutMs: number;
   readonly backfillPauseMs?: number;
   readonly backfillStatementTimeoutMs?: number;
@@ -109,9 +126,16 @@ export type TargetRunReport = {
   readonly target: string;
   readonly applied: readonly string[];
   readonly setRole?: string;
+  /** Present when a step had to wait for a lock. */
+  readonly lock?: LockTally;
 };
 
-const BACKOFF_MS = 50;
+/** Where the run's lock waits are counted, and what counts as already committed. */
+type LockRun = {
+  readonly tally: LockTally;
+  readonly done: () => number;
+  readonly waiter: (label: string, earlier?: () => boolean) => LockWaiter;
+};
 
 /** Role and extension schemas remembered for one apply connection. */
 type RunSession = { setRole?: string; extensionSchemas?: Set<string> };
@@ -126,11 +150,12 @@ const KEY_TYPES = `select a.attname, format_type(a.atttypid, a.atttypmod)
  * Runs one target's units in order.
  *
  * A finished step is skipped by the caller before it is placed in `units`.
- * Lock timeout retries that step. A backfill retries the current batch only
- * and resumes from `okm_backfill`.
+ * A lock timeout retries that step in a new transaction until `lockWaitMs`
+ * is spent. A backfill retries the current batch only and resumes from
+ * `okm_backfill`.
  *
  * @param connection - Reserved connection. The caller holds the advisory lock
- * @param run - Units, retries, and the protection flag
+ * @param run - Units, lock wait, and the protection flag
  * @param session - Role assumed for the rest of the connection
  * @returns The target and the migration ids that ran at least one unit
  */
@@ -140,11 +165,31 @@ export async function runTarget(
   session: RunSession,
 ): Promise<TargetRunReport> {
   const applied: string[] = [];
+  const tally: LockTally = { attempts: 0, waitedMs: 0 };
+  let done = 0;
+  const lock: LockRun = {
+    tally,
+    done: () => done,
+    waiter: (label, earlier = () => done > 0) =>
+      lockWaiter(
+        {
+          waitMs: run.lockWaitMs,
+          lockTimeoutMs: run.lockTimeoutMs,
+          ...(run.directPid !== undefined ? { pid: run.directPid } : {}),
+          ...(run.observer !== undefined ? { observer: run.observer } : {}),
+          ...(run.onProgress !== undefined ? { note: run.onProgress } : {}),
+          earlier: () => done > 0 || earlier(),
+          tally,
+        },
+        label,
+      ),
+  };
   for (let index = 0; index < run.units.length; index += 1) {
     const unit = run.units[index];
     if (unit === undefined) continue;
     assertUnitPolicy(run.policy, unit);
-    await runUnit(connection, unit, run, session);
+    await runUnit(connection, unit, run, session, lock);
+    done += 1;
     const next = run.units[index + 1];
     if (next === undefined || next.migrationId !== unit.migrationId) applied.push(unit.migrationId);
   }
@@ -152,6 +197,7 @@ export async function runTarget(
     target: run.policy.target,
     applied,
     ...(session.setRole !== undefined ? { setRole: session.setRole } : {}),
+    ...(tally.attempts > 0 ? { lock: tally } : {}),
   };
 }
 
@@ -371,45 +417,71 @@ async function runUnit(
   unit: RunnableUnit,
   run: TargetRun,
   session: RunSession,
+  lock: LockRun,
 ): Promise<void> {
   const only = unit.steps.length === 1 ? unit.steps[0] : undefined;
   if (only?.step.backfill !== undefined) {
-    await runBackfill(connection, unit, only, only.step.backfill, run);
+    await runBackfill(connection, unit, only, only.step.backfill, run, lock);
     return;
   }
   if (unitMode(unit) === "committed") {
     if (only === undefined) return;
-    await runCommitted(connection, unit, only, run, session);
+    await runCommitted(connection, unit, only, run, session, lock);
     return;
   }
-  for (let attempt = 0; attempt <= run.retries; attempt += 1) {
-    let began = false;
-    let current = unit.steps[0]?.index ?? 0;
-    try {
-      await connection.execute("begin");
-      began = true;
-      if (run.beforeStatements !== undefined) await run.beforeStatements(connection, unit);
-      for (const item of unit.steps) {
-        current = item.index;
-        await executePlanStep(connection, item, run, session);
+  let current = unit.steps[0]?.index ?? 0;
+  const label = `${unit.migrationId} step ${String(current + 1)}`;
+  try {
+    await lock.waiter(label).run(async () => {
+      let began = false;
+      try {
+        await connection.execute("begin");
+        began = true;
+        await scopeTimeouts(connection, run.lockTimeoutMs, run.statementTimeoutMs);
+        if (run.beforeStatements !== undefined) await run.beforeStatements(connection, unit);
+        for (const item of unit.steps) {
+          current = item.index;
+          await executePlanStep(connection, item, run, session);
+        }
+        if (
+          run.migrationRole !== undefined &&
+          session.setRole !== run.migrationRole &&
+          (await roleExists(connection, run.migrationRole))
+        ) {
+          await assumeRole(connection, run.migrationRole, session);
+        }
+        for (const item of unit.steps) await writeStep(connection, unit, item);
+        if (unit.finishes) await writeMeta(connection, unit);
+        await connection.execute("commit");
+      } catch (error) {
+        if (began) await connection.execute("rollback").catch(() => undefined);
+        throw error;
       }
-      if (
-        run.migrationRole !== undefined &&
-        session.setRole !== run.migrationRole &&
-        (await roleExists(connection, run.migrationRole))
-      ) {
-        await assumeRole(connection, run.migrationRole, session);
-      }
-      for (const item of unit.steps) await writeStep(connection, unit, item);
-      if (unit.finishes) await writeMeta(connection, unit);
-      await connection.execute("commit");
-      return;
-    } catch (error) {
-      if (began) await connection.execute("rollback").catch(() => undefined);
-      if (!isLockTimeout(error) || attempt === run.retries) throw failStep(unit, current, error);
-      await delay(BACKOFF_MS * 2 ** attempt);
-    }
+    });
+  } catch (error) {
+    throw failStep(unit, current, error);
   }
+}
+
+/**
+ * Sets both timeouts for the transaction that just began.
+ *
+ * `set_config(…, true)` is `SET LOCAL`: it ends with the transaction, so it
+ * cannot reach another client behind a pooler.
+ *
+ * @param connection - Reserved connection, inside a transaction
+ * @param lockMs - `lock_timeout` for this attempt
+ * @param statementMs - `statement_timeout` for this attempt
+ */
+async function scopeTimeouts(
+  connection: DriverConnection,
+  lockMs: number,
+  statementMs: number,
+): Promise<void> {
+  await connection.execute(
+    "select set_config('lock_timeout', $1, true), set_config('statement_timeout', $2, true)",
+    [String(lockMs), String(statementMs)],
+  );
 }
 
 async function runCommitted(
@@ -418,7 +490,9 @@ async function runCommitted(
   item: RunnableStep,
   run: TargetRun,
   session: RunSession,
+  lock: LockRun,
 ): Promise<void> {
+  if (run.directPid === undefined) throw outsideTransaction(unit, item.index);
   const step = committedOf(unit, item);
   await resumeCommittedStep(
     step,
@@ -428,13 +502,12 @@ async function runCommitted(
       {
         kind: step.kind,
         sql: item.step.sql,
-        lockTimeoutMs: run.lockTimeoutMs,
         ...(item.step.probe !== undefined ? { probe: item.step.probe } : {}),
       },
       () => executePlanStep(connection, item, run, session),
     ),
     {
-      retries: run.retries,
+      wait: lock.waiter(`${unit.migrationId} step ${String(item.index + 1)}`),
       ...(run.failAt !== undefined ? { failAt: run.failAt } : {}),
       wrap: (error) => failStep(unit, item.index, error),
     },
@@ -506,6 +579,7 @@ async function runBackfill(
   item: RunnableStep,
   spec: BackfillSpec,
   run: TargetRun,
+  lock: LockRun,
 ): Promise<void> {
   const columns = await keyColumns(connection, spec);
   const query = boundaryQuery(spec.table, columns);
@@ -539,12 +613,16 @@ async function runBackfill(
       "backfill",
       run.policy.allowProtected === true,
     );
-    const committed = await oneBatch(connection, unit, item, spec, run, query, {
-      last,
-      rows,
-      batches,
-      statementMs,
-    });
+    const committed = await oneBatch(
+      connection,
+      unit,
+      item,
+      spec,
+      run,
+      query,
+      { last, rows, batches, statementMs },
+      lock,
+    );
     rows = committed.rows;
     batches = committed.batches;
     const note: BackfillBatch = {
@@ -586,46 +664,50 @@ async function oneBatch(
   run: TargetRun,
   query: string,
   state: BatchState,
+  lock: LockRun,
 ): Promise<CommittedBatch> {
-  for (let attempt = 0; attempt <= run.retries; attempt += 1) {
-    let began = false;
-    try {
-      await connection.execute("begin");
-      began = true;
-      await connection.execute("select set_config('lock_timeout', $1, true)", [
-        String(run.lockTimeoutMs),
-      ]);
-      await connection.execute("select set_config('statement_timeout', $1, true)", [
-        String(state.statementMs),
-      ]);
-      const boundary = await connection.execute(query, [state.last, String(spec.batch - 1)]);
-      const upper = boundary.rows[0]?.[0] ?? null;
-      const final = upper === null;
-      const updated = await connection.execute(item.step.sql, [state.last, upper]);
-      const rows = state.rows + updated.count;
-      const batches = state.batches + 1;
-      const lastKey = upper ?? state.last;
-      await writeCheckpoint(connection, unit.migrationId, item.index, {
-        lastKey,
-        rows,
-        batches,
-        state: final ? "done" : "running",
-      });
-      if (final) {
-        await writeStep(connection, unit, item);
-        if (unit.finishes) await writeMeta(connection, unit);
+  const wait = lock.waiter(
+    `${unit.migrationId} step ${String(item.index + 1)}`,
+    () => state.batches > 0,
+  );
+  try {
+    return await wait.run(async () => {
+      let began = false;
+      try {
+        await connection.execute("begin");
+        began = true;
+        await scopeTimeouts(connection, run.lockTimeoutMs, state.statementMs);
+        const boundary = await connection.execute(query, [state.last, String(spec.batch - 1)]);
+        const upper = boundary.rows[0]?.[0] ?? null;
+        const final = upper === null;
+        const updated = await connection.execute(item.step.sql, [state.last, upper]);
+        const rows = state.rows + updated.count;
+        const batches = state.batches + 1;
+        const lastKey = upper ?? state.last;
+        await writeCheckpoint(connection, unit.migrationId, item.index, {
+          lastKey,
+          rows,
+          batches,
+          state: final ? "done" : "running",
+        });
+        if (final) {
+          await writeStep(connection, unit, item);
+          if (unit.finishes) await writeMeta(connection, unit);
+        }
+        await connection.execute("commit");
+        if (run.failAt === "after-ddl") throw new StepBoundaryStop("after-ddl");
+        return { rows, batches, lastKey, final };
+      } catch (error) {
+        if (began && !(error instanceof StepBoundaryStop)) {
+          await connection.execute("rollback").catch(() => undefined);
+        }
+        throw error;
       }
-      await connection.execute("commit");
-      if (run.failAt === "after-ddl") throw new StepBoundaryStop("after-ddl");
-      return { rows, batches, lastKey, final };
-    } catch (error) {
-      if (error instanceof StepBoundaryStop) throw error;
-      if (began) await connection.execute("rollback").catch(() => undefined);
-      if (!isLockTimeout(error) || attempt === run.retries) throw failStep(unit, item.index, error);
-      await delay(BACKOFF_MS * 2 ** attempt);
-    }
+    });
+  } catch (error) {
+    if (error instanceof StepBoundaryStop) throw error;
+    throw failStep(unit, item.index, error);
   }
-  throw failStep(unit, item.index, new Error("The batch did not commit."));
 }
 
 async function keyColumns(
@@ -769,7 +851,25 @@ export async function assertSchemaUsageLanded(
   });
 }
 
+function outsideTransaction(unit: RunnableUnit, index: number): OkmError {
+  return new OkmError(
+    "OKM1854",
+    `Migration ${unit.migrationId} step ${String(index + 1)} runs outside a transaction, and with --allow-pooler I cannot give it a lock timeout that stays on one connection. I stopped before running it.`,
+    { fix: { summary: "Use a direct connection, without --allow-pooler, for this migration." } },
+  );
+}
+
 function failStep(unit: RunnableUnit, index: number, error: unknown): OkmError {
+  const waited = readLock(error);
+  if (waited !== undefined) {
+    return lockFailure(
+      unit.migrationId,
+      index + 1,
+      error,
+      waited,
+      stepFailureFix(error, "apply").summary,
+    );
+  }
   const lost = sessionFailure(error);
   if (lost !== undefined) {
     return new OkmError(

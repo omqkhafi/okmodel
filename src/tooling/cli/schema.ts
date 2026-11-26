@@ -6,6 +6,7 @@
  */
 
 import { ERROR_CATEGORIES, ERROR_KINDS } from "../../contracts/error.js";
+import { HOLDER_KINDS } from "../migrate/lock-wait.js";
 import { UNTRUSTED_ORIGINS } from "../untrusted.js";
 import { COMMANDS } from "./spec.js";
 
@@ -260,7 +261,11 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
       },
     },
   },
-  "migrate apply": textData(idOf("migrate apply"), "okm migrate apply data"),
+  "migrate apply": object("migrate apply", "okm migrate apply data", ["text"], {
+    text: { type: "string" },
+    attempts: { type: "number" },
+    waitedMs: { type: "number" },
+  }),
   "migrate status": object("migrate status", "okm migrate status data", ["text", "steps"], {
     text: { type: "string" },
     steps: {
@@ -600,6 +605,18 @@ function errorItemSchema(): JsonSchemaNode {
     docs: { type: "string" },
     escapeHatches: hatchesSchema(),
     detail: untrustedSchema(),
+    attempts: { type: "number" },
+    waitedMs: { type: "number" },
+    blockedBy: {
+      type: "array",
+      items: objectNode(["pid", "application", "state", "ageMs", "kind"], {
+        pid: { type: "number" },
+        application: { type: "string" },
+        state: { type: "string" },
+        ageMs: { type: ["number", "null"] },
+        kind: { enum: HOLDER_KINDS },
+      }),
+    },
   });
 }
 

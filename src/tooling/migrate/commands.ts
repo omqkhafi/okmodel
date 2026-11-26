@@ -84,14 +84,16 @@ type Produced = {
  * @param error - Failure from a command
  * @param verbose - When true, append the stack
  * @param columns - Where prose wraps. The default leaves it unwrapped
+ * @param pretty - A terminal, so a lock failure may print the holders' query text
  * @returns The stderr text, including the trailing newline
  */
 export function formatFailure(
   error: unknown,
   verbose = false,
   columns = Number.POSITIVE_INFINITY,
+  pretty = false,
 ): string {
-  return failureText(error, verbose, columns);
+  return failureText(error, verbose, columns, pretty);
 }
 
 /**
@@ -728,19 +730,16 @@ async function applyCommand(
   parsed: ParsedCli,
   human: (text: string) => void,
 ): Promise<Produced> {
-  const { apply } = await import("./api.js");
+  const { applyProjectResult } = await import("./apply.js");
   let progress = "";
-  const result = await apply({
-    cwd: project.cwd,
-    config: project.configPath,
-    ...invokeOf(parsed),
-    onProgress: (chunk) => {
-      progress += chunk;
-      human(chunk);
-    },
+  const { report, text } = await applyProjectResult(project, invokeOf(parsed), (chunk) => {
+    progress += chunk;
+    human(chunk);
   });
-  human(result.text);
-  return textData(`${progress}${result.text}`);
+  human(text);
+  const produced = textData(`${progress}${text}`);
+  if (report.lock === undefined) return produced;
+  return { ...produced, data: { ...(produced.data as object), ...report.lock } };
 }
 
 async function statusCommand(
@@ -969,6 +968,7 @@ function invokeOf(parsed: ParsedCli): InvokeFlags {
     ...(parsed.statementTimeoutMs !== undefined
       ? { statementTimeoutMs: parsed.statementTimeoutMs }
       : {}),
+    ...(parsed.lockWaitMs !== undefined ? { lockWaitMs: parsed.lockWaitMs } : {}),
   };
 }
 

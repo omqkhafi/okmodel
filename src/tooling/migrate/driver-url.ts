@@ -12,17 +12,24 @@
  * Other pooler hints in the URL are left alone: this version does not
  * interpret them.
  *
+ * `application` names the connection in `pg_stat_activity` when the URL does
+ * not name one already.
+ *
  * @param url - A `postgres://` or `postgresql://` URL
+ * @param application - `application_name` to add, unless the URL has one
  * @returns The same URL without `pgbouncer` in the query string
  */
-export function driverUrl(url: string): string {
+export function driverUrl(url: string, application?: string): string {
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
     return url;
   }
-  if (!parsed.searchParams.has("pgbouncer")) return url;
+  const hint = parsed.searchParams.has("pgbouncer");
+  const name = application !== undefined && !parsed.searchParams.has("application_name");
+  if (!hint && !name) return url;
   parsed.searchParams.delete("pgbouncer");
+  if (name) parsed.searchParams.set("application_name", application);
   return parsed.toString();
 }

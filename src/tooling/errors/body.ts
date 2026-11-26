@@ -7,6 +7,7 @@
  */
 
 import { OkmError, type ErrorCategory, type ErrorKind } from "../../contracts/error.js";
+import { lockBody, readLock, type HolderBody } from "../migrate/lock-wait.js";
 import { sessionFailure } from "../migrate/lost.js";
 import type { CliNoticeLevel, CliNoticeSeverity, CliWarningBody } from "../cli/outcome.js";
 import { untrustedText, type UntrustedText } from "../untrusted.js";
@@ -35,6 +36,10 @@ export type CliErrorBody = {
   readonly docs?: string;
   readonly escapeHatches?: readonly CliEscapeHatch[];
   readonly detail?: UntrustedText;
+  /** A step gave up on a lock: how many tries, how long, and who held it. */
+  readonly attempts?: number;
+  readonly waitedMs?: number;
+  readonly blockedBy?: readonly HolderBody[];
 };
 
 /**
@@ -64,6 +69,9 @@ export function errorBody(error: unknown): CliErrorBody {
     docs?: string;
     escapeHatches?: readonly CliEscapeHatch[];
     detail?: UntrustedText;
+    attempts?: number;
+    waitedMs?: number;
+    blockedBy?: readonly HolderBody[];
   } = {
     code: mapped.code,
     kind: mapped.kind,
@@ -87,6 +95,8 @@ export function errorBody(error: unknown): CliErrorBody {
     }
   }
   if (leaked !== undefined) body.detail = leaked;
+  const waited = readLock(error) ?? readLock(mapped);
+  if (waited !== undefined) Object.assign(body, lockBody(waited));
   return body;
 }
 

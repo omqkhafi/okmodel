@@ -356,8 +356,9 @@ async function runOne(
     {
       policy: { target: "default", protected: protectedTarget, allowProtected },
       units: [unit],
-      retries: 0,
+      lockWaitMs: 0,
       lockTimeoutMs: 1_000,
+      directPid: "0",
       statementTimeoutMs: 5_000,
     },
     {},

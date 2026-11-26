@@ -100,6 +100,7 @@ import {
   refuseUserModified,
   refuseWorkspaceChoice,
 } from "../init/guards.js";
+import { ONCE } from "../migrate/lock-wait.js";
 import { resumeCommittedStep, stepSqlHash } from "../migrate/step-engine.js";
 import type { CommittedStep, StepEngine, StepJournal } from "../migrate/step-engine.js";
 import type { PageExample } from "./page.js";
@@ -931,12 +932,12 @@ thrown(
   "OKM1553",
   () =>
     resumeCommittedStep(committedNote(), failedMarker(committedNote().sqlHash), unknownEngine(), {
-      retries: 0,
+      wait: ONCE,
       wrap: (error) => error as OkmError,
     }),
   () =>
     resumeCommittedStep(committedNote(), failedMarker(committedNote().sqlHash), appliedEngine(), {
-      retries: 0,
+      wait: ONCE,
       wrap: (error) => error as OkmError,
     }),
 );
@@ -949,13 +950,13 @@ thrown(
       failedMarker(stepSqlHash("create table other (id int)")),
       appliedEngine(),
       {
-        retries: 0,
+        wait: ONCE,
         wrap: (error) => error as OkmError,
       },
     ),
   () =>
     resumeCommittedStep(committedNote(), failedMarker(committedNote().sqlHash), appliedEngine(), {
-      retries: 0,
+      wait: ONCE,
       wrap: (error) => error as OkmError,
     }),
 );

@@ -158,13 +158,19 @@ const planHash: FlagSpec = {
 const lockTimeout: FlagSpec = {
   name: "lock-timeout",
   type: "string",
-  hint: "<milliseconds>",
+  hint: "<duration> one attempt waits for a lock. Default 1s.",
+};
+
+const lockWait: FlagSpec = {
+  name: "lock-wait",
+  type: "string",
+  hint: "<duration> to keep retrying a blocked step. Default 2m. 0 tries once.",
 };
 
 const statementTimeout: FlagSpec = {
   name: "statement-timeout",
   type: "string",
-  hint: "<milliseconds>",
+  hint: "<duration> one statement may run. Default 30s.",
 };
 
 /** Every command, longest word list first so `migrate plan` wins over a prefix. */
@@ -192,7 +198,7 @@ export const COMMANDS: readonly CommandSpec[] = [
     maxOperands: 0,
     usesDatabase: true,
     ownOut: false,
-    flags: [target, allowProtected, allowPooler, lockTimeout, statementTimeout],
+    flags: [target, allowProtected, allowPooler, lockTimeout, lockWait, statementTimeout],
   }),
   spec({
     id: "migrate status",

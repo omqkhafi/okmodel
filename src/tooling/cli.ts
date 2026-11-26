@@ -51,7 +51,8 @@ if (nodeProblem !== undefined) {
       process.exitCode = error.exitCode;
     } else {
       const verbose = wantsVerbose(process.argv) || process.env.OKM_DEBUG === "1";
-      writeErr(formatFailure(error, verbose, outputMode().columns));
+      const mode = outputMode();
+      writeErr(formatFailure(error, verbose, mode.columns, mode.pretty));
       process.exitCode = exitCodeFor(error);
     }
   }

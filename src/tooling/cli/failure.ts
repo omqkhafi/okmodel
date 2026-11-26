@@ -11,6 +11,7 @@ import { OkmError } from "../../contracts/error.js";
 import { nearestName } from "../../contracts/nearest.js";
 import { ERROR_DOCS, errorDoc } from "../errors/registry.js";
 import { knownFix } from "../errors/known-fix.js";
+import { queryLines, readLock } from "../migrate/lock-wait.js";
 import { sessionFailure } from "../migrate/lost.js";
 import { readConfigPath } from "./outcome.js";
 import { wrap } from "./output.js";
@@ -27,6 +28,7 @@ const DRIFT_FIX = "Change the schema or the database so okm check reports no dif
 /** The OKM1510 message `okm generate` throws when a person answers no to a drop. */
 const DECLINED = "The migration drops data and was not confirmed. Nothing was written.";
 const UNREACHABLE = /\b(ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|ETIMEDOUT|CONNECT_TIMEOUT)\b/;
+const EMPTY_LOCK = { attempts: 0, waitedMs: 0, blockedBy: [], ran: false, earlier: false };
 const FINDING = /^(error|warning) OKM\d{4} [^:]+: /;
 
 /**
@@ -35,12 +37,14 @@ const FINDING = /^(error|warning) OKM\d{4} [^:]+: /;
  * @param error - Failure from a command
  * @param verbose - When true, append the stack
  * @param columns - Where prose wraps. The default leaves it unwrapped
+ * @param pretty - A terminal. Only then does a lock failure print the holders' query text
  * @returns Plain text, including the trailing newline. `writeErr` colors it
  */
 export function failureText(
   error: unknown,
   verbose = false,
   columns = Number.POSITIVE_INFINITY,
+  pretty = false,
 ): string {
   const mapped = sessionFailure(error) ?? OkmError.from(error);
   const raw = typeof error === "object" && error !== null ? error : undefined;
@@ -53,7 +57,8 @@ export function failureText(
     text = `${first(`${line}${hint}`)}\n`;
   } else {
     const said = voice(mapped);
-    text = `${first(said.lead)}${said.rest}\n`;
+    const queries = pretty ? queryLines(readLock(error) ?? readLock(mapped) ?? EMPTY_LOCK) : [];
+    text = `${first(said.lead)}${said.rest}${queries.map((line) => `\n${line}`).join("")}\n`;
     text += `${wrap(said.fix, columns)}\n`;
     if (errorDoc(mapped.code) !== undefined) text += `Details: okm help ${mapped.code}\n`;
   }

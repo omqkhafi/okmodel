@@ -42,6 +42,8 @@ export type InvokeFlags = {
   readonly allowDataLoss?: boolean;
   readonly lockTimeoutMs?: number;
   readonly statementTimeoutMs?: number;
+  /** `okm migrate apply --lock-wait`. */
+  readonly lockWaitMs?: number;
 };
 
 /**

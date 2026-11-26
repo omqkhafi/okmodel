@@ -49,6 +49,8 @@ export type ParsedCli = {
   readonly drizzleCasing: DrizzleCasing | undefined;
   readonly url: string | undefined;
   readonly lockTimeoutMs: number | undefined;
+  /** `okm migrate apply --lock-wait`. */
+  readonly lockWaitMs: number | undefined;
   readonly statementTimeoutMs: number | undefined;
   /** `okm migrate resolve --applied`. */
   readonly applied: boolean;
@@ -288,8 +290,9 @@ export function parseCli(argv: readonly string[]): ParsedCli {
     casing: casingOf(stringValue(values.casing)),
     drizzleCasing: drizzleCasingOf(stringValue(values["drizzle-casing"])),
     url: stringValue(values.url),
-    lockTimeoutMs: milliseconds(values["lock-timeout"], "--lock-timeout"),
-    statementTimeoutMs: milliseconds(values["statement-timeout"], "--statement-timeout"),
+    lockTimeoutMs: duration(values["lock-timeout"], "--lock-timeout"),
+    lockWaitMs: duration(values["lock-wait"], "--lock-wait"),
+    statementTimeoutMs: duration(values["statement-timeout"], "--statement-timeout"),
     applied: values.applied === true,
     retry: values.retry === true,
     acceptUnverified: values["accept-unverified"] === true,
@@ -387,6 +390,7 @@ function blank(flags: { readonly help: boolean; readonly json: boolean }): Parse
     drizzleCasing: undefined,
     url: undefined,
     lockTimeoutMs: undefined,
+    lockWaitMs: undefined,
     statementTimeoutMs: undefined,
     applied: false,
     retry: false,
@@ -568,8 +572,11 @@ function missingValue(name: string): OkmError {
   if (name === "url")
     return usage("okm driver test --url needs a postgres URL.", "Pass --url <postgres-url>.");
   if (name === "schema") return usage("--schema needs a name.", "Pass --schema <name>.");
-  if (name === "lock-timeout" || name === "statement-timeout") {
-    return usage(`--${name} needs a number of milliseconds.`, `Pass --${name} <milliseconds>.`);
+  if (name === "lock-timeout" || name === "lock-wait" || name === "statement-timeout") {
+    return usage(
+      `--${name} needs a duration.`,
+      `Pass --${name} <duration>, such as 500, 30s, or 2m.`,
+    );
   }
   if (name === "dialect") return usage("--dialect needs a name.", "Pass --dialect postgres.");
   if (name === "driver") {
@@ -611,14 +618,17 @@ function repeatedConfig(
   return undefined;
 }
 
-function milliseconds(value: unknown, flag: string): number | undefined {
+const UNIT_MS = { ms: 1, s: 1_000, m: 60_000 } as const;
+
+/** `1500`, `1500ms`, `30s`, `2m`, or `1.5s`. A bare number is milliseconds. */
+function duration(value: unknown, flag: string): number | undefined {
   const text = stringValue(value);
   if (text === undefined) return undefined;
-  const parsed = Number(text);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    throw usage(`${flag} needs a number of milliseconds.`, `Pass ${flag} <milliseconds>.`);
+  const found = /^(\d+(?:\.\d+)?)(ms|s|m)?$/.exec(text);
+  if (found === null) {
+    throw usage(`${flag} needs a duration.`, `Pass ${flag} <duration>, such as 500, 30s, or 2m.`);
   }
-  return parsed;
+  return Math.round(Number(found[1]) * UNIT_MS[(found[2] ?? "ms") as keyof typeof UNIT_MS]);
 }
 
 function casingOf(value: string | undefined): Casing | undefined {

@@ -69,6 +69,14 @@ import {
   type ProtectionMatch,
 } from "./policy.js";
 import { probeStableBackend } from "./pooler-probe.js";
+import {
+  APPLY_APPLICATION,
+  counted,
+  DEFAULT_LOCK_WAIT_MS,
+  lockObserver,
+  span,
+  type LockObserver,
+} from "./lock-wait.js";
 import { driverUrl } from "./driver-url.js";
 import type { DeclaredRename } from "../../dialects/pg/declarations.js";
 import postgres from "postgres";
@@ -100,7 +108,8 @@ export type ApplyRequest = {
   readonly searchPath?: string;
   readonly lockTimeoutMs?: number;
   readonly statementTimeoutMs?: number;
-  readonly retries?: number;
+  /** How long a blocked step keeps retrying, in milliseconds. 0 tries once. */
+  readonly lockWaitMs?: number;
   readonly migrations: readonly StoredMigration[];
   /** Runs after the advisory lock is held and before the first step. */
   readonly onLocked?: () => void;
@@ -187,13 +196,14 @@ export type ApplyReport = {
   readonly setRole?: string;
   /** Data-loss objects applied with `--allow-data-loss`. Printed as `dropped <label>`. */
   readonly dropped?: readonly string[];
+  /** Present when a step had to wait for a lock. */
+  readonly lock?: { readonly attempts: number; readonly waitedMs: number };
 };
 
-/** `lock_timeout` apply sets when neither a flag nor `timeouts.lock` names one. */
-export const DEFAULT_LOCK_MS = 5_000;
+/** `lock_timeout` for one attempt when neither a flag nor `timeouts.lock` names one. */
+export const DEFAULT_LOCK_MS = 1_000;
 /** `statement_timeout` apply sets when neither a flag nor `timeouts.statement` names one. */
 export const DEFAULT_STATEMENT_MS = 30_000;
-const DEFAULT_RETRIES = 3;
 
 const META = `create table if not exists okm_meta (
   id text primary key,
@@ -325,7 +335,7 @@ export function applyUnits(
  */
 export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
   assertDirectConnection(request.url, request.allowPooler === true);
-  const url = driverUrl(request.url);
+  const url = driverUrl(request.url, APPLY_APPLICATION);
   const pool = open({
     url,
     max: 1,
@@ -340,14 +350,10 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
   const reserved = await pool.reserve();
   const connection = reserved;
   let locked = false;
+  let direct: DirectSession | undefined;
   try {
-    await probeStableBackend(
-      request.url,
-      () => backendPid(connection),
-      request.allowPooler === true,
-    );
+    direct = await directSession(connection, request, url);
     await assertStandardStrings(connection);
-    await setTimeouts(connection, request);
     await lockTarget(connection, request.target);
     locked = true;
     request.onLocked?.();
@@ -381,8 +387,9 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
       {
         policy: request,
         units,
-        retries: request.retries ?? DEFAULT_RETRIES,
+        lockWaitMs: request.lockWaitMs ?? DEFAULT_LOCK_WAIT_MS,
         lockTimeoutMs: request.lockTimeoutMs ?? DEFAULT_LOCK_MS,
+        ...(direct !== undefined ? { directPid: direct.pid, observer: direct.observer } : {}),
         statementTimeoutMs: request.statementTimeoutMs ?? DEFAULT_STATEMENT_MS,
         backfillStatementTimeoutMs:
           request.backfillStatementTimeoutMs ?? request.statementTimeoutMs ?? DEFAULT_STATEMENT_MS,
@@ -419,7 +426,8 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
         connection.execute("select pg_advisory_unlock(hashtext($1))", [lockKey(request.target)]),
       );
     }
-    await finishQuiet(() => connection.release());
+    const clean = direct === undefined ? true : await direct.end();
+    if (clean) await finishQuiet(() => connection.release());
     await finishQuiet(() => pool.close());
   }
 }
@@ -524,6 +532,7 @@ async function runApply(
       : config.timeouts?.statement !== undefined
         ? { statementTimeoutMs: config.timeouts.statement }
         : {}),
+    ...(flags.lockWaitMs !== undefined ? { lockWaitMs: flags.lockWaitMs } : {}),
     ...backfillTiming(config.backfill),
     migrations,
     snapshot: {
@@ -630,7 +639,7 @@ type PushRequest = {
  */
 async function pushTarget(request: PushRequest): Promise<ApplyReport> {
   assertDirectConnection(request.url, request.allowPooler === true);
-  const url = driverUrl(request.url);
+  const url = driverUrl(request.url, APPLY_APPLICATION);
   const pool = open({
     url,
     max: 1,
@@ -644,19 +653,10 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
   }
   const connection = await pool.reserve();
   let locked = false;
+  let direct: DirectSession | undefined;
   try {
-    await probeStableBackend(
-      request.url,
-      () => backendPid(connection),
-      request.allowPooler === true,
-    );
+    direct = await directSession(connection, request, url);
     await assertStandardStrings(connection);
-    await setTimeouts(connection, {
-      url: request.url,
-      target: request.target,
-      protected: request.protected,
-      migrations: [],
-    });
     await lockTarget(connection, request.target);
     locked = true;
     const session: { setRole?: string } = {};
@@ -766,9 +766,10 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
           ...(request.protection !== undefined ? { protection: request.protection } : {}),
         },
         units,
-        retries: DEFAULT_RETRIES,
+        lockWaitMs: DEFAULT_LOCK_WAIT_MS,
         lockTimeoutMs: DEFAULT_LOCK_MS,
         statementTimeoutMs: DEFAULT_STATEMENT_MS,
+        ...(direct !== undefined ? { directPid: direct.pid, observer: direct.observer } : {}),
         backfillStatementTimeoutMs: request.backfillStatementTimeoutMs ?? DEFAULT_STATEMENT_MS,
         ...(request.backfillPauseMs !== undefined
           ? { backfillPauseMs: request.backfillPauseMs }
@@ -803,7 +804,8 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
         connection.execute("select pg_advisory_unlock(hashtext($1))", [lockKey(request.target)]),
       );
     }
-    await finishQuiet(() => connection.release());
+    const clean = direct === undefined ? true : await direct.end();
+    if (clean) await finishQuiet(() => connection.release());
     await finishQuiet(() => pool.close());
   }
 }
@@ -920,7 +922,11 @@ export function formatApplyText(report: ApplyReport): string {
     return `target ${report.target}\n${role}${restamped}nothing to apply\n`;
   }
   const dropped = (report.dropped ?? []).map((label) => `dropped ${label}\n`).join("");
-  return `target ${report.target}\n${role}${restamped}${dropped}${report.applied.map((id) => `applied ${id}`).join("\n")}\n`;
+  const waited =
+    report.lock === undefined
+      ? ""
+      : `waited for a lock: ${counted(report.lock.attempts, "attempt", "attempts")}, ${span(report.lock.waitedMs)}\n`;
+  return `target ${report.target}\n${role}${restamped}${dropped}${report.applied.map((id) => `applied ${id}`).join("\n")}\n${waited}`;
 }
 
 /**
@@ -1008,14 +1014,67 @@ async function assertStandardStrings(connection: DriverConnection): Promise<void
   );
 }
 
-async function setTimeouts(connection: DriverConnection, request: ApplyRequest): Promise<void> {
-  const lock = request.lockTimeoutMs ?? DEFAULT_LOCK_MS;
-  const statement = request.statementTimeoutMs ?? DEFAULT_STATEMENT_MS;
-  await connection.execute("select set_config('lock_timeout', $1, false)", [String(lock)]);
-  await connection.execute("select set_config('statement_timeout', $1, false)", [
-    String(statement),
-  ]);
+/** What a connection that passed the direct check holds until the run ends. */
+export type DirectSession = {
+  /** Backend pid of the checked connection. */
+  readonly pid: string;
+  readonly observer: LockObserver;
+  /** Gives the session settings back and closes the observer. `false` when the reset did not verify. */
+  readonly end: () => Promise<boolean>;
+};
+
+const SESSION_TIMEOUTS =
+  "select set_config('lock_timeout', $1, false), set_config('statement_timeout', $2, false)";
+
+/**
+ * Checks the connection is direct, then sets the session timeouts on it.
+ *
+ * Only a connection that passed the pid probe takes a session setting. Behind
+ * `--allow-pooler` a session setting is lost, or reaches another client, so
+ * nothing is set and each transaction scopes its own timeouts. `end` puts the
+ * original values back and reads them again.
+ *
+ * @param connection - Reserved connection
+ * @param request - Pooler opt-in and the timeouts
+ * @param url - Driver URL, for the observer's own connection
+ * @returns The session, or `undefined` when the probe was skipped
+ */
+export async function directSession(
+  connection: DriverConnection,
+  request: {
+    readonly url: string;
+    readonly allowPooler?: boolean;
+    readonly lockTimeoutMs?: number;
+    readonly statementTimeoutMs?: number;
+  },
+  url: string,
+): Promise<DirectSession | undefined> {
+  await probeStableBackend(request.url, () => backendPid(connection), request.allowPooler === true);
+  if (request.allowPooler === true) return undefined;
+  const pid = await backendPid(connection);
+  const before = (await connection.execute(READ_TIMEOUTS)).rows[0] ?? [];
+  const lock = String(request.lockTimeoutMs ?? DEFAULT_LOCK_MS);
+  const statement = String(request.statementTimeoutMs ?? DEFAULT_STATEMENT_MS);
+  await connection.execute(SESSION_TIMEOUTS, [lock, statement]);
+  const observer = lockObserver(() => open({ url, max: 1 }));
+  return {
+    pid,
+    observer,
+    async end() {
+      await finishQuiet(() => observer.close());
+      try {
+        await connection.execute(SESSION_TIMEOUTS, [String(before[0]), String(before[1])]);
+        const after = (await connection.execute(READ_TIMEOUTS)).rows[0] ?? [];
+        return after[0] === before[0] && after[1] === before[1];
+      } catch {
+        return false;
+      }
+    },
+  };
 }
+
+const READ_TIMEOUTS =
+  "select current_setting('lock_timeout'), current_setting('statement_timeout')";
 
 export async function lockTarget(connection: DriverConnection, target: string): Promise<void> {
   const result = await connection.execute("select pg_try_advisory_lock(hashtext($1))", [

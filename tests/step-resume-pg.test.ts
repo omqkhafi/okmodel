@@ -32,6 +32,7 @@ import {
   type CommittedStep,
   type StepBoundary,
 } from "../src/tooling/migrate/step-engine.js";
+import { ONCE } from "../src/tooling/migrate/lock-wait.js";
 
 const gate = await loadPostgresGate();
 const url = primaryUrl();
@@ -57,7 +58,7 @@ test("pglite resumes a committed check at every crash boundary", async () => {
           postgresStepJournal(connection),
           engine(connection, committed, runs),
           {
-            retries: 0,
+            wait: ONCE,
             failAt: boundary,
             wrap: (error) =>
               new OkmError("invalid", error instanceof Error ? error.message : "failed"),
@@ -80,7 +81,7 @@ test("pglite resumes a committed check at every crash boundary", async () => {
         postgresStepJournal(connection),
         engine(connection, committed, runs),
         {
-          retries: 0,
+          wait: ONCE,
           wrap: (error) =>
             new OkmError("invalid", error instanceof Error ? error.message : "failed"),
         },
@@ -107,10 +108,8 @@ test("pglite resolve refuses an absent probe and accepts an applied one", async 
     const sql = "alter type color add value 'blue'";
     const committed = committedStep(sql, "add-enum-value");
     await postgresStepJournal(connection).start(committed, 1);
-    const absent = postgresStepEngine(
-      connection,
-      { kind: "add-enum-value", sql, lockTimeoutMs: 1_000 },
-      () => Promise.resolve(),
+    const absent = postgresStepEngine(connection, { kind: "add-enum-value", sql }, () =>
+      Promise.resolve(),
     );
     expect(await absent.probe()).toBe("absent");
     await connection.execute(sql);
@@ -238,10 +237,8 @@ postgresTest(
       const create = `create index concurrently items_id_idx on ${q(schemaName)}.items (note)`;
       const connection = await reserved(schemaName);
       try {
-        const probe = postgresStepEngine(
-          connection,
-          { kind: "create-index", sql: create, lockTimeoutMs: 1_000 },
-          () => Promise.resolve(),
+        const probe = postgresStepEngine(connection, { kind: "create-index", sql: create }, () =>
+          Promise.resolve(),
         );
         expect(await probe.probe()).toBe("unknown");
       } finally {
@@ -447,14 +444,10 @@ function committedStep(sql: string, kind: StepKind | "raw-sql"): CommittedStep {
 }
 
 function engine(connection: DriverConnection, step: CommittedStep, runs: string[]) {
-  return postgresStepEngine(
-    connection,
-    { kind: step.kind, sql: step.sql, lockTimeoutMs: 1_000 },
-    async () => {
-      runs.push("run");
-      await connection.execute(step.sql);
-    },
-  );
+  return postgresStepEngine(connection, { kind: step.kind, sql: step.sql }, async () => {
+    runs.push("run");
+    await connection.execute(step.sql);
+  });
 }
 
 async function count(connection: DriverConnection, table: string): Promise<number> {
