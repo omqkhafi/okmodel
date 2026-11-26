@@ -16,6 +16,7 @@
     "references",
     "relations",
     "indexes",
+    "comments",
     "---Constraints and validation---",
     "checks",
     "validation",

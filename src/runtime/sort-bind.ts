@@ -128,5 +128,9 @@ function marked(value: object): boolean {
 }
 
 function uniqueIndex(columns: readonly string[], predicate: string | undefined): IndexCall {
-  return buildIndex({ columns, isUnique: true, predicate });
+  return buildIndex({
+    columns,
+    isUnique: true,
+    ...(predicate !== undefined ? { predicate } : {}),
+  });
 }

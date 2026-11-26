@@ -22,6 +22,7 @@ import type {
   ColumnObject,
   ConstraintObject,
   FunctionObject,
+  IndexElement,
   IndexObject,
   MaterializedViewObject,
   PolicyObject,
@@ -578,21 +579,64 @@ function columnSql(column: ColumnObject, schema: string): string {
   return sql;
 }
 
-function createIndexSql(object: IndexObject, schema: string): string {
-  const unique = object.definition.unique ? "unique " : "";
-  const where =
-    object.definition.predicate === undefined ? "" : ` where ${object.definition.predicate}`;
-  const expression = object.definition.expression;
+/** CREATE INDEX text for one catalog index. The planner owns CONCURRENTLY. */
+export function createIndexSql(object: IndexObject, schema: string): string {
+  const definition = object.definition;
+  const unique = definition.unique ? "unique " : "";
+  const where = definition.predicate === undefined ? "" : ` where ${definition.predicate}`;
+  const expression = definition.expression;
   const name = quoteIdent(object.identity.name);
   const on = qualify(schema, object.identity.parent.name);
-  if (expression !== undefined && expression.startsWith("using ")) {
+  if (
+    expression !== undefined &&
+    expression.startsWith("using ") &&
+    definition.method === undefined &&
+    definition.elements === undefined
+  ) {
     return `create ${unique}index ${name} on ${on} ${expression}${where}`;
   }
-  const target =
-    expression !== undefined
-      ? `(${expression})`
-      : object.definition.columns.map((column) => quoteIdent(column)).join(", ");
-  return `create ${unique}index ${name} on ${on} (${target})${where}`;
+  const method =
+    definition.method !== undefined && definition.method !== "btree"
+      ? ` using ${definition.method}`
+      : "";
+  const keys = indexKeys(definition);
+  const include =
+    definition.include !== undefined && definition.include.length > 0
+      ? ` include (${definition.include.map((column) => quoteIdent(column)).join(", ")})`
+      : "";
+  const nulls = definition.nullsNotDistinct === true ? " nulls not distinct" : "";
+  const storage = indexStorageSql(definition.storage);
+  return `create ${unique}index ${name} on ${on}${method} (${keys})${include}${nulls}${storage}${where}`;
+}
+
+function indexKeys(definition: IndexObject["definition"]): string {
+  if (definition.elements !== undefined && definition.elements.length > 0) {
+    return definition.elements.map(indexElementSql).join(", ");
+  }
+  const columns = definition.columns.map((column) => quoteIdent(column));
+  if (definition.expression !== undefined) {
+    const expression = `(${definition.expression})`;
+    return columns.length > 0 ? `${columns.join(", ")}, ${expression}` : expression;
+  }
+  return columns.join(", ");
+}
+
+function indexElementSql(element: IndexElement): string {
+  const base =
+    element.expression !== undefined ? `(${element.expression})` : quoteIdent(element.column ?? "");
+  const opclass = element.opclass !== undefined ? ` ${element.opclass}` : "";
+  const order = element.order === "desc" ? " desc" : "";
+  const nulls =
+    element.nulls === "first" ? " nulls first" : element.nulls === "last" ? " nulls last" : "";
+  return `${base}${opclass}${order}${nulls}`;
+}
+
+function indexStorageSql(storage: IndexObject["definition"]["storage"]): string {
+  if (storage === undefined) return "";
+  const parts = Object.keys(storage)
+    .sort()
+    .map((key) => `${key}=${storage[key]}`);
+  return parts.length === 0 ? "" : ` with (${parts.join(", ")})`;
 }
 
 function createExtensionSql(object: CatalogObject & { readonly kind: "extension" }): string {

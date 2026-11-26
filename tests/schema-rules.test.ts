@@ -519,3 +519,58 @@ test("level error refuses with the rule code and every error line", () => {
   expect(refusal?.message).toContain("OKM2102 events");
   expect(adviceRefusal(schemaAdvice(built, [], {}).advice)).toBeUndefined();
 });
+
+test("OKM2101 does not count a partial index", () => {
+  const built = schema({
+    tables: [
+      users(),
+      table(
+        "posts",
+        { id: t.identity(), authorId: t.bigint().references("users") },
+        { indexes: (columns) => [index(columns.authorId).where({ authorId: 1 })] },
+      ),
+    ],
+  });
+  expect(codes(built)).toContain("OKM2101 posts.authorId");
+});
+
+test("OKM2104 names a duplicate and OKM2105 names a prefix", () => {
+  const built = schema({
+    tables: [
+      table(
+        "notes",
+        { id: t.identity(), email: t.text(), name: t.text() },
+        {
+          indexes: (columns) => [
+            index(columns.email).name("notes_email_a"),
+            index(columns.email).name("notes_email_b"),
+            index(columns.email).name("notes_email_short"),
+            index(columns.email, columns.name).name("notes_email_name"),
+          ],
+        },
+      ),
+    ],
+  });
+  const listed = codes(built);
+  expect(listed.some((line) => line.startsWith("OKM2104"))).toBe(true);
+  expect(listed).toContain("OKM2105 notes.notes_email_short");
+});
+
+test("a unique or partial index is not a redundant prefix", () => {
+  const built = schema({
+    tables: [
+      table(
+        "notes",
+        { id: t.identity(), email: t.text(), name: t.text() },
+        {
+          indexes: (columns) => [
+            index(columns.email).unique().name("notes_email_unique"),
+            index(columns.email).where({ email: "a@b.c" }).name("notes_email_partial"),
+            index(columns.email, columns.name).name("notes_email_name"),
+          ],
+        },
+      ),
+    ],
+  });
+  expect(codes(built).some((line) => line.startsWith("OKM2105"))).toBe(false);
+});

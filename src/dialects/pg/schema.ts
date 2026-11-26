@@ -13,7 +13,6 @@ import { staticNamespace } from "../../contracts/catalog/identity.js";
 import {
   assertIdentifier,
   assertStoredText,
-  deterministicName,
   identitySequenceName,
   printedIdentifier,
 } from "../../contracts/catalog/identifier.js";
@@ -82,6 +81,9 @@ import {
   type RowFrom,
   type SqlText,
   type UpdateFrom,
+  bindIndexNames,
+  clearIndexNames,
+  columnHandle,
   emittedTypeName,
   rejectLater,
 } from "./table.js";
@@ -376,7 +378,8 @@ type StoredOptions = {
       | ((columns: Readonly<Record<string, ColumnHandle>>) => SqlText)
       | {
           readonly expression: (columns: Readonly<Record<string, ColumnHandle>>) => SqlText;
-          readonly enforced: false;
+          readonly enforced?: false;
+          readonly comment?: string;
         }
     >
   >;
@@ -671,6 +674,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
               name,
               labels: note.labels,
               provenance: note.provenance,
+              ...(note.comment !== undefined ? { comment: note.comment } : {}),
             }),
           );
         }
@@ -748,6 +752,7 @@ type EnumNote = {
   readonly labels: readonly string[];
   readonly table: string;
   readonly provenance: Provenance;
+  readonly comment?: string;
 };
 
 function noteEnum(
@@ -756,6 +761,7 @@ function noteEnum(
   name: string,
   table: string,
   provenance: Provenance,
+  comment?: string,
 ): void {
   const previous = notes.get(name);
   if (previous !== undefined && !sameEnumLabels(previous.labels, labels)) {
@@ -765,7 +771,13 @@ function noteEnum(
     );
   }
   if (previous === undefined || compareText(table, previous.table) < 0) {
-    notes.set(name, { labels, table, provenance });
+    const kept = comment ?? previous?.comment;
+    notes.set(name, {
+      labels,
+      table,
+      provenance,
+      ...(kept !== undefined ? { comment: kept } : {}),
+    });
   }
 }
 
@@ -1065,7 +1077,14 @@ function compileTable(
       ? { origin: "file", name: item.name }
       : { origin: "file", name: item.name, source: item.source };
   const parent: ObjectRef = { namespace, name: sqlName };
-  stage(jobs, () => catalogTable({ namespace, name: sqlName, provenance }));
+  stage(jobs, () =>
+    catalogTable({
+      namespace,
+      name: sqlName,
+      provenance,
+      ...(options?.comment !== undefined ? { comment: options.comment } : {}),
+    }),
+  );
 
   const columns: PreparedColumn[] = [];
   const columnPrimary: string[] = [];
@@ -1116,6 +1135,7 @@ function compileTable(
               : "bigint",
           provenance,
           dependencies: [{ kind: "table", namespace, name: sqlName }],
+          ...(identity.comment !== undefined ? { comment: identity.comment } : {}),
         });
         objects.push(seq);
         pushCompiled(objects, column, {
@@ -1149,7 +1169,7 @@ function compileTable(
     columns.push(prepared);
     byField.set(field, prepared);
     bySql.set(prepared.sqlName, prepared);
-    handles[field] = { name: prepared.sqlName };
+    handles[field] = columnHandle(prepared.sqlName);
     if (column.state.primaryKey) {
       if (column.state.nullable) {
         catalogError("OKM1020", `Primary key ${item.name}.${field} is nullable.`);
@@ -1161,7 +1181,14 @@ function compileTable(
     }
     const labels = column.state.enumLabels;
     if (labels !== undefined) {
-      noteEnum(enums, labels, column.state.typeDependency ?? prepared.sqlName, sqlName, provenance);
+      noteEnum(
+        enums,
+        labels,
+        column.state.typeDependency ?? prepared.sqlName,
+        sqlName,
+        provenance,
+        column.state.enumComment,
+      );
     }
   }
 
@@ -1194,7 +1221,16 @@ function compileTable(
     compileUniques(item.name, options, parent, provenance, byField, jobs);
   }
   if (options?.indexes !== undefined) {
-    compileIndexes(item.name, options, handles, parent, provenance, jobs, bare);
+    compileIndexes(
+      item.name,
+      options,
+      handles,
+      parent,
+      provenance,
+      jobs,
+      bare,
+      (field) => byField.get(field)?.sqlName ?? field,
+    );
   }
   if (options?.checks !== undefined) {
     compileChecks(item.name, options, handles, parent, provenance, byField, jobs);
@@ -1339,12 +1375,19 @@ function compileIndexes(
   provenance: Provenance,
   jobs: CatalogJob[],
   bare: boolean,
+  sqlNameOf: (field: string) => string,
 ): void {
   const build = options?.indexes;
   if (build === undefined) {
     return;
   }
-  const calls = build(handles);
+  bindIndexNames(sqlNameOf);
+  let calls: readonly IndexCall[];
+  try {
+    calls = build(handles);
+  } finally {
+    clearIndexNames();
+  }
   if (!Array.isArray(calls)) {
     definition(`Table ${tableName} indexes must return an array.`);
   }
@@ -1355,16 +1398,22 @@ function compileIndexes(
     if (bare && call.tenantScoped === true) {
       definition(`Table ${tableName} index().scoped() needs tenancy.`);
     }
-    const built = readIndex(tableName, call, parent.name);
+    const built = readIndex(tableName, call);
     stage(jobs, () =>
       catalogIndex({
         parent,
         columns: built.columns,
         unique: built.isUnique === true,
-        nameKey: built.columns.join("_"),
-        ...(built.sqlName !== undefined ? { name: built.sqlName } : {}),
-        ...(built.predicate !== undefined ? { predicate: built.predicate } : {}),
-        ...(built.expression !== undefined ? { expression: built.expression } : {}),
+        nameKey: built.columns.length > 0 ? built.columns.join("_") : "expr",
+        name: built.sqlName,
+        predicate: built.predicate,
+        expression: built.expression,
+        method: built.method,
+        include: built.included,
+        elements: built.elements,
+        storage: built.storage,
+        nullsNotDistinct: built.nullsNotDistinct,
+        ...(built.commentText !== undefined ? { comment: built.commentText } : {}),
         provenance,
       }),
     );
@@ -1410,8 +1459,13 @@ function compileChecks(
           nameKey: name,
           expression: text,
           provenance,
+          ...(typeof (build as { readonly comment?: unknown }).comment === "string"
+            ? { comment: (build as { readonly comment: string }).comment }
+            : {}),
         })),
-        fn !== build && ((made as { enforced?: false }).enforced = false),
+        fn !== build &&
+          (build as { readonly enforced?: false }).enforced === false &&
+          ((made as { enforced?: false }).enforced = false),
         made
       ),
     );
@@ -1484,6 +1538,7 @@ function compileForeignKeys(
           ...(reference.onDelete !== undefined ? { onDelete: reference.onDelete } : {}),
           ...(reference.onUpdate !== undefined ? { onUpdate: reference.onUpdate } : {}),
         },
+        ...(reference.comment !== undefined ? { comment: reference.comment } : {}),
       }),
     );
     edges.push({
@@ -1606,12 +1661,6 @@ function readTableNames(tableName: string, options: StoredOptions | undefined): 
       definition(`Table ${tableName} renamedFrom must be a non-empty previous name.`);
     }
     assertIdentifier(options.renamedFrom, `table ${tableName} renamedFrom`);
-  }
-  if (options?.comment !== undefined) {
-    assertStoredText(options.comment, `table ${tableName} comment`);
-    if (options.comment.length === 0) {
-      definition(`Table ${tableName} comment must be non-empty.`);
-    }
   }
 }
 
@@ -1929,22 +1978,11 @@ function readFloor(minPostgres: unknown, requires: unknown): SchemaRequires | un
   return { postgres: formatPostgresFloor(major) };
 }
 
-function readIndex(tableName: string, call: IndexCall, sqlTable: string): IndexCall {
-  const method = call.isUnique ? /^using\s+([a-z_]+)/.exec(call.expression ?? "")?.[1] : undefined;
-  if (method !== undefined && method !== "btree") {
-    const name = deterministicName({
-      parent: sqlTable,
-      purpose: "index",
-      nameKey: call.columns.join("_"),
-    });
-    definition(
-      `Index ${name} on ${tableName} is unique, but a ${method} index cannot be unique: Postgres builds unique indexes with btree only. Remove .unique(), or add a unique constraint or btree index on the same columns.`,
-    );
-  }
+function readIndex(tableName: string, call: IndexCall): IndexCall {
   if (call.sqlName !== undefined && call.sqlName.length === 0) {
     definition(`Index on ${tableName} name must be a non-empty SQL identifier.`);
   }
-  if (call.columns.length === 0) {
+  if (call.columns.length === 0 && call.expression === undefined) {
     definition(`Index on ${tableName} needs a column.`);
   }
   for (const name of call.columns) {

@@ -66,7 +66,7 @@ A longer value is refused when it is encoded.
 
 ### Citext
 
-`t.citext()` is `citext`. The TypeScript value is a string. Comparison ignores case. The schema lists `citext()` from `okmodel/pg/citext`. See [extensions](/docs/schema/extensions).
+`t.citext()` is `citext`. The TypeScript value is a string. Comparison ignores case. Use it for case-insensitive text. `index(sql\`lower(...)\`)` is only for uniqueness of the lowered value. The schema lists `citext()` from `okmodel/pg/citext`. See [extensions](/docs/schema/extensions).
 
 ```ts title="citext.ts"
 import { citext } from "okmodel/pg/citext";

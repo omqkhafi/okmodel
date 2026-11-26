@@ -150,8 +150,8 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1060",
     title: "Invalid column",
     summary:
-      "A column definition has a bad length, precision, scale, array rank, interval qualifier, or an empty or repeated picklist or enum. .unique() on a gin or gist index is this code too: Postgres builds unique indexes with btree only. A schema() casing other than snake or camel is this code too.",
-    fix: "Use a value the error lists as accepted. Remove .unique() from a gin or gist index, or use btree. Pass snake or camel for casing, or leave it out.",
+      "A column definition has a bad length, precision, scale, array rank, interval qualifier, or an empty or repeated picklist or enum. A schema() casing other than snake or camel is this code too.",
+    fix: "Use a value the error lists as accepted. Pass snake or camel for casing, or leave it out.",
   },
   {
     code: "OKM1061",
@@ -1166,6 +1166,14 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     since: "0.10",
   },
   {
+    code: "OKM1903",
+    title: "Index shape",
+    summary:
+      "An index uses an option its access method does not support. Unique, descending, and nulls order are btree. Include is btree, gist, or spgist, and only plain columns.",
+    fix: "Change the method, or remove the option the message names.",
+    since: "0.10",
+  },
+  {
     code: "OKM2200",
     title: "Observer buffer overflow",
     summary:
@@ -1215,7 +1223,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   // Reserved, not registered (no raising path): version OKM1804–OKM1809,
   // extension OKM1815–OKM1819, feature refusal OKM1861 and OKM1868–OKM1879,
   // adapter capability refusal OKM1880 and OKM1889. OKM1881–OKM1888 (agent files) and
-  // OKM1890–OKM1902 are registered.
+  // OKM1890–OKM1903 are registered.
   // OKM1140–OKM1179 stay reserved (D291).
 ];
 

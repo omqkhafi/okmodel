@@ -38,6 +38,8 @@ import type {
   Catalog,
   CatalogObject,
   ColumnObject,
+  IndexElement,
+  IndexStorage,
   FunctionVolatility,
   ObjectIdentity,
   ObjectRef,
@@ -211,6 +213,7 @@ export async function introspectSchema(
     views,
     viewDeps,
     policies,
+    comments,
   ] = await Promise.all([
     runner.query(TABLES, params),
     runner.query(COLUMNS, params),
@@ -226,6 +229,7 @@ export async function introspectSchema(
     runner.query(VIEWS, params),
     runner.query(VIEW_DEPENDENCIES, params),
     runner.query(POLICIES, params),
+    runner.query(COMMENTS, params),
   ]);
   const objects: CatalogObject[] = [];
   const parents = new Map<string, ObjectRef>();
@@ -409,6 +413,7 @@ export async function introspectSchema(
       refuseReservedIndex(options, indexName);
       const predicate = text(row, "predicate");
       const expression = indexExpression(row, columns);
+      const extras = indexExtras(row, columns, expression);
       objects.push(
         materializedViewIndex({
           parent,
@@ -416,8 +421,9 @@ export async function introspectSchema(
           columns,
           unique: flag(row, "is_unique"),
           provenance,
-          ...(expression.length > 0 ? { expression } : {}),
+          ...(expression.length > 0 && extras.method === undefined ? { expression } : {}),
           ...(predicate.length > 0 ? { predicate } : {}),
+          ...extras,
         }),
       );
       continue;
@@ -430,6 +436,7 @@ export async function introspectSchema(
     refuseReservedIndex(options, indexName);
     const predicate = text(row, "predicate");
     const expression = indexExpression(row, columns);
+    const extras = indexExtras(row, columns, expression);
     objects.push(
       index({
         parent,
@@ -438,8 +445,9 @@ export async function introspectSchema(
         columns,
         unique: flag(row, "is_unique"),
         provenance,
-        ...(expression.length > 0 ? { expression } : {}),
+        ...(expression.length > 0 && extras.method === undefined ? { expression } : {}),
         ...(predicate.length > 0 ? { predicate } : {}),
+        ...extras,
       }),
     );
   }
@@ -649,6 +657,7 @@ export async function introspectSchema(
     );
   }
   await includeOutsideReferences(runner, logical, provenance, objects);
+  applyComments(objects, comments);
   return catalog(objects);
 }
 
@@ -1013,21 +1022,9 @@ function indexExpression(
   const method = text(row, "am");
   const stored = text(row, "expression");
   const btree = method.length === 0 || method === "btree";
-  if (btree) {
-    const custom = list(text(row, "opc_custom"));
-    if (stored.length === 0 && custom.some((name) => name.length > 0)) {
-      const body = columns
-        .map((name, index) => {
-          const opclass = custom[index];
-          return opclass === undefined || opclass.length === 0
-            ? quoteIdent(name)
-            : `${quoteIdent(name)} ${opclass}`;
-        })
-        .join(", ");
-      return `using btree (${body})`;
-    }
-    return stored;
-  }
+  if (btree) return stored;
+  const custom = list(text(row, "opc_custom"));
+  if (stored.length === 0 && custom.every((name) => name.length === 0)) return "";
   const opclasses = list(text(row, "opc"));
   const body = columns
     .map((name, index) => {
@@ -1036,6 +1033,76 @@ function indexExpression(
     })
     .join(", ");
   return `using ${method} (${body.length > 0 ? body : stored})`;
+}
+
+function indexExtras(
+  row: Readonly<Record<string, unknown>>,
+  columns: readonly string[],
+  expression: string,
+): {
+  readonly method?: string;
+  readonly include?: readonly string[];
+  readonly elements?: readonly IndexElement[];
+  readonly storage?: IndexStorage;
+  readonly nullsNotDistinct?: true;
+} {
+  const method = text(row, "am");
+  const include = list(text(row, "included"));
+  const elements = indexElements(
+    columns,
+    list(text(row, "indoption")),
+    list(text(row, "opc_custom")),
+  );
+  const storage = parseReloptions(row.reloptions);
+  return {
+    ...(method.length > 0 && method !== "btree" && expression.length === 0 ? { method } : {}),
+    ...(include.length > 0 ? { include } : {}),
+    ...(elements !== undefined ? { elements } : {}),
+    ...(storage !== undefined ? { storage } : {}),
+    ...(flag(row, "nulls_not_distinct") ? { nullsNotDistinct: true as const } : {}),
+  };
+}
+
+function indexElements(
+  columns: readonly string[],
+  options: readonly string[],
+  opclasses: readonly string[],
+): readonly IndexElement[] | undefined {
+  const ordered = options.some((value) => value !== "0" && value.length > 0);
+  const custom = opclasses.some((name) => name.length > 0);
+  if (!ordered && !custom) return undefined;
+  return columns.map((name, index) => {
+    const bits = Number(options[index] ?? "0");
+    const desc = (bits & 1) !== 0;
+    const nullsFirst = (bits & 2) !== 0;
+    const opclass = opclasses[index];
+    return {
+      column: name,
+      ...(desc ? { order: "desc" as const } : {}),
+      ...(desc && !nullsFirst ? { nulls: "last" as const } : {}),
+      ...(!desc && nullsFirst ? { nulls: "first" as const } : {}),
+      ...(opclass !== undefined && opclass.length > 0 ? { opclass } : {}),
+    };
+  });
+}
+
+function parseReloptions(value: unknown): IndexStorage | undefined {
+  const items = Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : typeof value === "string"
+      ? value
+          .replace(/^\{|\}$/g, "")
+          .split(",")
+          .filter((item) => item.length > 0)
+      : [];
+  if (items.length === 0) return undefined;
+  const storage: Record<string, string> = {};
+  for (const item of items) {
+    const eq = item.indexOf("=");
+    if (eq <= 0) continue;
+    storage[item.slice(0, eq)] = item.slice(eq + 1);
+  }
+  return Object.keys(storage).length === 0 ? undefined : storage;
 }
 
 /** Column shape used when {@link reprintCheck} builds a scratch table. */
@@ -1960,8 +2027,21 @@ const INDEXES = `
       select coalesce(string_agg(a.attname, ',' order by cols.ord), '')
       from unnest(i.indkey) with ordinality as cols(attnum, ord)
       join pg_attribute a on a.attrelid = tbl.oid and a.attnum = cols.attnum
-      where cols.attnum > 0
+      where cols.attnum > 0 and cols.ord <= i.indnkeyatts
     ) as columns,
+    (
+      select coalesce(string_agg(a.attname, ',' order by cols.ord), '')
+      from unnest(i.indkey) with ordinality as cols(attnum, ord)
+      join pg_attribute a on a.attrelid = tbl.oid and a.attnum = cols.attnum
+      where cols.attnum > 0 and cols.ord > i.indnkeyatts
+    ) as included,
+    (
+      select coalesce(string_agg(cols.opt::text, ',' order by cols.ord), '')
+      from unnest(i.indoption) with ordinality as cols(opt, ord)
+      where cols.ord <= i.indnkeyatts
+    ) as indoption,
+    i.indnullsnotdistinct as nulls_not_distinct,
+    idx.reloptions as reloptions,
     pg_get_expr(i.indexprs, i.indrelid) as expression,
     pg_get_expr(i.indpred, i.indrelid) as predicate,
     am.amname as am,
@@ -1993,6 +2073,128 @@ const INDEXES = `
     and not exists (select 1 from pg_inherits inh where inh.inhrelid = idx.oid)
     and ${member("idx.oid", "pg_class")}
 `;
+
+const COMMENTS = `
+  select 'table' as kind, c.relname as name, '' as extra, d.description
+  from pg_description d
+  join pg_class c on c.oid = d.objoid and c.relkind = 'r'
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = $1 and d.classoid = 'pg_class'::regclass and d.objsubid = 0
+  union all
+  select 'index', c.relname, '', d.description
+  from pg_description d
+  join pg_class c on c.oid = d.objoid and c.relkind = 'i'
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = $1 and d.classoid = 'pg_class'::regclass and d.objsubid = 0
+  union all
+  select case c.relkind when 'v' then 'view' when 'm' then 'matview' else 'sequence' end,
+    c.relname, '', d.description
+  from pg_description d
+  join pg_class c on c.oid = d.objoid and c.relkind in ('v', 'm', 'S')
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = $1 and d.classoid = 'pg_class'::regclass and d.objsubid = 0
+  union all
+  select 'column', c.relname, a.attname, d.description
+  from pg_description d
+  join pg_class c on c.oid = d.objoid and c.relkind in ('r', 'v', 'm')
+  join pg_namespace n on n.oid = c.relnamespace
+  join pg_attribute a on a.attrelid = c.oid and a.attnum = d.objsubid
+  where n.nspname = $1 and d.classoid = 'pg_class'::regclass and d.objsubid > 0
+  union all
+  select 'function', p.proname, '', d.description
+  from pg_description d
+  join pg_proc p on p.oid = d.objoid
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = $1 and d.classoid = 'pg_proc'::regclass
+  union all
+  select 'trigger', c.relname, t.tgname, d.description
+  from pg_description d
+  join pg_trigger t on t.oid = d.objoid
+  join pg_class c on c.oid = t.tgrelid
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = $1 and d.classoid = 'pg_trigger'::regclass
+  union all
+  select 'type', t.typname, '', d.description
+  from pg_description d
+  join pg_type t on t.oid = d.objoid
+  join pg_namespace n on n.oid = t.typnamespace
+  where n.nspname = $1 and d.classoid = 'pg_type'::regclass and d.objsubid = 0
+  union all
+  select 'constraint', c.relname, con.conname, d.description
+  from pg_description d
+  join pg_constraint con on con.oid = d.objoid
+  join pg_class c on c.oid = con.conrelid
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = $1 and d.classoid = 'pg_constraint'::regclass
+    and con.contype in ('c', 'f')
+`;
+
+function applyComments(
+  objects: CatalogObject[],
+  rows: readonly Readonly<Record<string, unknown>>[],
+): void {
+  const textOf = new Map<string, string>();
+  for (const row of rows) {
+    const description = text(row, "description");
+    if (description.length === 0) continue;
+    textOf.set(`${text(row, "kind")}\t${text(row, "name")}\t${text(row, "extra")}`, description);
+  }
+  if (textOf.size === 0) return;
+  for (let index = 0; index < objects.length; index += 1) {
+    const object = objects[index];
+    if (object === undefined) continue;
+    const next = withComment(object, textOf);
+    if (next !== object) objects[index] = next;
+  }
+}
+
+function withComment(object: CatalogObject, textOf: ReadonlyMap<string, string>): CatalogObject {
+  const found = commentLookup(object, textOf);
+  const commented = found === undefined ? object : { ...object, comment: found };
+  if (commented.kind !== "view" && commented.kind !== "materializedView") return commented;
+  const columns = commented.definition.columns.map((column) => {
+    const description = textOf.get(`column\t${commented.identity.name}\t${column.name}`);
+    return description === undefined ? column : { ...column, comment: description };
+  });
+  const changed = columns.some((column, index) => column !== commented.definition.columns[index]);
+  return changed ? { ...commented, definition: { ...commented.definition, columns } } : commented;
+}
+
+function commentLookup(
+  object: CatalogObject,
+  textOf: ReadonlyMap<string, string>,
+): string | undefined {
+  switch (object.kind) {
+    case "table":
+      return textOf.get(`table\t${object.identity.name}\t`);
+    case "column":
+      return textOf.get(`column\t${object.identity.parent.name}\t${object.identity.name}`);
+    case "index":
+      return textOf.get(`index\t${object.identity.name}\t`);
+    case "view":
+      return textOf.get(`view\t${object.identity.name}\t`);
+    case "materializedView":
+      return textOf.get(`matview\t${object.identity.name}\t`);
+    case "sequence":
+      return textOf.get(`sequence\t${object.identity.name}\t`);
+    case "function":
+      return textOf.get(`function\t${object.identity.name}\t`);
+    case "trigger":
+      return textOf.get(`trigger\t${object.identity.parent.name}\t${object.identity.name}`);
+    case "type":
+      return textOf.get(`type\t${object.identity.name}\t`);
+    case "constraint":
+      if (
+        object.definition.constraintKind !== "check" &&
+        object.definition.constraintKind !== "foreignKey"
+      ) {
+        return undefined;
+      }
+      return textOf.get(`constraint\t${object.identity.parent.name}\t${object.identity.name}`);
+    default:
+      return undefined;
+  }
+}
 
 /**
  * Indexes whose build did not finish.

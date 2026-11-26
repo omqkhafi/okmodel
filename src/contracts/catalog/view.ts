@@ -38,6 +38,8 @@ export type ViewInput = {
   readonly owner?: Owner;
   readonly provenance: Provenance;
   readonly dependencies?: readonly ObjectIdentity[];
+  /** Absent means the comment is not managed. */
+  readonly comment?: string;
 };
 
 /** Input for {@link materializedViewObject}. */
@@ -58,6 +60,12 @@ export type MaterializedViewIndexInput = {
   readonly nameKey?: string;
   readonly expression?: string;
   readonly predicate?: string;
+  readonly method?: string;
+  readonly include?: readonly string[];
+  readonly elements?: IndexObject["definition"]["elements"];
+  readonly storage?: IndexObject["definition"]["storage"];
+  readonly nullsNotDistinct?: boolean;
+  readonly comment?: string;
   readonly owner?: Owner;
   readonly provenance: Provenance;
   /** Retargeted edges. Omitted edges depend on the materialized view. */
@@ -105,6 +113,7 @@ export function viewObject(input: ViewInput): ViewObject {
     definition,
     dependencies: normaliseEdges(input.dependencies ?? []),
     provenance: input.provenance,
+    ...(input.comment !== undefined ? { comment: input.comment } : {}),
   };
 }
 
@@ -138,6 +147,7 @@ export function materializedViewObject(input: MaterializedViewInput): Materializ
     definition,
     dependencies: normaliseEdges(input.dependencies ?? []),
     provenance: input.provenance,
+    ...(input.comment !== undefined ? { comment: input.comment } : {}),
   };
 }
 
@@ -179,9 +189,19 @@ export function materializedViewIndex(input: MaterializedViewIndexInput): IndexO
       nameKey,
       ...(input.expression !== undefined ? { expression: input.expression } : {}),
       ...(input.predicate !== undefined ? { predicate: input.predicate } : {}),
+      ...(input.method !== undefined && input.method !== "btree" ? { method: input.method } : {}),
+      ...(input.include !== undefined && input.include.length > 0
+        ? { include: input.include }
+        : {}),
+      ...(input.elements !== undefined && input.elements.length > 0
+        ? { elements: input.elements }
+        : {}),
+      ...(input.storage !== undefined ? { storage: input.storage } : {}),
+      ...(input.nullsNotDistinct === true ? { nullsNotDistinct: true } : {}),
     },
     dependencies: normaliseEdges(input.dependencies ?? [parentView]),
     provenance: input.provenance,
+    ...(input.comment !== undefined ? { comment: input.comment } : {}),
   };
 }
 
@@ -198,7 +218,11 @@ function readColumns(view: string, columns: readonly ViewColumn[]): readonly Vie
     if (column.dataType.length === 0 || /[;'"\\]/.test(column.dataType)) {
       catalogError("OKM1020", `View ${view} column ${column.name} type is not a type name.`);
     }
-    return { name: column.name, dataType: column.dataType };
+    return {
+      name: column.name,
+      dataType: column.dataType,
+      ...(column.comment !== undefined ? { comment: column.comment } : {}),
+    };
   });
 }
 

@@ -28,6 +28,7 @@ import {
 import { decodeBigintNumber } from "../../dialects/pg/integer.js";
 import { mapPostgresError } from "../../dialects/pg/errors.js";
 import { readOnlyReprint } from "../../dialects/pg/introspect.js";
+import { assertIndexRules } from "../migrate/index-rules.js";
 import { schemaDeclarations } from "../../dialects/pg/declarations.js";
 import { enumColumn } from "../../dialects/pg/enum.js";
 import { extension } from "../../dialects/pg/ext/index.js";
@@ -2337,6 +2338,33 @@ thrown(
       limit: 1,
       orderBy: { id: "asc" },
       computed: { replies: (note) => note.comments.count() },
+    });
+  },
+);
+
+thrown(
+  "OKM1903",
+  () => {
+    const built = schema({
+      tables: [
+        table(
+          "notes",
+          { id: t.integer().primaryKey(), title: t.text() },
+          { indexes: (columns) => [index(columns.title).unique().using("gin")] },
+        ),
+      ],
+    });
+    assertIndexRules(built.catalog);
+  },
+  () => {
+    schema({
+      tables: [
+        table(
+          "notes",
+          { id: t.integer().primaryKey(), title: t.text() },
+          { indexes: (columns) => [index(columns.title).unique()] },
+        ),
+      ],
     });
   },
 );

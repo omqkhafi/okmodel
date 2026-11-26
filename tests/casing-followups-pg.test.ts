@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { OkmError } from "../src/contracts/error.js";
+import { assertIndexRules } from "../src/tooling/migrate/index-rules.js";
 import { pgTrgm } from "../src/dialects/pg/ext/pg-trgm.js";
 import { schema, table, t } from "../src/dialects/pg/index.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
@@ -168,25 +169,24 @@ postgresTest(
 
 postgresTest(
   gate,
-  "OKM1060 covers a unique gin index and a casing other than snake or camel",
+  "OKM1060 covers a casing other than snake or camel, and a unique gin index is OKM1903",
   async () => {
     const casing = thrown(() => schema({ casing: "kebab" as "snake", tables: [] }));
     expect(casing.code).toBe("OKM1060");
     expect(casing.message).toContain("snake or camel");
     const trgm = pgTrgm();
-    const gin = thrown(() =>
-      schema({
-        extensions: [trgm],
-        tables: [
-          table(
-            "notes",
-            { id: t.integer().primaryKey(), title: t.text() },
-            { indexes: (columns) => [trgm.gin(columns.title.name).unique()] },
-          ),
-        ],
-      }),
-    );
-    expect(gin.code).toBe("OKM1060");
+    const built = schema({
+      extensions: [trgm],
+      tables: [
+        table(
+          "notes",
+          { id: t.integer().primaryKey(), title: t.text() },
+          { indexes: (columns) => [trgm.gin(columns.title.name).unique()] },
+        ),
+      ],
+    });
+    const gin = thrown(() => assertIndexRules(built.catalog));
+    expect(gin.code).toBe("OKM1903");
     expect(gin.message).toContain("gin");
     expect(gin.message).toContain("notes_title_idx");
   },

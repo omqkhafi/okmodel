@@ -451,7 +451,7 @@ postgresTest(
       const source = readFileSync(join(cwd, "tables", "people.ts"), "utf8");
       expect(source).toContain("index(columns.id)");
       expect(source).toContain("text_pattern_ops");
-      expect(source).toMatch(/using btree \(("email"|\\"email\\") text_pattern_ops\)/);
+      expect(source).toMatch(/\.ops\("text_pattern_ops"\)/);
       expect(source).not.toMatch(/index\(columns\.id\)[^\n]*text_pattern_ops/);
       await cli(cwd, ["generate", "init"]);
       const baselined = await cli(cwd, ["migrate", "baseline"]);

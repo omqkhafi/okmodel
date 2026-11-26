@@ -407,6 +407,7 @@ async function check(
   text += formatFindings(checked.findings);
   text += formatAllows(checked.allows);
   text += formatAdvice(checked.advice ?? []);
+  for (const line of checked.information ?? []) text += `${line}\n`;
   const listed = checked.ignores ?? [];
   for (const item of listed) text += `${ignoreLine(item)}\n`;
   text += "ok\n";
@@ -414,6 +415,7 @@ async function check(
   const data: {
     status: "ok";
     notice?: string;
+    information?: readonly string[];
     emulation?: string;
     ignores?: readonly {
       readonly rule: string;
@@ -424,6 +426,9 @@ async function check(
     allows: readonly AllowRecord[];
   } = { status: "ok", allows: allowRecords(checked.allows) };
   if (checked.notice !== undefined) data.notice = checked.notice;
+  if (checked.information !== undefined && checked.information.length > 0) {
+    data.information = checked.information;
+  }
   if (checked.emulation !== undefined) data.emulation = checked.emulation;
   if (listed.length > 0) {
     data.ignores = listed.map((item) => ({

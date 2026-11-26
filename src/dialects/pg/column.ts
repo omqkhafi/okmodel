@@ -128,6 +128,8 @@ export type ReferenceModifier = {
    * Set when the key is composite. Absent on a single-column reference.
    */
   readonly along?: readonly string[];
+  /** Comment on the foreign key. Absent means unmanaged. */
+  readonly comment?: string;
 };
 
 /**
@@ -137,6 +139,8 @@ export type ReferenceOptions = {
   readonly onDelete?: ReferentialAction;
   readonly onUpdate?: ReferentialAction;
   readonly columns?: readonly string[];
+  /** Comment on the foreign key. Absent means unmanaged. */
+  readonly comment?: string;
 };
 
 /**
@@ -261,7 +265,7 @@ export type ColumnState<TValue> = {
    * it. `column` is a choice on that column and wins.
    */
   readonly idSource: "implicit" | "column" | undefined;
-  readonly identity: { readonly always: boolean } | undefined;
+  readonly identity: { readonly always: boolean; readonly comment?: string } | undefined;
   readonly generated: { readonly stored: boolean; readonly expression: string } | undefined;
   readonly unique:
     | { readonly reason: string | undefined; readonly global: boolean | undefined }
@@ -286,6 +290,8 @@ export type ColumnState<TValue> = {
   readonly typeDependency: string | undefined;
   /** Ordered enum labels. Absent on every column that is not an enum. */
   readonly enumLabels: readonly string[] | undefined;
+  /** Comment on the enum type. Absent when the enum comment is unmanaged. */
+  readonly enumComment: string | undefined;
   readonly domain:
     | {
         readonly base: string;
@@ -333,10 +339,12 @@ export type OpenColumn<TValue> = {
   readonly clientDefault?: ClientFill;
   readonly collation?: string;
   readonly idSource?: "implicit" | "column";
-  readonly identity?: { readonly always: boolean };
+  readonly identity?: { readonly always: boolean; readonly comment?: string };
   readonly extension?: string;
   readonly typeDependency?: string;
   readonly enumLabels?: readonly string[];
+  /** Comment on the enum type this column introduces. */
+  readonly enumComment?: string;
   readonly domain?: {
     readonly base: string;
     readonly check: string;
@@ -680,6 +688,7 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
         ...(onDelete !== undefined ? { onDelete } : {}),
         ...(onUpdate !== undefined ? { onUpdate } : {}),
         ...(columns !== undefined ? { columns } : {}),
+        ...(options?.comment !== undefined ? { comment: options.comment } : {}),
       },
     });
   }
@@ -812,6 +821,7 @@ export function openColumn<TValue, TFlags extends ColumnFlags>(
     extension: input.extension,
     typeDependency: input.typeDependency,
     enumLabels: input.enumLabels,
+    enumComment: input.enumComment,
     domain: input.domain,
     primaryKey: input.primaryKey === true,
     typeLabel: input.typeLabel,

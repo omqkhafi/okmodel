@@ -137,6 +137,7 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
   check: object("check", "okm check data", ["status"], {
     status: { const: "ok" },
     notice: { type: "string" },
+    information: { type: "array", items: { type: "string" } },
     emulation: { type: "string" },
     ignores: {
       type: "array",

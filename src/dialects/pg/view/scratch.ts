@@ -120,6 +120,7 @@ export async function sealViews(runner: CatalogQuery, source: Catalog): Promise<
           ...(object.definition.checkOption !== undefined
             ? { checkOption: object.definition.checkOption }
             : {}),
+          ...(object.comment !== undefined ? { comment: object.comment } : {}),
         });
       }
       return materializedViewObject({
@@ -137,6 +138,7 @@ export async function sealViews(runner: CatalogQuery, source: Catalog): Promise<
         ...(object.definition.tablespace !== undefined
           ? { tablespace: object.definition.tablespace }
           : {}),
+        ...(object.comment !== undefined ? { comment: object.comment } : {}),
       });
     });
     return catalog(next);

@@ -45,6 +45,10 @@ type CommonOptions<Sources extends readonly Named[]> = {
   readonly schema?: string;
   /** Opts the view out of tenancy. The reason is not stored in the catalog. */
   readonly tenancy?: unknown;
+  /** Comment on the view. Absent means unmanaged. */
+  readonly comment?: string;
+  /** Comments on output columns, by output name. Absent means unmanaged. */
+  readonly comments?: Readonly<Record<string, string>>;
 };
 
 /** Options of {@link view}. */
@@ -404,9 +408,13 @@ function declare<const Sources extends readonly Named[]>(
       const namespace = staticNamespace(options.schema ?? "public");
       const provenance: Provenance = { origin: "file", name };
       const dependencies = dependencyEdges(name, sources, built, names, namespace);
+      const columnComments = options.comments;
       const columns = compiled.columns.map((column) => ({
         name: column.name,
         dataType: column.dataType,
+        ...(columnComments?.[column.name] !== undefined
+          ? { comment: columnComments[column.name] }
+          : {}),
       }));
       const query = compiled.query;
       if (kind === "view") {
@@ -423,6 +431,7 @@ function declare<const Sources extends readonly Named[]>(
             ...("checkOption" in options && options.checkOption !== undefined
               ? { checkOption: options.checkOption }
               : {}),
+            ...(options.comment !== undefined ? { comment: options.comment } : {}),
           }),
         ];
       }
@@ -444,6 +453,7 @@ function declare<const Sources extends readonly Named[]>(
           ...(mat.using !== undefined && mat.using !== "heap" ? { using: mat.using } : {}),
           ...(storage.length > 0 ? { storage } : {}),
           ...(mat.tablespace !== undefined ? { tablespace: mat.tablespace } : {}),
+          ...(options.comment !== undefined ? { comment: options.comment } : {}),
         }),
         ...indexes.map((index) =>
           materializedViewIndex({
@@ -453,6 +463,12 @@ function declare<const Sources extends readonly Named[]>(
             unique: index.isUnique,
             ...(index.expression !== undefined ? { expression: index.expression } : {}),
             ...(index.predicate !== undefined ? { predicate: index.predicate } : {}),
+            ...(index.method !== undefined ? { method: index.method } : {}),
+            ...(index.included !== undefined ? { include: index.included } : {}),
+            ...(index.elements !== undefined ? { elements: index.elements } : {}),
+            ...(index.storage !== undefined ? { storage: index.storage } : {}),
+            ...(index.nullsNotDistinct === true ? { nullsNotDistinct: true } : {}),
+            ...(index.commentText !== undefined ? { comment: index.commentText } : {}),
             provenance,
           }),
         ),

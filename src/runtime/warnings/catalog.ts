@@ -227,6 +227,63 @@ export const WARNING_RULES: readonly WarningRule[] = [
     ],
     escapeHatches: [hatch("OKM2103")],
   },
+  {
+    code: "OKM2104",
+    rule: "duplicate-index",
+    title: "Duplicate index",
+    summary: "Two indexes on one table have the same columns, method, uniqueness, and predicate.",
+    fix: "Drop one of the indexes.",
+    defaultLevel: "warn",
+    severity: "medium",
+    phase: "check",
+    evidence: "static",
+    safeAlternatives: [alt("OKM2104", "Drop one of the indexes.")],
+    escapeHatches: [hatch("OKM2104")],
+  },
+  {
+    code: "OKM2105",
+    rule: "redundant-index",
+    title: "Redundant index",
+    summary:
+      "An index is a column prefix of another index on the same table. Unique, partial, and expression indexes are redundant only when they match completely.",
+    fix: "Drop the shorter index, or keep it when the longer one is unique, partial, or an expression.",
+    defaultLevel: "warn",
+    severity: "low",
+    phase: "check",
+    evidence: "static",
+    safeAlternatives: [alt("OKM2105", "Drop the shorter index.")],
+    escapeHatches: [hatch("OKM2105")],
+  },
+  {
+    code: "OKM2106",
+    rule: "partial-index-bound-value",
+    title: "Partial index bound value",
+    summary:
+      "A partial index predicate column is also filtered by filters() or a preset. Those compile to bound parameters, so a generic plan may not use the index.",
+    fix: "Keep the predicate as a constant in SQL, or accept a scan. Inlining preset constants is a later decision.",
+    defaultLevel: "warn",
+    severity: "low",
+    phase: "check",
+    evidence: "static",
+    safeAlternatives: [
+      alt("OKM2106", "Filter that column with a SQL predicate that repeats the index predicate."),
+    ],
+    escapeHatches: [hatch("OKM2106")],
+  },
+  {
+    code: "OKM2107",
+    rule: "unmanaged-comment",
+    title: "Unmanaged comment",
+    summary:
+      "The database has a comment the schema does not declare. OKM leaves it in place. okm pull writes it into the schema.",
+    fix: "okm pull writes the comment into the schema, or the schema declares it.",
+    defaultLevel: "hint",
+    severity: "low",
+    phase: "check",
+    evidence: "observed",
+    safeAlternatives: [alt("OKM2107", "okm pull copies the comment into the schema.")],
+    escapeHatches: [hatch("OKM2107")],
+  },
 ];
 
 /**
