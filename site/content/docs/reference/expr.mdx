@@ -58,7 +58,7 @@ import { gt, lt, or } from "okmodel/pg";
 import { add, col } from "okmodel/expr";
 
 const underLimit = { qty: lt(col("limit_qty")) };
-const wellOver = { qty: gt(add(col("limit_qty"), 1)) };
+const wellOver = { qty: gt(add(col<number>("limit_qty"), 1)) };
 const either = or([underLimit, wellOver]);
 ```
 
