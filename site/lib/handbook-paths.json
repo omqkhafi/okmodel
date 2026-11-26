@@ -64,6 +64,7 @@
   "/docs/reference/config-roles",
   "/docs/reference/environment-variables",
   "/docs/reference/errors",
+  "/docs/reference/expr",
   "/docs/reference/github-action",
   "/docs/reference/observer-events",
   "/docs/reference/okid",
