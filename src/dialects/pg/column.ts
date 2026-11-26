@@ -720,8 +720,9 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
   }
 
   /**
-   * Stores a comment. The catalog column object has no comment field yet,
-   * so compile returns it beside the column.
+   * Stores a comment on the catalog column.
+   *
+   * Absent means unmanaged. `schema()` copies the text onto the column.
    *
    * @param text - Comment text
    * @returns The same column

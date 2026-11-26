@@ -42,8 +42,8 @@ import { planMigration } from "./plan.js";
 import { withoutUnpulled } from "./unpulled.js";
 import { finishQuiet, sessionFailure } from "./lost.js";
 import { driverUrl } from "./driver-url.js";
-import { assertDirectConnection } from "./policy.js";
-import { probeStableBackend } from "./pooler-probe.js";
+import { refusePooler } from "./pooler.js";
+import { resolvePooler } from "./pooler-probe.js";
 
 const NO_UNPULLED: ReadonlySet<string> = new Set();
 
@@ -64,7 +64,7 @@ export async function assertAuthorDrift(
   unpulled: ReadonlySet<string> = NO_UNPULLED,
   commentAuthority?: Catalog,
 ): Promise<readonly string[]> {
-  assertDirectConnection(url, allowPooler);
+  refusePooler(await resolvePooler(url, allowPooler), allowPooler);
   const schema = authorSchema(author);
   // pg_get_viewdef qualifies a table that is not on the search path, so a
   // namespace's views would read back as `appns.tasks` and never match.
@@ -79,14 +79,6 @@ export async function assertAuthorDrift(
     ...(searchPath !== undefined ? { connection: { search_path: searchPath } } : {}),
   });
   try {
-    await probeStableBackend(
-      url,
-      async () => {
-        const rows = await sql<{ pid: string }[]>`select pg_backend_pid()::text as pid`;
-        return rows[0]?.pid ?? "";
-      },
-      allowPooler,
-    );
     const runner = catalogQuery(sql);
     const introspectOptions: IntrospectOptions = {
       ...liveIntrospectOptions(roles, author),

@@ -21,7 +21,13 @@ import { changesRole, createdRoleName, createRoleOnce } from "../../dialects/pg/
 import { migrationJournalGrants } from "./managed.js";
 import { ensureMigrationTables } from "./apply.js";
 import type { MigrateConfig } from "./config.js";
-import { catalogQuery, managedRoleOptions, sealAuthored, sealStoredChecks } from "./drift.js";
+import {
+  catalogQuery,
+  managedRoleOptions,
+  sealAuthored,
+  sealStoredChecks,
+  unmanagedComments,
+} from "./drift.js";
 import { assertUuidV7Available } from "./engine.js";
 import {
   ensureExtensionSchemaSql,
@@ -32,7 +38,8 @@ import { finishQuiet, sessionFailure } from "./lost.js";
 import { lintReprints, type Finding } from "./lint.js";
 import { planMigration, type MigrationPlan, type PlanStep } from "./plan.js";
 import { driverUrl } from "./driver-url.js";
-import { probeStableBackend } from "./pooler-probe.js";
+import { refusePooler } from "./pooler.js";
+import { resolvePooler } from "./pooler-probe.js";
 import {
   assumeRole,
   assertSchemaUsageLanded,
@@ -141,8 +148,11 @@ export async function replayCheckHistory(
       // generate is empty (B-37, D128). The live catalog is sealed too: author
       // SQL stores the first printer pass, and that pass is not always stable.
       const sealed = await sealAuthored(runner, migration.catalog);
+      const sealedLive = await sealStoredChecks(runner, live);
+      // A comment the previous snapshot did not record is unmanaged (D345).
+      const previous = index === 0 ? undefined : history[index - 1]?.catalog;
       const back = planMigration({
-        before: await sealStoredChecks(runner, live),
+        before: unmanagedComments(sealedLive, sealed, previous).catalog,
         after: sealed,
         name: migration.id,
         postgres,
@@ -288,6 +298,7 @@ async function inCheckTransaction<T>(
   allowPooler: boolean,
   run: (sql: Sql) => Promise<T>,
 ): Promise<T> {
+  refusePooler(await resolvePooler(url, allowPooler), allowPooler);
   const sql = postgres(driverUrl(url), {
     max: 1,
     connect_timeout: 5,
@@ -308,15 +319,6 @@ async function inCheckTransaction<T>(
   let rolledBack = false;
   let xid = "";
   try {
-    await probeStableBackend(
-      url,
-      async () => {
-        const rows = await reserved.unsafe("select pg_backend_pid()::text as pid");
-        const pid = cell(rows[0], "pid");
-        return pid ?? "";
-      },
-      allowPooler,
-    );
     await reserved.unsafe("begin");
     open = true;
     xid = await readXid(reserved);

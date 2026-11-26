@@ -11,7 +11,8 @@ import { expandGrants } from "../src/dialects/pg/role/grants.js";
 import { attachRoles } from "../src/dialects/pg/role/index.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
 import { catalog } from "../src/contracts/catalog/build.js";
-import { classifyLogin } from "../src/tooling/migrate/roles-cmd.js";
+import { classifyLogin, roleDoctorNotes } from "../src/tooling/migrate/roles-cmd.js";
+import type { DriverPool } from "../src/contracts/driver.js";
 
 const roles = normalizeRoles({
   migration: { name: "okm_migrate", env: "MIGRATE_DATABASE_URL" },
@@ -111,4 +112,19 @@ test("proof:grants.verify", () => {
   const unknown = classifyLogin(Object.assign(new Error("timeout"), { code: "08006" }), true);
   expect(unknown.result).toBe("unknown");
   expect(unknown.result === "unknown" ? unknown.detail : "").toBe("cannot verify through a pooler");
+});
+
+test("doctor lists an app role setting from pg_db_role_setting", async () => {
+  const pool = {
+    execute: async (text: string) => {
+      if (text.includes("pg_db_role_setting")) {
+        return { rows: [["statement_timeout=5s"]], columns: [] };
+      }
+      return { rows: [["0"]], columns: [] };
+    },
+  } as unknown as DriverPool;
+  const notes = await roleDoctorNotes(pool, "okm_app");
+  expect(notes).toContain(
+    "statement_timeout=5s is set on okm_app and is not applied when the client switches role with SET ROLE",
+  );
 });

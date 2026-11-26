@@ -9,15 +9,9 @@ import { OkmError } from "../../contracts/error.js";
 import type { MigrateConfig, TargetInput } from "./config.js";
 import { hostDbFingerprint, postgresEndpoint } from "./fingerprint.js";
 import { protectedStorePath, readProtectedStore } from "./protected-store.js";
-import {
-  assertDirectConnection,
-  poolerSignal,
-  probePooler,
-  type PoolerSignal,
-  type StableBackendOptions,
-} from "./pooler.js";
+import { assertDirectConnection, poolerSignal, type PoolerSignal } from "./pooler.js";
 
-export { assertDirectConnection, poolerSignal, type PoolerSignal, type StableBackendOptions };
+export { assertDirectConnection, poolerSignal, type PoolerSignal };
 
 /** An operation the policy table allows or blocks. */
 export type PolicyOperation =
@@ -273,24 +267,6 @@ export function assertTargetAlias(targets: readonly TargetRecord[]): void {
       );
     }
   }
-}
-
-/**
- * Refuses a session whose backend pid changes across eight statements.
- *
- * The signal list lives in {@link probePooler}. This wrapper has no URL of
- * its own, so it probes a direct-looking placeholder and only the pid can fire.
- *
- * @param readPid - Reads `pg_backend_pid()` on the session under test
- * @param allowPooler - The invocation opted in
- * @param options - Optional hold used by the migrate warm-and-hold probe
- */
-export async function assertStableBackend(
-  readPid: () => Promise<string>,
-  allowPooler: boolean,
-  options?: StableBackendOptions,
-): Promise<void> {
-  await probePooler("postgres://localhost/okm", readPid, allowPooler, options);
 }
 
 /**

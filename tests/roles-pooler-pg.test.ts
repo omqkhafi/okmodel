@@ -17,11 +17,11 @@ import { attachRoles } from "../src/dialects/pg/role/index.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
 import { primaryUrl } from "../packages/harness/src/topology.js";
-import { open } from "../src/adapters/pg/postgresjs.js";
 import { applyTarget } from "../src/tooling/migrate/apply.js";
 import { driverUrl } from "../src/tooling/migrate/driver-url.js";
-import { assertDirectConnection, assertStableBackend } from "../src/tooling/migrate/policy.js";
-import { probeStableBackend } from "../src/tooling/migrate/pooler-probe.js";
+import { assertDirectConnection } from "../src/tooling/migrate/policy.js";
+import { refusePooler } from "../src/tooling/migrate/pooler.js";
+import { resolvePooler } from "../src/tooling/migrate/pooler-probe.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
 import { poolerConfig, POOLER_PORT } from "../scripts/pooler-proof.js";
 
@@ -223,92 +223,28 @@ postgresTest(
     const version = await pgbouncerVersion();
     if (version === undefined || version.major !== 1 || version.minor < 26) return;
     for (const roundRobin of [0, 1] as const) {
-      for (let attempt = 0; attempt < 5; attempt += 1) {
-        await withPgbouncer(roundRobin, async (url) => {
-          // Warm two backends, then hold one between pid reads so LIFO
-          // (`server_round_robin=0`) cannot reuse a single server.
-          const warmA = open({ url, max: 1 });
-          const warmB = open({ url, max: 1 });
+      await withPgbouncer(roundRobin, async (url) => {
+        const found = await resolvePooler(url);
+        expect(found.pooled).toBe(true);
+        expect(found.provenDirect).toBe(false);
+        const error = (() => {
           try {
-            await Promise.all([
-              warmA.execute("select pg_sleep(0.25)"),
-              warmB.execute("select pg_sleep(0.25)"),
-            ]);
-          } finally {
-            await Promise.all([warmA.close(), warmB.close()]);
+            refusePooler(found, false);
+            return undefined;
+          } catch (caught) {
+            return caught;
           }
-          const pool = open({ url, max: 1 });
-          const disrupt = open({ url, max: 1 });
-          try {
-            const reserved = await pool.reserve!();
-            try {
-              const error = await probeStableBackend(
-                url,
-                async () => {
-                  const result = await reserved.execute("select pg_backend_pid()::text");
-                  return String(result.rows[0]?.[0] ?? "");
-                },
-                false,
-                {
-                  holdBackend: async () => {
-                    const held = await disrupt.reserve!();
-                    await held.execute("begin");
-                    return async () => {
-                      await held.execute("rollback").catch(() => undefined);
-                      await held.release();
-                    };
-                  },
-                },
-              ).then(
-                () => undefined,
-                (caught: unknown) => caught,
-              );
-              expect(error).toBeInstanceOf(OkmError);
-              if (error instanceof OkmError) expect(error.code).toBe("OKM1854");
-            } finally {
-              await reserved.release();
-            }
-          } finally {
-            await Promise.all([pool.close(), disrupt.close()]);
-          }
-        });
-      }
+        })();
+        expect(error).toBeInstanceOf(OkmError);
+        if (error instanceof OkmError) expect(error.code).toBe("OKM1854");
+      });
     }
-    // A direct connection must never be a false positive.
-    const direct = open({ url: primaryUrl(), max: 1 });
-    try {
-      const reserved = await direct.reserve!();
-      try {
-        await probeStableBackend(
-          primaryUrl(),
-          async () => {
-            const result = await reserved.execute("select pg_backend_pid()::text");
-            return String(result.rows[0]?.[0] ?? "");
-          },
-          false,
-        );
-      } finally {
-        await reserved.release();
-      }
-    } finally {
-      await direct.close();
-    }
+    const direct = await resolvePooler(primaryUrl());
+    expect(direct.provenDirect).toBe(true);
+    expect(direct.pooled).toBe(false);
   },
   300_000,
 );
-
-postgresTest(gate, "assertStableBackend still fails when two of eight pids differ", async () => {
-  let n = 0;
-  const error = await assertStableBackend(async () => {
-    n += 1;
-    return n === 3 ? "22" : "11";
-  }, false).then(
-    () => undefined,
-    (caught: unknown) => caught,
-  );
-  expect(error).toBeInstanceOf(OkmError);
-  if (error instanceof OkmError) expect(error.code).toBe("OKM1854");
-});
 
 type GuideRoles = {
   readonly migrate: string;
@@ -490,7 +426,9 @@ async function withPgbouncer(
   ).replace(`listen_port = ${String(POOLER_PORT)}`, `listen_port = ${String(port)}`);
   writeFileSync(
     join(dir, "pgbouncer.ini"),
-    ini.replace(/server_round_robin = 1/, `server_round_robin = ${String(roundRobin)}`),
+    ini
+      .replace(/server_round_robin = 1/, `server_round_robin = ${String(roundRobin)}`)
+      .replace("pool_mode = transaction", "pool_mode = transaction\ndefault_pool_size = 2"),
   );
   const child = Bun.spawn(["pgbouncer", join(dir, "pgbouncer.ini")], {
     cwd: dir,

@@ -77,7 +77,7 @@ import { lintCatalog, lintPlan, type Finding } from "../migrate/lint.js";
 import { parsePlan, planMigration } from "../migrate/plan.js";
 import { postgresDialect } from "../migrate/postgres-dialect.js";
 import {
-  assertStableBackend,
+  assertDirectConnection,
   assertTargetAlias,
   assertTargetPolicy,
   listTargets,
@@ -675,15 +675,11 @@ thrown(
 
 thrown(
   "OKM1854",
-  async () => {
-    let n = 0;
-    await assertStableBackend(async () => {
-      n += 1;
-      return n < 2 ? "1" : "2";
-    }, false);
+  () => {
+    assertDirectConnection("postgres://u@db.example:6543/db", false);
   },
-  async () => {
-    await assertStableBackend(async () => "1", false);
+  () => {
+    assertDirectConnection("postgres://u@db.example:5432/db", false);
   },
 );
 

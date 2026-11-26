@@ -30,6 +30,7 @@ import {
   liveIntrospectOptions,
   sealStoredChecks,
   sealTriggerWhens,
+  unmanagedComments,
 } from "./drift.js";
 import { catalogNamespace } from "./export.js";
 import { loadHeadSnapshot } from "./files.js";
@@ -37,13 +38,9 @@ import { finishQuiet, sessionFailure } from "./lost.js";
 import { omitManagedObjects } from "./managed.js";
 import { projectContext, projectPath, type ProjectContext } from "./paths.js";
 import { formatPlan, planMigration } from "./plan.js";
-import {
-  assertDirectConnection,
-  assertTargetPolicy,
-  selectTarget,
-  type InvokeFlags,
-} from "./policy.js";
-import { probeStableBackend } from "./pooler-probe.js";
+import { assertTargetPolicy, selectTarget, type InvokeFlags } from "./policy.js";
+import { refusePooler } from "./pooler.js";
+import { resolvePooler } from "./pooler-probe.js";
 import { loadConfig } from "./project.js";
 import { grantAppMeta } from "./runner.js";
 import { baselineMark } from "./snapshot.js";
@@ -102,7 +99,7 @@ export async function runBaseline(
   const target = selectTarget(config, flags.target);
   assertTargetPolicy(target, "history-repair", flags.allowProtected);
   const allowPooler = flags.allowPooler || config.allowPooler === true;
-  assertDirectConnection(target.url, allowPooler);
+  refusePooler(await resolvePooler(target.url, allowPooler), allowPooler);
   const directory = projectPath(cwd, config.migrations ?? "migrations");
   const head = loadHeadSnapshot(directory);
   if (head === undefined) {
@@ -129,7 +126,6 @@ export async function runBaseline(
   const connection = await pool.reserve();
   let locked = false;
   try {
-    await probeStableBackend(target.url, () => backendPid(connection), allowPooler);
     await enterCatalogSchema(connection, namespace);
     await lockTarget(connection, target.name);
     locked = true;
@@ -299,8 +295,10 @@ async function compareLive(
       }),
     };
     const invalid = await invalidIndexReport(runner, namespace);
+    const sealedLive = await sealStoredChecks(runner, managedLive);
+    // A comment the model did not record is unmanaged (D345).
     const plan = planMigration({
-      before: await sealStoredChecks(runner, managedLive),
+      before: unmanagedComments(sealedLive, authorOnServer, model).catalog,
       after: authorOnServer,
       name: "baseline",
       schema: namespace,
@@ -436,12 +434,6 @@ async function lockTarget(connection: DriverConnection, target: string): Promise
       },
     });
   }
-}
-
-async function backendPid(connection: DriverConnection): Promise<string> {
-  const result = await connection.execute("select pg_backend_pid()::text");
-  const cell = result.rows[0]?.[0];
-  return cell === null || cell === undefined ? "" : String(cell);
 }
 
 function wireTrue(value: string | boolean | null | undefined): boolean {

@@ -1,28 +1,17 @@
 /**
- * Pid probe for transaction-mode poolers (B-41).
+ * Eight-client probe for {@link detectPooler} (B-41, D344).
  *
- * Eight separate `pg_backend_pid()` reads on the caller's session. Two or
- * more distinct pids mean a pooler handed out a new backend. A direct
- * session keeps one pid. A rotating pooler (`server_round_robin=1`) is
- * refused on any port. Default LIFO PgBouncer on a non-heuristic port can
- * keep one pid for all eight reads; mark that URL with `?pgbouncer=true`
- * (or a `pooler` / `pgbouncer` host) so the URL guard refuses it.
- *
- * Warm-and-hold for LIFO needs extra connections and deadlocks a
- * single-connection target (PGlite wire) when apply/seed already hold
- * `max: 1`. That path stays in the PgBouncer test via the optional
- * `holdBackend` option; production keeps URL heuristics plus these eight
- * reads.
+ * {@link resolvePooler} reads URL signals and `allowPooler` first and opens
+ * no client. Eight clients run only when nothing matched and the caller still
+ * has to decide. Each reads `pg_backend_pid()` a few times while the others
+ * run. One stable pid per client is proven direct. A pid change, or fewer
+ * backends than clients, is pooled. A stable idle pid on one session is not
+ * a signal and is not proof of a direct connection.
  */
 
 import { open } from "../../adapters/pg/postgresjs.js";
 import { driverUrl } from "./driver-url.js";
-import {
-  detectPooler,
-  probePooler,
-  type PoolerDetection,
-  type StableBackendOptions,
-} from "./pooler.js";
+import { detectPooler, type PoolerDetection } from "./pooler.js";
 
 /** Clients opened together. */
 const CONCURRENT_CLIENTS = 8;
@@ -30,12 +19,30 @@ const CONCURRENT_CLIENTS = 8;
 const CONCURRENT_STATEMENTS = 3;
 
 /**
+ * Decides with the URL first, then eight clients when the URL did not.
+ *
+ * `allowPooler` is a config signal and skips the clients. A URL that already
+ * matches a host, port, or `pgbouncer=true` does too. A quiet URL is not
+ * direct until the clients prove it.
+ *
+ * @param url - Target URL. Not copied into the result
+ * @param allowPooler - The invocation opted in
+ * @returns The detector result
+ */
+export async function resolvePooler(url: string, allowPooler = false): Promise<PoolerDetection> {
+  const hinted = detectPooler({ url, marker: allowPooler });
+  if (hinted.pooled || allowPooler) return hinted;
+  return probeConcurrent(url);
+}
+
+/**
  * Opens eight clients at once and reads `pg_backend_pid()` on each.
  *
  * Each client runs a few statements while the others run. A pid change on one
  * client, or fewer distinct backends than clients, is pooled. One stable pid
  * per client is proven direct. A URL that already matches a signal is returned
- * without opening a client.
+ * without opening a client. Prefer {@link resolvePooler} when `allowPooler`
+ * can also skip the clients.
  *
  * @param url - Target URL. Not copied into the result
  * @returns The detector result
@@ -58,6 +65,10 @@ export async function probeConcurrent(url: string): Promise<PoolerDetection> {
         return seen;
       }),
     );
+    const banner = await pools[0]?.execute("select version()");
+    // PGlite is one process. Every connection reports the same pid, which is
+    // not a transaction-mode pooler.
+    if (String(banner?.rows[0]?.[0] ?? "").includes("PGlite")) return detectPooler({ url });
     const distinct = new Set(sets.flatMap((set) => [...set]));
     return detectPooler({
       url,
@@ -70,21 +81,4 @@ export async function probeConcurrent(url: string): Promise<PoolerDetection> {
   } finally {
     await Promise.all(pools.map((pool) => pool.close().catch(() => undefined)));
   }
-}
-
-/**
- * Refuses a session whose backend pid changes across eight reads.
- *
- * @param _url - Target URL (unused; kept for call-site stability)
- * @param readPid - Reads `pg_backend_pid()` on the session under test
- * @param allowPooler - The invocation opted in
- * @param options - Optional hold between reads (PgBouncer tests)
- */
-export async function probeStableBackend(
-  url: string,
-  readPid: () => Promise<string>,
-  allowPooler: boolean,
-  options?: StableBackendOptions,
-): Promise<void> {
-  await probePooler(url, readPid, allowPooler, options);
 }

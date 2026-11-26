@@ -3,7 +3,8 @@
  *
  * A replay that rolls back does not open a second connection. A step that
  * commits leaves the scratch schema, and that path still drops it on a new
- * connection. `pg_stat_database.sessions` counts each new session.
+ * connection. `pg_stat_database.sessions` counts each new session, including
+ * the eight clients the pooler probe opens and closes before the replay.
  */
 
 import { expect } from "bun:test";
@@ -30,7 +31,8 @@ postgresTest(
       const before = await sessions(sql);
       const scratch = schemaName();
       await replayCheckHistory(database.url, scratch, config, false, [migration("select 1")]);
-      expect((await sessions(sql)) - before).toBe(1);
+      // Eight probe clients, then the one replay session. No cleanup session.
+      expect((await sessions(sql)) - before).toBe(9);
       expect(await scratchSchemas(sql)).toEqual([]);
     } finally {
       await sql.end({ timeout: 5 });
@@ -57,7 +59,8 @@ postgresTest(
       );
       expect(error).toBeInstanceOf(OkmError);
       expect((error as OkmError).message).toContain("left its transaction");
-      expect((await sessions(sql)) - before).toBe(2);
+      // Eight probe clients, the replay session, and one cleanup session.
+      expect((await sessions(sql)) - before).toBe(10);
       expect(await scratchSchemas(sql)).toEqual([]);
     } finally {
       await sql.end({ timeout: 5 });

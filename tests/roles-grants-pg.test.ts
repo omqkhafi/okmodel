@@ -73,6 +73,8 @@ postgresTest(
       const status = await roleStatus(config, database.url);
       expect(JSON.stringify(status)).not.toContain(password);
       expect(JSON.stringify(status)).not.toContain(next);
+      expect(status.rows.find((row) => row.name === name)?.scope).toBe("managed");
+      expect(status.rows.some((row) => row.scope === "unmanaged")).toBe(true);
     } finally {
       delete process.env[adminEnv];
       delete process.env[roleEnv];

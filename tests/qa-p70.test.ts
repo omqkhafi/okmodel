@@ -14,7 +14,8 @@ import { isOperator, operatorName } from "../src/dialects/pg/operators.js";
 import { archivable, timestamps } from "../src/runtime/traits/index.js";
 import { errorDoc } from "../src/tooling/errors/registry.js";
 import { formatFailure, run } from "../src/tooling/migrate/commands.js";
-import { assertDirectConnection, assertStableBackend } from "../src/tooling/migrate/policy.js";
+import { assertDirectConnection } from "../src/tooling/migrate/policy.js";
+import { detectPooler, refusePooler } from "../src/tooling/migrate/pooler.js";
 import { repoRoot } from "../scripts/root.js";
 
 const root = repoRoot();
@@ -46,35 +47,29 @@ test("B-41: non-default pooler port needs ?pgbouncer=true or a host hint", () =>
   );
 });
 
-test("QA-M6: a backend pid that changes between the two statements is OKM1854", async () => {
-  let pid = "11";
-  let started!: () => void;
-  const first = new Promise<void>((resolve) => {
-    started = resolve;
+test("QA-M6: a backend pid that changes between the two statements is OKM1854", () => {
+  const url = "postgres://u@127.0.0.1:5432/app";
+  const found = detectPooler({
+    url,
+    concurrent: { clients: 8, distinct: 2, changed: true },
   });
-  const pending = assertStableBackend(async () => {
-    const seen = pid;
-    if (seen === "11") {
-      started();
-      await new Promise((resolve) => setTimeout(resolve, 30));
+  expect(found.pooled).toBe(true);
+  expect(found.provenDirect).toBe(false);
+  const error = (() => {
+    try {
+      refusePooler(found, false);
+      return undefined;
+    } catch (caught) {
+      return caught;
     }
-    return seen;
-  }, false);
-  await first;
-  pid = "22";
-  const error = await pending.then(
-    () => undefined,
-    (caught: unknown) => caught,
-  );
+  })();
   expect(error).toBeInstanceOf(OkmError);
   if (!(error instanceof OkmError)) return;
   expect(error.code).toBe("OKM1854");
-  expect(error.message).toContain("11");
-  expect(error.message).toContain("22");
-  await assertStableBackend(async () => {
-    pid = pid === "11" ? "22" : "11";
-    return pid;
-  }, true);
+  expect(error.message).toContain("pid changed");
+  expect(() => refusePooler(found, true)).not.toThrow();
+  const quiet = detectPooler({ url });
+  expect(quiet.provenDirect).toBe(false);
 });
 
 test("QA-M9: prototype keys are OKM1123 and parse applies the allowed operators", async () => {

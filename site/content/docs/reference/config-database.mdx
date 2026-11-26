@@ -36,7 +36,7 @@ description: "database is one target named default. targets replaces it."
 
 `okm migrate apply`, `okm push` when it connects, `provision()`, `okm seed`, `okm migrate check`, and `okm check` when it compares a database run the host check. `okm migrate plan` and `okm migrate status` do not. Naming the URL does not refuse it.
 
-`okm migrate apply`, `okm push` when it connects, `provision()`, and that same `okm check` comparison also read `pg_backend_pid()` eight times (`assertStableBackend`). A change is OKM1854. The same opt-in skips the probe.
+`okm seed`, `okm migrate baseline`, `okm migrate resolve`, `okm migrate check`, and `okm check` when it compares a database use that same detector. A URL signal is refused first. Otherwise eight clients read `pg_backend_pid()`. A stable idle pid is not proof of a direct connection. A pooled result is OKM1854. `--allow-pooler` skips both. `okm migrate apply` and `okm push` open the eight clients only when a step cannot share a transaction.
 
 | Case | Result |
 | --- | --- |
@@ -80,7 +80,7 @@ export default defineConfig({
 </Callout>
 
 <Callout type="error" title="OKM1854">
-`The backend pid changed from <first> to <second>. A pooler is handing out a new session between statements.`
+`The migration URL is a pooler (fewer backends than clients). Use a direct URL for migrations.`
 </Callout>
 
 ### Protection
