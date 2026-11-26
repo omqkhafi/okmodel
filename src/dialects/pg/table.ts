@@ -701,18 +701,23 @@ export function clearIndexNames(): void {
  * Declares an index from column handles, one expression, or `sql` text.
  *
  * @param first - A column, an expression, or `sql` text
- * @param rest - Further columns. An expression takes none
+ * @param rest - Further columns, then one expression. An expression takes no columns after it
  * @returns An index call `schema()` compiles
  */
 export function index(...args: readonly unknown[]): IndexChain {
   const first = args[0];
-  const rest = args.slice(1);
   if (first === undefined) definition("index() needs a column or an expression.");
   if (isColumnHandle(first)) {
     const handles: IndexKey[] = [];
-    for (const handle of [first, ...rest]) {
-      if (!isColumnHandle(handle)) definition("index() takes columns or one expression.");
-      handles.push(handle);
+    let expression: string | undefined;
+    for (const arg of args) {
+      if (isColumnHandle(arg)) {
+        if (expression !== undefined) definition("index() takes columns, then one expression.");
+        handles.push(arg);
+        continue;
+      }
+      if (expression !== undefined) definition("index() takes one expression.");
+      expression = printIndexText(arg, fieldSql);
     }
     const marked = handles.some(
       (handle) =>
@@ -720,10 +725,11 @@ export function index(...args: readonly unknown[]): IndexChain {
     );
     return buildIndex({
       columns: handles.map((handle) => handle.name),
+      ...(expression !== undefined ? { expression } : {}),
       ...(marked ? { elements: handles.map(elementFrom) } : {}),
     });
   }
-  if (rest.length > 0) definition("index() takes columns or one expression.");
+  if (args.length > 1) definition("index() takes columns or one expression.");
   return buildIndex({ columns: [], expression: printIndexText(first, fieldSql) });
 }
 

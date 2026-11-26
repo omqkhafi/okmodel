@@ -610,12 +610,16 @@ export function createIndexSql(object: IndexObject, schema: string): string {
 }
 
 function indexKeys(definition: IndexObject["definition"]): string {
+  const expression =
+    definition.expression !== undefined && !definition.expression.startsWith("using ")
+      ? `(${definition.expression})`
+      : undefined;
   if (definition.elements !== undefined && definition.elements.length > 0) {
-    return definition.elements.map(indexElementSql).join(", ");
+    const keys = definition.elements.map(indexElementSql).join(", ");
+    return expression === undefined ? keys : `${keys}, ${expression}`;
   }
   const columns = definition.columns.map((column) => quoteIdent(column));
-  if (definition.expression !== undefined) {
-    const expression = `(${definition.expression})`;
+  if (expression !== undefined) {
     return columns.length > 0 ? `${columns.join(", ")}, ${expression}` : expression;
   }
   return columns.join(", ");

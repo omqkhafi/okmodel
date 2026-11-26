@@ -296,11 +296,12 @@ postgresTest(
       await cli(cwd, ["pull"]);
       const source = readFileSync(join(cwd, "tables", "tasks.ts"), "utf8");
       expect(source).not.toContain("unique() { return this; }");
-      expect(source).toContain('index(columns.title).name("open_title")');
-      expect(source).toContain("predicate:");
-      expect(source).toContain("expression:");
-      expect(source).toContain('index(columns.title).name("folded_title")');
-      expect(source).not.toMatch(/import \{[^}]*\bsql\b/);
+      expect(source).toContain(
+        "index(columns.title).where(sql`(title <> ''::text)`).name(\"open_title\")",
+      );
+      expect(source).not.toContain("predicate:");
+      expect(source).toContain('index(columns.title, sql`lower(title)`).name("folded_title")');
+      expect(source).toMatch(/import \{[^}]*\bsql\b/);
       expect(source).toMatch(/import \{[^}]*\bindex\b/);
       await typecheckPulled(cwd);
       const built = await cli(cwd, ["build"]);

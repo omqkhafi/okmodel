@@ -393,7 +393,10 @@ export async function sealIndexExpressions(
     try {
       reprinted = await reprintIndex(
         runner,
-        object.definition.expression ?? object.definition.columns[0] ?? "true",
+        object.definition.expression ??
+          (object.definition.columns[0] !== undefined
+            ? quoteIdent(object.definition.columns[0])
+            : "true"),
         columnsByParent.get(object.identity.parent.name) ?? [],
         types,
         {

@@ -97,7 +97,7 @@ export async function assertIndexImmutable(catalog: Catalog): Promise<void> {
     if (!scratchIndex(object)) continue;
     const statements = [
       ...functions.filter((fn) => mentioned(object, fn.identity.name)).map(functionSql),
-      `create table ${qualify("public", "okm_scratch")} (${tableColumns(catalog, object.identity.parent.name)})`,
+      `create table ${qualify("public", "okm_scratch")} (${tableColumns(catalog, object)})`,
       createIndexSql(renamed(object), "public"),
     ];
     const verdict = await checkScratch(statements);
@@ -116,15 +116,68 @@ function mentioned(object: IndexObject, name: string): boolean {
   return text.includes(name);
 }
 
-function tableColumns(catalog: Catalog, table: string): string {
+function tableColumns(catalog: Catalog, index: IndexObject): string {
+  const table = index.identity.parent.name;
   const columns = catalog.objects.filter(
     (object): object is ColumnObject =>
       object.kind === "column" && object.identity.parent.name === table,
   );
-  if (columns.length === 0) return "id integer";
-  return columns
-    .map((column) => `${quoteIdent(column.identity.name)} ${column.definition.dataType}`)
+  const wanted = new Set<string>([
+    ...index.definition.columns,
+    ...(index.definition.include ?? []),
+    ...(index.definition.elements ?? []).flatMap((element) =>
+      element.column === undefined ? [] : [element.column],
+    ),
+  ]);
+  const text = `${index.definition.expression ?? ""}\n${index.definition.predicate ?? ""}`;
+  for (const column of columns) {
+    if (mentions(text, column.identity.name)) wanted.add(column.identity.name);
+  }
+  const used = columns.filter((column) => wanted.has(column.identity.name));
+  const picked = used.length > 0 ? used : columns.slice(0, 1);
+  if (picked.length === 0) return "id integer";
+  return picked
+    .map(
+      (column) =>
+        `${quoteIdent(column.identity.name)} ${scratchType(catalog, column.definition.dataType)}`,
+    )
     .join(", ");
+}
+
+/** A catalog enum or domain is not created in the scratch database. Text stands in. */
+function scratchType(catalog: Catalog, dataType: string): string {
+  const array = dataType.endsWith("[]");
+  const base = array ? dataType.slice(0, -2) : dataType;
+  const owned = catalog.objects.some(
+    (object) => object.kind === "type" && object.identity.name === base,
+  );
+  if (!owned) return dataType;
+  return array ? "text[]" : "text";
+}
+
+function mentions(text: string, name: string): boolean {
+  const quoted = `"${name.replaceAll('"', '""')}"`;
+  if (text.includes(quoted)) return true;
+  let from = 0;
+  while (from < text.length) {
+    const at = text.indexOf(name, from);
+    if (at < 0) return false;
+    const before = at === 0 ? "" : text.charAt(at - 1);
+    const after = text.charAt(at + name.length);
+    if (!identChar(before) && !identChar(after)) return true;
+    from = at + name.length;
+  }
+  return false;
+}
+
+function identChar(char: string): boolean {
+  const code = char.charCodeAt(0);
+  return (
+    (code >= 48 && code <= 57) ||
+    (code >= 65 && code <= 90) ||
+    (code >= 97 && code <= 122) ||
+    code === 95
+  );
 }
 
 function named(object: CatalogObject): string {

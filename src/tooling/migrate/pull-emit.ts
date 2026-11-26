@@ -1032,15 +1032,22 @@ function indexCall(index: IndexObject, fields: ReadonlyMap<string, string>): str
     if (element?.opclass !== undefined) text += `.ops(${JSON.stringify(element.opclass)})`;
     return text;
   };
-  const head =
-    definition.expression !== undefined && definition.columns.length === 0
-      ? `index(sql\`${sqlBody(definition.expression)}\`)`
-      : `index(${definition.columns.map((name) => columnArg(name)).join(", ")})`;
+  const expression =
+    definition.expression !== undefined ? `sql\`${sqlBody(definition.expression)}\`` : undefined;
+  const args = [
+    ...definition.columns.map((name) => columnArg(name)),
+    ...(expression !== undefined ? [expression] : []),
+  ];
+  const head = `index(${args.join(", ")})`;
   let call = head;
   if (definition.unique) {
     call += definition.nullsNotDistinct ? ".unique({ nullsNotDistinct: true })" : ".unique()";
   }
-  if (definition.method !== undefined && definition.method !== "btree") {
+  if (
+    definition.method !== undefined &&
+    definition.method !== "btree" &&
+    definition.expression?.startsWith("using ") !== true
+  ) {
     call += `.using(${JSON.stringify(definition.method)})`;
   }
   if (definition.include !== undefined && definition.include.length > 0) {
