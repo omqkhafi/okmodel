@@ -80,6 +80,13 @@ export type IntrospectOptions = {
    */
   readonly reserved?: IntrospectSkip[];
   /**
+   * Functions in a language the catalog cannot hold yet.
+   *
+   * Only `sql` and `plpgsql` are read. Another language is left out of the
+   * catalog and recorded here, never read as `plpgsql`.
+   */
+  readonly notPulled?: IntrospectSkip[];
+  /**
    * Identity keys to leave out before a name is checked.
    *
    * `okm check` and `okm push` pass the keys in `.okm/pull.json`. A recorded
@@ -99,7 +106,7 @@ export type IntrospectOptions = {
 
 /** One object pull left out because `table()` rejects a reserved word. */
 export type IntrospectSkip = {
-  readonly kind: "column" | "constraint" | "index";
+  readonly kind: "column" | "constraint" | "index" | "function";
   /** {@link identityKey} of the object that was not stored. */
   readonly key: string;
   /** `table.column` or `table.constraint`. */
@@ -114,7 +121,7 @@ const RESERVED_REASON = RESERVED_WORD_REASON;
 
 function listed(
   options: IntrospectOptions | undefined,
-  kind: IntrospectSkip["kind"],
+  kind: Exclude<IntrospectSkip["kind"], "function">,
   parent: ObjectRef,
   name: string,
   words: readonly string[],
@@ -132,7 +139,7 @@ function refuseReservedIndex(options: IntrospectOptions | undefined, name: strin
 
 function leaveReserved(
   skipped: IntrospectSkip[] | undefined,
-  kind: IntrospectSkip["kind"],
+  kind: Exclude<IntrospectSkip["kind"], "function">,
   parent: ObjectRef,
   name: string,
   words: readonly string[],
@@ -468,8 +475,17 @@ export async function introspectSchema(
   }
   for (const row of functions) {
     const name = text(row, "name");
-    const language = text(row, "language") === "sql" ? "sql" : "plpgsql";
+    const language = text(row, "language");
     const argTypes = splitTypes(text(row, "arg_types"));
+    if (language !== "sql" && language !== "plpgsql") {
+      options?.notPulled?.push({
+        kind: "function",
+        key: identityKey({ kind: "function", namespace, name, argTypes }),
+        label: name,
+        reason: `not pulled yet: language ${language}`,
+      });
+      continue;
+    }
     const source = text(row, "body");
     const atomic = language === "sql" && source.length === 0;
     const body = atomic ? atomicBody(text(row, "definition")) : source;
@@ -2061,7 +2077,10 @@ const FUNCTIONS = `
   join pg_language l on l.oid = p.prolang
   where n.nspname = $1
     and p.prokind = 'f'
-    and ${member("p.oid", "pg_proc")}
+    and not exists (
+      select 1 from pg_depend d
+      where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype in ('i', 'a', 'e')
+    )
 `;
 
 const TRIGGERS = `
