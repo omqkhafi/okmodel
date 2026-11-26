@@ -26,6 +26,7 @@
   "/docs/migrations/environments",
   "/docs/migrations/failures",
   "/docs/migrations/from-drizzle",
+  "/docs/migrations/waiting-for-locks",
   "/docs/operate/connect",
   "/docs/operate/drivers",
   "/docs/operate/errors",
