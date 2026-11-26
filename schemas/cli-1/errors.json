@@ -197,6 +197,53 @@
             "type": "boolean"
           }
         }
+      },
+      "attempts": {
+        "type": "number"
+      },
+      "waitedMs": {
+        "type": "number"
+      },
+      "blockedBy": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pid",
+            "application",
+            "state",
+            "ageMs",
+            "kind"
+          ],
+          "properties": {
+            "pid": {
+              "type": "number"
+            },
+            "application": {
+              "type": "string"
+            },
+            "state": {
+              "type": "string"
+            },
+            "ageMs": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "kind": {
+              "enum": [
+                "okm-apply",
+                "autovacuum",
+                "prepared-transaction",
+                "idle-in-transaction",
+                "active",
+                "other"
+              ]
+            }
+          }
+        }
       }
     }
   }

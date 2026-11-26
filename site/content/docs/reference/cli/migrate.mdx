@@ -167,7 +167,7 @@ Push runs no migration lint, with one exception. A plan that would weaken row-le
 
 A plan that drops columns and tables that hold rows is OKM1898. The check is `select 1 from <table> limit 1` inside the push transaction, before any statement. The refusal names every object and `--allow-data-loss`. That flag applies the plan and prints `dropped <object>` for each one. An empty table, a rename, an added object, and a dropped constraint are applied. Dropping an empty column or table without the flag applies and prints nothing extra. A drop that `.okm/pull.json` already lists stays OKM1897. A reserved column or index name that the record does not list is OKM1122, the same error `okm check` reports. A ledger name that already belongs to another table is OKM1899, before any step. The message names the schema and the table.
 
-A protected target is OKM1850 until `--allow-protected`. Lock and statement timeouts stay 5000 and 30000 milliseconds. The config and the flags are not applied. A pooler host is refused until [allowPooler](/docs/reference/config#pooler) or `--allow-pooler`.
+A protected target is OKM1850 until `--allow-protected`. Lock and statement timeouts stay 1000 and 30000 milliseconds. The config and the flags are not applied. A pooler host is refused until [allowPooler](/docs/reference/config#pooler) or `--allow-pooler`.
 
 ```sh
 bunx okm push

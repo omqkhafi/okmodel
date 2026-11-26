@@ -1,0 +1,59 @@
+---
+title: Waiting for locks
+description: How okm migrate apply waits for a lock, what it retries, and how it names the session that holds the lock.
+---
+
+A step that needs a lock somebody else holds waits for it. `okm migrate apply` does not wait forever and does not give up at the first refusal. It tries again in a new transaction until `--lock-wait` is spent, and when it gives up it says who holds the lock.
+
+Postgres: native. Proof passes (`apply waits, retries, and succeeds when the holder commits inside the window`).
+
+## What is retried
+
+Only SQLSTATE `55P03`, lock not available. A deadlock (`40P01`), a statement timeout (`57014`), and every other error stop the step at once.
+
+Each attempt is a new transaction that starts with a local `lock_timeout`. An attempt that fails rolls back, so a retry never repeats half a step. A step that cannot share a transaction, such as `CREATE INDEX CONCURRENTLY`, retries as a new statement. Its `lock_timeout` is a session setting. It is set only on a connection that passed the [pooler check](/docs/reference/errors#okm1854), and it is put back and read again when apply ends. Behind `--allow-pooler` a session setting can be lost or reach another client, so apply refuses such a step before it runs.
+
+| Flag | Meaning | Default |
+| --- | --- | --- |
+| `--lock-timeout <duration>` | How long one attempt waits for a lock. | `1s` |
+| `--lock-wait <duration>` | How long a blocked step keeps retrying, in total. `0` tries once. | `2m` |
+
+A duration is `500`, `500ms`, `30s`, or `2m`. A bare number is milliseconds. `--lock-timeout` covers the time to get a lock. It does not cover the time a long statement takes once it has the lock: that is `--statement-timeout`.
+
+## When it gives up
+
+```text
+Migration 0001_alter failed at step 1: I could not get a lock after 7 attempts over 1.5 s.
+Held by pid <pid> (lock-holder), idle in a transaction for <age>.
+I did not touch any of them.
+Nothing was changed.
+```
+
+Apply names up to five holders, one query on `pg_locks`, `pg_stat_activity`, and `pg_blocking_pids`. It recognises another `okm apply`, autovacuum, a prepared transaction (it has no pid, so the line gives its name), and a session that is idle in a transaction. It never cancels or ends a session. The pid is there for a person to decide.
+
+On a terminal, each holder's last query follows, cut to one line. It is never in `--json` and never in a log. A role that cannot read another role's query is told so.
+
+The step stays as written and nothing is recorded, so running `okm migrate apply` again is safe. Finished steps are not repeated.
+
+## In `--json`
+
+A run that never waits prints exactly what it printed before. A run that waited and then finished adds `attempts` and `waitedMs` to `data`. A step that gave up adds `attempts`, `waitedMs`, and `blockedBy` to its entry in `errors`, with `retryable: true`. The exit code does not change.
+
+```json
+{
+  "retryable": true,
+  "attempts": 7,
+  "waitedMs": 1500,
+  "blockedBy": [
+    { "pid": 4242, "application": "lock-holder", "state": "idle in transaction", "ageMs": 61000, "kind": "idle-in-transaction" }
+  ]
+}
+```
+
+`kind` is `okm-apply`, `autovacuum`, `prepared-transaction`, `idle-in-transaction`, `active`, or `other`. A prepared transaction has `pid` 0.
+
+Fail fast with `--lock-wait 0`:
+
+```bash
+bunx okm migrate apply --lock-wait 0
+```

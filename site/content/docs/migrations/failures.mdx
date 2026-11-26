@@ -43,7 +43,7 @@ Renaming `okm_steps` or `okm_history` in the schema is [OKM1899](/docs/reference
 
 | What happened | What is recorded | What you do |
 | --- | --- | --- |
-| The statement was inside the migration transaction and it failed. | Nothing. The transaction rolls back, and so does the history row. | Fix the migration and run `okm migrate apply` again. |
+| The statement was inside the migration transaction and it failed. (A lock that stays taken is retried first: [Waiting for locks](/docs/migrations/waiting-for-locks).) | Nothing. The transaction rolls back, and so does the history row. | Fix the migration and run `okm migrate apply` again. |
 | The statement committed, and this kind has a built-in probe. | An `okm_steps` row. | Run `okm migrate apply` again. The probe decides. |
 | The statement committed, and the kind has no probe. | An `okm_steps` row. The next apply stops. | Finish the work, then [`okm migrate resolve`](/docs/reference/cli/migrate#migrate-resolve). |
 | The connection dropped after the server committed and before the client heard. | The same as a committed statement. | Probe if the kind has one. Otherwise resolve. |
