@@ -344,7 +344,7 @@ test("fitIdentifier pins the FNV-1a suffix of an overflowing name", () => {
   expect(fitIdentifier("\u{1f600}".repeat(20))).toBe(`${"\u{1f600}".repeat(13)}_871aaf95`);
 });
 
-test("two long names with the same suffix are OKM1023, never merged", () => {
+test("two long names with the same suffix stay distinct", () => {
   const prefix = "x".repeat(60);
   const left = `${prefix}_2pf8`;
   const right = `${prefix}_jrj6`;
@@ -352,23 +352,16 @@ test("two long names with the same suffix are OKM1023, never merged", () => {
   expect(fitIdentifier(left)).toBe(fitIdentifier(right));
   expect(fitIdentifier(left)).toBe(`${"x".repeat(54)}_cf9ed602`);
   const tasks = parent("tasks");
-  const objects = [
+  const built = catalog([
     table({ namespace: ns, name: "tasks", provenance }),
     column({ parent: tasks, name: "email", dataType: "text", nullable: false, provenance }),
     index({ parent: tasks, columns: ["email"], name: left, provenance }),
     index({ parent: tasks, columns: ["email"], name: right, provenance }),
-  ];
-  try {
-    catalog(objects);
-  } catch (error) {
-    expect(error).toBeInstanceOf(OkmError);
-    if (error instanceof OkmError) {
-      expect(error.code).toBe("OKM1023");
-      expect(error.message).toContain(`index ${fitIdentifier(left)}`);
-      return;
-    }
-  }
-  throw new Error("expected OKM1023");
+  ]);
+  const names = built.objects
+    .filter((object) => object.kind === "index")
+    .map((object) => object.identity.name);
+  expect(names).toEqual([left, right]);
 });
 
 test("grant and default-privilege identities skip the length limit", () => {

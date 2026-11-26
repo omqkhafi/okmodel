@@ -14,6 +14,12 @@
     "notice": {
       "type": "string"
     },
+    "information": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "emulation": {
       "type": "string"
     },

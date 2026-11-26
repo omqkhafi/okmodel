@@ -455,6 +455,7 @@ export async function sealIndexExpressions(
         ...rest,
         columns: reprinted.columns,
         ...(expression !== undefined ? { expression } : {}),
+        ...(reprinted.elements !== undefined ? { elements: reprinted.elements } : {}),
         ...(predicate !== undefined ? { predicate } : {}),
       },
     });

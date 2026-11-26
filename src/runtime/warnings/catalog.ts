@@ -247,7 +247,7 @@ export const WARNING_RULES: readonly WarningRule[] = [
     summary:
       "An index is a column prefix of another index on the same table. Unique, partial, and expression indexes are redundant only when they match completely.",
     fix: "Drop the shorter index, or keep it when the longer one is unique, partial, or an expression.",
-    defaultLevel: "warn",
+    defaultLevel: "hint",
     severity: "low",
     phase: "check",
     evidence: "static",
@@ -261,7 +261,7 @@ export const WARNING_RULES: readonly WarningRule[] = [
     summary:
       "A partial index predicate column is also filtered by filters() or a preset. Those compile to bound parameters, so a generic plan may not use the index.",
     fix: "Keep the predicate as a constant in SQL, or accept a scan. Inlining preset constants is a later decision.",
-    defaultLevel: "warn",
+    defaultLevel: "hint",
     severity: "low",
     phase: "check",
     evidence: "static",

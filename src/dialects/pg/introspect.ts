@@ -1048,11 +1048,10 @@ function indexExtras(
 } {
   const method = text(row, "am");
   const include = list(text(row, "included"));
-  const elements = indexElements(
-    columns,
-    list(text(row, "indoption")),
-    list(text(row, "opc_custom")),
-  );
+  const btree = method.length === 0 || method === "btree";
+  const elements = btree
+    ? indexElements(columns, list(text(row, "indoption")), list(text(row, "opc_custom")))
+    : undefined;
   const storage = parseReloptions(row.reloptions);
   return {
     ...(method.length > 0 && method !== "btree" && expression.length === 0 ? { method } : {}),
@@ -1258,6 +1257,7 @@ export type ReprintedIndex = {
   readonly expression: string;
   readonly columns: readonly string[];
   readonly predicate: string;
+  readonly elements?: readonly IndexElement[];
 };
 
 /**
@@ -1405,10 +1405,16 @@ async function reprintIndexOnce(
     );
     const row = rows[0] ?? {};
     const keyColumns = list(text(row, "columns"));
+    const method = text(row, "am");
+    const elements =
+      using && (method.length === 0 || method === "btree")
+        ? indexElements(keyColumns, [], list(text(row, "opc_custom")))
+        : undefined;
     return {
       expression: using ? indexExpression(row, keyColumns) : text(row, "expression"),
       columns: keyColumns,
       predicate: text(row, "predicate"),
+      ...(elements !== undefined ? { elements } : {}),
     };
   } catch (error) {
     throw readOnlyReprint(error) ?? error;

@@ -160,6 +160,7 @@ const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/docs/schema/references": Link2,
   "/docs/schema/relations": Waypoints,
   "/docs/schema/indexes": ListTree,
+  "/docs/schema/comments": ScrollText,
   "/docs/schema/checks": SquareCheck,
   "/docs/queries/read-rows": BookOpen,
   "/docs/queries/request-filters": ListFilter,

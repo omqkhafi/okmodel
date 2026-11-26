@@ -22,7 +22,6 @@ import { isDomain, sameEnumLabels } from "../../contracts/catalog/enum.js";
 import { fitIdentifier, identitySequenceName } from "../../contracts/catalog/identifier.js";
 import { identityKey, identityLabel, staticNamespace } from "../../contracts/catalog/identity.js";
 import { compareText } from "../../contracts/catalog/object.js";
-import { qualify } from "../../dialects/pg/ddl.js";
 import { ddlStep } from "../../dialects/ddl-step.js";
 import { assertIndexRules } from "./index-rules.js";
 import {
@@ -2307,6 +2306,10 @@ function comparedExtensionType(
   return typeName;
 }
 
+function quotedName(name: string): string {
+  return `"${name.replaceAll('"', '""')}"`;
+}
+
 function indexStorageOnly(before: IndexObject, after: IndexObject): boolean {
   const { storage: leftStorage, ...left } = before.definition;
   const { storage: rightStorage, ...right } = after.definition;
@@ -2326,7 +2329,7 @@ function storageReplaceSteps(
   return [
     ...take([
       ddlStep(
-        `drop index concurrently if exists ${qualify(schema, temp)}`,
+        `drop index concurrently if exists ${quotedName(schema)}.${quotedName(temp)}`,
         "drop-index",
         "ddl",
         "SHARE UPDATE EXCLUSIVE",

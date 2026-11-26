@@ -13,6 +13,7 @@ import { index, schema, table, t } from "../src/dialects/pg/index.js";
 import { columnTenancy } from "../src/runtime/tenancy/index.js";
 import { previousCatalogGaps } from "../src/tooling/migrate/check.js";
 import { lintPlan } from "../src/tooling/migrate/lint.js";
+import { assertIndexRules } from "../src/tooling/migrate/index-rules.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
 
 function withReference(options?: {
@@ -118,29 +119,30 @@ test("a new unique index with no unique index under it stays OKM1529 (N-103)", (
   expect(lintCodes(coded("global", false), coded("tenant"))).toContain("OKM1529");
 });
 
-test("a unique gin or gist index is refused when the schema is built (N-107)", () => {
+test("a unique gin or gist index is refused before a plan (N-107)", () => {
   const trgm = pgTrgm();
   for (const method of ["gin", "gist"] as const) {
+    const built = schema({
+      extensions: [trgm],
+      tables: [
+        table(
+          "notes",
+          { id: t.integer().primaryKey(), title: t.text() },
+          { indexes: (columns) => [trgm[method](columns.title.name).unique()] },
+        ),
+      ],
+    });
     let caught: unknown;
     try {
-      schema({
-        extensions: [trgm],
-        tables: [
-          table(
-            "notes",
-            { id: t.integer().primaryKey(), title: t.text() },
-            { indexes: (columns) => [trgm[method](columns.title.name).unique()] },
-          ),
-        ],
-      });
+      assertIndexRules(built.catalog);
     } catch (error) {
       caught = error;
     }
     expect(caught).toBeInstanceOf(OkmError);
     const error = caught as OkmError;
-    expect(error.code).toBe("OKM1060");
+    expect(error.code).toBe("OKM1900");
     expect(error.message).toContain("notes_title_idx");
-    expect(error.message).toContain(`${method} index cannot be unique`);
+    expect(error.message).toContain(`unique on ${method}`);
   }
 });
 
