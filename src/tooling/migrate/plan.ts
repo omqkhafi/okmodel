@@ -19,9 +19,11 @@ import {
   settleChecks,
 } from "../../contracts/catalog/document.js";
 import { isDomain, sameEnumLabels } from "../../contracts/catalog/enum.js";
-import { identitySequenceName } from "../../contracts/catalog/identifier.js";
+import { fitIdentifier, identitySequenceName } from "../../contracts/catalog/identifier.js";
 import { identityKey, identityLabel, staticNamespace } from "../../contracts/catalog/identity.js";
 import { compareText } from "../../contracts/catalog/object.js";
+import { ddlStep } from "../../dialects/ddl-step.js";
+import { assertIndexRules } from "./index-rules.js";
 import {
   identitySequence,
   ownedByView,
@@ -34,6 +36,7 @@ import type {
   ColumnObject,
   ConstraintObject,
   FunctionObject,
+  IndexObject,
   MaterializedViewObject,
   TableObject,
   ViewColumn,
@@ -267,6 +270,7 @@ export function planMigration(
   dialect: DdlDialect = postgresDialect,
 ): MigrationPlan {
   requireDialect(dialect);
+  assertIndexRules(input.after);
   settleChecks(input.before);
   settleChecks(input.after);
   const request: PlanRequest = {
@@ -300,6 +304,7 @@ export function planMigration(
   }[] = [];
   const alters: { readonly before: ColumnObject; readonly after: ColumnObject }[] = [];
   const enforcement: { readonly before: ConstraintObject; readonly after: ConstraintObject }[] = [];
+  const storageReplaces: { readonly before: IndexObject; readonly after: IndexObject }[] = [];
   for (const item of beforeList) {
     if (!afterBy.has(item.key)) {
       if (item.object.kind === "role") continue;
@@ -357,6 +362,14 @@ export function planMigration(
       enforcementOnly(previous, item.object)
     ) {
       enforcement.push({ before: previous, after: item.object });
+      continue;
+    }
+    if (
+      previous.kind === "index" &&
+      item.object.kind === "index" &&
+      indexStorageOnly(previous, item.object)
+    ) {
+      storageReplaces.push({ before: previous, after: item.object });
       continue;
     }
     dropKeys.add(item.key);
@@ -716,6 +729,10 @@ export function planMigration(
       }),
     ),
   );
+  for (const replace of storageReplaces) {
+    steps.push(...storageReplaceSteps(replace.before, replace.after, schema, dialect));
+  }
+  steps.push(...commentDiffSteps(beforeBy, afterBy, createKeys, schema, dialect));
   steps.push(
     ...contractSwaps(
       picklists,
@@ -2289,6 +2306,81 @@ function comparedExtensionType(
   return typeName;
 }
 
+function quotedName(name: string): string {
+  return `"${name.replaceAll('"', '""')}"`;
+}
+
+function indexStorageOnly(before: IndexObject, after: IndexObject): boolean {
+  const { storage: leftStorage, ...left } = before.definition;
+  const { storage: rightStorage, ...right } = after.definition;
+  return (
+    stable(left) === stable(right) && stable(leftStorage ?? null) !== stable(rightStorage ?? null)
+  );
+}
+
+function storageReplaceSteps(
+  before: IndexObject,
+  after: IndexObject,
+  schema: string,
+  dialect: DdlDialect,
+): PlanStep[] {
+  const temp = fitIdentifier(`${after.identity.name}_okmnew`);
+  const created: IndexObject = { ...after, identity: { ...after.identity, name: temp } };
+  return [
+    ...take([
+      ddlStep(
+        `drop index concurrently if exists ${quotedName(schema)}.${quotedName(temp)}`,
+        "drop-index",
+        "ddl",
+        "SHARE UPDATE EXCLUSIVE",
+        false,
+      ),
+    ]),
+    ...take(dialect.lower({ op: "create-index", index: created, schema, onExistingTable: true })),
+    ...take(dialect.lower({ op: "drop-index", index: before, schema, onExistingTable: true })),
+    ...take(dialect.lower({ op: "rename-index", schema, from: temp, to: after.identity.name })),
+  ];
+}
+
+function commentDiffSteps(
+  beforeBy: ReadonlyMap<string, CatalogObject>,
+  afterBy: ReadonlyMap<string, CatalogObject>,
+  createKeys: ReadonlySet<string>,
+  schema: string,
+  dialect: DdlDialect,
+): PlanStep[] {
+  const createdTables = new Set<string>();
+  for (const [key, object] of afterBy) {
+    if (object.kind === "table" && createKeys.has(key)) createdTables.add(object.identity.name);
+  }
+  const steps: PlanStep[] = [];
+  for (const [key, after] of afterBy) {
+    const before = beforeBy.get(key);
+    if (before === undefined) continue;
+    const covered =
+      createKeys.has(key) ||
+      ((after.kind === "column" || after.kind === "constraint" || after.kind === "index") &&
+        createdTables.has(after.identity.parent.name)) ||
+      (after.kind === "sequence" &&
+        after.dependencies.some(
+          (edge) => edge.target.kind === "table" && createdTables.has(edge.target.name),
+        ));
+    if (covered) continue;
+    if ((before.comment ?? undefined) === (after.comment ?? undefined)) continue;
+    steps.push(
+      ...take(
+        dialect.lower({
+          op: "comment",
+          object: after,
+          schema,
+          text: after.comment ?? null,
+        }),
+      ),
+    );
+  }
+  return steps;
+}
+
 function sameDefinition(
   left: CatalogObject,
   right: CatalogObject,
@@ -2386,7 +2478,10 @@ function forComparison(
 }
 
 function canonicalColumns(columns: readonly ViewColumn[]): ViewColumn[] {
-  return columns.map((column) => ({ ...column, dataType: canonicalTypeName(column.dataType) }));
+  return columns.map((column) => ({
+    name: column.name,
+    dataType: canonicalTypeName(column.dataType),
+  }));
 }
 
 /**

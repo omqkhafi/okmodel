@@ -153,7 +153,8 @@ postgresTest(
       expect(readFileSync(join(cwd, "schema.ts"), "utf8")).toContain("fn(");
       expect(first.text).toContain("notes.note");
       expect(first.text).toContain("extra_seq");
-      expect(first.text).toContain("notes_title_expr");
+      expect(first.text).not.toContain("notes_title_expr");
+      expect(readFileSync(join(cwd, "tables", "notes.ts"), "utf8")).toContain("sql`lower(title)`");
       const names = readdirSync(join(cwd, "tables"));
       const source = readFileSync(join(cwd, "schema.ts"), "utf8");
       expect(unlistedTableFiles(source, names)).toEqual([]);

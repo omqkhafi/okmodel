@@ -28,6 +28,7 @@ import {
 import { decodeBigintNumber } from "../../dialects/pg/integer.js";
 import { mapPostgresError } from "../../dialects/pg/errors.js";
 import { readOnlyReprint } from "../../dialects/pg/introspect.js";
+import { assertIndexRules } from "../migrate/index-rules.js";
 import { schemaDeclarations } from "../../dialects/pg/declarations.js";
 import { enumColumn } from "../../dialects/pg/enum.js";
 import { extension } from "../../dialects/pg/ext/index.js";
@@ -107,6 +108,7 @@ import type { CommittedStep, StepEngine, StepJournal } from "../migrate/step-eng
 import type { PageExample } from "./page.js";
 import { assertLocked, assertSignature, staleLockCodes } from "../describe/lock.js";
 import { discoverRawCalls } from "../describe/scan.js";
+import { unmanagedComments } from "../migrate/drift.js";
 import { schemaAdvice } from "../migrate/schema-rules.js";
 import { testingObjectConflict } from "../testing/conflict.js";
 import { refuseDataLoss } from "../migrate/data-loss.js";
@@ -2341,6 +2343,33 @@ thrown(
   },
 );
 
+thrown(
+  "OKM1903",
+  () => {
+    const built = schema({
+      tables: [
+        table(
+          "notes",
+          { id: t.integer().primaryKey(), title: t.text() },
+          { indexes: (columns) => [index(columns.title).unique().using("gin")] },
+        ),
+      ],
+    });
+    assertIndexRules(built.catalog);
+  },
+  () => {
+    schema({
+      tables: [
+        table(
+          "notes",
+          { id: t.integer().primaryKey(), title: t.text() },
+          { indexes: (columns) => [index(columns.title).unique()] },
+        ),
+      ],
+    });
+  },
+);
+
 function adviceCodes(built: ReturnType<typeof schema>): readonly string[] {
   return schemaAdvice(built, [], {}).advice.map((item) => item.code);
 }
@@ -2407,6 +2436,125 @@ reported(
       }),
     ),
 );
+
+reported(
+  "OKM2104",
+  () =>
+    adviceCodes(
+      schema({
+        tables: [
+          table(
+            "notes",
+            { id: t.identity(), email: t.text() },
+            {
+              indexes: (columns) => [
+                index(columns.email).name("notes_email_a"),
+                index(columns.email).name("notes_email_b"),
+              ],
+            },
+          ),
+        ],
+      }),
+    ),
+  () =>
+    adviceCodes(
+      schema({
+        tables: [
+          table(
+            "notes",
+            { id: t.identity(), email: t.text() },
+            { indexes: (columns) => [index(columns.email)] },
+          ),
+        ],
+      }),
+    ),
+);
+
+reported(
+  "OKM2105",
+  () =>
+    adviceCodes(
+      schema({
+        tables: [
+          table(
+            "notes",
+            { id: t.identity(), email: t.text(), name: t.text() },
+            {
+              indexes: (columns) => [
+                index(columns.email).name("notes_email_short"),
+                index(columns.email, columns.name).name("notes_email_name"),
+              ],
+            },
+          ),
+        ],
+      }),
+    ),
+  () =>
+    adviceCodes(
+      schema({
+        tables: [
+          table(
+            "notes",
+            { id: t.identity(), email: t.text(), name: t.text() },
+            { indexes: (columns) => [index(columns.email, columns.name)] },
+          ),
+        ],
+      }),
+    ),
+);
+
+reported(
+  "OKM2106",
+  () =>
+    adviceCodes(
+      schema({
+        tables: [
+          table(
+            "tasks",
+            { id: t.identity(), status: t.text() },
+            {
+              presets: { pending: (q) => q.where({ status: "pending" }) },
+              indexes: (columns) => [index(columns.status).where({ status: "pending" })],
+            },
+          ),
+        ],
+      }),
+    ),
+  () =>
+    adviceCodes(
+      schema({
+        tables: [
+          table(
+            "tasks",
+            { id: t.identity(), status: t.text() },
+            { indexes: (columns) => [index(columns.status).where({ status: "pending" })] },
+          ),
+        ],
+      }),
+    ),
+);
+
+reported(
+  "OKM2107",
+  () => unmanagedLines(false),
+  () => unmanagedLines(true),
+);
+
+function unmanagedLines(declared: boolean): readonly string[] {
+  const author = schema({
+    tables: [
+      table("notes", { id: t.integer().primaryKey() }, declared ? { comment: "from the dba" } : {}),
+    ],
+  }).catalog;
+  const live = {
+    ...author,
+    objects: author.objects.map((object) =>
+      object.kind === "table" ? { ...object, comment: "from the dba" } : object,
+    ),
+  };
+  const lines = unmanagedComments(live, author, schema({ tables: [] }).catalog).information;
+  return lines.some((line) => line.startsWith("OKM2107")) ? ["OKM2107"] : [];
+}
 
 function withColumn(
   source: Catalog,

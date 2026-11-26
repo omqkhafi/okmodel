@@ -42,6 +42,7 @@ const EXPECTED = [
   ["widen-check", "expand"],
   ["narrow-check", "contract"],
   ["create-index", "expand"],
+  ["comment", "expand"],
   ["drop-index", "contract"],
   ["rename-index", "contract"],
   ["create-sequence", "expand"],

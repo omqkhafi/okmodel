@@ -28,11 +28,13 @@ import { definition, rejected } from "./misuse.js";
  *
  * @param name - Postgres type name
  * @param values - Labels, in stored order
+ * @param comment - Comment on the enum type. Absent means unmanaged
  * @returns An enum column
  */
 export function enumColumn<const TValues extends readonly string[]>(
   name: string,
   values: TValues,
+  comment?: string,
 ): ColumnBuilder<TValues[number], PlainFlags> {
   if (name.length === 0) {
     definition("enum name must be a non-empty type name.");
@@ -54,6 +56,7 @@ export function enumColumn<const TValues extends readonly string[]>(
     baseType: name,
     typeDependency: name,
     enumLabels: [...values],
+    ...(comment !== undefined ? { enumComment: comment } : {}),
     typeLabel: values.map((value) => JSON.stringify(value)).join(" | "),
     encode: (value) => {
       if (!allowed.has(value)) {
@@ -82,12 +85,14 @@ export function enumColumn<const TValues extends readonly string[]>(
  * @param name - Domain name
  * @param base - Column the domain is based on
  * @param check - Domain check expression, stored as written
+ * @param comment - Comment on the domain. Absent means unmanaged
  * @returns A domain column
  */
 export function domain<TValue, TFlags extends ColumnFlags>(
   name: string,
   base: ColumnBuilder<TValue, TFlags>,
   check: string,
+  comment?: string,
 ): ColumnBuilder<TValue, TFlags> {
   if (name.length === 0) definition("domain name must be a non-empty type name.");
   if (check.length === 0) definition("domain check must be a non-empty expression.");
@@ -121,6 +126,7 @@ export function domain<TValue, TFlags extends ColumnFlags>(
           check,
           provenance,
           ...(dependencies.length > 0 ? { dependencies } : {}),
+          ...(comment !== undefined ? { comment } : {}),
         });
         const index = objects.findIndex(
           (object) =>

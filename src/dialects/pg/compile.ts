@@ -102,9 +102,6 @@ export function compileColumn(
   if (state.renamedFrom !== undefined) {
     assertIdentifier(state.renamedFrom, "renamed column");
   }
-  if (state.comment !== undefined) {
-    assertStoredText(state.comment, "column comment");
-  }
   if (state.picklist !== undefined) {
     for (const value of state.picklist.values) {
       assertStoredText(value, "picklist value");
@@ -120,7 +117,8 @@ export function compileColumn(
     ...owner,
     ...(state.defaultSql !== undefined ? { defaultExpression: state.defaultSql } : {}),
     ...(state.collation !== undefined ? { collation: state.collation } : {}),
-    ...(state.identity !== undefined ? { identity: state.identity } : {}),
+    ...(state.identity !== undefined ? { identity: { always: state.identity.always } } : {}),
+    ...(state.comment !== undefined ? { comment: state.comment } : {}),
     ...(state.generated !== undefined ? { generated: state.generated } : {}),
     ...(dependencies.length > 0 || (input.dependencies?.length ?? 0) > 0
       ? { dependencies: [...dependencies, ...(input.dependencies ?? [])] }

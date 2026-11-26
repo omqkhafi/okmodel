@@ -1,0 +1,49 @@
+---
+title: "Comments"
+description: "comment is stored and written as COMMENT ON."
+---
+
+A comment is catalog text. `okm` writes `COMMENT ON ... IS '...'` after the object exists, in the same transaction. After a drop-and-create of a view or a function, the comment is written again. A rename keeps the comment Postgres already stored on that object.
+
+The declared comment is the text OKM writes. Omitting `comment` means the comment is unmanaged. OKM does not remove it. OKM writes `IS NULL` only when an earlier migration snapshot shows that OKM wrote the comment and the schema no longer declares it. When that snapshot is missing, OKM leaves the database comment alone. `okm check` reports that comment as information (OKM2107). `okm pull` writes it into the schema.
+
+Anyone who can read the catalog can read the comment. PostgREST, pg_graphql, and Supabase publish catalog comments as API docs. Do not put a secret in a comment.
+
+A comment that already exists in the schema is written on the first plan after this version. Newline, tab, and carriage return are stored as written. Other control characters are OKM1122. The text is not trimmed.
+
+### Table and column
+
+`table` takes `comment`. A column takes `.comment()`. An identity sequence takes the comment on `t.identity({ comment })` or `t.integerIdentity({ comment })`. That comment is on the sequence, not the column.
+
+```ts title="table-comment.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity({ comment: "Surrogate key." }),
+    title: t.text().comment("Shown in the list."),
+  },
+  { comment: "Notes the app stores." },
+);
+```
+
+### Index
+
+`.comment()` is on the index chain, after the columns and the options.
+
+```ts title="index-comment.ts"
+import { index, table, t } from "okmodel/pg";
+
+export const users = table(
+  "users",
+  { id: t.identity(), email: t.text() },
+  { indexes: (columns) => [index(columns.email).unique().comment("Login lookup.")] },
+);
+```
+
+### Other objects
+
+A view or materialized view takes `comment` on the options, and `comments` for output columns by name. A function and a trigger take `comment` on their options. An enum takes the comment on `t.enum(name, values, comment)`. A domain takes it on `t.domain(name, base, check, comment)`. A check and a foreign key take `comment` on the object form.
+
+Unique constraints, primary keys, extensions, roles, and schemas do not take a comment.

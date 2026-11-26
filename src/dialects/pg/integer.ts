@@ -102,11 +102,13 @@ export function bigint<const TAs extends BigintAs = "string">(options?: {
  */
 export function identity<const TAs extends BigintAs = "string">(options?: {
   readonly as?: TAs;
+  /** Comment on the identity sequence, not the column. */
+  readonly comment?: string;
 }): ColumnBuilder<BigintValue<TAs>, IdentityFlags> {
   const mode = options?.as ?? "string";
   if (mode === "number") {
     return openColumn({
-      ...identityFlags(),
+      ...identityFlags(options?.comment),
       encode: encodeBigintNumber,
       decode: decodeBigintNumber,
       typeLabel: "number",
@@ -114,7 +116,7 @@ export function identity<const TAs extends BigintAs = "string">(options?: {
   }
   if (mode === "bigint") {
     return openColumn({
-      ...identityFlags(),
+      ...identityFlags(options?.comment),
       encode: encodeBigintValue,
       decode: decodeBigintValue,
       typeLabel: "bigint",
@@ -124,7 +126,7 @@ export function identity<const TAs extends BigintAs = "string">(options?: {
     definition(`identity as ${String(mode)} must be string, number, or bigint.`);
   }
   return openColumn({
-    ...identityFlags(),
+    ...identityFlags(options?.comment),
     encode: encodeBigintString,
     decode: decodeBigintString,
   }) as unknown as ColumnBuilder<BigintValue<TAs>, IdentityFlags>;
@@ -138,9 +140,11 @@ export function identity<const TAs extends BigintAs = "string">(options?: {
  *
  * @returns An identity column
  */
-export function integerIdentity(): ColumnBuilder<number, IdentityFlags> {
+export function integerIdentity(options?: {
+  readonly comment?: string;
+}): ColumnBuilder<number, IdentityFlags> {
   return openColumn({
-    ...identityFlags(),
+    ...identityFlags(options?.comment),
     baseType: "integer",
     encode: (value: number) => integerToken(value, -2_147_483_648, 2_147_483_647, "integer"),
     decode: (wire) => decodeBounded(wire, -2_147_483_648, 2_147_483_647, "integer"),
@@ -245,7 +249,7 @@ function decodeBounded(wire: string, min: number, max: number, role: string): nu
   return value;
 }
 
-function identityFlags(): {
+function identityFlags(comment?: string): {
   readonly baseType: "bigint";
   readonly nullable: false;
   readonly hasDefault: true;
@@ -254,7 +258,7 @@ function identityFlags(): {
   readonly hidden: false;
   readonly omitWrite: true;
   readonly sqlForm: "raw";
-  readonly identity: { readonly always: true };
+  readonly identity: { readonly always: true; readonly comment?: string };
   readonly primaryKey: true;
 } {
   return {
@@ -266,7 +270,7 @@ function identityFlags(): {
     hidden: false,
     omitWrite: true,
     sqlForm: "raw",
-    identity: { always: true },
+    identity: comment === undefined ? { always: true } : { always: true, comment },
     primaryKey: true,
   };
 }

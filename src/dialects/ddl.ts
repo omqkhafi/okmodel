@@ -230,6 +230,7 @@ const KIND_SQL: Readonly<Record<StepKind, RegExp>> = {
   "widen-check": /^alter table\b.*\b(?:drop constraint|add constraint|validate constraint)\b/,
   "narrow-check": /^alter table\b.*\b(?:drop constraint|add constraint|validate constraint)\b/,
   "create-index": /^create (?:unique )?index\b/,
+  comment: /^comment on\b/,
   "drop-index": /^drop index\b/,
   "rename-index": /^alter index\b.*\brename to\b/,
   "create-sequence": /^create sequence\b/,
@@ -440,6 +441,13 @@ export type LogicalChange =
       readonly schema: string;
       /** True when the parent table is created in this same plan. */
       readonly tableIsNew: boolean;
+    }
+  | {
+      readonly op: "comment";
+      readonly object: CatalogObject;
+      readonly schema: string;
+      /** `null` clears a comment OKM previously wrote. */
+      readonly text: string | null;
     }
   | {
       readonly op: "create-index";

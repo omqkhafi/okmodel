@@ -44,6 +44,8 @@ export type FunctionInput = {
   readonly owner?: Owner;
   readonly provenance: Provenance;
   readonly dependencies?: readonly ObjectIdentity[];
+  /** Absent means the comment is not managed. */
+  readonly comment?: string;
 };
 
 /** Input for {@link triggerObject}. */
@@ -59,6 +61,8 @@ export type TriggerInput = {
   readonly owner?: Owner;
   readonly provenance: Provenance;
   readonly dependencies?: readonly ObjectIdentity[];
+  /** Absent means the comment is not managed. */
+  readonly comment?: string;
 };
 
 const VOLATILITY = new Set<FunctionVolatility>(["volatile", "stable", "immutable"]);
@@ -126,6 +130,7 @@ export function functionObject(input: FunctionInput): FunctionObject {
     definition,
     dependencies: normaliseEdges(input.dependencies ?? []),
     provenance: input.provenance,
+    ...(input.comment !== undefined ? { comment: input.comment } : {}),
   };
 }
 
@@ -211,6 +216,7 @@ export function triggerObject(input: TriggerInput): TriggerObject {
     definition,
     dependencies: normaliseEdges(edges),
     provenance: input.provenance,
+    ...(input.comment !== undefined ? { comment: input.comment } : {}),
   };
 }
 

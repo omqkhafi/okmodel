@@ -282,12 +282,43 @@ export type ColumnDefinition = {
  * `nameKey` is the stable token the name was generated from. It does not
  * follow a later field rename. Column order is significant.
  */
+/**
+ * One key of an index that is not a plain ascending column.
+ *
+ * A column key sets `column`. An expression key sets `expression`. `order`,
+ * `nulls`, and `opclass` are present only when they are not the btree default.
+ */
+export type IndexElement = {
+  readonly column?: string;
+  readonly expression?: string;
+  readonly order?: "desc";
+  readonly nulls?: "first" | "last";
+  readonly opclass?: string;
+};
+
+/**
+ * Storage parameters, as Postgres reports them.
+ *
+ * Keys are sorted. Values are the text `reloptions` uses (`90`, `on`, `off`),
+ * so a round trip matches `pg_get_indexdef`.
+ */
+export type IndexStorage = Readonly<Record<string, string>>;
+
 export type IndexDefinition = {
   readonly columns: readonly string[];
   readonly unique: boolean;
   readonly nameKey: string;
   readonly predicate?: string;
   readonly expression?: string;
+  /** Absent means btree. A btree index does not store the method. */
+  readonly method?: string;
+  /** Covering columns. Absent when the index has none. */
+  readonly include?: readonly string[];
+  /** Keys that are not a plain ascending column list. */
+  readonly elements?: readonly IndexElement[];
+  readonly storage?: IndexStorage;
+  /** PostgreSQL 15. Absent means nulls are distinct. */
+  readonly nullsNotDistinct?: boolean;
 };
 
 /** Constraint family. */
@@ -386,6 +417,12 @@ export type CatalogEnvelope<K extends ObjectKind, I extends ObjectIdentity, D> =
   readonly definition: D;
   readonly dependencies: readonly DependencyEdge[];
   readonly provenance: Provenance;
+  /**
+   * Comment text, verbatim.
+   *
+   * Absent means the comment is not managed. It is never trimmed.
+   */
+  readonly comment?: string;
 };
 
 /** A table, possibly partitioned. Copied partition keys are not objects. */
@@ -516,6 +553,8 @@ export type TriggerObject = CatalogEnvelope<
 export type ViewColumn = {
   readonly name: string;
   readonly dataType: string;
+  /** Absent means the column comment is not managed. */
+  readonly comment?: string;
 };
 
 /**

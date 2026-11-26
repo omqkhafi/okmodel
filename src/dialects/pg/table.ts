@@ -6,7 +6,9 @@
  */
 
 import { printedIdentifier } from "../../contracts/catalog/identifier.js";
+import type { IndexElement, IndexStorage } from "../../contracts/catalog/types.js";
 import { throwNamed } from "../../contracts/error.js";
+import { printIndexText } from "./index-print.js";
 import { callerLocation, withLocation } from "../../contracts/location.js";
 import { type ColumnInsertOf, type ColumnRowOf, type ColumnUpdateOf } from "./column.js";
 import { openFilters } from "./filters.js";
@@ -24,11 +26,48 @@ import {
 /**
  * A column as seen by `indexes` and `checks`.
  *
- * `name` is the SQL name `schema()` will store.
+ * `name` is the SQL name `schema()` will store. `desc`, `nullsFirst`,
+ * `nullsLast`, and `ops` mark one index key. They do not change the column.
  */
 export type ColumnHandle = {
   readonly name: string;
+  /** Stores `DESC` on this index key. */
+  desc(): ColumnHandle;
+  /** Stores `NULLS FIRST` on this index key. */
+  nullsFirst(): ColumnHandle;
+  /** Stores `NULLS LAST` on this index key. */
+  nullsLast(): ColumnHandle;
+  /**
+   * Stores an operator class on this index key.
+   *
+   * @param name - Operator class, such as `text_pattern_ops`
+   */
+  ops(name: string): ColumnHandle;
+  readonly order?: "desc";
+  readonly nulls?: "first" | "last";
+  readonly opclass?: string;
 };
+
+/**
+ * Builds the column handle `indexes` and `checks` receive.
+ *
+ * @param name - SQL column name
+ * @param extra - Order, nulls, or operator class already chosen
+ * @returns A handle
+ */
+export function columnHandle(
+  name: string,
+  extra?: { readonly order?: "desc"; readonly nulls?: "first" | "last"; readonly opclass?: string },
+): ColumnHandle {
+  return {
+    name,
+    ...extra,
+    desc: () => columnHandle(name, { ...extra, order: "desc" }),
+    nullsFirst: () => columnHandle(name, { ...extra, nulls: "first" }),
+    nullsLast: () => columnHandle(name, { ...extra, nulls: "last" }),
+    ops: (opclass: string) => columnHandle(name, { ...extra, opclass }),
+  };
+}
 
 /**
  * An index declared on a table.
@@ -49,6 +88,18 @@ export type IndexCall = {
    * not read it. `compileIndexes` copies the field onto the catalog index.
    */
   readonly expression?: string;
+  /** Access method. Absent means btree, and btree is not stored. */
+  readonly method?: string;
+  /** Covering columns, SQL names. The method is `include()`. */
+  readonly included?: readonly string[];
+  /** Keys that are not a plain ascending column list. */
+  readonly elements?: readonly IndexElement[];
+  /** Storage parameters, already spelled the way Postgres stores them. */
+  readonly storage?: IndexStorage;
+  /** PostgreSQL 15. Nulls compare equal. */
+  readonly nullsNotDistinct?: boolean;
+  /** Comment text. The method is `comment()`. Absent means unmanaged. */
+  readonly commentText?: string;
   /**
    * Set by {@link IndexCall.global}. The catalog does not store it.
    *
@@ -77,7 +128,7 @@ export type IndexCall = {
    *
    * @returns The same columns, unique
    */
-  unique(): IndexCall;
+  unique(options?: { readonly nullsNotDistinct?: boolean }): IndexCall;
   /**
    * Opts this index out of the tenant prefix.
    *
@@ -118,29 +169,87 @@ export type IndexCall = {
  *
  * A hand-built {@link IndexCall} may omit them. Chaining stays on this type.
  */
-export interface IndexChain extends IndexCall {
-  /** @returns The same columns, unique */
-  unique(): IndexChain;
+/** Storage `.with()` accepts for one access method. */
+export type IndexStorageFor<M extends string> = M extends "btree"
+  ? { readonly fillfactor?: number; readonly deduplicate_items?: boolean }
+  : M extends "gin"
+    ? { readonly fastupdate?: boolean; readonly gin_pending_list_limit?: number }
+    : M extends "gist"
+      ? { readonly fillfactor?: number; readonly buffering?: "auto" | "on" | "off" }
+      : M extends "brin"
+        ? { readonly pages_per_range?: number; readonly autosummarize?: boolean }
+        : M extends "hash" | "spgist"
+          ? { readonly fillfactor?: number }
+          : Readonly<Record<string, string | number | boolean>>;
+
+/** A where object, an expression, or `sql` text. */
+export type IndexPredicate = unknown;
+
+export interface IndexChain<M extends string = "btree"> extends IndexCall {
+  /**
+   * Marks the index unique.
+   *
+   * @param options - `nullsNotDistinct` is PostgreSQL 15
+   * @returns The same index, unique
+   */
+  unique(options?: { readonly nullsNotDistinct?: boolean }): IndexChain<M>;
   /**
    * Opts this index out of the tenant prefix.
    *
    * @param reason - Why this index is shared across tenants
    * @returns The same columns, unprefixed
    */
-  global(reason: string): IndexChain;
+  global(reason: string): IndexChain<M>;
   /**
    * Opts this index into the tenant prefix.
    *
    * @returns The same columns, prefixed when the table is a tenant table
    */
-  scoped(): IndexChain;
+  scoped(): IndexChain<M>;
   /**
    * Sets the SQL name stored for this index.
    *
    * @param sqlName - SQL identifier to store
    * @returns The same columns, under that name
    */
-  name(sqlName: string): IndexChain;
+  name(sqlName: string): IndexChain<M>;
+  /**
+   * Partial index predicate.
+   *
+   * A where object, an expression, or `sql` text. The catalog stores the SQL.
+   *
+   * @param predicate - Predicate
+   * @returns The same index, partial
+   */
+  where(predicate: IndexPredicate): IndexChain<M>;
+  /**
+   * Access method. The planner still owns `CONCURRENTLY`.
+   *
+   * @param method - `btree`, `gin`, `gist`, `brin`, or an extension method
+   * @returns The same index, using that method
+   */
+  using<const Next extends string>(method: Next): IndexChain<Next>;
+  /**
+   * Covering columns. Only plain columns are accepted later.
+   *
+   * @param columns - Column handles
+   * @returns The same index, with `INCLUDE`
+   */
+  include(...columns: readonly ColumnHandle[]): IndexChain<M>;
+  /**
+   * Storage parameters. Builtin methods are typed. An extension method takes a record.
+   *
+   * @param storage - Parameters for this method
+   * @returns The same index, with `WITH`
+   */
+  with(storage: IndexStorageFor<M>): IndexChain<M>;
+  /**
+   * Comment stored on the index.
+   *
+   * @param text - Comment text, verbatim
+   * @returns The same index, with that comment
+   */
+  comment(text: string): IndexChain<M>;
 }
 
 /**
@@ -153,7 +262,14 @@ export type SqlText = {
 };
 
 /** Values an {@link sql} template may interpolate. */
-export type SqlValue = string | number | boolean | null | ColumnHandle | SqlText;
+export type SqlValue =
+  | string
+  | number
+  | boolean
+  | null
+  | ColumnHandle
+  | { readonly name: string }
+  | SqlText;
 
 /**
  * Options `table()` stores.
@@ -169,7 +285,9 @@ export type TableOptions<TColumns> = {
       | ((columns: Handles<TColumns>) => SqlText)
       | {
           readonly expression: (columns: Handles<TColumns>) => SqlText;
-          readonly enforced: false;
+          readonly enforced?: false;
+          /** Comment on the check. Absent means unmanaged. */
+          readonly comment?: string;
         };
   };
   readonly unique?: {
@@ -563,103 +681,214 @@ type TraitShapes<TColumns, TOptions> = TOptions extends { readonly traits: infer
       HasVersioned<TTraits>
   : unknown;
 
+let fieldSql: (field: string) => string = (field) => field;
+
 /**
- * Declares an index from column handles.
+ * Maps where-object keys to SQL names while `indexes` runs.
  *
- * @param columns - Columns in index order
- * @returns An index call `schema()` compiles
+ * @param resolve - Field name to SQL name
  */
-export function index(...columns: readonly (ColumnHandle | undefined)[]): IndexChain {
-  const names: string[] = [];
-  for (const column of columns) {
-    if (column === undefined) definition("index() needs a column of this table.");
-    names.push(column.name);
-  }
-  return buildIndex({ columns: names });
+export function bindIndexNames(resolve: (field: string) => string): void {
+  fieldSql = resolve;
+}
+
+/** Restores field keys as SQL names. */
+export function clearIndexNames(): void {
+  fieldSql = (field) => field;
 }
 
 /**
- * Builds an index call, including `.unique()`, `.global()`, `.scoped()`, and `.name()`.
+ * Declares an index from column handles, one expression, or `sql` text.
+ *
+ * @param first - A column, an expression, or `sql` text
+ * @param rest - Further columns, then one expression. An expression takes no columns after it
+ * @returns An index call `schema()` compiles
+ */
+export function index(...args: readonly unknown[]): IndexChain {
+  const first = args[0];
+  if (first === undefined) definition("index() needs a column or an expression.");
+  if (isColumnHandle(first)) {
+    const handles: IndexKey[] = [];
+    let expression: string | undefined;
+    for (const arg of args) {
+      if (isColumnHandle(arg)) {
+        if (expression !== undefined) definition("index() takes columns, then one expression.");
+        handles.push(arg);
+        continue;
+      }
+      if (expression !== undefined) definition("index() takes one expression.");
+      expression = printIndexText(arg, fieldSql);
+    }
+    const marked = handles.some(
+      (handle) =>
+        handle.order !== undefined || handle.nulls !== undefined || handle.opclass !== undefined,
+    );
+    return buildIndex({
+      columns: handles.map((handle) => handle.name),
+      ...(expression !== undefined ? { expression } : {}),
+      ...(marked ? { elements: handles.map(elementFrom) } : {}),
+    });
+  }
+  if (args.length > 1) definition("index() takes columns or one expression.");
+  return buildIndex({ columns: [], expression: printIndexText(first, fieldSql) });
+}
+
+/** Fields {@link buildIndex} stores. Methods are added by the chain. */
+export type IndexBuild = {
+  readonly columns: readonly string[];
+  readonly isUnique?: boolean;
+  readonly predicate?: string;
+  readonly expression?: string;
+  readonly method?: string;
+  readonly include?: readonly string[];
+  readonly elements?: readonly IndexElement[];
+  readonly storage?: IndexStorage;
+  readonly nullsNotDistinct?: boolean;
+  readonly comment?: string;
+  readonly tenantGlobal?: string;
+  readonly tenantScoped?: boolean;
+  readonly sqlName?: string;
+};
+
+/**
+ * Builds an index call, including the chain methods.
  *
  * Extension `using` tails and trait rewrites share this so the methods stay
  * one implementation. It is not on the `okmodel/pg` barrel.
  *
- * @param input - Columns, uniqueness, and an optional predicate or expression
+ * @param input - Columns, uniqueness, and optional index options
  * @returns The index call `schema()` compiles
  */
-export function buildIndex(input: {
+export function buildIndex(input: IndexBuild): IndexChain {
+  return chain(indexData(input));
+}
+
+type IndexData = {
   readonly columns: readonly string[];
-  readonly isUnique?: boolean;
-  readonly predicate?: string | undefined;
-  readonly expression?: string | undefined;
-  readonly tenantGlobal?: string | undefined;
-  readonly tenantScoped?: boolean | undefined;
-  readonly sqlName?: string | undefined;
-}): IndexChain {
-  const columns = input.columns;
-  const isUnique = input.isUnique === true;
-  const predicate = input.predicate;
-  const expression = input.expression;
-  const tenantGlobal = input.tenantGlobal;
-  const tenantScoped = input.tenantScoped === true ? true : undefined;
-  const sqlName = input.sqlName;
+  readonly isUnique: boolean;
+  readonly predicate?: string;
+  readonly expression?: string;
+  readonly method?: string;
+  readonly included?: readonly string[];
+  readonly elements?: readonly IndexElement[];
+  readonly storage?: IndexStorage;
+  readonly nullsNotDistinct?: boolean;
+  readonly commentText?: string;
+  readonly tenantGlobal?: string;
+  readonly tenantScoped?: boolean;
+  readonly sqlName?: string;
+};
+
+function indexData(input: IndexBuild): IndexData {
   return {
-    columns,
-    isUnique,
-    ...(predicate !== undefined ? { predicate } : {}),
-    ...(expression !== undefined ? { expression } : {}),
-    ...(tenantGlobal !== undefined ? { tenantGlobal } : {}),
-    ...(tenantScoped === true ? { tenantScoped: true } : {}),
-    ...(sqlName !== undefined ? { sqlName } : {}),
-    unique() {
-      return buildIndex({
-        columns,
+    columns: input.columns,
+    isUnique: input.isUnique === true,
+    ...(input.predicate !== undefined ? { predicate: input.predicate } : {}),
+    ...(input.expression !== undefined ? { expression: input.expression } : {}),
+    ...(input.method !== undefined && input.method !== "btree" ? { method: input.method } : {}),
+    ...(input.include !== undefined ? { included: input.include } : {}),
+    ...(input.elements !== undefined ? { elements: input.elements } : {}),
+    ...(input.storage !== undefined ? { storage: input.storage } : {}),
+    ...(input.nullsNotDistinct === true ? { nullsNotDistinct: true } : {}),
+    ...(input.comment !== undefined ? { commentText: input.comment } : {}),
+    ...(input.tenantGlobal !== undefined ? { tenantGlobal: input.tenantGlobal } : {}),
+    ...(input.tenantScoped === true ? { tenantScoped: true } : {}),
+    ...(input.sqlName !== undefined ? { sqlName: input.sqlName } : {}),
+  };
+}
+
+function chain(state: IndexData): IndexChain {
+  const call: IndexChain = {
+    columns: state.columns,
+    isUnique: state.isUnique === true,
+    ...(state.predicate !== undefined ? { predicate: state.predicate } : {}),
+    ...(state.expression !== undefined ? { expression: state.expression } : {}),
+    ...(state.method !== undefined ? { method: state.method } : {}),
+    ...(state.included !== undefined ? { included: state.included } : {}),
+    ...(state.elements !== undefined ? { elements: state.elements } : {}),
+    ...(state.storage !== undefined ? { storage: state.storage } : {}),
+    ...(state.nullsNotDistinct === true ? { nullsNotDistinct: true } : {}),
+    ...(state.commentText !== undefined ? { commentText: state.commentText } : {}),
+    ...(state.tenantGlobal !== undefined ? { tenantGlobal: state.tenantGlobal } : {}),
+    ...(state.tenantScoped === true ? { tenantScoped: true } : {}),
+    ...(state.sqlName !== undefined ? { sqlName: state.sqlName } : {}),
+    unique(options?: { readonly nullsNotDistinct?: boolean }) {
+      return chain({
+        ...state,
         isUnique: true,
-        predicate,
-        expression,
-        tenantGlobal,
-        tenantScoped,
-        sqlName,
+        ...(options?.nullsNotDistinct === true ? { nullsNotDistinct: true } : {}),
       });
     },
     global(reason: string) {
       if (typeof reason !== "string" || reason.trim().length === 0) {
         definition("index().global() needs a reason.");
       }
-      return buildIndex({
-        columns,
-        isUnique,
-        predicate,
-        expression,
-        tenantGlobal: reason.trim(),
-        sqlName,
-      });
+      const { tenantScoped: _scoped, ...rest } = state;
+      return chain({ ...rest, tenantGlobal: reason.trim() });
     },
     scoped() {
-      return buildIndex({
-        columns,
-        isUnique,
-        predicate,
-        expression,
-        tenantScoped: true,
-        sqlName,
-      });
+      const { tenantGlobal: _global, ...rest } = state;
+      return chain({ ...rest, tenantScoped: true });
     },
     name(next: string) {
-      if (next.length === 0) {
-        definition("index().name() must be a non-empty SQL identifier.");
-      }
-      return buildIndex({
-        columns,
-        isUnique,
-        predicate,
-        expression,
-        tenantGlobal,
-        tenantScoped,
-        sqlName: next,
-      });
+      if (next.length === 0) definition("index().name() must be a non-empty SQL identifier.");
+      return chain({ ...state, sqlName: next });
+    },
+    where(predicate: IndexPredicate) {
+      return chain({ ...state, predicate: printIndexText(predicate, fieldSql) });
+    },
+    using<const Next extends string>(method: Next) {
+      if (method.length === 0) definition("index().using() needs a method.");
+      const { method: _method, ...rest } = state;
+      return chain(method === "btree" ? rest : { ...rest, method }) as IndexChain<Next>;
+    },
+    include(...columns: readonly ColumnHandle[]) {
+      return chain({ ...state, included: columns.map((column) => column.name) });
+    },
+    with(storage: IndexStorageFor<string>) {
+      return chain({ ...state, storage: storageRecord(storage) });
+    },
+    comment(text: string) {
+      return chain({ ...state, commentText: text });
     },
   };
+  return call;
+}
+
+type IndexKey = {
+  readonly name: string;
+  readonly order?: "desc";
+  readonly nulls?: "first" | "last";
+  readonly opclass?: string;
+};
+
+function isColumnHandle(value: unknown): value is IndexKey {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    "name" in value &&
+    typeof value.name === "string" &&
+    !("text" in value)
+  );
+}
+
+function elementFrom(handle: IndexKey): IndexElement {
+  return {
+    column: handle.name,
+    ...(handle.order !== undefined ? { order: handle.order } : {}),
+    ...(handle.nulls !== undefined ? { nulls: handle.nulls } : {}),
+    ...(handle.opclass !== undefined ? { opclass: handle.opclass } : {}),
+  };
+}
+
+function storageRecord(storage: IndexStorageFor<string>): IndexStorage {
+  const out: Record<string, string> = {};
+  for (const key of Object.keys(storage).sort()) {
+    const value = storage[key];
+    if (typeof value === "boolean") out[key] = value ? "on" : "off";
+    else if (value !== undefined) out[key] = String(value);
+  }
+  return out;
 }
 
 /**
