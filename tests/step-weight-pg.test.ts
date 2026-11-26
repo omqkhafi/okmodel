@@ -277,7 +277,7 @@ async function table(sql: Sql, schemaName: string, rows: number): Promise<void> 
 
 async function constraints(sql: Sql, schemaName: string): Promise<readonly string[]> {
   const rows = await sql.unsafe(
-    `select conname from pg_constraint where conrelid = '${schemaName}.big'::regclass order by 1`,
+    `select conname from pg_constraint where conrelid = '${schemaName}.big'::regclass and contype = 'x' order by 1`,
   );
   return rows.map((row) => String(row.conname));
 }
