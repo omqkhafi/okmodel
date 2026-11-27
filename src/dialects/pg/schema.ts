@@ -707,7 +707,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
           rememberTypeGrant(schemaName, name, note.grants);
         }
         contributeListed(config.extensions, objects, names);
-        contributeListed(config.functions, objects, names);
+        contributeListed(config.functions, objects, names, tables);
         contributeListed(schemaTraits, objects, names);
         for (const item of config.tables) {
           contributeListed(
@@ -1050,12 +1050,24 @@ function bareTables(tables: readonly AnyTable[]): readonly AnyTable[] {
  * @param value - The option or trait list the caller passed
  * @param objects - Objects the schema is collecting
  */
-function contributeListed(value: unknown, objects: CatalogObject[], names: Names): void {
+function contributeListed(
+  value: unknown,
+  objects: CatalogObject[],
+  names: Names,
+  sources?: readonly object[],
+): void {
   if (!Array.isArray(value)) return;
   for (const item of value) {
     const produced = (
-      item as { contribute(peers: unknown, built: unknown, names: Names): unknown }
-    ).contribute(value, objects, names);
+      item as {
+        contribute(
+          peers: unknown,
+          built: unknown,
+          names: Names,
+          sources?: readonly object[],
+        ): unknown;
+      }
+    ).contribute(value, objects, names, sources);
     if (Array.isArray(produced))
       for (const object of produced) objects.push(object as CatalogObject);
   }

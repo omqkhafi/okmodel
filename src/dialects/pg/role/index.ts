@@ -369,7 +369,7 @@ function grantRef(object: CatalogObject): GrantObjectRef | undefined {
   }
   if (object.kind === "function") {
     return {
-      kind: "function",
+      kind: object.definition.routine === "procedure" ? "procedure" : "function",
       namespace: object.identity.namespace,
       name: `${object.identity.name}(${object.identity.argTypes.join(",")})`,
     };
@@ -381,7 +381,7 @@ function grantRef(object: CatalogObject): GrantObjectRef | undefined {
 }
 
 function privilegesFor(kind: GrantObjectRef["kind"]): readonly string[] {
-  if (kind === "function") return ROUTINE;
+  if (kind === "function" || kind === "procedure") return ROUTINE;
   if (kind === "sequence") return SEQUENCE;
   if (kind === "materializedView") return READ;
   if (kind === "namespace") return [];
@@ -456,7 +456,8 @@ function objectGrants(
     return readGrants(object.kind, namespace, object.identity.name);
   }
   if (object.kind === "function") {
-    return readGrants("function", namespace, object.identity.name);
+    const slot = object.definition.routine === "procedure" ? "procedure" : "function";
+    return readGrants(slot, namespace, object.identity.name);
   }
   if (object.kind === "type") return readTypeGrant(namespace, object.identity.name);
   if (object.kind === "sequence") {

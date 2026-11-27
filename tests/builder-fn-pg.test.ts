@@ -14,6 +14,7 @@ import {
   sql as predicate,
   table,
   text,
+  t,
 } from "../src/dialects/pg/index.js";
 import { view } from "../src/dialects/pg/view/index.js";
 import { connect } from "../src/runtime/pg/postgresjs.js";
@@ -29,8 +30,8 @@ postgresTest(gate, "a call returns the slug and the builder view is readable", a
   await withPostgresSchema(async (sql, schemaName) => {
     const slugify = fn("slugify", {
       schema: schemaName,
-      arguments: [{ name: "title", type: "text" }],
-      returns: "text",
+      arguments: [{ name: "title", type: t.text() }],
+      returns: t.text(),
       language: "sql",
       volatility: "immutable",
       body: predicate`select lower(title)`,

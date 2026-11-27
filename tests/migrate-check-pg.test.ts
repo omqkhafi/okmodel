@@ -652,7 +652,7 @@ postgresTest(
         cwd,
         [
           `const tasks = table("tasks", { id: t.identity(), status: t.enum("task_status", ["todo", "done"]) });`,
-          `const isOpen = fn("task_is_open", { arguments: [{ name: "status", type: "task_status" }], returns: "boolean", language: "sql", volatility: "immutable", body: "select status <> 'done'::task_status" });`,
+          `const isOpen = fn("task_is_open", { arguments: [{ name: "status", type: t.custom({ sqlType: "task_status", encode: (value) => String(value), decode: (wire) => wire }) }], returns: t.boolean(), language: "sql", volatility: "immutable", body: "select status <> 'done'::task_status" });`,
           "export const app = schema({ tables: [tasks], functions: [isOpen] });",
         ].join("\n"),
       );
@@ -674,7 +674,7 @@ postgresTest(
         cwd,
         [
           `const tasks = table("tasks", { id: t.identity(), status: t.text() });`,
-          `const isOpen = fn("is_open", { arguments: [{ name: "status", type: "text" }], returns: "boolean", language: "sql", volatility: "immutable", body: "select status <> 'done'" });`,
+          `const isOpen = fn("is_open", { arguments: [{ name: "status", type: t.text() }], returns: t.boolean(), language: "sql", volatility: "immutable", body: "select status <> 'done'" });`,
           "export const app = schema({",
           "  tables: [tasks],",
           "  functions: [isOpen],",

@@ -170,6 +170,8 @@ export type ErrorLog = {
   readonly columns?: readonly string[];
   readonly constraint?: string;
   readonly sqlstate?: string;
+  /** Declared `raises` name. Detail and hint stay off the log. */
+  readonly raised?: string;
 };
 
 /** Fields the constructor accepts beyond the code and the summary. */
@@ -182,6 +184,12 @@ export type OkmErrorOptions = {
   readonly fieldReason?: string;
   readonly constraint?: string;
   readonly sqlstate?: string;
+  /** Server DETAIL. Not logged. */
+  readonly detail?: string;
+  /** Server HINT. Not logged. */
+  readonly hint?: string;
+  /** Declared `raises` name for this SQLSTATE. */
+  readonly raised?: string;
   /** Statement index, or `null` at commit. Omitted on a single statement. */
   readonly batchIndex?: number | null;
   readonly cause?: unknown;
@@ -289,6 +297,12 @@ export class OkmError extends Error {
   readonly constraint: string | undefined;
   /** SQLSTATE the database sent, when it sent one. */
   readonly sqlstate: string | undefined;
+  /** Server DETAIL. Present for the caller. Omitted from {@link log}. */
+  readonly detail: string | undefined;
+  /** Server HINT. Present for the caller. Omitted from {@link log}. */
+  readonly hint: string | undefined;
+  /** Declared `raises` name when the SQLSTATE matches one. */
+  readonly raised: string | undefined;
   /**
    * Failing statement inside a batch, or `null` when the failure is the commit.
    *
@@ -335,6 +349,9 @@ export class OkmError extends Error {
     this.columns = columns === undefined || columns.length === 0 ? NO_COLUMNS : columns;
     this.constraint = options?.constraint;
     this.sqlstate = options?.sqlstate;
+    this.detail = options?.detail;
+    this.hint = options?.hint;
+    this.raised = options?.raised;
     this.batchIndex = options?.batchIndex === undefined ? null : options.batchIndex;
     this.fieldReason = options?.fieldReason ?? kind;
     this.#values = options?.includeValues === true ? options.values : undefined;
@@ -468,6 +485,7 @@ export class OkmError extends Error {
       ...(this.columns.length > 0 ? { columns: this.columns } : {}),
       ...(this.constraint !== undefined ? { constraint: this.constraint } : {}),
       ...(this.sqlstate !== undefined ? { sqlstate: this.sqlstate } : {}),
+      ...(this.raised !== undefined ? { raised: this.raised } : {}),
       ...(this.issues !== undefined ? { issues: this.issues } : {}),
     };
   }

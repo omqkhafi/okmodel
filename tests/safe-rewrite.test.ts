@@ -178,7 +178,7 @@ test("a volatile default on an existing table is split, and a stable default is 
   ]);
 
   const mint = fn("mint", {
-    returns: "uuid",
+    returns: t.uuid(),
     language: "sql",
     volatility: "volatile",
     body: "select gen_random_uuid()",
@@ -196,7 +196,7 @@ test("a volatile default on an existing table is split, and a stable default is 
   expect(sqlOf(fromCatalog.steps).some((sql) => sql.startsWith("update "))).toBe(true);
 
   const steady = fn("steady", {
-    returns: "timestamptz",
+    returns: t.timestamptz(),
     language: "sql",
     volatility: "stable",
     body: "select now()",

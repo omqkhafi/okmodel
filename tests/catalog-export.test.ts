@@ -6,7 +6,7 @@ import { expect, test } from "bun:test";
 
 import { parseCatalog, serializeCatalog } from "../src/contracts/catalog/document.js";
 import { external, schema, t, table, type AnyTable } from "../src/dialects/pg/index.js";
-import { fn, trigger } from "../src/dialects/pg/fn/index.js";
+import { fn, trigger, triggerType } from "../src/dialects/pg/fn/index.js";
 import { stampOwnership } from "../src/dialects/pg/owner.js";
 import {
   assertSnapshots,
@@ -29,7 +29,7 @@ test("a public catalog with no external namespace is the same object", () => {
 test("placeCatalog moves a trigger calls namespace and survives serialize (B-47)", () => {
   const tasks = table("tasks", { id: t.integer().primaryKey(), title: t.text() });
   const touch = fn("touch", {
-    returns: "trigger",
+    returns: triggerType,
     language: "plpgsql",
     body: "begin return new; end",
     dependsOn: [tasks],

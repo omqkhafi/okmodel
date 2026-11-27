@@ -26,6 +26,8 @@ export class DriverError extends Error {
   readonly column: string | undefined;
   /** Server detail line. */
   readonly detail: string | undefined;
+  /** Server hint line. */
+  readonly hint: string | undefined;
   /** Driver or server error underneath. */
   override readonly cause: unknown;
   /** Statement index inside a batch, or `null` when this is not that case. */
@@ -45,6 +47,7 @@ export class DriverError extends Error {
     this.table = fields.table;
     this.column = fields.column;
     this.detail = fields.detail;
+    this.hint = fields.hint;
     this.cause = fields.cause;
     this.batchIndex = fields.batchIndex === undefined ? null : fields.batchIndex;
     this.kind = fields.kind;
@@ -66,6 +69,7 @@ export class DriverError extends Error {
         table: this.table,
         column: this.column,
         detail: this.detail,
+        hint: this.hint,
         cause: this.cause,
         kind: this.kind,
         batchIndex,
@@ -131,6 +135,7 @@ export function driverFields(input: {
   readonly table?: string | undefined;
   readonly column?: string | undefined;
   readonly detail?: string | undefined;
+  readonly hint?: string | undefined;
   readonly cause?: unknown;
   readonly batchIndex?: number | null | undefined;
   readonly kind?: DriverFailureKind | undefined;
@@ -142,6 +147,7 @@ export function driverFields(input: {
     "table",
     "column",
     "detail",
+    "hint",
     "cause",
     "batchIndex",
     "kind",

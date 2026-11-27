@@ -104,16 +104,16 @@ postgresTest(
     const routines = { functions: "length, named, guard", triggers: "fired" };
     const before = [
       'const notes = table("notes", { id: t.identity(), title: t.text() });',
-      'const length = fn("title_len", { returns: "integer", language: "plpgsql", body: \'begin return (select length("title") from notes limit 1); end\', dependsOn: [{ table: notes, column: "title" }] });',
-      'const named = fn("notes_title_len", { returns: "integer", language: "plpgsql", body: \'begin return (select length("title") from notes limit 1); end\', dependsOn: [{ table: notes, column: "title" }] });',
-      'const guard = fn("guard", { returns: "trigger", language: "plpgsql", body: "begin return new; end", dependsOn: [notes] });',
+      'const length = fn("title_len", { returns: t.integer(), language: "plpgsql", body: \'begin return (select length("title") from notes limit 1); end\', dependsOn: [{ table: notes, column: "title" }] });',
+      'const named = fn("notes_title_len", { returns: t.integer(), language: "plpgsql", body: \'begin return (select length("title") from notes limit 1); end\', dependsOn: [{ table: notes, column: "title" }] });',
+      'const guard = fn("guard", { returns: triggerType, language: "plpgsql", body: "begin return new; end", dependsOn: [notes] });',
       'const fired = trigger("notes_guard", { on: notes, timing: "before", events: ["update"], level: "row", calls: guard, when: \'OLD."title" is not null\' });',
     ];
     const after = [
       'const notes = table("notes", { id: t.identity(), heading: t.text().renamedFrom("title") });',
-      'const length = fn("title_len", { returns: "integer", language: "plpgsql", body: \'begin return (select length("heading") from notes limit 1); end\', dependsOn: [{ table: notes, column: "heading" }] });',
-      'const named = fn("notes_heading_len", { returns: "integer", language: "plpgsql", body: \'begin return (select length("heading") from notes limit 1); end\', dependsOn: [{ table: notes, column: "heading" }] });',
-      'const guard = fn("guard", { returns: "trigger", language: "plpgsql", body: "begin return new; end", dependsOn: [notes] });',
+      'const length = fn("title_len", { returns: t.integer(), language: "plpgsql", body: \'begin return (select length("heading") from notes limit 1); end\', dependsOn: [{ table: notes, column: "heading" }] });',
+      'const named = fn("notes_heading_len", { returns: t.integer(), language: "plpgsql", body: \'begin return (select length("heading") from notes limit 1); end\', dependsOn: [{ table: notes, column: "heading" }] });',
+      'const guard = fn("guard", { returns: triggerType, language: "plpgsql", body: "begin return new; end", dependsOn: [notes] });',
       'const fired = trigger("notes_guard", { on: notes, timing: "before", events: ["update"], level: "row", calls: guard, when: \'OLD."heading" is not null\' });',
     ];
     const settled = after.map((line) => line.replace('.renamedFrom("title")', ""));

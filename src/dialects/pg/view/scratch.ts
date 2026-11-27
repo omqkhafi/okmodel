@@ -244,7 +244,7 @@ const FUNCTION_DEFS = `
     pg_get_functiondef(p.oid) as definition
   from pg_proc p
   join pg_namespace n on n.oid = p.pronamespace
-  where n.nspname = $1 and p.prokind = 'f'
+  where n.nspname = $1 and p.prokind in ('f', 'p')
 `;
 
 /** One function Postgres created in the scratch schema. */
@@ -575,7 +575,8 @@ async function dropScratch(runner: CatalogQuery): Promise<void> {
   );
   const routines = await runner.query(
     `
-    select p.proname as name, pg_get_function_identity_arguments(p.oid) as args
+    select p.proname as name, pg_get_function_identity_arguments(p.oid) as args,
+      p.prokind as kind
     from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = $1
@@ -597,8 +598,9 @@ async function dropScratch(runner: CatalogQuery): Promise<void> {
   }
   for (const row of routines) {
     const args = cellText(row.args);
+    const word = cellText(row.kind) === "p" ? "procedure" : "function";
     await runner.query(
-      `drop function if exists ${quoteIdent(SCRATCH)}.${quoteIdent(cellText(row.name))}(${args})`,
+      `drop ${word} if exists ${quoteIdent(SCRATCH)}.${quoteIdent(cellText(row.name))}(${args})`,
     );
   }
   for (const row of rows) {

@@ -41,6 +41,9 @@ export type FunctionInput = {
   readonly searchPath?: string;
   readonly body: string;
   readonly atomic?: boolean;
+  readonly routine?: "procedure";
+  readonly commits?: boolean;
+  readonly raises?: readonly { readonly name: string; readonly code: string }[];
   readonly owner?: Owner;
   readonly provenance: Provenance;
   readonly dependencies?: readonly ObjectIdentity[];
@@ -96,7 +99,8 @@ export function functionObject(input: FunctionInput): FunctionObject {
   if (!SECURITY.has(security)) {
     catalogError("OKM1020", `Function ${input.name} security ${security} is not supported.`);
   }
-  assertTypeName(input.returns, `function ${input.name} return type`);
+  const procedure = input.routine === "procedure";
+  if (!procedure) assertTypeName(input.returns, `function ${input.name} return type`);
   const args = (input.arguments ?? []).map((argument) => readArgument(input.name, argument));
   if (input.body.length === 0) {
     catalogError("OKM1020", `Function ${input.name} needs a body.`);
@@ -108,15 +112,19 @@ export function functionObject(input: FunctionInput): FunctionObject {
   if (input.searchPath !== undefined && input.searchPath.trim().length === 0) {
     catalogError("OKM1020", `Function ${input.name} search_path is empty.`);
   }
+  const raises = input.raises === undefined ? undefined : normaliseRaises(input.name, input.raises);
   const definition: FunctionDefinition = {
     arguments: args,
-    returns: input.returns,
+    returns: procedure ? "" : input.returns,
     language: input.language,
     volatility,
     security,
     body: input.body,
     ...(input.searchPath !== undefined ? { searchPath: input.searchPath } : {}),
     ...(atomic ? { atomic: true } : {}),
+    ...(procedure ? { routine: "procedure" } : {}),
+    ...(input.commits === true ? { commits: true } : {}),
+    ...(raises !== undefined ? { raises } : {}),
   };
   return {
     kind: "function",
@@ -124,7 +132,7 @@ export function functionObject(input: FunctionInput): FunctionObject {
       kind: "function",
       namespace,
       name: input.name,
-      argTypes: args.map((arg) => arg.type),
+      argTypes: args.filter((arg) => (arg.mode ?? "in") !== "out").map((arg) => arg.type),
     },
     owner: input.owner ?? "managed",
     definition,
@@ -246,10 +254,79 @@ export function whenColumnNames(when: string | undefined): readonly string[] {
   return found;
 }
 
+/**
+ * Copies a function or procedure onto new edges and a body.
+ *
+ * Rename uses this so a procedure keeps its modes, commits, and raises.
+ * The body is the stored text. The plan then replaces a routine whose text
+ * the author updated, which is how a renamed column reaches the database.
+ *
+ * @param object - The routine already in the catalog
+ * @param dependencies - Edges after the rename
+ * @param body - Body text to store
+ * @returns The same routine with those edges and that body
+ */
+export function retargetFunction(
+  object: FunctionObject,
+  dependencies: readonly ObjectIdentity[],
+  body: string,
+): FunctionObject {
+  return functionObject({
+    namespace: object.identity.namespace,
+    name: object.identity.name,
+    arguments: object.definition.arguments,
+    returns: object.definition.routine === "procedure" ? "" : object.definition.returns,
+    language: object.definition.language,
+    volatility: object.definition.volatility,
+    security: object.definition.security,
+    body,
+    owner: object.owner,
+    provenance: object.provenance,
+    dependencies,
+    ...(object.definition.searchPath !== undefined
+      ? { searchPath: object.definition.searchPath }
+      : {}),
+    ...(object.definition.atomic === true ? { atomic: true } : {}),
+    ...(object.definition.routine === "procedure" ? { routine: "procedure" } : {}),
+    ...(object.definition.commits === true ? { commits: true } : {}),
+    ...(object.definition.raises !== undefined ? { raises: object.definition.raises } : {}),
+    ...(object.comment !== undefined ? { comment: object.comment } : {}),
+  });
+}
+
 function readArgument(fn: string, argument: FunctionArgument): FunctionArgument {
   assertIdentifier(argument.name, `function ${fn} argument`);
   assertTypeName(argument.type, `function ${fn} argument ${argument.name}`);
-  return { name: argument.name, type: argument.type };
+  const mode = argument.mode;
+  if (mode !== undefined && mode !== "in" && mode !== "out" && mode !== "inout") {
+    catalogError("OKM1020", `Function ${fn} argument ${argument.name} mode is not supported.`);
+  }
+  return {
+    name: argument.name,
+    type: argument.type,
+    ...(mode !== undefined && mode !== "in" ? { mode } : {}),
+    ...(argument.default !== undefined ? { default: argument.default } : {}),
+  };
+}
+
+function normaliseRaises(
+  fn: string,
+  raises: readonly { readonly name: string; readonly code: string }[],
+): readonly { readonly name: string; readonly code: string }[] {
+  const seen = new Set<string>();
+  const next = raises.map((item) => {
+    assertIdentifier(item.name, `function ${fn} raise`);
+    if (!/^[0-9A-Z]{5}$/.test(item.code)) {
+      catalogError("OKM1020", `Function ${fn} raise ${item.name} needs a five-character SQLSTATE.`);
+    }
+    if (seen.has(item.name)) {
+      catalogError("OKM1020", `Function ${fn} declares raise ${item.name} twice.`);
+    }
+    seen.add(item.name);
+    return { name: item.name, code: item.code };
+  });
+  next.sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
+  return next;
 }
 
 function assertTypeName(typeName: string, role: string): void {

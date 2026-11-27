@@ -160,8 +160,8 @@ postgresTest(
     try {
       const tasks = table("tasks", { id: t.identity(), title: t.text() });
       const isOpen = fn("is_open", {
-        arguments: [{ name: "status", type: "text" }],
-        returns: "boolean",
+        arguments: [{ name: "status", type: t.text() }],
+        returns: t.boolean(),
         language: "sql",
         volatility: "immutable",
         body: "select status <> 'done'",
@@ -307,8 +307,8 @@ function guideCatalog(roles: GuideRoles) {
     status: t.text(),
   });
   const isOpen = fn("is_open", {
-    arguments: [{ name: "status", type: "text" }],
-    returns: "boolean",
+    arguments: [{ name: "status", type: t.text() }],
+    returns: t.boolean(),
     language: "sql",
     volatility: "immutable",
     body: "select status <> 'done'",

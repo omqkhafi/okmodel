@@ -469,6 +469,11 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
   "roles generate": object("roles generate", "okm roles generate data", ["text"], {
     text: { type: "string" },
   }),
+  call: object("call", "okm call data", ["routine", "rolledBack", "result"], {
+    routine: { type: "string" },
+    rolledBack: { type: "boolean" },
+    result: {},
+  }),
   access: object("access", "okm access data", ["grants", "memberships", "unmanaged", "policies"], {
     grants: { type: "array" },
     memberships: { type: "array" },

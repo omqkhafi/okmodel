@@ -15,7 +15,13 @@ import type { Catalog } from "../src/contracts/catalog/types.js";
 import { schemaDeclarations, type DeclaredRename } from "../src/dialects/pg/declarations.js";
 import { extension } from "../src/dialects/pg/ext/index.js";
 import { pgTrgm, type PgTrgm } from "../src/dialects/pg/ext/pg-trgm.js";
-import { fn, trigger, type Routine, type TriggerDeclaration } from "../src/dialects/pg/fn/index.js";
+import {
+  fn,
+  trigger,
+  type Routine,
+  type TriggerDeclaration,
+  triggerType,
+} from "../src/dialects/pg/fn/index.js";
 import { introspectSchema, type CatalogQuery } from "../src/dialects/pg/introspect.js";
 import {
   index,
@@ -219,7 +225,7 @@ postgresTest(
         taskId: t.bigint().nullable().references("tasks"),
       });
       const touch = fn("touch_title", {
-        returns: "trigger",
+        returns: triggerType,
         language: "plpgsql",
         body: "begin return new; end",
         dependsOn: [beforeTasks],
@@ -265,7 +271,7 @@ postgresTest(
         taskId: t.bigint().nullable().references("items"),
       });
       const afterTouch = fn("touch_title", {
-        returns: "trigger",
+        returns: triggerType,
         language: "plpgsql",
         body: "begin return new; end",
         dependsOn: [afterTasks],
@@ -583,7 +589,7 @@ function declare(shape: Shape, flip: boolean, seed: number, roles: RolesInput): 
     const tasks = tasksTable(shape, flip, seed, titleName, tableName, trgm);
     const body = functionBody(shape, flip, seed, titleName);
     const touch = fn("touch_title", {
-      returns: "trigger",
+      returns: triggerType,
       language: "plpgsql",
       body,
       dependsOn: [tasks],

@@ -55,7 +55,7 @@ export function renderSchema(model: SchemaModel, root: string): string {
     const first = model.tables[0];
     if (first !== undefined) {
       lines.push(
-        `const touch = fn("touch", { returns: "trigger", language: "plpgsql", body: "begin return new; end", dependsOn: [${first.key}] });`,
+        `const touch = fn("touch", { returns: triggerType, language: "plpgsql", body: "begin return new; end", dependsOn: [${first.key}] });`,
       );
     }
     for (const item of model.triggers) {

@@ -81,8 +81,17 @@ const comments = table(
 
 /** True for a task that still belongs on the board. */
 const taskIsOpen = fn("task_is_open", {
-  arguments: [{ name: "status", type: "task_status" }],
-  returns: "boolean",
+  arguments: [
+    {
+      name: "status",
+      type: t.custom({
+        sqlType: "task_status",
+        encode: (value) => String(value),
+        decode: (wire) => wire,
+      }),
+    },
+  ],
+  returns: t.boolean(),
   language: "sql",
   volatility: "immutable",
   body: "select status <> 'done'::task_status",

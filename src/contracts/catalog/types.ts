@@ -162,6 +162,7 @@ export type GrantObjectRef = {
     | "materializedView"
     | "sequence"
     | "function"
+    | "procedure"
     | "namespace"
     | "type";
   readonly namespace: Namespace;
@@ -593,10 +594,21 @@ export type FunctionVolatility = "volatile" | "stable" | "immutable";
 /** `SECURITY INVOKER` or `SECURITY DEFINER`. */
 export type FunctionSecurity = "invoker" | "definer";
 
-/** One argument. The name is not part of the identity. */
+/** `IN`, `OUT`, or `INOUT`. Absent means `IN`. */
+export type ArgumentMode = "in" | "out" | "inout";
+
+/**
+ * One argument. The name is not part of the identity.
+ *
+ * Identity types are `IN` and `INOUT` only. `OUT` stays in the definition.
+ */
 export type FunctionArgument = {
   readonly name: string;
   readonly type: string;
+  /** Absent means `IN`, so a function argument does not store a mode. */
+  readonly mode?: ArgumentMode;
+  /** SQL default, already encoded. Absent means the argument is required. */
+  readonly default?: string;
 };
 
 /**
@@ -608,6 +620,11 @@ export type FunctionArgument = {
  */
 export type FunctionDefinition = {
   readonly arguments: readonly FunctionArgument[];
+  /**
+   * Return type.
+   *
+   * A procedure stores an empty string. PostgreSQL procedures have no return type.
+   */
   readonly returns: string;
   readonly language: FunctionLanguage;
   readonly volatility: FunctionVolatility;
@@ -615,6 +632,12 @@ export type FunctionDefinition = {
   readonly body: string;
   readonly searchPath?: string;
   readonly atomic?: true;
+  /** Set only for a procedure. Absent means a function, so existing hashes stay. */
+  readonly routine?: "procedure";
+  /** The body commits. Absent means it does not. */
+  readonly commits?: true;
+  /** Declared `RAISE` names. Each code is a five-character SQLSTATE. */
+  readonly raises?: readonly { readonly name: string; readonly code: string }[];
 };
 
 /** One trigger timing. */

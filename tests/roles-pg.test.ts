@@ -39,7 +39,7 @@ const TASKS = [
 
 const IS_OPEN = [
   `const tasks = table("tasks", { id: t.identity(), status: t.text() });`,
-  `const isOpen = fn("is_open", { arguments: [{ name: "status", type: "text" }], returns: "boolean", language: "sql", volatility: "immutable", body: "select status <> 'done'" });`,
+  `const isOpen = fn("is_open", { arguments: [{ name: "status", type: t.text() }], returns: t.boolean(), language: "sql", volatility: "immutable", body: "select status <> 'done'" });`,
   "export const app = schema({ tables: [tasks], functions: [isOpen] });",
 ].join("\n");
 
@@ -288,7 +288,7 @@ postgresTest(
         database.url,
         { app },
         [
-          `const isOpen = fn("is_open", { arguments: [{ name: "status", type: "text" }], returns: "boolean", language: "sql", volatility: "immutable", body: "select status <> 'done'" });`,
+          `const isOpen = fn("is_open", { arguments: [{ name: "status", type: t.text() }], returns: t.boolean(), language: "sql", volatility: "immutable", body: "select status <> 'done'" });`,
           "export const app = schema({ tables: [], functions: [isOpen] });",
         ].join("\n"),
       );
@@ -439,7 +439,7 @@ postgresTest(
           `import { schema, table, t } from ${source("src/dialects/pg/index.ts")};`,
           `import { fn } from ${source("src/dialects/pg/fn/index.ts")};`,
           `const tasks = table("tasks", { id: t.identity(), title: t.text().hidden(), status: t.text() });`,
-          `const isOpen = fn("is_open", { arguments: [{ name: "status", type: "text" }], returns: "boolean", language: "sql", volatility: "immutable", body: "select status <> 'done'" });`,
+          `const isOpen = fn("is_open", { arguments: [{ name: "status", type: t.text() }], returns: t.boolean(), language: "sql", volatility: "immutable", body: "select status <> 'done'" });`,
           "export const app = schema({ tables: [tasks], functions: [isOpen] });",
           "",
         ].join("\n"),

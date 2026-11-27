@@ -110,6 +110,8 @@ export function mapPostgresError(error: unknown, options?: MapPostgresErrorOptio
     ...(columns.length > 0 ? { columns } : {}),
     ...(error.constraint !== undefined ? { constraint: error.constraint } : {}),
     ...(error.sqlstate !== undefined ? { sqlstate: error.sqlstate } : {}),
+    ...(error.detail !== undefined ? { detail: error.detail } : {}),
+    ...(error.hint !== undefined ? { hint: error.hint } : {}),
     batchIndex: error.batchIndex,
     cause: redact ? safeCause(error) : (error.cause ?? error),
     ...(values !== undefined ? { includeValues: true, values } : {}),
@@ -246,6 +248,7 @@ type DriverShape = {
   readonly table: string | undefined;
   readonly column: string | undefined;
   readonly detail: string | undefined;
+  readonly hint: string | undefined;
   readonly batchIndex: number | null;
   readonly kind: "timeout" | "cancelled" | "outcome_unknown" | undefined;
   readonly cause: unknown;

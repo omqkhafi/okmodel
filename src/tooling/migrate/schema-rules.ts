@@ -14,6 +14,7 @@ import type { TableModel } from "../../dialects/pg/model.js";
 import type { RolesInput } from "../../dialects/pg/role/config.js";
 import { warningRule, type WarningIgnore } from "../../runtime/warnings/catalog.js";
 import { policyFindings } from "./policy-rules.js";
+import { procedureFindings } from "./procedure-rules.js";
 import type { WarningLevel, WarningRule } from "../../runtime/warnings/catalog.js";
 import { resolvedLevel } from "../../runtime/warnings/level.js";
 import { fieldsOf } from "../../runtime/presets.js";
@@ -108,6 +109,7 @@ export function schemaAdvice(
     ...genericPlanTrap(groups, input, uses),
     ...nullableMatchSimple(input.catalog),
     ...policyFindings(input.catalog, roles),
+    ...procedureFindings(input.catalog, input.tenancy),
     ...seriesFindings(input.catalog),
   ].sort(compareFound);
   const ignore = config.ignore ?? [];

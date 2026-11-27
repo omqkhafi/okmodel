@@ -23,7 +23,7 @@ const notes = table("notes", {
 });
 
 const touch = fn("touch_notes", {
-  returns: "trigger",
+  returns: triggerType,
   language: "plpgsql",
   body: sql`begin new."updatedAt" = now(); return new; end`,
   dependsOn: [notes],
@@ -67,7 +67,7 @@ const notes = table("notes", {
 });
 
 const touch = fn("touch_notes", {
-  returns: "trigger",
+  returns: triggerType,
   language: "plpgsql",
   body: sql`begin new.updated_at = now(); return new; end`,
   dependsOn: [{ table: notes, column: "updated_at" }],
@@ -108,7 +108,7 @@ const notes = table("notes", {
 });
 
 const touch = fn("touch_notes", {
-  returns: "trigger",
+  returns: triggerType,
   language: "plpgsql",
   body: sql`begin return new; end`,
   dependsOn: [notes],
@@ -145,7 +145,7 @@ const notes = table("notes", {
 });
 
 const touch = fn("touch_notes", {
-  returns: "trigger",
+  returns: triggerType,
   language: "plpgsql",
   body: sql`begin new.updated_at = now(); return new; end`,
   dependsOn: [{ table: notes, column: "updated_at" }],
@@ -187,7 +187,7 @@ const notes = table("notes", {
 });
 
 const touch = fn("touch_notes", {
-  returns: "trigger",
+  returns: triggerType,
   language: "plpgsql",
   body: sql`begin return new; end`,
   dependsOn: [notes],
@@ -222,7 +222,7 @@ const notes = table("notes", {
 });
 
 const touch = fn("touch_notes", {
-  returns: "trigger",
+  returns: triggerType,
   language: "plpgsql",
   body: sql`begin return new; end`,
   dependsOn: [notes],

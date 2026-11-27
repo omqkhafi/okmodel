@@ -222,7 +222,7 @@ postgresTest(
 
     const fn = await checkProject([
       `const tasks = table("tasks", { id: t.text().primaryKey(), title: t.text() });`,
-      `const byId = fn("by_id", { arguments: [{ name: "n", type: "text" }], returns: "text", language: "sql", body: "begin atomic select title from tasks where id = n; end" });`,
+      `const byId = fn("by_id", { arguments: [{ name: "n", type: t.text() }], returns: t.text(), language: "sql", body: "begin atomic select title from tasks where id = n; end" });`,
       "export const app = schema({ tables: [tasks], functions: [byId] });",
     ]);
     expect(fn.code).toBe(0);
@@ -231,7 +231,7 @@ postgresTest(
     expect(fn.text).toContain("function by_id body reprints differently");
 
     const plain = await checkProject([
-      `const answer = fn("answer", { returns: "integer", language: "sql", body: "select 1" });`,
+      `const answer = fn("answer", { returns: t.integer(), language: "sql", body: "select 1" });`,
       "export const app = schema({ tables: [], functions: [answer] });",
     ]);
     expect(plain.code).toBe(0);
@@ -240,7 +240,7 @@ postgresTest(
     const allowed = await checkProject(
       [
         `const tasks = table("tasks", { id: t.text().primaryKey(), title: t.text() });`,
-        `const byId = fn("by_id", { arguments: [{ name: "n", type: "text" }], returns: "text", language: "sql", body: "begin atomic select title from tasks where id = n; end" });`,
+        `const byId = fn("by_id", { arguments: [{ name: "n", type: t.text() }], returns: t.text(), language: "sql", body: "begin atomic select title from tasks where id = n; end" });`,
         "export const app = schema({ tables: [tasks], functions: [byId] });",
       ],
       (sql) => sql.replace(/^(create function )/m, "-- okm-allow OKM1552: reviewed\n$1"),
@@ -251,7 +251,7 @@ postgresTest(
 
     const unused = await checkProject(
       [
-        `const answer = fn("answer", { returns: "integer", language: "sql", body: "select 1" });`,
+        `const answer = fn("answer", { returns: t.integer(), language: "sql", body: "select 1" });`,
         "export const app = schema({ tables: [], functions: [answer] });",
       ],
       (sql) => sql.replace(/^(create function )/m, "-- okm-allow OKM1552: reviewed\n$1"),

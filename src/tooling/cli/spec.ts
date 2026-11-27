@@ -808,6 +808,31 @@ export const COMMANDS: readonly CommandSpec[] = [
     flags: [envFile],
   }),
   spec({
+    id: "call",
+    policy: "seed",
+    words: ["call"],
+    summary: "Call a procedure. JSON output. --rollback runs it and rolls the transaction back.",
+    usage: "call <routine> --arg name=value",
+    minOperands: 1,
+    maxOperands: 1,
+    missing: "call needs a routine name.",
+    usesDatabase: true,
+    ownOut: false,
+    flags: [
+      {
+        name: "arg",
+        type: "string",
+        multiple: true,
+        hint: "name=value. Repeat for each argument. Types come from the declaration.",
+      },
+      {
+        name: "rollback",
+        type: "boolean",
+        hint: "Run the call inside a transaction and roll it back. Refused when the procedure commits.",
+      },
+    ],
+  }),
+  spec({
     id: "access",
     policy: "status",
     words: ["access"],

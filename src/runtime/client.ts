@@ -283,6 +283,11 @@ export function openClient<S extends QuerySchema>(session: Session): Connected<S
     batch: (ops: unknown, options?: object) => batchHandle(session, ops, options),
     ...session.tx?.extras,
   };
+  (client as Record<symbol, unknown>)[Symbol.for("okm.procedure")] = (
+    spec: unknown,
+    args: unknown,
+    options: unknown,
+  ) => import("./procedure.js").then((mod) => mod.runProcedure(session, spec, args, options));
   const hooks = session.hooks;
   if (hooks !== undefined) {
     for (const hook of hooks) {
@@ -901,12 +906,22 @@ function errorFields(error: OkmError): {
   readonly table?: string;
   readonly columns?: readonly string[];
   readonly fix?: OkmError["fix"];
+  readonly constraint?: string;
+  readonly sqlstate?: string;
+  readonly detail?: string;
+  readonly hint?: string;
+  readonly raised?: string;
 } {
   return {
     kind: error.kind,
     ...(error.table !== undefined ? { table: error.table } : {}),
     ...(error.columns.length > 0 ? { columns: error.columns } : {}),
     fix: error.fix,
+    ...(error.constraint !== undefined ? { constraint: error.constraint } : {}),
+    ...(error.sqlstate !== undefined ? { sqlstate: error.sqlstate } : {}),
+    ...(error.detail !== undefined ? { detail: error.detail } : {}),
+    ...(error.hint !== undefined ? { hint: error.hint } : {}),
+    ...(error.raised !== undefined ? { raised: error.raised } : {}),
   };
 }
 

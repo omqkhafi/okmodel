@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { expect, test } from "bun:test";
 
 import { OkmError } from "../src/contracts/error.js";
-import { fn } from "../src/dialects/pg/fn/index.js";
+import { fn, voidType } from "../src/dialects/pg/fn/index.js";
 import { schema, table, t } from "../src/dialects/pg/index.js";
 import { isOperator, operatorName } from "../src/dialects/pg/operators.js";
 import { archivable, timestamps } from "../src/runtime/traits/index.js";
@@ -140,7 +140,7 @@ test("QA-S3: fn searchPath is a list of identifiers", () => {
   expect(() =>
     fn("touch", {
       language: "sql",
-      returns: "void",
+      returns: voidType,
       body: "select 1",
       searchPath: "public, app",
     }),
@@ -148,7 +148,7 @@ test("QA-S3: fn searchPath is a list of identifiers", () => {
   const error = capture(() =>
     fn("touch", {
       language: "sql",
-      returns: "void",
+      returns: voidType,
       body: "select 1",
       searchPath: "public, user",
     }),

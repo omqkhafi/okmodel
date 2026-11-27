@@ -5,7 +5,7 @@
 import { expectTypeOf } from "expect-type";
 
 import { fn } from "../src/dialects/pg/fn/index.js";
-import { ident, schema, table, text, integer } from "../src/dialects/pg/index.js";
+import { ident, schema, table, text, integer, t } from "../src/dialects/pg/index.js";
 import type { Connected } from "../src/runtime/types.js";
 
 const notes = table("notes", { id: text(), title: text(), n: integer() });
@@ -13,15 +13,15 @@ const app = schema({ tables: [notes] });
 declare const db: Connected<typeof app>;
 
 const slugify = fn("slugify", {
-  arguments: [{ name: "title", type: "text" }],
-  returns: "text",
+  arguments: [{ name: "title", type: t.text() }],
+  returns: t.text(),
   language: "sql",
   body: "select lower(title)",
 });
 
 const double = fn("double_n", {
-  arguments: [{ name: "n", type: "integer" }],
-  returns: "integer",
+  arguments: [{ name: "n", type: t.integer() }],
+  returns: t.integer(),
   language: "sql",
   body: "select n * 2",
 });

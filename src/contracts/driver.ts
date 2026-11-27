@@ -140,6 +140,8 @@ export type DriverErrorFields = {
   readonly table?: string;
   readonly column?: string;
   readonly detail?: string;
+  /** Server HINT. */
+  readonly hint?: string;
   readonly cause?: unknown;
   readonly batchIndex?: number | null;
   readonly kind?: DriverFailureKind;

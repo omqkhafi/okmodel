@@ -477,9 +477,6 @@ const UNEXPRESSED = `
     (select count(*)::int from pg_proc p
       join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = $1 and p.prokind = 'a') as aggregates,
-    (select count(*)::int from pg_proc p
-      join pg_namespace n on n.oid = p.pronamespace
-      where n.nspname = $1 and p.prokind = 'p') as procedures,
     (select count(*)::int from pg_event_trigger) as event_triggers,
     (select count(*)::int from pg_rewrite r
       join pg_class c on c.oid = r.ev_class
@@ -492,20 +489,17 @@ async function countUnexpressed(
   schemas: readonly string[],
 ): Promise<readonly PullCount[]> {
   let aggregates = 0;
-  let procedures = 0;
   let eventTriggers = 0;
   let rules = 0;
   for (const name of schemas) {
     const rows = await query.query(UNEXPRESSED, [name]);
     const row = rows[0];
     aggregates += countCell(row?.aggregates);
-    procedures += countCell(row?.procedures);
     eventTriggers = countCell(row?.event_triggers);
     rules += countCell(row?.rules);
   }
   return [
     { kind: "aggregate", count: aggregates, reason: "the catalog has no aggregate kind" },
-    { kind: "procedure", count: procedures, reason: "the catalog has no procedure kind" },
     {
       kind: "eventTrigger",
       count: eventTriggers,

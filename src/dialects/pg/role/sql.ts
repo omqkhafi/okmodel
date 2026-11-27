@@ -322,7 +322,7 @@ function grantTargetKey(object: GrantObjectRef): string | undefined {
   if (object.kind === "type") {
     return identityKey({ kind: "type", namespace: object.namespace, name: object.name });
   }
-  if (object.kind !== "function") return undefined;
+  if (object.kind !== "function" && object.kind !== "procedure") return undefined;
   const open = object.name.lastIndexOf("(");
   if (open < 0 || !object.name.endsWith(")")) return undefined;
   const name = object.name.slice(0, open);
@@ -337,18 +337,20 @@ function grantTargetKey(object: GrantObjectRef): string | undefined {
 
 function grantTarget(object: GrantObjectRef, schema: string): string {
   if (object.kind === "sequence") return `sequence ${qualify(schema, object.name)}`;
-  if (object.kind === "function") return functionTarget(object.name, schema);
+  if (object.kind === "function" || object.kind === "procedure") {
+    return routineTarget(object.kind, object.name, schema);
+  }
   if (object.kind === "namespace") return `schema ${quoteIdent(schema)}`;
   if (object.kind === "type") return `type ${qualify(schema, object.name)}`;
   return `table ${qualify(schema, object.name)}`;
 }
 
-function functionTarget(name: string, schema: string): string {
+function routineTarget(kind: "function" | "procedure", name: string, schema: string): string {
   const open = name.lastIndexOf("(");
-  if (open < 0 || !name.endsWith(")")) return `function ${qualify(schema, name)}()`;
+  if (open < 0 || !name.endsWith(")")) return `${kind} ${qualify(schema, name)}()`;
   const fn = name.slice(0, open);
   const args = name.slice(open + 1, -1);
-  return `function ${qualify(schema, fn)}(${args})`;
+  return `${kind} ${qualify(schema, fn)}(${args})`;
 }
 
 function objectKindSql(kind: string): string {
