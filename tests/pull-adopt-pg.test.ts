@@ -46,7 +46,7 @@ postgresTest(
          );
          alter table notes enable row level security;
          alter table notes force row level security;
-         create policy notes_all on notes for all using (true) with check (true)`,
+         create policy notes_all on notes for all using (id > 0) with check (id > 0)`,
       );
       const pulled = await cli(cwd, ["pull"]);
       expect(pulled).not.toContain("a later step writes policies");

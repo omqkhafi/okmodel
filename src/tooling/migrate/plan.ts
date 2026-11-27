@@ -1716,6 +1716,7 @@ function rlsToggleSteps(
 ): readonly PlanStep[] {
   const tables = new Set<string>();
   for (const object of [...before, ...after.objects]) {
+    if (handsOff(object)) continue;
     if (object.kind === "policy") tables.add(object.identity.parent.name);
     if (object.kind === "table" && object.definition.rowSecurity !== undefined) {
       tables.add(object.identity.name);
@@ -1760,7 +1761,8 @@ function rlsStateOf(objects: readonly CatalogObject[], table: string): RlsState 
   let force = false;
   let policies = 0;
   for (const object of objects) {
-    if (object.kind !== "policy" || object.identity.parent.name !== table) continue;
+    if (object.kind !== "policy" || handsOff(object) || object.identity.parent.name !== table)
+      continue;
     policies += 1;
     if (object.definition.disabled !== true) enable = true;
     if (object.definition.force) force = true;

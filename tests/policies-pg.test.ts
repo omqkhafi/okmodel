@@ -128,7 +128,10 @@ postgresTest(gate, "proof:policies.permissive", async () => {
     const live = await introspectSchema(queryOf(sql), "public", "public");
     const again = planMigration({ before: live, after: built.catalog, name: "round" });
     expect(
-      again.steps.filter((step) => step.kind.includes("policy") || step.kind.includes("rls")),
+      again.steps.filter(
+        (step) =>
+          step.kind !== undefined && (step.kind.includes("policy") || step.kind.includes("rls")),
+      ),
     ).toHaveLength(0);
     await sql.unsafe("insert into notes (id, body) values (1, 'a')");
     await sql.unsafe(`grant select on notes to ${role}`);

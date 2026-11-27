@@ -370,7 +370,7 @@ export const WARNING_RULES: readonly WarningRule[] = [
     code: "OKM2115",
     rule: "policy-while-disabled",
     title: "Policies while row security is off",
-    summary: "The table stores policies and row security is not enabled. They do not run.",
+    summary: "The table stores policies and row security is not enabled. They have no effect.",
     fix: "Set rls so the table enables row security, or remove the policies.",
     defaultLevel: "warn",
     severity: "medium",

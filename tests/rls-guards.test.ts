@@ -72,6 +72,7 @@ test("OKM1550 flags every way to weaken row-level security", () => {
   expect(reasons("create policy extra on notes using (1=1)")).toEqual([
     "creates a policy that is not the tenant predicate",
   ]);
+  expect(reasons("create policy extra on notes as restrictive using (1=1)")).toEqual([]);
   expect(reasons("create policy extra on notes using ((true))")).toEqual([
     "creates a policy that is not the tenant predicate",
   ]);

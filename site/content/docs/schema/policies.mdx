@@ -3,7 +3,7 @@ title: "Policies"
 description: "Keyed row-level security policies, session values, and the role a statement runs as."
 ---
 
-A policy is a keyed object on `table()`. The key is the stored name. Import `sessionSettings` from `okmodel/session` before `schema()` when a table sets `policies` or `rls`.
+A policy is a keyed object on `table()`. The key is the stored name. Import `sessionSettings` from `okmodel/session` before `schema()` when a table sets `policies` or `rls`. `okm pull` writes `import "okmodel/session"` for the same reason.
 
 ```ts
 import { schema, table, t } from "okmodel/pg";

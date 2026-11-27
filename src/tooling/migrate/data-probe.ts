@@ -386,7 +386,7 @@ export async function assertBackfillVisible(
     `Table ${table} forces row-level security. A backfill from this role would update zero rows.`,
     {
       fix: {
-        summary: "Run the backfill as a role that bypasses row-level security.",
+        summary: "Use a role that bypasses row-level security.",
       },
     },
   );

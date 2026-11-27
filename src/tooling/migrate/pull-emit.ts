@@ -299,6 +299,9 @@ export function emitPull(
   }
   const verdictList = review?.verdicts ?? [];
   const routines = renderRoutines(plan, new Map(verdictList.map((item) => [item.key, item])));
+  const needsSession = files.some(
+    (file) => file.text.includes("policies:") || file.text.includes("rls:"),
+  );
   files.push({
     path: layout.schemaFile,
     text: schemaText(
@@ -308,6 +311,7 @@ export function emitPull(
       routines,
       importExt,
       casing,
+      needsSession,
     ),
   });
   files.sort((left, right) => compare(left.path, right.path));
@@ -1289,12 +1293,14 @@ function schemaText(
   },
   importExt: PullImportExt,
   casing: Casing | undefined,
+  needsSession: boolean,
 ): string {
   const pgNames = ["schema"];
   if (routines.views.length > 0) pgNames.push("t");
   if (routines.needsIndex) pgNames.push("index");
   pgNames.sort();
   const lines = [`import { ${pgNames.join(", ")} } from "okmodel/pg";`];
+  if (needsSession) lines.push('import "okmodel/session";');
   if (extensions.length > 0) lines.push('import { extension } from "okmodel/ext";');
   for (const line of routines.imports) lines.push(line);
   const sorted = [...imports].sort((left, right) => compare(left.name, right.name));

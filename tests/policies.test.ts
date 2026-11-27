@@ -15,6 +15,7 @@ import {
   settingList,
 } from "../src/dialects/pg/expr/index.js";
 import { has, schema, table, t } from "../src/dialects/pg/index.js";
+import type { PolicyMap, RlsOption } from "../src/dialects/pg/policy-compile.js";
 import { printIndexText } from "../src/dialects/pg/index-print.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
 import { policyFindings } from "../src/tooling/migrate/policy-rules.js";
@@ -36,7 +37,7 @@ const session = sessionSettings({
   scopes: { name: "app.scopes", type: "text[]" },
 });
 
-function notes(policies: () => Record<string, unknown>, rls?: unknown) {
+function notes(policies: () => PolicyMap, rls?: RlsOption) {
   return schema({
     tables: [
       table(
@@ -77,9 +78,9 @@ test("select with check, insert with using, and a generated name are refused", (
   expect(() => notes(() => ({ add: { for: "insert", using: true, check: true } })).catalog).toThrow(
     OkmError,
   );
-  expect(thrown(() => notes(() => ({ read: { for: "select", using: true, check: true } })).catalog)).toBe(
-    "OKM1924",
-  );
+  expect(
+    thrown(() => notes(() => ({ read: { for: "select", using: true, check: true } })).catalog),
+  ).toBe("OKM1924");
 });
 
 test("a policy that reads its own table is OKM1925", () => {
