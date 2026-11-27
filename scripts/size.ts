@@ -83,8 +83,9 @@ export const FULL_ENTRY = "scripts/app-full.ts";
  * `schema()` calls `namesFor()` synchronously, so casing stays on this graph, and pull and the
  * Drizzle import share it. The relation-order scan stays eager so the join chunk can stay lazy.
  * 94,680: date and time modes measured 94,653, plus 20, rounded up (D322).
+ * 98,373: the merged round 3 tree measured 97,399, plus about 1 percent (D350).
  */
-export const APP_MAX_MIN_BYTES = 94_680;
+export const APP_MAX_MIN_BYTES = 98_373;
 
 /**
  * Gzipped app-fixture ceiling, in bytes (D160).
@@ -94,8 +95,9 @@ export const APP_MAX_MIN_BYTES = 94_680;
  * Was 29,210 (P24).
  * 30,830: date and time modes measured 30,810, plus 20 (D322).
  * 30,850: postgres.js 4 class `count` in the shared reader, measured 30,832 (D324).
+ * 32,296: the merged round 3 tree measured 31,976, plus about 1 percent (D350).
  */
-export const APP_MAX_GZIP_BYTES = 30_850;
+export const APP_MAX_GZIP_BYTES = 32_296;
 
 /**
  * Public connect entries, driver left external (D142, D143, D156).
