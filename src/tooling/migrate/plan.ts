@@ -33,7 +33,7 @@ import {
   foldSeries,
   ownSequenceStep,
   type SeriesWarning,
-} from "../../dialects/pg/seq/engine.js";
+} from "./series-plan.js";
 import { rlsToggleSteps } from "./policy-plan.js";
 import { assertForeignKeyTargets } from "./foreign-target.js";
 import { assertIndexRules } from "./index-rules.js";

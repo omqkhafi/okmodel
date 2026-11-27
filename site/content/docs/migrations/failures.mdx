@@ -99,6 +99,8 @@ The table is generated from `STEP_KINDS`, `postgresHasProbe`, and `unitMode`. Do
 | `drop-index` | no when CONCURRENTLY | when CONCURRENTLY | a plain statement rolls back; CONCURRENTLY follows the probe | OKM1553, OKM1556 |
 | `rename-index` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `create-sequence` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `alter-sequence` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `seed-counter` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `drop-sequence` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `create-enum` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `recreate-enum` | yes | no | rolls back with the history row; the next apply runs the step again | — |

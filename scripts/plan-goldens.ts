@@ -2,7 +2,6 @@
  * Regenerates plan goldens from the request stored in each file.
  *
  *   bun ./scripts/plan-goldens.ts --write
- *
  * `--write` replans every stored request and writes the coverage requests for
  * step kinds no captured pair produces. A `source: "parse"` file is raw SQL:
  * the planner never emits that kind, so the golden is `parsePlan` output.
@@ -22,6 +21,7 @@ import { sha256 } from "../src/contracts/sha256.js";
 import type { DdlStep } from "../src/dialects/ddl.js";
 import { schemaDeclarations } from "../src/dialects/pg/declarations.js";
 import { schema, sql, t, table as defineTable } from "../src/dialects/pg/index.js";
+import { sequence as series } from "../src/dialects/pg/seq/index.js";
 import { formatPlanJson } from "../src/tooling/migrate/plan-json.js";
 import {
   formatPlan,
@@ -322,6 +322,28 @@ function coverageRequests(): readonly PlanRequest[] {
         }),
       ]),
       name: "alter-policy",
+    },
+    {
+      before: catalog([]),
+      after: schema({
+        tables: [defineTable("docs", { id: t.bigint().primaryKey(), n: series().column() })],
+      }).catalog,
+      name: "own-sequence",
+    },
+    {
+      before: schema({
+        tables: [defineTable("docs", { id: t.bigint().primaryKey(), tenantId: t.uuid() })],
+      }).catalog,
+      after: schema({
+        tables: [
+          defineTable("docs", {
+            id: t.bigint().primaryKey(),
+            tenantId: t.uuid(),
+            n: series("doc_no").column({ scope: ["tenantId"] }),
+          }),
+        ],
+      }).catalog,
+      name: "seed-counter",
     },
   ];
 }

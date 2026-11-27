@@ -2736,7 +2736,7 @@ const SEQUENCES = `
       select owned.relname
       from pg_depend d
       join pg_class owned on owned.oid = d.refobjid and owned.relkind in ('r', 'p')
-      where d.objid = c.oid and d.deptype = 'a'
+      where d.objid = c.oid and d.deptype in ('a', 'i')
       limit 1
     ) as owned_table
   from pg_sequence s

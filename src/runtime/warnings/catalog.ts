@@ -442,7 +442,7 @@ export const WARNING_RULES: readonly WarningRule[] = [
     summary:
       "start changed on a sequence that already exists. The plan does not restart it. Existing values stay.",
     fix: "Leave start as it is, or set the live value yourself with setval when you mean to.",
-    defaultLevel: "warn",
+    defaultLevel: "hint",
     severity: "low",
     phase: "check",
     evidence: "static",

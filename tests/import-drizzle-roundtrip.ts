@@ -39,7 +39,7 @@ function sourceImport(fromFile: string, sourceFile: string): string {
 }
 
 /**
- * Points emitted `okmodel/pg` and `okmodel/ext` imports at source.
+ * Points emitted `okmodel/pg`, `okmodel/ext`, and `okmodel/seq` imports at source.
  *
  * @param directory - The adopted schema directory
  */
@@ -59,6 +59,10 @@ function rewritePackageImports(directory: string): void {
       .replaceAll(
         'from "okmodel/ext"',
         `from ${JSON.stringify(sourceImport(path, join(root, "src/dialects/pg/ext/index.ts")))}`,
+      )
+      .replaceAll(
+        'from "okmodel/seq"',
+        `from ${JSON.stringify(sourceImport(path, join(root, "src/dialects/pg/seq/index.ts")))}`,
       );
     writeFileSync(path, text);
   }
@@ -85,7 +89,7 @@ export async function roundTrip(
     expect(imported.text).toContain("relations() is not a foreign key");
     expect(imported.text).toContain("authorsRelations");
     expect(imported.text).toContain("mood");
-    expect(imported.text).toContain("extra_seq");
+    expect(imported.text).not.toContain("extra_seq");
     expect(imported.text).toContain("notes_n_seq");
     expect(imported.text).toContain("extras_id_seq");
     const configPath = join(cwd, "okmodel.config.ts");
@@ -106,6 +110,7 @@ export default defineConfig({
     const built = await loadSchema(cwd, "./adopted/schema.ts");
     const live = await apply(renderCatalog(built.catalog, "shop"));
     await assertLive(live);
+    expect(readFileSync(join(cwd, "adopted/schema.ts"), "utf8")).toContain('sequence("extra_seq"');
     const notes = await Bun.file(join(cwd, "adopted/tables/notes.ts")).text();
     expect(notes).toContain("authorId");
     expect(notes).toContain('sqlName("author_id")');
