@@ -560,6 +560,7 @@ function planTable(
 
   const uniques: string[] = [];
   const checks: string[] = [];
+  const namedForeign: string[] = [];
   const foreign: Map<string, string> = new Map();
   for (const constraint of [...bag.constraints].sort((left, right) =>
     compare(left.identity.name, right.identity.name),
@@ -628,16 +629,27 @@ function planTable(
       const local = constraint.definition.columns;
       const references = constraint.definition.references;
       const field = local[0] === undefined ? undefined : fields.get(local[0]);
-      if (field !== undefined && foreign.has(field)) {
-        skipped.push(
-          skip(
-            constraint,
-            "constraint",
-            label,
-            "references() is one foreign key on a column",
-            statementFor(statements, constraint.identity.name),
-          ),
-        );
+      const named =
+        local.length !== 1 ||
+        references === undefined ||
+        constraint.definition.deferrable ||
+        references?.match === "full" ||
+        references?.onDeleteColumns !== undefined ||
+        (field !== undefined && foreign.has(field));
+      if (named && references !== undefined) {
+        if (!targetIsKey(byParent, references)) {
+          skipped.push(
+            skip(
+              constraint,
+              "constraint",
+              label,
+              "the referenced columns are not a primary key or a unique constraint",
+              statementFor(statements, constraint.identity.name),
+            ),
+          );
+          continue;
+        }
+        namedForeign.push(foreignKeyLine(constraint, fields));
         continue;
       }
       if (local.length !== 1 || local[0] === undefined || references === undefined) {
@@ -688,10 +700,15 @@ function planTable(
     options.push(...checks);
     options.push("    },");
   }
+  if (namedForeign.length > 0) {
+    options.push("    foreignKeys: (_columns) => ({");
+    options.push(...namedForeign);
+    options.push("    }),");
+  }
 
   const indexLines: string[] = [];
   let needsIndex = false;
-  let needsSql = checks.length > 0;
+  let needsSql = checks.length > 0 || columnLines.some((line) => line.includes("sql`"));
   for (const index of [...bag.indexes].sort((left, right) =>
     compare(left.identity.name, right.identity.name),
   )) {
@@ -843,6 +860,32 @@ function pulledColumnNames(
   return pulled;
 }
 
+function targetIsKey(
+  byParent: ReadonlyMap<string, ParentBag>,
+  references: NonNullable<ConstraintObject["definition"]["references"]>,
+): boolean {
+  const bag = byParent.get(references.parent.name);
+  if (bag === undefined) return false;
+  const wanted = [...references.columns].sort().join("\0");
+  const same = (columns: readonly string[]): boolean => [...columns].sort().join("\0") === wanted;
+  if (
+    bag.constraints.some(
+      (item) =>
+        (item.definition.constraintKind === "primaryKey" ||
+          item.definition.constraintKind === "unique") &&
+        same(item.definition.columns),
+    )
+  ) {
+    return true;
+  }
+  return bag.indexes.some(
+    (item) =>
+      item.definition.unique &&
+      item.definition.predicate === undefined &&
+      same(item.definition.columns),
+  );
+}
+
 function referencedColumnsPulled(
   references: NonNullable<ConstraintObject["definition"]["references"]>,
   pulled: ReadonlyMap<string, ReadonlySet<string>>,
@@ -871,12 +914,9 @@ function columnSource(
   renames: string[],
 ): string | undefined {
   if (column.definition.identity !== undefined) return undefined;
-  if (column.definition.generated !== undefined && column.definition.generated.stored !== true) {
-    return undefined;
-  }
   const scalar = column.definition.dataType.replace(/(?:\[\])+$/, "");
-  const labels = enums.get(scalar);
-  const domain = domains.get(scalar);
+  const labels = enums.get(column.definition.dataType);
+  const domain = domains.get(column.definition.dataType);
   const composite = composites.get(scalar);
   let call: string | undefined;
   if (composite !== undefined) {
@@ -903,7 +943,8 @@ function columnSource(
     call += `.defaultSql(${JSON.stringify(column.definition.defaultExpression)})`;
   }
   if (column.definition.generated !== undefined) {
-    call += `.generated(${JSON.stringify(column.definition.generated.expression)})`;
+    const stored = column.definition.generated.stored ? "" : ", { stored: false }";
+    call += `.generated((columns) => sql\`${sqlBody(column.definition.generated.expression)}\`${stored})`;
   }
   if (column.comment !== undefined) call += `.comment(${JSON.stringify(column.comment)})`;
   if (column.definition.collation !== undefined) return undefined;
@@ -1039,6 +1080,35 @@ function rewriteForeign(lines: readonly string[], foreign: ReadonlyMap<string, s
   });
 }
 
+function foreignKeyLine(constraint: ConstraintObject, fields: ReadonlyMap<string, string>): string {
+  const references = constraint.definition.references;
+  const local = constraint.definition.columns
+    .map((name) => JSON.stringify(fields.get(name) ?? name))
+    .join(", ");
+  const remote = (references?.columns ?? []).map((name) => JSON.stringify(name)).join(", ");
+  const options: string[] = [];
+  if (references?.onDelete !== undefined && references.onDeleteColumns === undefined) {
+    options.push(`onDelete: ${JSON.stringify(references.onDelete)}`);
+  }
+  if (references?.onDeleteColumns !== undefined && references.onDelete !== undefined) {
+    const list = references.onDeleteColumns.map((name) => JSON.stringify(name)).join(", ");
+    const key = references.onDelete === "set default" ? "setDefault" : "setNull";
+    options.push(`onDelete: { ${key}: [${list}] }`);
+  }
+  if (references?.onUpdate !== undefined)
+    options.push(`onUpdate: ${JSON.stringify(references.onUpdate)}`);
+  if (references?.match === "full") options.push(`match: "full"`);
+  if (constraint.definition.deferrable) {
+    options.push(
+      `deferrable: ${JSON.stringify(constraint.definition.initially === "deferred" ? "deferred" : "immediate")}`,
+    );
+  }
+  if (constraint.comment !== undefined)
+    options.push(`comment: ${JSON.stringify(constraint.comment)}`);
+  const extra = options.length === 0 ? "" : `, ${options.join(", ")}`;
+  return `      ${jsKey(constraint.identity.name)}: { columns: [${local}], references: { table: ${JSON.stringify(references?.parent.name ?? "")}, columns: [${remote}] }${extra} },`;
+}
+
 function referenceCall(
   references: NonNullable<ConstraintObject["definition"]["references"]>,
   tableExports: ReadonlyMap<string, string>,
@@ -1137,11 +1207,9 @@ function customIndexName(index: IndexObject): string | undefined {
 }
 
 function plainConstraint(constraint: ConstraintObject): boolean {
-  return (
-    !constraint.definition.deferrable &&
-    constraint.definition.initially === "immediate" &&
-    !constraint.definition.nullsNotDistinct
-  );
+  if (constraint.definition.nullsNotDistinct) return false;
+  if (constraint.definition.constraintKind === "foreignKey") return true;
+  return !constraint.definition.deferrable && constraint.definition.initially === "immediate";
 }
 
 function skipChildren(

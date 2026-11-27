@@ -75,7 +75,7 @@ const notes = table(
     score: t.domain("score", t.integer(), "VALUE > 0"),
     createdAt: t.timestamptz().defaultSql("now()"),
     code: t.varchar(40).nullable(),
-    total: t.integer().generated("1"),
+    total: t.integer().generated(() => sql`1`),
     authorId: t.uuid().references("authors", { columns: ["id"], onDelete: "cascade" }),
   },
   {
@@ -452,7 +452,6 @@ export default defineConfig({
       expect(tasksText).toContain('["__proto__"]:');
       const kidsText = readFileSync(join(cwd, "adopted/tables/kids.ts"), "utf8");
       expect(kidsText).toContain('.references("Tasks"');
-      expect(pulled.text).toContain("references() takes one local column");
       const built = await loadSchema(cwd, "./adopted/schema.ts");
       const live = await readLive(database.url);
       expectEqual(align(live, keysOf(pulled)), align(built.catalog, new Set()));

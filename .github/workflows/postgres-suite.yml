@@ -191,7 +191,6 @@ jobs:
             -e AUTH_TYPE=scram-sha-256 \
             "$PGBOUNCER_IMAGE"
           docker exec okm-pgbouncer pgbouncer --version
-          docker exec okm-pgbouncer cat /etc/pgbouncer/pgbouncer.ini
           ready=0
           for _ in $(seq 1 50); do
             if docker exec okm-pgbouncer pg_isready -h 127.0.0.1 -p 5432 -U okm -d okm; then
@@ -204,6 +203,11 @@ jobs:
             docker logs okm-pgbouncer || true
             exit 1
           fi
+          # The image ships pgbouncer.ini.example. entrypoint.sh writes
+          # /etc/pgbouncer/pgbouncer.ini before it listens, so cat after
+          # pg_isready. Catting immediately after `docker run -d` races
+          # that write and the step exits before the server is ready.
+          docker exec okm-pgbouncer cat /etc/pgbouncer/pgbouncer.ini
         env:
           PGBOUNCER_IMAGE: edoburu/pgbouncer:v1.26.1-p0@sha256:488422e38cff912895d0d65d8963fcd306e6ac589a724398b6eb8e294e94d624
 

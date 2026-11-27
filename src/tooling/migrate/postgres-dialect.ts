@@ -8,6 +8,7 @@
 
 import type { DdlDialect, DdlSupport } from "../../dialects/ddl.js";
 import { caseName } from "../../dialects/pg/casing.js";
+import { sealGenerated } from "../../dialects/pg/generated-print.js";
 import { lowerPostgres } from "../../dialects/pg/lower.js";
 import { assertSupported } from "../capabilities/check.js";
 import { POSTGRES_FEATURES, type PostgresFeature } from "../capabilities/postgres.js";
@@ -38,6 +39,7 @@ export const postgresDialect: DdlDialect = {
   name: "postgres",
   support: postgresSupport,
   featuresUsed,
+  prepare: sealGenerated,
   refuseUnsupported(features) {
     return assertSupported(features, POSTGRES_FEATURES, "postgres");
   },

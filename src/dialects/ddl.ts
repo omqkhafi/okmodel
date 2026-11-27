@@ -214,6 +214,7 @@ const KIND_SQL: Readonly<Record<StepKind, RegExp>> = {
   "add-column-required": /^alter table\b.*\badd column\b/,
   "drop-column": /^alter table\b.*\bdrop column\b/,
   "set-column-type": /^alter table\b.*\bset data type\b/,
+  "set-generated": /^alter table\b.*\bset expression\b/,
   "set-not-null": /^alter table\b.*\bset not null\b/,
   "drop-not-null": /^alter table\b.*\bdrop not null\b/,
   "set-default": /^alter table\b.*\bset default\b/,
@@ -737,6 +738,12 @@ export type DdlDialect = {
    * @returns Feature keys this dialect's registry understands
    */
   featuresUsed(catalog: Catalog): readonly string[];
+  /**
+   * Prints held generated expressions before the planner diffs the catalog.
+   *
+   * @param catalog - Catalog the planner is about to diff
+   */
+  prepare?(catalog: Catalog): void;
   /**
    * Refuses a feature this dialect marks `refused`.
    *

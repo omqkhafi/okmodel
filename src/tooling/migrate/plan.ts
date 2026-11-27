@@ -25,6 +25,7 @@ import { fitIdentifier, identitySequenceName } from "../../contracts/catalog/ide
 import { identityKey, identityLabel, staticNamespace } from "../../contracts/catalog/identity.js";
 import { compareText } from "../../contracts/catalog/object.js";
 import { ddlStep } from "../../dialects/ddl-step.js";
+import { assertForeignKeyTargets } from "./foreign-target.js";
 import { assertIndexRules } from "./index-rules.js";
 import {
   identitySequence,
@@ -290,6 +291,9 @@ export function planMigration(
   dialect: DdlDialect = postgresDialect,
 ): MigrationPlan {
   requireDialect(dialect);
+  dialect.prepare?.(input.before);
+  dialect.prepare?.(input.after);
+  assertForeignKeyTargets(input.after);
   assertIndexRules(input.after);
   settleChecks(input.before);
   settleChecks(input.after);
@@ -371,7 +375,7 @@ export function planMigration(
     if (
       previous.kind === "column" &&
       item.object.kind === "column" &&
-      columnAlterable(previous, item.object)
+      columnAlterable(previous, item.object, request.postgres)
     ) {
       alters.push({ before: previous, after: item.object });
       continue;
@@ -2241,8 +2245,20 @@ function columnNullable(source: Catalog, table: string, column: string): boolean
   return false;
 }
 
-function columnAlterable(before: ColumnObject, after: ColumnObject): boolean {
-  return stable(before.definition.generated) === stable(after.definition.generated);
+function columnAlterable(
+  before: ColumnObject,
+  after: ColumnObject,
+  postgres: number | undefined,
+): boolean {
+  const left = before.definition.generated;
+  const right = after.definition.generated;
+  if ((left === undefined) !== (right === undefined)) return false;
+  if (left !== undefined && right !== undefined && left.stored !== right.stored) return false;
+  if (left !== undefined && right !== undefined && left.expression !== right.expression) {
+    if (!right.stored) return true;
+    return (postgres ?? 0) >= 17;
+  }
+  return true;
 }
 
 function omitOwnedSequences(

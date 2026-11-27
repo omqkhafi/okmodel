@@ -188,6 +188,18 @@ export function serializeCatalog(source: Catalog): string {
  * @returns Lowercase hex digest
  */
 export function catalogHash(source: Catalog): string {
+  for (const object of source.objects) {
+    if (
+      object.kind === "column" &&
+      object.definition.generated !== undefined &&
+      /^#\d+$/.test(object.definition.generated.expression)
+    ) {
+      catalogError(
+        "OKM1020",
+        `Column ${object.identity.parent.name}.${object.identity.name} still has an unprinted generated expression.`,
+      );
+    }
+  }
   const cached = serializedHash.get(source);
   if (cached !== undefined) return cached;
   const hash = sha256(serializeCatalog(source));
@@ -1144,7 +1156,11 @@ function definitionToJson(object: CatalogObject): Json {
               references: {
                 columns: references.columns,
                 ...(references.onDelete !== undefined ? { onDelete: references.onDelete } : {}),
+                ...(references.onDeleteColumns !== undefined
+                  ? { onDeleteColumns: references.onDeleteColumns }
+                  : {}),
                 ...(references.onUpdate !== undefined ? { onUpdate: references.onUpdate } : {}),
+                ...(references.match === "full" ? { match: "full" } : {}),
                 parent: {
                   name: references.parent.name,
                   namespace: namespaceToJson(references.parent.namespace),
@@ -2165,14 +2181,28 @@ function parseReferences(value: unknown): {
   readonly onUpdate?: ReferentialAction;
 } {
   const record = requireRecord(value, "references");
-  rejectUnknown(record, ["columns", "onDelete", "onUpdate", "parent"], "references");
+  rejectUnknown(
+    record,
+    ["columns", "match", "onDelete", "onDeleteColumns", "onUpdate", "parent"],
+    "references",
+  );
   const onDelete = parseAction(record.onDelete, "onDelete");
   const onUpdate = parseAction(record.onUpdate, "onUpdate");
+  const match = record.match === undefined ? undefined : requireString(record.match, "match");
+  if (match !== undefined && match !== "full") {
+    catalogError("OKM1020", `Foreign key match ${match} is not full.`);
+  }
+  const onDeleteColumns =
+    record.onDeleteColumns === undefined
+      ? undefined
+      : requireStrings(record.onDeleteColumns, "onDeleteColumns");
   return {
     parent: parseRef(record.parent),
     columns: requireStrings(record.columns, "referenced columns"),
     ...(onDelete !== undefined ? { onDelete } : {}),
     ...(onUpdate !== undefined ? { onUpdate } : {}),
+    ...(match === "full" ? { match: "full" as const } : {}),
+    ...(onDeleteColumns !== undefined ? { onDeleteColumns } : {}),
   };
 }
 

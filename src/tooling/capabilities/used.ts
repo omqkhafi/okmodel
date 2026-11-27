@@ -50,7 +50,19 @@ function note(used: Set<string>, object: CatalogObject): void {
     if (RANGE_TYPES.has(definition.dataType) || definition.dataType.endsWith("multirange")) {
       used.add("type.range");
     }
-    if (definition.generated !== undefined) used.add("column.generated");
+    if (definition.generated !== undefined) {
+      used.add("column.generated");
+      used.add("column.generatedExpression");
+      if (definition.generated.stored === false) used.add("column.generatedVirtual");
+    }
+  }
+  if (object.kind === "constraint" && object.definition.constraintKind === "foreignKey") {
+    if (object.definition.columns.length > 1) used.add("foreignKey.composite");
+    if (object.definition.deferrable) used.add("foreignKey.deferrable");
+    if (object.definition.references?.onDeleteColumns !== undefined) {
+      used.add("foreignKey.setNullColumns");
+    }
+    if (object.definition.references?.match === "full") used.add("foreignKey.matchFull");
   }
   if (
     object.kind === "constraint" &&

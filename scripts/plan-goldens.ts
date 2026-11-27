@@ -21,7 +21,7 @@ import { defaultPrivilegeObject, roleObject } from "../src/contracts/catalog/pri
 import { sha256 } from "../src/contracts/sha256.js";
 import type { DdlStep } from "../src/dialects/ddl.js";
 import { schemaDeclarations } from "../src/dialects/pg/declarations.js";
-import { schema, t, table as defineTable } from "../src/dialects/pg/index.js";
+import { schema, sql, t, table as defineTable } from "../src/dialects/pg/index.js";
 import { formatPlanJson } from "../src/tooling/migrate/plan-json.js";
 import {
   formatPlan,
@@ -281,6 +281,20 @@ function coverageRequests(): readonly PlanRequest[] {
       }).catalog,
       confirmTypeChanges: true,
       name: "set-composite-column",
+    },
+    {
+      before: schema({
+        tables: [
+          defineTable("notes", { n: t.integer(), total: t.integer().generated(() => sql`1`) }),
+        ],
+      }).catalog,
+      after: schema({
+        tables: [
+          defineTable("notes", { n: t.integer(), total: t.integer().generated(() => sql`2`) }),
+        ],
+      }).catalog,
+      postgres: 17,
+      name: "set-generated",
     },
   ];
 }

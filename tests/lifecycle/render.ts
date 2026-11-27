@@ -147,7 +147,7 @@ function renderColumn(column: ColumnModel): string {
     expr += `.defaultSql(${JSON.stringify(column.defaultValue)})`;
   }
   if (column.generated !== undefined) {
-    expr += `.generated(${JSON.stringify(column.generated)})`;
+    expr += `.generated((c) => sql\`${column.generated.replaceAll("\\", "\\\\").replaceAll("`", "\\`").replaceAll("${", "\\${")}\`)`;
   }
   if (column.picklist !== undefined) {
     expr += `.picklist(${JSON.stringify(column.picklist)})`;

@@ -81,7 +81,7 @@ export async function roundTrip(
     expect(imported.namespace).toBe("shop");
     expect(imported.text).toContain("namespace shop");
     expect(imported.text).toContain("not imported");
-    expect(imported.text).toContain("references() takes one local column");
+    expect(imported.text).toContain("not a primary key or a unique constraint");
     expect(imported.text).toContain("relations() is not a foreign key");
     expect(imported.text).toContain("authorsRelations");
     expect(imported.text).toContain("mood");

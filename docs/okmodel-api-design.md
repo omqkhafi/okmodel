@@ -642,7 +642,7 @@ References are plain table-name strings (a generic table-name argument cycles th
 | Arrays | `.array()`, `.array({ dims: 2 })` |
 | Custom | `t.custom({ sqlType, encode, decode, tsType, accepts? })`. `accepts` names the object kinds the codec takes (`"Object"`, `"Array"`, `"Temporal.Instant"`); without it every object is rejected (OKM1121) |
 
-Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.primaryKey()`, `.unique({ reason, global })`, `.references(table, opts)`, `.picklist([...], { check })`, `.generated(sql, { stored })`, `.guarded()`, `.hidden()`, `.sensitive()`, `.renamedFrom(name)`, `.sqlName()`, `.comment()`, `.validate(rules | schema)`.
+Modifiers: `.nullable()`, `.default(v)`, `.defaultSql(sql)`, `.primaryKey()`, `.unique({ reason, global })`, `.references(table, opts)`, `.picklist([...], { check })`, `.generated((columns) => expr, { stored })`, `.guarded()`, `.hidden()`, `.sensitive()`, `.renamedFrom(name)`, `.sqlName()`, `.comment()`, `.validate(rules | schema)`.
 
 A `timestamptz`, `timestamp`, `time`, or `timetz` value keeps microseconds. Precision is 0 through 6, and omitting it keeps the full value. `Temporal.Instant.toString()` with no options is not how to show that value: pass `fractionalSecondDigits` when the display should be shorter. The codecs do not warn.
 

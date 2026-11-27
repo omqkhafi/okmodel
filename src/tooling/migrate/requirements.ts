@@ -14,6 +14,7 @@ import {
   isPostgresMajor,
   notEnforcedNeedsPostgres,
   NOT_ENFORCED_POSTGRES,
+  VIRTUAL_POSTGRES,
   parsePostgresFloor,
   POSTGRES_FLOOR,
   UUIDV7_POSTGRES,
@@ -58,7 +59,16 @@ export function schemaMinPostgres(catalog: Catalog, declared: PostgresMajor): Po
   let floor = declared;
   if (usesUuidV7(catalog) && floor < UUIDV7_POSTGRES) floor = UUIDV7_POSTGRES;
   if (usesNotEnforced(catalog) && floor < NOT_ENFORCED_POSTGRES) floor = NOT_ENFORCED_POSTGRES;
+  if (usesVirtualGenerated(catalog) && floor < VIRTUAL_POSTGRES) floor = VIRTUAL_POSTGRES;
   return floor;
+}
+
+/** OKM1812 when a declared floor is below 18 and a column is VIRTUAL. */
+export function assertVirtualDeclared(catalog: Catalog, postgres: string | undefined): void {
+  const declared = parsePostgresFloor(postgres);
+  if (!usesVirtualGenerated(catalog) || !(declared > 0) || declared >= VIRTUAL_POSTGRES) return;
+  const sentence = `A virtual generated column needs PostgreSQL ${String(VIRTUAL_POSTGRES)}. Use STORED, or raise minPostgres. The declared floor is ${postgres ?? ""}.`;
+  throw new OkmError("OKM1812", sentence, { fix: { summary: sentence } });
 }
 
 /** OKM1812 when a declared floor is below 18 and a check is `enforced: false`. */
@@ -105,6 +115,15 @@ export function requiredExtensions(catalog: Catalog): readonly RequiredExtension
   return [...reasons.entries()]
     .sort((left, right) => (left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0))
     .map(([name, uses]) => ({ name, reason: unique(uses).join("; ") }));
+}
+
+function usesVirtualGenerated(catalog: Catalog): boolean {
+  return catalog.objects.some(
+    (object) =>
+      object.kind === "column" &&
+      object.definition.generated !== undefined &&
+      object.definition.generated.stored === false,
+  );
 }
 
 function usesNotEnforced(catalog: Catalog): boolean {

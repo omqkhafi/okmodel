@@ -382,6 +382,15 @@ export type ConstraintDefinition = {
     readonly columns: readonly string[];
     readonly onDelete?: ReferentialAction;
     readonly onUpdate?: ReferentialAction;
+    /** `full` is `MATCH FULL`. Absent is `MATCH SIMPLE`. */
+    readonly match?: "full";
+    /**
+     * Columns cleared by `ON DELETE SET NULL` or `SET DEFAULT`.
+     *
+     * Absent when the action names no column list. PostgreSQL accepts the
+     * list only on delete.
+     */
+    readonly onDeleteColumns?: readonly string[];
   };
 };
 

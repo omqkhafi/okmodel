@@ -46,7 +46,7 @@ import { attachRoles, type RolesInput, type TableExposure } from "../../dialects
 import type { BuiltSchema } from "../../dialects/pg/schema.js";
 import type { AnyTable } from "../../dialects/pg/table.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
-import { assertNotEnforcedDeclared } from "./requirements.js";
+import { assertNotEnforcedDeclared, assertVirtualDeclared } from "./requirements.js";
 import { batchSizeField } from "./backfill.js";
 import { type MigrateConfig } from "./config.js";
 import {
@@ -896,6 +896,7 @@ export async function openProject(project: string | ProjectContext): Promise<{
   const config = await loadConfig(project);
   const built = await loadBuiltSchema(cwd, config);
   assertNotEnforcedDeclared(built.catalog, built.requires?.postgres);
+  assertVirtualDeclared(built.catalog, built.requires?.postgres);
   const declarations = schemaDeclarations(built);
   const previous = readPrevious(projectPath(cwd, config.migrations ?? "migrations"));
   const stale = staleRenames(previous?.catalog, declarations.renames);

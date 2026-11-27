@@ -23,6 +23,7 @@ import { featuresUsed } from "../capabilities/used.js";
 import { LOGICAL_FORMAT, type LogicalIdentity } from "./export.js";
 import {
   assertNotEnforcedDeclared,
+  assertVirtualDeclared,
   declaredFloor,
   requiredExtensions,
   schemaMinPostgres,
@@ -95,6 +96,7 @@ export function describe(schema: {
 }): SchemaDescription {
   const source = schemaCatalog(schema);
   assertNotEnforcedDeclared(source, schema.requires?.postgres);
+  assertVirtualDeclared(source, schema.requires?.postgres);
   const document = JSON.parse(serializeCatalog(source)) as Json;
   const computed = schemaMinPostgres(source, declaredFloor(schema.requires));
   const carried = schema.minPostgres;

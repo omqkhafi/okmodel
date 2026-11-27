@@ -26,7 +26,7 @@ import { OkmError } from "../src/contracts/error.js";
 import type { DdlDialect } from "../src/dialects/ddl.js";
 import { extension } from "../src/dialects/pg/ext/index.js";
 import { pgTrgm } from "../src/dialects/pg/ext/pg-trgm.js";
-import { schema, t, table } from "../src/dialects/pg/index.js";
+import { schema, sql, t, table } from "../src/dialects/pg/index.js";
 import { attachRoles } from "../src/dialects/pg/role/index.js";
 import { mapPostgresError } from "../src/dialects/pg/errors.js";
 import { createClient } from "../src/runtime/client.js";
@@ -96,7 +96,7 @@ function catalogs(): readonly Catalog[] {
     extensions: [pgTrgm()],
   }).catalog;
   const generated = schema({
-    tables: [table("stats", { total: t.integer().generated("1") })],
+    tables: [table("stats", { total: t.integer().generated(() => sql`1`) })],
   }).catalog;
   const placed = placeCatalog(schema({ tables: [users] }).catalog, "app", new Map());
   const extended = schema({
@@ -356,6 +356,12 @@ test("refusal:comment.sequence", () => refuse("comment.sequence"));
 test("refusal:comment.type", () => refuse("comment.type"));
 test("refusal:comment.constraint", () => refuse("comment.constraint"));
 test("refusal:column.generated", () => refuse("column.generated"));
+test("refusal:column.generatedExpression", () => refuse("column.generatedExpression"));
+test("refusal:column.generatedVirtual", () => refuse("column.generatedVirtual"));
+test("refusal:foreignKey.composite", () => refuse("foreignKey.composite"));
+test("refusal:foreignKey.deferrable", () => refuse("foreignKey.deferrable"));
+test("refusal:foreignKey.setNullColumns", () => refuse("foreignKey.setNullColumns"));
+test("refusal:foreignKey.matchFull", () => refuse("foreignKey.matchFull"));
 test("refusal:namespace", () => refuse("namespace"));
 test("refusal:extension", () => refuse("extension"));
 test("refusal:query.relational", () => refuse("query.relational"));

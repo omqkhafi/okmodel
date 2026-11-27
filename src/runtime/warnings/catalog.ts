@@ -284,6 +284,20 @@ export const WARNING_RULES: readonly WarningRule[] = [
     safeAlternatives: [alt("OKM2107", "okm pull copies the comment into the schema.")],
     escapeHatches: [hatch("OKM2107")],
   },
+  {
+    code: "OKM2108",
+    rule: "nullable-match-simple",
+    title: "Nullable composite key",
+    summary:
+      "A composite foreign key has a nullable column and MATCH SIMPLE. PostgreSQL skips the check when any column of the key is null.",
+    fix: 'Use match: "full", or make every column of the key not null.',
+    defaultLevel: "hint",
+    severity: "low",
+    phase: "check",
+    evidence: "static",
+    safeAlternatives: [alt("OKM2108", 'match: "full" checks the whole key.')],
+    escapeHatches: [hatch("OKM2108")],
+  },
 ];
 
 /**

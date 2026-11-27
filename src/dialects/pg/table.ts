@@ -10,7 +10,12 @@ import type { IndexElement, IndexStorage } from "../../contracts/catalog/types.j
 import { throwNamed } from "../../contracts/error.js";
 import { printIndexText } from "./index-print.js";
 import { callerLocation, withLocation } from "../../contracts/location.js";
-import { type ColumnInsertOf, type ColumnRowOf, type ColumnUpdateOf } from "./column.js";
+import {
+  type ColumnInsertOf,
+  type ColumnRowOf,
+  type ColumnUpdateOf,
+  type ForeignKeySpec,
+} from "./column.js";
 import { openFilters } from "./filters.js";
 import { definition, unavailable } from "./misuse.js";
 import { type RelationCall } from "./relations.js";
@@ -360,6 +365,13 @@ export type TableOptions<TColumns> = {
    * `.global("reason")` or `.scoped()` still wins.
    */
   readonly tenantIndexes?: boolean;
+  /**
+   * Named foreign keys. The key is the stored constraint name.
+   *
+   * Use this for a composite key. A single column can still use `.references()`.
+   * Table and column names are strings, so the column type does not cycle.
+   */
+  readonly foreignKeys?: (columns: Handles<TColumns>) => Readonly<Record<string, ForeignKeySpec>>;
 };
 
 /**
@@ -512,6 +524,7 @@ export type UpdateFrom<TColumns, TKey extends string = never> = {
 const TABLE_KNOWN = new Set([
   "checks",
   "comment",
+  "foreignKeys",
   "grants",
   "indexes",
   "omitDefaults",

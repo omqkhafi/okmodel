@@ -68,7 +68,7 @@ const PICKLIST = `schema({
     id: t.uuid().defaultSql("gen_random_uuid()"),
     title: t.text(),
     kind: t.text().picklist(["open", "done"]),
-    search: t.tsvector().generated("to_tsvector('simple', title)"),
+    search: t.tsvector().generated((c) => sql\`to_tsvector('simple', \${c.title})\`),
   })],
 })`;
 
