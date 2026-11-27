@@ -8,8 +8,12 @@
 import { expect, test } from "bun:test";
 
 import { catalog } from "../src/contracts/catalog/build.js";
+import { staticNamespace } from "../src/contracts/catalog/identity.js";
+import { column, table as catalogTable } from "../src/contracts/catalog/object.js";
+import { functionObject } from "../src/contracts/catalog/routine.js";
 import { OkmError } from "../src/contracts/error.js";
-import { schema, t, table } from "../src/dialects/pg/index.js";
+import { schema, sql, t, table } from "../src/dialects/pg/index.js";
+import { foldSeries, seriesMarker } from "../src/dialects/pg/seq/engine.js";
 import { numbered, sequence } from "../src/dialects/pg/seq/index.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
 
@@ -99,4 +103,111 @@ test("a counter plan creates a table, a definer, and a trigger", () => {
   expect(text).toContain("before insert or update");
   expect(text).toContain("revoke all on table");
   expect(text).not.toContain("create sequence");
+});
+
+test("the next-function marker names the column's assign function, and the fold drops it", () => {
+  const built = schema({
+    tables: [
+      table("issued", {
+        tenantId: t.uuid().primaryKey(),
+        number: sequence("docs").column({ scope: ["tenantId"] }),
+      }),
+    ],
+  });
+  const plan = planMigration({ before: empty, after: built.catalog, name: "mark" });
+  const next = plan.steps.find((step) => step.sql.includes("okm_next_docs"));
+  const assign = plan.steps.find((step) => step.sql.includes("okm_assign_docs_number"));
+  const nextMark = seriesMarker(next?.sql ?? "");
+  const assignMark = seriesMarker(assign?.sql ?? "");
+  expect(nextMark?.column).toBe("number");
+  expect(nextMark?.assign).toBe("okm_assign_docs_number");
+  expect(nextMark?.index).toBe("okm_uq_docs_number");
+  expect(nextMark?.assign).toBe(assignMark?.assign);
+  expect(nextMark?.index).toBe(assignMark?.index);
+
+  const namespace = staticNamespace("public");
+  const provenance = { origin: "file" as const, name: "issued.ts" };
+  const parent = { kind: "table" as const, namespace, name: "issued" };
+  const folded = foldSeries(
+    catalog([
+      catalogTable({ namespace, name: "issued", provenance }),
+      column({ parent, name: "number", dataType: "bigint", nullable: true, provenance }),
+      functionObject({
+        namespace,
+        name: "okm_next_docs",
+        language: "plpgsql",
+        returns: "bigint",
+        body: next?.sql ?? "",
+        provenance,
+      }),
+      functionObject({
+        namespace,
+        name: "okm_assign_docs_number",
+        language: "plpgsql",
+        returns: "trigger",
+        body: assign?.sql ?? "",
+        provenance,
+      }),
+      catalogTable({ namespace, name: "okm_ctr_docs", provenance }),
+    ]),
+  );
+  expect(folded.objects.some((object) => object.kind === "function")).toBe(false);
+  expect(
+    folded.objects.some(
+      (object) => object.kind === "table" && object.identity.name === "okm_ctr_docs",
+    ),
+  ).toBe(false);
+  const kept = folded.objects.find(
+    (object) => object.kind === "column" && object.identity.name === "number",
+  );
+  expect(kept?.kind === "column" && kept.definition.series?.name).toBe("docs");
+});
+
+test("a when expression containing $okm$ does not close the dollar quote", () => {
+  const built = schema({
+    tables: [
+      table("issued", {
+        ready: t.boolean(),
+        number: sequence("docs").column({ when: () => sql`$okm$` }),
+      }),
+    ],
+  });
+  const plan = planMigration({ before: empty, after: built.catalog, name: "tag" });
+  const assign = plan.steps.find((step) => step.sql.includes("okm_assign_docs_number"));
+  expect(assign?.sql).toContain("$okm$");
+  expect(assign?.sql).toContain("as $okm1$");
+  expect(assign?.sql.endsWith("$okm1$")).toBe(true);
+});
+
+test("ALTER SEQUENCE, a trigger, and a unique index on an existing table do not block readers", () => {
+  const before = schema({
+    tables: [table("issued", { id: t.integer().primaryKey(), tenantId: t.uuid() })],
+  }).catalog;
+  const after = schema({
+    tables: [
+      table("issued", {
+        id: t.integer().primaryKey(),
+        tenantId: t.uuid(),
+        number: sequence("docs").column({ scope: ["tenantId"] }),
+      }),
+    ],
+  }).catalog;
+  const plan = planMigration({ before, after, name: "seed" });
+  const trigger = plan.steps.find((step) => step.kind === "create-trigger");
+  const index = plan.steps.find((step) => step.kind === "create-index");
+  expect(trigger?.sql).toContain("create trigger");
+  expect(index?.sql).toContain("create unique index");
+  expect(trigger?.weight).toBeUndefined();
+  expect(index?.weight).toBeUndefined();
+
+  const nativeBefore = schema({
+    tables: [table("docs", { number: sequence({ increment: 1 }).column() })],
+  }).catalog;
+  const nativeAfter = schema({
+    tables: [table("docs", { number: sequence({ increment: 5 }).column() })],
+  }).catalog;
+  const altered = planMigration({ before: nativeBefore, after: nativeAfter, name: "alter" });
+  const alteredStep = altered.steps.find((step) => step.kind === "alter-sequence");
+  expect(alteredStep?.weight).toBeUndefined();
+  expect(alteredStep?.lock).toBe("SHARE ROW EXCLUSIVE");
 });

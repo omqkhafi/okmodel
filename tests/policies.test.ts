@@ -256,6 +256,15 @@ test("a disabled generated policy plans enable row level security", () => {
   expect(sql.includes("drop policy")).toBe(false);
 });
 
+test("widening an existing policy to public is a protected step", () => {
+  const before = notes(() => ({ open: { to: "reader", using: true } }));
+  const after = notes(() => ({ open: { to: "public", using: true } }));
+  const plan = planMigration({ before: before.catalog, after: after.catalog, name: "widen" });
+  const step = plan.steps.find((item) => item.kind === "policy-public");
+  expect(step?.sql).toContain("to public");
+  expect(step?.class).toBe("contract");
+});
+
 test("public is stored with no role list and is not the default", () => {
   const built = notes(() => ({ open: { to: "public", using: true } }));
   expect(policyOf(built, "open").definition.roles).toBeUndefined();
