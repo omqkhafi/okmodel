@@ -41,7 +41,7 @@ const cases: readonly { readonly name: string; readonly schema: string }[] = [
       "  publishedAt: t.timestamptz().nullable(),",
       "  tableWidth: t.integer(),",
       "  tableHeight: t.integer(),",
-      '  tableArea: t.integer().generated(\'("tableWidth" * "tableHeight")\'),',
+      '  tableArea: t.integer().generated((columns) => sql`("tableWidth" * "tableHeight")`),',
       "}, {",
       "  checks: {",
       "    order_ok: (c) => sql`${c.publishedAt} is null or ${c.publishedAt} >= ${c.openedAt}`,",

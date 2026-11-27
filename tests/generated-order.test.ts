@@ -11,7 +11,7 @@ import { open } from "../src/adapters/pg/pglite.js";
 import { catalogHash, creationOrder } from "../src/contracts/catalog/document.js";
 import type { Catalog } from "../src/contracts/catalog/types.js";
 import { renderCatalog } from "../src/dialects/pg/ddl.js";
-import { identity, schema, table, text, tsvector } from "../src/dialects/pg/index.js";
+import { identity, schema, sql, table, text, tsvector } from "../src/dialects/pg/index.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
 import { testing } from "../src/tooling/testing/index.js";
 
@@ -21,27 +21,27 @@ const GOLDEN = "deb4849d38a380823d94dc9ee8b0a8a5123993911df4edc0f87784520615d611
 const searchFromTitle = table("docs", {
   id: identity(),
   title: text(),
-  search: tsvector().generated("to_tsvector('english', title)"),
+  search: tsvector().generated((c) => sql`to_tsvector('english', ${c.title!})`),
 });
 
 const searchFromBody = table("docs", {
   id: identity(),
   title: text(),
   body: text(),
-  search: tsvector().generated("to_tsvector('english', body)"),
+  search: tsvector().generated((c) => sql`to_tsvector('english', ${c.body!})`),
 });
 
 const zsearchFromTitle = table("docs", {
   id: identity(),
   title: text(),
-  zsearch: tsvector().generated("to_tsvector('english', title)"),
+  zsearch: tsvector().generated((c) => sql`to_tsvector('english', ${c.title!})`),
 });
 
 const people = table("people", {
   id: identity(),
   first_name: text(),
   last_name: text(),
-  full_name: text().generated("first_name || ' ' || last_name"),
+  full_name: text().generated((c) => sql`${c.first_name!} || ' ' || ${c.last_name!}`),
 });
 
 function names(source: Catalog): readonly string[] {

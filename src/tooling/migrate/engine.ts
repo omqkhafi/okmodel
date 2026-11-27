@@ -9,7 +9,7 @@
 
 import type { DriverConnection } from "../../contracts/driver.js";
 import { OkmError } from "../../contracts/error.js";
-import { UUIDV7_POSTGRES, uuidv7NeedsPostgres } from "../../dialects/pg/floor.js";
+import { UUIDV7_POSTGRES, VIRTUAL_POSTGRES, uuidv7NeedsPostgres } from "../../dialects/pg/floor.js";
 
 /** A migration the `uuidv7()` scan can read. Apply and check both pass this. */
 type UuidV7Source = {
@@ -82,6 +82,32 @@ export async function assertUuidV7Available(
   const where = found.column === undefined ? "A column" : `Column ${found.column}`;
   const message = `${where} has a uuidv7() default (migration ${found.migrationId}, step ${String(found.stepIndex + 1)}), and the server is PostgreSQL ${String(major)}. ${uuidv7NeedsPostgres()} Nothing was changed.`;
   throw new OkmError("OKM1812", message, { fix: { summary: uuidv7NeedsPostgres() } });
+}
+
+/**
+ * Refuses VIRTUAL generated SQL on a server older than PostgreSQL 18.
+ *
+ * The check runs before the first statement. STORED columns are unaffected.
+ *
+ * @param connection - The reserved apply or check connection
+ * @param migrations - Migrations in apply order
+ * @throws OkmError OKM1812, before any statement of the plan runs
+ */
+export async function assertVirtualAvailable(
+  connection: DriverConnection,
+  migrations: readonly UuidV7Source[],
+): Promise<void> {
+  const needs = migrations.some((migration) =>
+    migration.steps.some(
+      (step) => /\bvirtual\b/i.test(step.sql) && /\bgenerated always as\b/i.test(step.sql),
+    ),
+  );
+  if (!needs) return;
+  const result = await connection.execute("select current_setting('server_version_num')");
+  const major = Math.floor(Number(result.rows[0]?.[0] ?? "0") / 10_000);
+  if (major >= VIRTUAL_POSTGRES) return;
+  const message = `A virtual generated column needs PostgreSQL ${String(VIRTUAL_POSTGRES)}. The server is PostgreSQL ${String(major)}. Use a STORED generated column, or upgrade. Nothing was changed.`;
+  throw new OkmError("OKM1812", message, { fix: { summary: message } });
 }
 
 function columnOf(sql: string): string | undefined {

@@ -329,7 +329,7 @@ export default schema({
       {
         find: "  title: t.text().nullable(),\n  authorId: t.bigint(),\n",
         replace:
-          "  title: t.text().nullable(),\n  search: t.tsvector().generated(\"to_tsvector('simple', title)\"),\n  authorId: t.bigint(),\n",
+          "  title: t.text().nullable(),\n  search: t.tsvector().generated((c) => sql`to_tsvector('simple', ${c.title})`),\n  authorId: t.bigint(),\n",
       },
     ],
   },

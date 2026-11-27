@@ -5,6 +5,7 @@
 import { expectTypeOf } from "expect-type";
 
 import {
+  sql,
   t,
   table,
   type ColumnInsertOf,
@@ -172,7 +173,7 @@ expectTypeOf<ColumnRowOf<typeof tags>>().toEqualTypeOf<readonly string[]>();
 const grid = t.integer().array({ dims: 2 });
 expectTypeOf<ColumnRowOf<typeof grid>>().toEqualTypeOf<readonly (readonly number[])[]>();
 
-const generated = t.integer().generated("1");
+const generated = t.integer().generated(() => sql`1`);
 expectTypeOf<ColumnInsertOf<typeof generated>>().toEqualTypeOf<never>();
 expectTypeOf<ColumnRowOf<typeof generated>>().toEqualTypeOf<number>();
 

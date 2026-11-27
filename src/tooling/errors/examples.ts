@@ -44,6 +44,7 @@ import {
   or,
   raw,
   schema,
+  sql,
   table,
   t,
   text,
@@ -74,6 +75,7 @@ import {
   timeoutFindings,
 } from "../migrate/doctor-production.js";
 import { lintCatalog, lintPlan, type Finding } from "../migrate/lint.js";
+import { refuseGeneratedProbe } from "../migrate/data-probe.js";
 import { parsePlan, planMigration } from "../migrate/plan.js";
 import { postgresDialect } from "../migrate/postgres-dialect.js";
 import {
@@ -2580,6 +2582,105 @@ function unmanagedLines(declared: boolean): readonly string[] {
   const lines = unmanagedComments(live, author, schema({ tables: [] }).catalog).information;
   return lines.some((line) => line.startsWith("OKM2107")) ? ["OKM2107"] : [];
 }
+
+thrown(
+  "OKM1920",
+  () => {
+    const built = schema({
+      tables: [
+        table("stats", {
+          total: t
+            .integer()
+            .generated(() => sql`1`, { stored: false })
+            .primaryKey(),
+        }),
+      ],
+    });
+    planMigration({
+      before: schema({ tables: [] }).catalog,
+      after: built.catalog,
+      name: "virtual",
+    });
+  },
+  () => {
+    schema({ tables: [table("stats", { total: t.integer().generated(() => sql`1`) })] });
+  },
+);
+
+thrown(
+  "OKM1921",
+  () => {
+    const built = schema({
+      tables: [
+        table("users", { id: t.integer().primaryKey(), email: t.text() }),
+        table("posts", {
+          id: t.integer().primaryKey(),
+          email: t.text().references("users", { columns: ["email"] }),
+        }),
+      ],
+    });
+    planMigration({ before: schema({ tables: [] }).catalog, after: built.catalog, name: "target" });
+  },
+  () => {
+    schema({
+      tables: [
+        table("users", { id: t.integer().primaryKey() }),
+        table("posts", { id: t.integer().primaryKey(), authorId: t.integer().references("users") }),
+      ],
+    });
+  },
+);
+
+thrown(
+  "OKM1922",
+  () => refuseGeneratedProbe(3, "the check on a virtual generated column"),
+  () => refuseGeneratedProbe(0, "the check on a virtual generated column"),
+);
+
+reported(
+  "OKM2108",
+  () =>
+    adviceCodes(
+      schema({
+        tables: [
+          table("users", { org: t.integer(), id: t.integer() }, { primaryKey: ["org", "id"] }),
+          table(
+            "posts",
+            { org: t.integer().nullable(), id: t.integer() },
+            {
+              foreignKeys: () => ({
+                posts_user: {
+                  columns: ["org", "id"],
+                  references: { table: "users", columns: ["org", "id"] },
+                },
+              }),
+            },
+          ),
+        ],
+      }),
+    ),
+  () =>
+    adviceCodes(
+      schema({
+        tables: [
+          table("users", { org: t.integer(), id: t.integer() }, { primaryKey: ["org", "id"] }),
+          table(
+            "posts",
+            { org: t.integer(), id: t.integer() },
+            {
+              foreignKeys: () => ({
+                posts_user: {
+                  columns: ["org", "id"],
+                  references: { table: "users", columns: ["org", "id"] },
+                  match: "full",
+                },
+              }),
+            },
+          ),
+        ],
+      }),
+    ),
+);
 
 function withColumn(
   source: Catalog,

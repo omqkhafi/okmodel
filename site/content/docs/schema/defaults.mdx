@@ -161,18 +161,19 @@ export const notes = table("notes", {
 
 ### Generated
 
-`.generated(expression)` is `generated always as (expression) stored`. Insert and update omit the column. A read returns the value. An empty expression is refused. `{ stored: true }` is the default, and the SQL is stored either way.
+`.generated((columns) => expression)` is `generated always as (expression) stored`. The callback receives column handles. Insert and update omit the column. A read returns the value. `{ stored: false }` emits `VIRTUAL` and needs PostgreSQL 18.
+
+| | STORED | VIRTUAL |
+| --- | --- | --- |
+| Use it when | The value must be indexed directly, be a key, be referenced by a foreign key, be replicated, or be read in a trigger | The value is cheap and read-only, or you are adding a computed value to a big table without a rewrite, plus an expression index |
+| Label | Default | PostgreSQL 18 and later, known limits |
 
 ```ts title="generated.ts"
-import { table, t } from "okmodel/pg";
+import { sql, table, t } from "okmodel/pg";
 
 export const notes = table("notes", {
   id: t.identity(),
   title: t.text(),
-  search: t.tsvector().generated("to_tsvector('simple', title)"), // [!code focus]
+  search: t.tsvector().generated((c) => sql`to_tsvector('simple', ${c.title})`), // [!code focus]
 });
 ```
-
-<Callout type="error" title="OKM1060">
-`generated()` must be a non-empty SQL expression.
-</Callout>

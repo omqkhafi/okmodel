@@ -25,6 +25,9 @@ export const UUIDV7_POSTGRES = 18;
 /** `NOT ENFORCED` checks. Creating one needs PostgreSQL 18. Altering one needs 19. */
 export const NOT_ENFORCED_POSTGRES = 18 satisfies PostgresMajor;
 
+/** `VIRTUAL` generated columns. PostgreSQL 18. */
+export const VIRTUAL_POSTGRES = 18 satisfies PostgresMajor;
+
 /**
  * Accepts an integer major of {@link POSTGRES_FLOOR} or later.
  *

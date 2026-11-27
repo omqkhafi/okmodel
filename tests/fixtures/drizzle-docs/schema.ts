@@ -6,7 +6,7 @@
  * `tests/fixtures/drizzle/docs.ts` compiles to this catalog.
  */
 
-import { index, schema, t, table } from "../../../src/dialects/pg/index.js";
+import { index, schema, sql, t, table } from "../../../src/dialects/pg/index.js";
 
 export const users = table(
   "users",
@@ -25,7 +25,7 @@ export const posts = table(
     content: t.text().nullable(),
     author_id: t.integer().references("users", { columns: ["id"] }),
     mood: t.enum("mood", ["sad", "ok", "happy"]),
-    total: t.integer().nullable().generated("1"),
+    total: t.integer().nullable().generated(() => sql`1`),
   },
   {
     primaryKey: ["id"],

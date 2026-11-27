@@ -26,6 +26,7 @@ const EXPECTED = [
   ["add-column-required", "contract"],
   ["drop-column", "contract"],
   ["set-column-type", "contract"],
+  ["set-generated", "expand"],
   ["set-not-null", "contract"],
   ["drop-not-null", "expand"],
   ["set-default", "expand"],

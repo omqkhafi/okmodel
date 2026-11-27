@@ -54,7 +54,7 @@ postgresTest(
           'export const app = schema({ tables: [table("tasks", {',
           "  id: t.integer().primaryKey(),",
           "  a: t.integer(),",
-          "  b: t.integer().generated('(\"a\" + 1)'),",
+          '  b: t.integer().generated((columns) => sql`("a" + 1)`),',
           "})] });",
           "",
         ].join("\n"),

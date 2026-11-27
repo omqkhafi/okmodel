@@ -3,6 +3,7 @@
  */
 
 import {
+  sql,
   t,
   type ColumnInsertOf,
   type ColumnRowOf,
@@ -54,7 +55,7 @@ const columns = {
   grid: t.integer().array({ dims: 2 }),
   hidden: t.text().hidden(),
   guarded: t.text().guarded(),
-  generated: t.integer().generated("1"),
+  generated: t.integer().generated(() => sql`1`),
 };
 
 type Row = { readonly [K in keyof typeof columns]: ColumnRowOf<(typeof columns)[K]> };

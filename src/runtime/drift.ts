@@ -92,8 +92,11 @@ async function codeHash(
   }
   const listed = await readHashFile(source.catalogDir);
   if (listed !== undefined) return { hash: listed, fromFile: true };
+  const { sealGenerated } = await import("../dialects/pg/generated-print.js");
   const { catalogHash } = await import("../contracts/catalog/document.js");
-  return { hash: catalogHash(schemaCatalog(schema)), fromFile: false };
+  const catalog = schemaCatalog(schema);
+  sealGenerated(catalog);
+  return { hash: catalogHash(catalog), fromFile: false };
 }
 
 function schemaCatalog(schema: QuerySchema): Catalog {

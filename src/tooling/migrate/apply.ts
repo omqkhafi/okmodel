@@ -37,7 +37,7 @@ import { assertSupported } from "../capabilities/check.js";
 import { POSTGRES_FEATURES } from "../capabilities/postgres.js";
 import { featuresUsed } from "../capabilities/used.js";
 import { assertExtensionsAvailable, extensionSchemaPath } from "./extensions.js";
-import { assertUuidV7Available } from "./engine.js";
+import { assertUuidV7Available, assertVirtualAvailable } from "./engine.js";
 import { assertSchemaMajor } from "./server-requirements.js";
 import { assertSnapshots } from "./export.js";
 import { asProject, projectPath, type ProjectContext } from "./paths.js";
@@ -380,6 +380,7 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
     await prepareMigrationRole(connection, request, session);
     await assertExtensionsAvailable(connection, request.migrations);
     await assertUuidV7Available(connection, request.migrations);
+    await assertVirtualAvailable(connection, request.migrations);
     await enterCatalogSchema(connection, request.schema ?? "public");
     await assertLedgerTables(connection);
     const state = request.snapshot === undefined ? undefined : await targetState(connection);
@@ -790,6 +791,7 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
     );
     await assertExtensionsAvailable(connection, [migration]);
     await assertUuidV7Available(connection, [migration]);
+    await assertVirtualAvailable(connection, [migration]);
     const units = applyUnits(migration, new Set());
     const armed = await armDirect(connection, request, url, units);
     direct = armed.direct;

@@ -387,7 +387,11 @@ function addColumn(column: ColumnObject, schema: string, tableIsNew: boolean): r
   const sql = createObjectSql(column, schema);
   if (sql === undefined) return [];
   const kind = requiredColumn(column) && !tableIsNew ? "add-column-required" : "add-column";
-  return [ddlStep(sql, kind, "ddl", ACCESS)];
+  const step = ddlStep(sql, kind, "ddl", ACCESS);
+  if (!tableIsNew && column.definition.generated?.stored === true) {
+    return [{ ...step, weight: "rewrite" }];
+  }
+  return [step];
 }
 
 function addConstraint(constraint: ConstraintObject, schema: string): readonly DdlStep[] {
@@ -693,7 +697,13 @@ function alterColumn(
       }
       continue;
     }
-    steps.push(ddlStep(sql, kind, "ddl", kind === "validate-constraint" ? SHARE_UPDATE : ACCESS));
+    const step = ddlStep(sql, kind, "ddl", kind === "validate-constraint" ? SHARE_UPDATE : ACCESS);
+    if (kind === "set-column-type" || kind === "set-generated") {
+      const stored = after.definition.generated?.stored !== false;
+      steps.push(kind === "set-generated" && !stored ? step : { ...step, weight: "rewrite" });
+      continue;
+    }
+    steps.push(step);
   }
   const identitySql = identityChangeSql(before, after, schema);
   const identity = identityKind(before, after);
@@ -710,6 +720,16 @@ function columnAlterKinds(before: ColumnObject, after: ColumnObject): readonly S
     before.definition.collation !== after.definition.collation
   ) {
     kinds.push("set-column-type");
+  }
+  const left = before.definition.generated;
+  const right = after.definition.generated;
+  if (
+    left !== undefined &&
+    right !== undefined &&
+    left.stored === right.stored &&
+    left.expression !== right.expression
+  ) {
+    kinds.push("set-generated");
   }
   if (before.definition.nullable !== after.definition.nullable) {
     kinds.push(after.definition.nullable ? "drop-not-null" : "set-not-null");
