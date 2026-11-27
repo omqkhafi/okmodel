@@ -315,6 +315,35 @@ export function bareCheck(expression: string | undefined): string {
   const marker = " NOT VALID";
   return expression.endsWith(marker) ? expression.slice(0, -marker.length) : expression;
 }
+/**
+ * Changes only deferrability, or only when the constraint is checked.
+ *
+ * One `ALTER CONSTRAINT` statement. No drop and no revalidation.
+ *
+ * @param changes - Constraints whose other fields already match
+ * @param schema - Schema name
+ * @returns One step per constraint
+ */
+export function deferrableSteps(changes: readonly ConstraintObject[], schema: string) {
+  const steps: ReturnType<typeof ddlStep>[] = [];
+  for (const object of changes) {
+    const table = qualify(schema, object.identity.parent.name);
+    const name = quoteIdent(object.identity.name);
+    const clause = object.definition.deferrable
+      ? `deferrable initially ${object.definition.initially}`
+      : "not deferrable";
+    steps.push(
+      ddlStep(
+        `alter table ${table} alter constraint ${name} ${clause}`,
+        "alter-constraint",
+        "ddl",
+        ACCESS,
+      ),
+    );
+  }
+  return steps;
+}
+
 /** `ALTER CONSTRAINT` on 19. Older servers drop the check and add it again. */
 export function enforcementSteps(
   changes: readonly { readonly after: ConstraintObject }[],

@@ -28,12 +28,9 @@ import {
 } from "../../contracts/catalog/document.js";
 import { sha256 } from "../../contracts/sha256.js";
 import { OkmError } from "../../contracts/error.js";
-import { compileUserPolicies } from "../../dialects/pg/policy-compile.js";
-import { installPolicyCompiler } from "../../dialects/pg/policy-slot.js";
+import "../../dialects/pg/policy.js";
 import { policyObject } from "../../contracts/catalog/policy.js";
 import { normalizeRoles } from "../../dialects/pg/role/config.js";
-
-installPolicyCompiler(compileUserPolicies);
 import { assertProjectWarnings } from "../../runtime/warnings/config.js";
 import { missingPostgres, tagOutcome } from "../cli/outcome.js";
 import { cliNote } from "../cli/notices.js";
@@ -254,6 +251,10 @@ async function shapePlan(
     choice.extra.push(...decidedSwaps.extra);
     choice.accept.push(...decidedSwaps.accept);
   }
+  const { assertGeneratedImmutable } = await import("./generated-check.js");
+  await assertGeneratedImmutable(opened.built.catalog);
+  const { parseFillFlag } = await import("./data-questions.js");
+  const columnFills = (data?.fills ?? []).map((flag) => parseFillFlag(flag));
   const compared = await comparedPlan(
     opened,
     name,
@@ -261,8 +262,13 @@ async function shapePlan(
     {
       extraRenames: choice.extra,
       acceptSwaps: choice.accept,
+      columnFills,
     },
   );
+  if (url !== undefined && !compared.unreachable) {
+    const { refuseGeneratedRowsOnTarget } = await import("./generated-probe.js");
+    await refuseGeneratedRowsOnTarget(url, schema, compared.plan.steps);
+  }
   const live = compared.unreachable ? undefined : url;
   const renames = [...opened.renames, ...choice.extra];
   const changes = requiredChanges(opened.previous, opened.built.catalog, renames);
@@ -571,7 +577,9 @@ export async function checkProject(
     opened.config.roles,
   );
   const { assertIndexImmutable } = await import("./index-rules.js");
+  const { assertGeneratedImmutable } = await import("./generated-check.js");
   await assertIndexImmutable(opened.built.catalog);
+  await assertGeneratedImmutable(opened.built.catalog);
   const refusal = adviceRefusal(advice);
   if (refusal !== undefined) throw refusal;
   const named = flags?.target;
@@ -802,6 +810,11 @@ async function comparedPlan(
       readonly from: string;
       readonly to: string;
     }[];
+    readonly columnFills?: readonly {
+      readonly table: string;
+      readonly column: string;
+      readonly expression: string;
+    }[];
   },
 ): Promise<{
   readonly plan: MigrationPlan;
@@ -816,6 +829,9 @@ async function comparedPlan(
     replacements,
     ...(choice?.acceptSwaps !== undefined && choice.acceptSwaps.length > 0
       ? { acceptSwaps: choice.acceptSwaps }
+      : {}),
+    ...(choice?.columnFills !== undefined && choice.columnFills.length > 0
+      ? { columnFills: choice.columnFills }
       : {}),
     name,
     ...placedSchema(opened.config),

@@ -15,11 +15,7 @@ import { setting, settingList, type Expr } from "../../dialects/pg/expr/index.js
 import type { SchemaHook } from "../../dialects/pg/model.js";
 import type { RolesInput } from "../../dialects/pg/role/config.js";
 import { normalizeRoles } from "../../dialects/pg/role/config.js";
-import { compileUserPolicies } from "../../dialects/pg/policy-compile.js";
-import { installPolicyCompiler } from "../../dialects/pg/policy-slot.js";
 import { INNER, isWrapped, wrapPool, type Setting } from "../tenancy/scope-pool.js";
-
-installPolicyCompiler(compileUserPolicies);
 
 /** Column types a setting can declare. The value is text on the wire. */
 export type SettingType = "text" | "uuid" | "int" | "bool" | "text[]";

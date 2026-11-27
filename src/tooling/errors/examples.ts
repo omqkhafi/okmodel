@@ -62,6 +62,7 @@ import { stand } from "../../runtime/validate/engine.js";
 import { v } from "../../runtime/validate/rules.js";
 import { assertParamCount, PG_PARAM_LIMIT } from "../../runtime/param-limit.js";
 import { sessionSettings } from "../../runtime/session/index.js";
+import "../../dialects/pg/policy.js";
 import { assertObserveKeys } from "../../runtime/observe-keys.js";
 import { assertSupported } from "../capabilities/check.js";
 import type { Registry } from "../capabilities/types.js";
@@ -2681,6 +2682,90 @@ thrown(
         table("users", { id: t.integer().primaryKey() }),
         table("posts", { id: t.integer().primaryKey(), authorId: t.integer().references("users") }),
       ],
+    });
+  },
+);
+
+thrown(
+  "OKM1927",
+  () => {
+    const before = schema({
+      tables: [
+        table(
+          "stats",
+          { n: t.integer(), total: t.integer().generated(() => sql`n + 1`) },
+          { indexes: (columns) => [index(columns.total)] },
+        ),
+      ],
+    });
+    const after = schema({
+      tables: [
+        table(
+          "stats",
+          {
+            n: t.integer(),
+            total: t.integer().generated(() => sql`n + 1`, { stored: false }),
+          },
+          { indexes: (columns) => [index(columns.total)] },
+        ),
+      ],
+    });
+    planMigration({ before: before.catalog, after: after.catalog, name: "swap" });
+  },
+  () => {
+    const before = schema({
+      tables: [table("stats", { n: t.integer(), total: t.integer().generated(() => sql`n + 1`) })],
+    });
+    const after = schema({
+      tables: [
+        table("stats", {
+          n: t.integer(),
+          total: t.integer().generated(() => sql`n + 1`, { stored: false }),
+        }),
+      ],
+    });
+    planMigration({
+      before: before.catalog,
+      after: after.catalog,
+      name: "swap",
+      confirmTypeChanges: true,
+    });
+  },
+);
+
+thrown(
+  "OKM1928",
+  () => {
+    const before = schema({
+      tables: [
+        table("stats", {
+          n: t.integer(),
+          total: t.integer().generated(() => sql`n + 1`, { stored: false }),
+        }),
+      ],
+    });
+    const after = schema({
+      tables: [table("stats", { n: t.integer(), total: t.integer() })],
+    });
+    planMigration({ before: before.catalog, after: after.catalog, name: "plain" });
+  },
+  () => {
+    const before = schema({
+      tables: [
+        table("stats", {
+          n: t.integer(),
+          total: t.integer().generated(() => sql`n + 1`, { stored: false }),
+        }),
+      ],
+    });
+    const after = schema({
+      tables: [table("stats", { n: t.integer(), total: t.integer() })],
+    });
+    planMigration({
+      before: before.catalog,
+      after: after.catalog,
+      name: "plain",
+      columnFills: [{ table: "stats", column: "total", expression: "n + 1" }],
     });
   },
 );
