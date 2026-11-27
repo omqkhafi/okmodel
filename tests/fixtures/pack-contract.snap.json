@@ -100,6 +100,10 @@
       "import": "./dist/dialects/pg/ext/unaccent.js",
       "types": "./dist/dialects/pg/ext/unaccent.d.ts"
     },
+    "./policy": {
+      "import": "./dist/dialects/pg/policy.js",
+      "types": "./dist/dialects/pg/policy.d.ts"
+    },
     "./safety": {
       "import": "./dist/runtime/safety/index.js",
       "types": "./dist/runtime/safety/index.d.ts"
@@ -170,6 +174,7 @@
     "dist/contracts/catalog/document.d.ts",
     "dist/contracts/catalog/enum.d.ts",
     "dist/contracts/catalog/extension.d.ts",
+    "dist/contracts/catalog/held.d.ts",
     "dist/contracts/catalog/identifier.d.ts",
     "dist/contracts/catalog/identity.d.ts",
     "dist/contracts/catalog/index.d.ts",
@@ -256,6 +261,7 @@
     "dist/dialects/pg/fn/index.js",
     "dist/dialects/pg/fn/touch.d.ts",
     "dist/dialects/pg/generated-hold.d.ts",
+    "dist/dialects/pg/generated-limit.d.ts",
     "dist/dialects/pg/generated-print.d.ts",
     "dist/dialects/pg/geometry.d.ts",
     "dist/dialects/pg/index-print.d.ts",
@@ -316,6 +322,8 @@
     "dist/dialects/pg/path-sql.d.ts",
     "dist/dialects/pg/policy-compile.d.ts",
     "dist/dialects/pg/policy-slot.d.ts",
+    "dist/dialects/pg/policy.d.ts",
+    "dist/dialects/pg/policy.js",
     "dist/dialects/pg/preset.d.ts",
     "dist/dialects/pg/quote.d.ts",
     "dist/dialects/pg/range.d.ts",
@@ -689,6 +697,7 @@
     "dist/shared/*.js",
     "dist/shared/*.js",
     "dist/shared/*.js",
+    "dist/shared/*.js",
     "dist/tooling/agents/apply.d.ts",
     "dist/tooling/agents/block.d.ts",
     "dist/tooling/agents/command.d.ts",
@@ -786,6 +795,9 @@
     "dist/tooling/migrate/filter-scan.d.ts",
     "dist/tooling/migrate/fingerprint.d.ts",
     "dist/tooling/migrate/foreign-target.d.ts",
+    "dist/tooling/migrate/generated-check.d.ts",
+    "dist/tooling/migrate/generated-probe.d.ts",
+    "dist/tooling/migrate/generated-swap.d.ts",
     "dist/tooling/migrate/import-drizzle.d.ts",
     "dist/tooling/migrate/index-rules.d.ts",
     "dist/tooling/migrate/index.d.ts",
@@ -1144,6 +1156,8 @@
     "docs/errors/OKM1924.md",
     "docs/errors/OKM1925.md",
     "docs/errors/OKM1926.md",
+    "docs/errors/OKM1927.md",
+    "docs/errors/OKM1928.md",
     "docs/errors/OKM2004.md",
     "docs/errors/OKM2005.md",
     "docs/errors/OKM2007.md",
