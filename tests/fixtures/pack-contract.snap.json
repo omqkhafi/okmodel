@@ -31,7 +31,8 @@
     "./policy": "052338b1674516151421f8036c2a1a7d6d0f77532add2df836eae5f90fdbace9",
     "./safety": "d8ec016fcd5639c29f9b4cdcf5e7c22da69e689e994a4bb5e312de9eec37114c",
     "./seq": "69be7c2be0dc8ba3941c9244f662d41fc221dc31b9235b1d8f49fdb755af9cdc",
-    "./session": "e0889227dbd88fa16ced91e7dfbe10c4b3fa70b5bff040439073ca0e7d88e454",
+    "./session": "8ebbb8fa0c64aeb193bb206a843b4243eabe92baebd99c6fcfe280678de5794a",
+    "./session/role": "7a590e4fe9f5025ff4dc45620a08a8ffe43e209a9c75ffb7d0224a9e6d55a844",
     "./tenancy": "11c0999b67bdc925f75b0c512d1ba6b14179b95a2d1bca3504cabdc69265aaa0",
     "./testing": "e2cd897a7b7c7d68f896397ca5a537772d2346106b4aeeee0276fff7629d5c76",
     "./traits": "aed5e54c74091172e0489e13a2a7819b19c39af2b98c4e6a91bf29668b998317",
@@ -151,6 +152,10 @@
     "./session": {
       "import": "./dist/runtime/session/index.js",
       "types": "./dist/runtime/session/index.d.ts"
+    },
+    "./session/role": {
+      "import": "./dist/runtime/session/role.js",
+      "types": "./dist/runtime/session/role.d.ts"
     },
     "./tenancy": {
       "import": "./dist/runtime/tenancy/index.js",

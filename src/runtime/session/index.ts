@@ -14,7 +14,7 @@ import type { DriverPool } from "../../contracts/driver.js";
 import { setting, settingList, type Expr } from "../../dialects/pg/expr/index.js";
 import type { SchemaHook } from "../../dialects/pg/model.js";
 import type { RolesInput } from "../../dialects/pg/role/config.js";
-import { normalizeRoles } from "../../dialects/pg/role/config.js";
+import { readRoleResolver } from "./role-slot.js";
 import { INNER, isWrapped, wrapPool, type Setting } from "../tenancy/scope-pool.js";
 
 /** Column types a setting can declare. The value is text on the wire. */
@@ -146,6 +146,7 @@ function bad(message: string, fix: string): never {
  * @param options - Logical role to `SET LOCAL ROLE`, and the roles config that names it
  * @returns The context `connect({ session })` takes, including `handles`
  * @throws OkmError OKM1709 for a name or type that is not accepted
+ * @throws OkmError OKM1929 when `roles` is set before `bindSessionRoles()`
  */
 export function sessionSettings<const M extends SettingMap>(
   settings: M,
@@ -209,8 +210,13 @@ export function sessionSettings<const M extends SettingMap>(
 function resolveRole(role: string | undefined, roles: RolesInput | undefined): string | undefined {
   if (role === undefined) return undefined;
   if (roles === undefined) return role;
-  const found = normalizeRoles(roles).find((entry) => entry.key === role);
-  return found === undefined ? role : found.name;
+  const resolve = readRoleResolver();
+  if (resolve === undefined) {
+    throw new OkmError("OKM1929", "sessionSettings() was given roles before bindSessionRoles().", {
+      fix: { summary: "Import okmodel/session/role and call bindSessionRoles() first." },
+    });
+  }
+  return resolve(role, roles);
 }
 
 function handlesOf(

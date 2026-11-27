@@ -11,12 +11,24 @@ import { schema, t, table } from "../src/dialects/pg/index.js";
 import { open } from "../src/adapters/pg/pglite.js";
 import { connect } from "../src/runtime/pg/pglite.js";
 import { sessionSettings } from "../src/runtime/session/index.js";
+import { bindSessionRoles } from "../src/runtime/session/role.js";
+import { resetRoleResolver } from "../src/runtime/session/role-slot.js";
 import { columnTenancy } from "../src/runtime/tenancy/index.js";
 import { SESSION_SETTINGS, assertSessionSettings } from "../src/tooling/capabilities/index.js";
 
 const USER_A = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c8d";
 const USER_B = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c8e";
 const TENANT = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c21";
+
+test("roles stay out of sessionSettings until bindSessionRoles", () => {
+  resetRoleResolver();
+  const roles = { migration: { name: "okm_migrate" }, app: { name: "okm_app" } } as const;
+  const settings = { userId: { name: "app.user_id", type: "uuid" as const } };
+  expect(code(() => sessionSettings(settings, { role: "app", roles }))).toBe("OKM1929");
+  bindSessionRoles();
+  expect(sessionSettings(settings, { role: "app", roles }).role).toBe("okm_app");
+  expect(sessionSettings(settings, { role: "app" }).role).toBe("app");
+});
 
 const ctx = sessionSettings({
   userId: { name: "app.user_id", type: "uuid", required: true },

@@ -1172,6 +1172,15 @@
     "docs": "docs/errors/OKM1927.md"
   },
   {
+    "code": "OKM1929",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "sessionSettings() was given a roles map before bindSessionRoles(). The roles config stays out of okmodel/session until that import. Nothing reached the database.",
+    "fix": "Import okmodel/session/role and call bindSessionRoles() before sessionSettings(..., { roles }).",
+    "retryable": false,
+    "docs": "docs/errors/OKM1929.md"
+  },
+  {
     "code": "OKM1928",
     "kind": "invalid",
     "category": "input",

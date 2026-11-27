@@ -62,6 +62,8 @@ import { stand } from "../../runtime/validate/engine.js";
 import { v } from "../../runtime/validate/rules.js";
 import { assertParamCount, PG_PARAM_LIMIT } from "../../runtime/param-limit.js";
 import { sessionSettings } from "../../runtime/session/index.js";
+import { bindSessionRoles } from "../../runtime/session/role.js";
+import { resetRoleResolver } from "../../runtime/session/role-slot.js";
 import "../../dialects/pg/policy.js";
 import { assertObserveKeys } from "../../runtime/observe-keys.js";
 import { assertSupported } from "../capabilities/check.js";
@@ -2213,6 +2215,30 @@ thrown(
   },
   () => {
     sessionSettings({ userId: { name: "app.user_id", type: "uuid" } });
+  },
+);
+
+thrown(
+  "OKM1929",
+  () => {
+    resetRoleResolver();
+    sessionSettings(
+      { userId: { name: "app.user_id", type: "uuid" } },
+      {
+        role: "app",
+        roles: { migration: { name: "okm_migrate" }, app: { name: "okm_app" } },
+      },
+    );
+  },
+  () => {
+    bindSessionRoles();
+    sessionSettings(
+      { userId: { name: "app.user_id", type: "uuid" } },
+      {
+        role: "app",
+        roles: { migration: { name: "okm_migrate" }, app: { name: "okm_app" } },
+      },
+    );
   },
 );
 
