@@ -346,7 +346,22 @@ export type TableOptions<TColumns> = {
    * reserved is OKM1040.
    */
   readonly presets?: PresetMap<RowFrom<TColumns>>;
-  readonly policies?: unknown;
+  /**
+   * Keyed row-level security policies.
+   *
+   * The function returns one policy per key. The key is the stored name.
+   * Import `sessionSettings` from `okmodel/session` in this module so the
+   * compiler is installed before the catalog is read.
+   */
+  readonly policies?: () => import("./policy-compile.js").PolicyMap;
+  /**
+   * Row security for this table.
+   *
+   * `true` enables it. `false` disables it. `{ force: true }` enables and
+   * forces it. Absent with policies enables it. Absent without policies
+   * leaves it off.
+   */
+  readonly rls?: import("./policy-compile.js").RlsOption;
   /**
    * Rows the application requires to exist.
    *
@@ -528,7 +543,9 @@ const TABLE_KNOWN = new Set([
   "grants",
   "indexes",
   "omitDefaults",
+  "policies",
   "presets",
+  "rls",
   "primaryKey",
   "reference",
   "relations",
@@ -549,7 +566,6 @@ const TABLE_KNOWN = new Set([
  */
 const TABLE_LATER: Readonly<Record<string, string>> = {
   computed: "Declare it in schema({ computed }).",
-  policies: "arrives later",
 };
 
 /**

@@ -9,6 +9,7 @@
 import { isConnectionFailure } from "../../contracts/connection.js";
 import { OkmError } from "../../contracts/error.js";
 import { qualify, quoteIdent } from "../../dialects/pg/ddl.js";
+import { quoteLiteral } from "../../dialects/pg/quote.js";
 import { driverUrl } from "./driver-url.js";
 import { OPTIONAL_CONNECT_SECONDS } from "./optional-read.js";
 import { missingPostgres } from "../cli/outcome.js";
@@ -168,6 +169,18 @@ export async function probeTarget(
     try {
       return await sql.begin("read only", async (tx) => {
         await tx.unsafe(`set local statement_timeout = '${String(PROBE_STATEMENT_MS)}ms'`);
+        await armProbe(
+          async (text) => {
+            const rows = await tx.unsafe(text);
+            return rows.map((row) =>
+              Object.values(row).map((value) =>
+                value === null || value === undefined ? null : String(value),
+              ),
+            );
+          },
+          schema,
+          [...new Set(requests.map((request) => request.table))],
+        );
         const hits: ProbeHit[] = [];
         for (const request of requests) {
           try {
@@ -277,6 +290,7 @@ async function readHits(
   await query("begin read only");
   try {
     await query(`set local statement_timeout = '${String(PROBE_STATEMENT_MS)}ms'`);
+    await armProbe(query, schema, [...new Set(requests.map((request) => request.table))]);
     for (const request of requests) {
       await query("savepoint okm_probe");
       try {
@@ -306,6 +320,76 @@ async function readHits(
     throw error;
   }
   return hits;
+}
+
+async function armProbe(query: Query, schema: string, tables: readonly string[]): Promise<void> {
+  if (tables.length === 0) return;
+  const list = tables.map((table) => quoteLiteral(table)).join(", ");
+  const rows = await query(
+    `select c.relname, c.relforcerowsecurity::text, r.rolsuper::text, r.rolbypassrls::text,
+            exists (
+              select 1 from pg_policy p
+              where p.polrelid = c.oid and p.polname = c.relname || '_unscoped_select'
+            )::text
+     from pg_class c
+     join pg_namespace n on n.oid = c.relnamespace
+     join pg_roles r on r.rolname = current_user
+     where n.nspname = ${quoteLiteral(schema)} and c.relname in (${list}) and c.relkind = 'r'`,
+  );
+  let unscoped = false;
+  for (const row of rows) {
+    if (row[1] !== "true" || row[2] === "true" || row[3] === "true") continue;
+    if (row[4] === "true") {
+      unscoped = true;
+      continue;
+    }
+    throw new OkmError(
+      "OKM1926",
+      `Table ${row[0] ?? ""} forces row-level security. This role would count zero rows.`,
+      {
+        fix: {
+          summary:
+            "Count as a role that bypasses row-level security, or use a table with the unscoped select policy.",
+        },
+      },
+    );
+  }
+  if (unscoped) await query("select set_config('app.unscoped', 'on', true)");
+}
+
+/**
+ * Refuses a backfill that would update zero rows under forced row security.
+ *
+ * The unscoped select policy does not cover writes. A role that is not a
+ * superuser and does not have BYPASSRLS cannot see the rows.
+ *
+ * @param execute - One statement
+ * @param schema - Schema name
+ * @param table - SQL table name
+ */
+export async function assertBackfillVisible(
+  execute: (sql: string) => Promise<unknown>,
+  schema: string,
+  table: string,
+): Promise<void> {
+  const result = (await execute(
+    `select c.relforcerowsecurity::text, r.rolsuper::text, r.rolbypassrls::text
+     from pg_class c
+     join pg_namespace n on n.oid = c.relnamespace
+     join pg_roles r on r.rolname = current_user
+     where n.nspname = ${quoteLiteral(schema)} and c.relname = ${quoteLiteral(table)} and c.relkind = 'r'`,
+  )) as { readonly rows?: readonly (readonly (string | null)[])[] };
+  const row = result.rows?.[0];
+  if (row === undefined || row[0] !== "true" || row[1] === "true" || row[2] === "true") return;
+  throw new OkmError(
+    "OKM1926",
+    `Table ${table} forces row-level security. A backfill from this role would update zero rows.`,
+    {
+      fix: {
+        summary: "Use a role that bypasses row-level security.",
+      },
+    },
+  );
 }
 
 function parseCount(raw: string | null, limit = PROBE_LIMIT): ProbeCount {

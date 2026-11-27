@@ -9,7 +9,7 @@
 import { assertIdentifier } from "../../contracts/catalog/identifier.js";
 import { OkmError } from "../../contracts/error.js";
 import { ColumnBuilder, retarget, type ReferenceModifier } from "../../dialects/pg/column.js";
-import { uuid } from "../../dialects/pg/keys.js";
+import { assertTenantKeyType, tenantKey, tenantWire, type TenantKeyType } from "./key-type.js";
 import { definition, refuseGlobalTenantIndexes } from "../../dialects/pg/misuse.js";
 import type { Names } from "../../dialects/pg/casing.js";
 import type { AnyTable } from "../../dialects/pg/table.js";
@@ -53,23 +53,29 @@ type TableOptions = {
  * @param input - The key list, `uuid`, and whether indexes are prefixed
  * @returns The object `schema()` applies
  */
-export function compositeTenancy<const Keys extends readonly [string, ...string[]]>(input: {
+export function compositeTenancy<
+  const Keys extends readonly [string, ...string[]],
+  const Type extends TenantKeyType,
+>(input: {
   readonly key: Keys;
-  readonly type: "uuid";
+  readonly type: Type;
   /** Prefix ordinary indexes with the first key. A unique index includes every key. Omitted is true. */
   readonly indexes?: boolean;
-}): ColumnTenancy & { readonly key: Keys[number]; readonly keys: Keys } {
+}): ColumnTenancy & { readonly key: Keys[number]; readonly keys: Keys; readonly type: Type } {
   if (input === undefined || typeof input !== "object") {
     definition("compositeTenancy() needs { key, type }.");
   }
-  if (input.type !== "uuid") {
-    definition(`compositeTenancy() type ${String(input.type)} must be uuid.`);
+  if (typeof input.type !== "string") {
+    definition("compositeTenancy() type must be uuid, text, int, or bigint.");
   }
+  assertTenantKeyType(input.type, "compositeTenancy()");
   const prefixIndexes = readIndexPolicy(input.indexes, "compositeTenancy()");
   const keys = readKeys(input.key) as unknown as Keys;
   const key = keys[0] ?? "";
-  const columns = keys.map(() => uuid().guarded());
-  const encodes = columns.map((column) => column.state.encode);
+  const built = keys.map(() => tenantKey(input.type));
+  const columns = built.map((item) => item.column);
+  const encodes = built.map((item) => item.encode);
+  const stamp = built[0]?.stamp ?? ((wire: string) => wire);
   const tenants = new Set<string>();
   const globals = new Map<string, string>();
   const exemptions = new Map<string, { name: string; reason: string }[]>();
@@ -81,7 +87,7 @@ export function compositeTenancy<const Keys extends readonly [string, ...string[
   const api: ColumnTenancy & { readonly key: Keys[number]; readonly keys: Keys } = {
     key: key as Keys[number],
     keys,
-    type: "uuid",
+    type: input.type,
     strategy: "composite",
     rewrite(tables, names) {
       tenants.clear();
@@ -100,7 +106,7 @@ export function compositeTenancy<const Keys extends readonly [string, ...string[
         names,
       );
     },
-    column: () => columns[0] ?? uuid().guarded(),
+    column: () => columns[0] ?? tenantKey(input.type).column,
     predicate(spec) {
       return writePredicate(keys, tenants, spec, encodeKey);
     },
@@ -110,12 +116,12 @@ export function compositeTenancy<const Keys extends readonly [string, ...string[
     },
     stamp(table, rows, scope) {
       if (!tenants.has(table)) return;
-      stampRows(keys, table, rows, scope);
+      stampRows(keys, table, rows, scope, stamp);
     },
     client(spec): TenancyClient {
       const names = spec.scoped ? spec.names : spec.names.filter((name) => !tenants.has(name));
       if (spec.scoped) return { names };
-      return { names, ...bindClient(keys, encodes, spec.open) };
+      return { names, ...bindClient(keys, input.type, spec.open) };
     },
     rules(table, source, scope) {
       return tenancyRules(table, source, scope, tenants, globals, exemptions);
@@ -150,7 +156,11 @@ export function compositeTenancy<const Keys extends readonly [string, ...string[
       );
     },
   };
-  return api;
+  return api as ColumnTenancy & {
+    readonly key: Keys[number];
+    readonly keys: Keys;
+    readonly type: Type;
+  };
 }
 
 function rewriteTables(
@@ -436,11 +446,12 @@ function stampRows(
   table: string,
   rows: Record<string, unknown>[],
   scope: TenantCall | undefined,
+  stamp: (wire: string) => string | number,
 ): void {
   requireScope(keys, table, scope);
   if (scope === undefined || "unscoped" in scope) return;
   for (const row of rows) {
-    for (const key of keys) row[key] = scope.values?.[key] ?? scope.value;
+    for (const key of keys) row[key] = stamp(scope.values?.[key] ?? scope.value);
   }
 }
 
@@ -459,10 +470,11 @@ function requireScope(
 
 function bindClient(
   keys: readonly string[],
-  encodes: readonly ((value: string) => string)[],
+  type: TenantKeyType,
   openScope: (scope: TenantCall) => unknown,
 ): { for: (input: unknown) => unknown; unscoped: (reason: string) => unknown } {
   const list = keys.join(", ");
+  const expect = type === "int" ? "an integer" : type === "bigint" ? "a bigint" : `a ${type}`;
   return {
     for: (input: unknown) => {
       if (typeof input !== "object" || input === null || Array.isArray(input)) {
@@ -470,16 +482,8 @@ function bindClient(
       }
       const record = input as Record<string, unknown>;
       const values: Record<string, string> = {};
-      for (let index = 0; index < keys.length; index += 1) {
-        const key = keys[index];
-        if (key === undefined) continue;
-        const value = record[key];
-        if (typeof value !== "string" || value.length === 0) {
-          throw new OkmError("OKM1701", `for() needs { ${list} } as a uuid.`);
-        }
-        const encode = encodes[index];
-        if (encode !== undefined) encode(value);
-        values[key] = value;
+      for (const key of keys) {
+        values[key] = tenantWire(type, record[key], `for() needs { ${list} } as ${expect}.`);
       }
       for (const name of Object.keys(record)) {
         if (keys.includes(name)) continue;

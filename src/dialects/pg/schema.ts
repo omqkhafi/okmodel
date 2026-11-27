@@ -37,6 +37,7 @@ import {
   type ClientGenerator,
 } from "../../contracts/generator.js";
 import { compileColumn, type CompilableColumn } from "./compile.js";
+import { readPolicyCompiler } from "./policy-slot.js";
 import {
   ColumnBuilder,
   compositeMark,
@@ -300,9 +301,9 @@ export type TenancySchema<
           : T extends { readonly "~path": string }
             ? T
             : T & {
-                readonly "~row": RowFrom<TenantFields<TTenancy["key"]>>;
-                readonly "~insert": InsertFrom<TenantFields<TTenancy["key"]>>;
-                readonly "~update": UpdateFrom<TenantFields<TTenancy["key"]>>;
+                readonly "~row": RowFrom<TenantFields<TTenancy["key"], TTenancy["type"]>>;
+                readonly "~insert": InsertFrom<TenantFields<TTenancy["key"], TTenancy["type"]>>;
+                readonly "~update": UpdateFrom<TenantFields<TTenancy["key"], TTenancy["type"]>>;
               };
       };
     }
@@ -706,6 +707,39 @@ export function schema<const TTables extends readonly AnyTable[]>(
         }
         contributeListed(config.triggers, objects, names);
         contributeListed(config.views, objects, names);
+        if (tablesWantPolicies(config.tables)) {
+          const compile = readPolicyCompiler();
+          if (compile === undefined) {
+            throw new OkmError(
+              "OKM1924",
+              "Import sessionSettings from okmodel/session before schema() when a table sets policies or rls.",
+              {
+                fix: {
+                  summary: "Import sessionSettings from okmodel/session in the schema module.",
+                },
+              },
+            );
+          }
+          compile(
+            config.tables,
+            (tsName) => {
+              const item = byName.get(tsName);
+              if (item === undefined) return undefined;
+              return {
+                sqlName: item.sqlName,
+                parent: item.parent,
+                provenance: item.provenance,
+                column: (field) => {
+                  const column = item.byField.get(field);
+                  return column === undefined
+                    ? undefined
+                    : { sql: column.sqlName, dataType: column.dataType };
+                },
+              };
+            },
+            objects,
+          );
+        }
         document = catalog(objects);
       }
       return document;
@@ -722,6 +756,16 @@ export function schema<const TTables extends readonly AnyTable[]>(
     ...(clientHooks !== undefined ? { hooks: clientHooks } : {}),
     ...(config.validation !== undefined ? { validation: config.validation } : {}),
   } as unknown as BuiltSchema<TTables>;
+}
+
+function tablesWantPolicies(tables: readonly AnyTable[]): boolean {
+  for (const item of tables) {
+    const options = item.options as
+      | { readonly policies?: unknown; readonly rls?: unknown }
+      | undefined;
+    if (options?.policies !== undefined || options?.rls !== undefined) return true;
+  }
+  return false;
 }
 
 function acceptTables(tables: readonly AnyTable[]): readonly string[] {

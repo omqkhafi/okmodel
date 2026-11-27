@@ -97,6 +97,12 @@ export const INDEX_ENTRIES: readonly IndexEntry[] = [
     group: "define",
   },
   {
+    path: "docs/policies.md",
+    purpose: "Keyed row-level security policies and the session values they read.",
+    when: "Read this when a table needs a policy.",
+    group: "define",
+  },
+  {
     path: "docs/type-change.md",
     purpose: "Expand and contract for a type change that rewrites a table.",
     when: "Read this when a column type must change.",

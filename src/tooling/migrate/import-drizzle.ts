@@ -17,6 +17,7 @@ import { enumType } from "../../contracts/catalog/enum.js";
 import { staticNamespace } from "../../contracts/catalog/identity.js";
 import { deterministicName } from "../../contracts/catalog/identifier.js";
 import { column, constraint, index, sequence, table } from "../../contracts/catalog/object.js";
+import { policyObject } from "../../contracts/catalog/policy.js";
 import type {
   CatalogObject,
   Namespace,
@@ -73,8 +74,17 @@ type TableConfig = {
   readonly uniqueConstraints: readonly DrizzleUnique[];
   readonly name: string;
   readonly schema: string | undefined;
-  readonly policies?: readonly { readonly name?: string }[];
+  readonly policies?: readonly DrizzlePolicy[];
   readonly enableRLS?: boolean;
+};
+
+type DrizzlePolicy = {
+  readonly name?: string;
+  readonly as?: string;
+  readonly for?: string;
+  readonly to?: unknown;
+  readonly using?: unknown;
+  readonly withCheck?: unknown;
 };
 
 type DrizzleIndex = {
@@ -488,22 +498,19 @@ function catalogOf(
       continue;
     }
     const parent: ObjectRef = { namespace, name: config.name };
+    const policies = config.policies ?? [];
     objects.push(
       table({
         namespace,
         name: config.name,
         provenance: provenanceOf(`export:${item.exportName}`),
+        rowSecurity:
+          config.enableRLS === true && policies.length === 0
+            ? { enable: true, force: false }
+            : undefined,
       }),
     );
-    if (config.enableRLS === true) {
-      extras.push(
-        extra("policy", `${config.name}.row level security`, "a later step writes policies"),
-      );
-    }
-    for (const policy of config.policies ?? []) {
-      const name = policy.name ?? "policy";
-      extras.push(extra("policy", `${config.name}.${name}`, "a later step writes policies"));
-    }
+    appendDrizzlePolicies(objects, parent, config, policies, extras);
     const columns = drizzle.getTableColumns(item.value);
     const sqlNames = namesFor(item.value, config.name);
     const primaryColumns = primaryColumnsOf(config, columns, sqlNames);
@@ -906,6 +913,71 @@ function sqlType(value: object): string | undefined {
   if (!("getSQLType" in value) || typeof value.getSQLType !== "function") return undefined;
   const type = (value.getSQLType as () => unknown).call(value);
   return typeof type === "string" && type.length > 0 ? type : undefined;
+}
+
+function appendDrizzlePolicies(
+  objects: CatalogObject[],
+  parent: ObjectRef,
+  config: TableConfig,
+  policies: readonly DrizzlePolicy[],
+  extras: PullSkip[],
+): void {
+  const commands = new Set(["all", "select", "insert", "update", "delete"]);
+  for (const policy of policies) {
+    const name = policy.name ?? "policy";
+    const using = policy.using === undefined ? undefined : sqlText(policy.using);
+    const check = policy.withCheck === undefined ? undefined : sqlText(policy.withCheck);
+    if (
+      (using === undefined && policy.using !== undefined) ||
+      (check === undefined && policy.withCheck !== undefined)
+    ) {
+      extras.push(
+        extra("policy", `${config.name}.${name}`, "the policy expression could not be read"),
+      );
+      continue;
+    }
+    if (using === undefined && check === undefined) {
+      extras.push(extra("policy", `${config.name}.${name}`, "the policy has no expression"));
+      continue;
+    }
+    const command = policy.for ?? "all";
+    if (!commands.has(command)) {
+      extras.push(extra("policy", `${config.name}.${name}`, "the policy command is not supported"));
+      continue;
+    }
+    const roles = drizzleRoles(policy.to);
+    objects.push(
+      policyObject({
+        parent,
+        name,
+        provenance: provenanceOf(),
+        command: command as "all" | "select" | "insert" | "update" | "delete",
+        expression: using ?? check ?? "true",
+        force: false,
+        ...(policy.as === "restrictive" ? { restrictive: true as const } : {}),
+        ...(roles === undefined ? {} : { roles }),
+        ...(using !== undefined && check !== undefined && check !== using ? { check } : {}),
+        ...(using === undefined ? { checkOnly: true as const } : {}),
+        ...(config.enableRLS === true ? {} : { disabled: true as const }),
+      }),
+    );
+  }
+}
+
+function drizzleRoles(to: unknown): readonly string[] | undefined {
+  if (to === undefined || to === "public") return undefined;
+  if (typeof to === "string") return [to];
+  if (Array.isArray(to)) {
+    const names = to.filter(
+      (item): item is string => typeof item === "string" && item !== "public",
+    );
+    return names.length === 0 ? undefined : names;
+  }
+  if (typeof to === "object" && to !== null) {
+    const name = stringField(to, "name");
+    if (name !== undefined && name !== "public") return [name];
+  }
+  return undefined;
 }
 
 function sqlText(value: unknown): string | undefined {

@@ -572,6 +572,14 @@ function policyDrift(input: StepInput, text: string): string | undefined {
     (matchesEmitted(name, `${table}_tenant`, using, check, tenant) ||
       matchesEmitted(name, `${table}_unscoped_select`, using, check, unscoped));
   if (emitted) return undefined;
+  if (tenant === undefined) return undefined;
+  if (
+    name !== `${table}_tenant` &&
+    name !== `${table}_unscoped_select` &&
+    /\bas restrictive\b/.test(text)
+  ) {
+    return undefined;
+  }
   return kind === "alter"
     ? "widens a policy away from the tenant predicate"
     : "creates a policy that is not the tenant predicate";

@@ -25,6 +25,7 @@
     "names-and-casing",
     "traits",
     "tenancy",
+    "policies",
     "enums-arrays-picklists",
     "composite-types",
     "codecs-and-row-types",

@@ -1139,10 +1139,46 @@
     "code": "OKM1709",
     "kind": "invalid",
     "category": "input",
-    "summary": "A sessionSettings() declaration or a db.with() value is not accepted: a name without a dot, a name that starts with a setting okm reserves for tenancy or is a built-in setting, a type that is not text, uuid, int, or bool, a value of the wrong type, an unknown key, or a required key that is missing. A client with a required setting refuses every statement until db.with() gives it. Nothing reached the database.",
+    "summary": "A sessionSettings() declaration or a db.with() value is not accepted: a name without a dot, a name that starts with a setting okm reserves for tenancy or is a built-in setting, a type that is not text, uuid, int, bool, or text[], a value of the wrong type, an unknown key, or a required key that is missing. A client with a required setting refuses every statement until db.with() gives it. Nothing reached the database.",
     "fix": "Declare names like app.user_id, pass each value as its declared type, and call db.with({ ... }) with every required key before the first query.",
     "retryable": false,
     "docs": "docs/errors/OKM1709.md"
+  },
+  {
+    "code": "OKM1924",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A table policy or rls option is not accepted: the wrong command for using or check, a name the tenancy policies already use, a permissive policy on a tenant table, or rls lowering a forced tenant table. Nothing reached the database.",
+    "fix": "Give each policy one command, keep tenant policies restrictive, and do not turn off row security on an rlsTenancy table.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1924.md"
+  },
+  {
+    "code": "OKM1925",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A policy reads a table whose policies read it back, including a policy that reads its own table. PostgreSQL raises 42P17 when a non-bypass role runs that query. okm check refuses the schema first.",
+    "fix": "Break the cycle. Read the other table through a security definer function that does not read back.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1925.md"
+  },
+  {
+    "code": "OKM1926",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A data probe or a backfill would count or update zero rows because the table forces row-level security and the role does not bypass it. okm refuses instead of reporting a silent zero.",
+    "fix": "Count as a role that is exempt from row-level security, or use the select policy rlsTenancy adds for a full-table count. A backfill under force needs an exempt role.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1926.md"
+  },
+  {
+    "code": "OKM1923",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "SET LOCAL ROLE failed with 42501. The login role is not a member of the session role. The transaction was rolled back.",
+    "fix": "Grant the login role membership in the session role, with SET TRUE on PostgreSQL 16 and later.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1923.md"
   },
   {
     "code": "OKM1801",
@@ -1932,6 +1968,182 @@
         "name": "ignore",
         "requiresHumanReason": true,
         "docs": "docs/errors/OKM2108.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM2110",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A policy filter column is not the first column of an index on that table.",
+    "fix": "Index that column first, or accept a scan on every policy check.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Add an index that starts with the policy column.",
+        "docs": "docs/errors/OKM2110.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2110.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2110.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM2111",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "Policy SQL calls current_setting or another function outside (select ...). Postgres re-evaluates it per row.",
+    "fix": "Use a session handle or wrap the call in (select ...).",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Write the setting as a session handle.",
+        "docs": "docs/errors/OKM2111.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2111.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2111.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM2112",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A security definer function reads a table with forced row security. The function owner is exempt unless the table is forced, and a forced read can return no rows.",
+    "fix": "Read the table as the caller, or keep the helper off forced tables.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Make the helper security invoker.",
+        "docs": "docs/errors/OKM2112.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2112.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2112.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM2113",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A policy names a role that owns the tables, is marked superuser, or has BYPASSRLS. That role does not see the policy.",
+    "fix": "Point the policy at a role that does not bypass row security.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Use the app role, then SET LOCAL ROLE to it.",
+        "docs": "docs/errors/OKM2113.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2113.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2113.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM2114",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A policy TO role is not a key or a name in the roles config.",
+    "fix": "Add the role to roles, or name a configured key.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Use a role key from the roles config.",
+        "docs": "docs/errors/OKM2114.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2114.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2114.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM2115",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The table stores policies and row security is not enabled. They have no effect.",
+    "fix": "Set rls so the table enables row security, or remove the policies.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Set rls: true on the table.",
+        "docs": "docs/errors/OKM2115.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2115.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2115.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM2116",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "An UPDATE policy has no SELECT policy for the same role. The update matches zero rows and reports success.",
+    "fix": "Add a SELECT policy for that role.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Add a for: select policy for the same role.",
+        "docs": "docs/errors/OKM2116.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2116.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2116.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM2117",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A restrictive SELECT policy also filters INSERT ... RETURNING and DELETE ... RETURNING. A row that fails it raises 42501 on insert and is omitted from a delete count.",
+    "fix": "Express write restrictions with for: insert, update, or delete policies.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Keep the restrictive policy on insert, update, or delete.",
+        "docs": "docs/errors/OKM2117.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2117.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2117.md#escape"
       }
     ]
   },

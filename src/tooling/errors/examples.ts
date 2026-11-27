@@ -55,7 +55,7 @@ import { materializedView, view } from "../../dialects/pg/view/index.js";
 import { connect } from "../../runtime/pg/postgresjs.js";
 import { warnings } from "../../runtime/warnings/index.js";
 import { archivable, timestamps, trait } from "../../runtime/traits/index.js";
-import { columnTenancy, global } from "../../runtime/tenancy/index.js";
+import { columnTenancy, global, rlsTenancy } from "../../runtime/tenancy/index.js";
 import { refuseMissingValidation } from "../../runtime/validate/closed.js";
 import { assertValidation } from "../../runtime/validate/places.js";
 import { stand } from "../../runtime/validate/engine.js";
@@ -155,6 +155,8 @@ export const NEEDS_DATABASE = [
   "OKM1913",
   "OKM1914",
   "OKM1915",
+  "OKM1923",
+  "OKM1926",
 ] as const;
 
 /**
@@ -1896,6 +1898,54 @@ thrown(
 );
 
 thrown(
+  "OKM1924",
+  () =>
+    schema({
+      tables: [
+        table(
+          "notes",
+          { id: t.integer().primaryKey() },
+          { policies: () => ({ read: { for: "select", using: true, check: true } }) },
+        ),
+      ],
+    }).catalog,
+  () =>
+    schema({
+      tables: [
+        table(
+          "notes",
+          { id: t.integer().primaryKey() },
+          { policies: () => ({ read: { for: "select", using: true } }) },
+        ),
+      ],
+    }).catalog,
+);
+
+thrown(
+  "OKM1925",
+  () =>
+    schema({
+      tables: [
+        table(
+          "notes",
+          { id: t.integer().primaryKey() },
+          { policies: () => ({ loop: { using: sql`exists (select 1 from "notes")` } }) },
+        ),
+      ],
+    }).catalog,
+  () =>
+    schema({
+      tables: [
+        table(
+          "notes",
+          { id: t.integer().primaryKey() },
+          { policies: () => ({ own: { using: true } }) },
+        ),
+      ],
+    }).catalog,
+);
+
+thrown(
   "OKM1709",
   () => {
     sessionSettings({ userId: { name: "user_id", type: "uuid" } });
@@ -2374,8 +2424,11 @@ thrown(
   },
 );
 
-function adviceCodes(built: ReturnType<typeof schema>): readonly string[] {
-  return schemaAdvice(built, [], {}).advice.map((item) => item.code);
+function adviceCodes(
+  built: ReturnType<typeof schema>,
+  roles?: Parameters<typeof schemaAdvice>[3],
+): readonly string[] {
+  return schemaAdvice(built, [], {}, roles).advice.map((item) => item.code);
 }
 
 reported(
@@ -2677,6 +2730,267 @@ reported(
                 },
               }),
             },
+          ),
+        ],
+      }),
+    ),
+);
+
+const roles = { migration: { name: "okm_migration" }, app: { name: "okm_app" } };
+
+reported(
+  "OKM2110",
+  () =>
+    adviceCodes(
+      schema({
+        tables: [
+          table(
+            "notes",
+            { id: t.integer().primaryKey(), ownerId: t.uuid() },
+            {
+              policies: () => ({
+                own: { using: { ownerId: "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c8d" } },
+              }),
+            },
+          ),
+        ],
+      }),
+    ),
+  () =>
+    adviceCodes(
+      schema({
+        tables: [
+          table(
+            "notes",
+            { id: t.integer().primaryKey(), ownerId: t.uuid() },
+            {
+              indexes: (columns) => [index(columns.ownerId)],
+              policies: () => ({
+                own: { using: { ownerId: "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c8d" } },
+              }),
+            },
+          ),
+        ],
+      }),
+    ),
+);
+
+reported(
+  "OKM2111",
+  () =>
+    adviceCodes(
+      schema({
+        tables: [
+          table(
+            "notes",
+            { id: t.integer().primaryKey() },
+            { policies: () => ({ own: { using: sql`current_setting('app.user_id', true)` } }) },
+          ),
+        ],
+      }),
+    ),
+  () =>
+    adviceCodes(
+      schema({
+        tables: [
+          table(
+            "notes",
+            { id: t.integer().primaryKey() },
+            {
+              policies: () => ({
+                own: { using: sql`(select current_setting('app.user_id', true))` },
+              }),
+            },
+          ),
+        ],
+      }),
+    ),
+);
+
+reported(
+  "OKM2112",
+  () =>
+    adviceCodes(
+      schema({
+        tenancy: rlsTenancy({ key: "tenantId", type: "uuid" }),
+        tables: [table("notes", { id: t.integer().primaryKey() })],
+        functions: [
+          fn("read_notes", {
+            returns: "integer",
+            language: "sql",
+            security: "definer",
+            searchPath: "public",
+            body: 'select 1 from "notes"',
+          }),
+        ],
+      }),
+    ),
+  () =>
+    adviceCodes(
+      schema({
+        tenancy: rlsTenancy({ key: "tenantId", type: "uuid" }),
+        tables: [table("notes", { id: t.integer().primaryKey() })],
+        functions: [
+          fn("read_notes", {
+            returns: "integer",
+            language: "sql",
+            security: "definer",
+            searchPath: "public",
+            body: "select 1",
+          }),
+        ],
+      }),
+    ),
+);
+
+reported(
+  "OKM2113",
+  () =>
+    adviceCodes(
+      schema({
+        tables: [
+          table(
+            "notes",
+            { id: t.integer().primaryKey() },
+            { policies: () => ({ own: { using: true } }) },
+          ),
+        ],
+      }),
+      { ...roles, app: { name: "okm_app", bypassRls: "the owner reads every row" } },
+    ),
+  () =>
+    adviceCodes(
+      schema({
+        tables: [
+          table(
+            "notes",
+            { id: t.integer().primaryKey() },
+            { policies: () => ({ own: { using: true } }) },
+          ),
+        ],
+      }),
+      roles,
+    ),
+);
+
+reported(
+  "OKM2114",
+  () =>
+    adviceCodes(
+      schema({
+        tables: [
+          table(
+            "notes",
+            { id: t.integer().primaryKey() },
+            { policies: () => ({ own: { to: "ghost", using: true } }) },
+          ),
+        ],
+      }),
+      roles,
+    ),
+  () =>
+    adviceCodes(
+      schema({
+        tables: [
+          table(
+            "notes",
+            { id: t.integer().primaryKey() },
+            { policies: () => ({ own: { using: true } }) },
+          ),
+        ],
+      }),
+      roles,
+    ),
+);
+
+reported(
+  "OKM2115",
+  () =>
+    adviceCodes(
+      schema({
+        tables: [
+          table(
+            "notes",
+            { id: t.integer().primaryKey() },
+            { rls: false, policies: () => ({ own: { using: true } }) },
+          ),
+        ],
+      }),
+    ),
+  () =>
+    adviceCodes(
+      schema({
+        tables: [
+          table(
+            "notes",
+            { id: t.integer().primaryKey() },
+            { rls: true, policies: () => ({ own: { using: true } }) },
+          ),
+        ],
+      }),
+    ),
+);
+
+reported(
+  "OKM2116",
+  () =>
+    adviceCodes(
+      schema({
+        tables: [
+          table(
+            "notes",
+            { id: t.integer().primaryKey() },
+            { policies: () => ({ edit: { for: "update", using: true, check: true } }) },
+          ),
+        ],
+      }),
+    ),
+  () =>
+    adviceCodes(
+      schema({
+        tables: [
+          table(
+            "notes",
+            { id: t.integer().primaryKey() },
+            {
+              policies: () => ({
+                read: { for: "select", using: true },
+                edit: { for: "update", using: true, check: true },
+              }),
+            },
+          ),
+        ],
+      }),
+    ),
+);
+
+reported(
+  "OKM2117",
+  () =>
+    adviceCodes(
+      schema({
+        tables: [
+          table(
+            "notes",
+            { id: t.integer().primaryKey() },
+            {
+              policies: () => ({
+                open: { using: true },
+                tight: { as: "restrictive", for: "select", using: true },
+              }),
+            },
+          ),
+        ],
+      }),
+    ),
+  () =>
+    adviceCodes(
+      schema({
+        tables: [
+          table(
+            "notes",
+            { id: t.integer().primaryKey() },
+            { policies: () => ({ open: { using: true } }) },
           ),
         ],
       }),

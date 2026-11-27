@@ -146,6 +146,7 @@ The table is generated from `STEP_KINDS`, `postgresHasProbe`, and `unitMode`. Do
 | `backfill-contract` | no | no | continues from the last key in okm_backfill; no okm_steps row | — |
 | `enable-rls` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `create-policy` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `alter-policy` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `drop-policy` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `disable-rls` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `raw-sql` | yes, unless the statement cannot share a transaction | when CONCURRENTLY | rolls back when the statement can share a transaction; a concurrent index follows the probe; any other committed statement stops until a declared probe or a person marks retry | OKM1553, OKM1556, OKM1557 |

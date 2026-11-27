@@ -46,14 +46,11 @@ postgresTest(
          );
          alter table notes enable row level security;
          alter table notes force row level security;
-         create policy notes_all on notes for all using (true) with check (true)`,
+         create policy notes_all on notes for all using (id > 0) with check (id > 0)`,
       );
       const pulled = await cli(cwd, ["pull"]);
-      expect(pulled).toContain("policies: 1");
-      expect(pulled).toContain("notes.notes_all");
-      expect(pulled).toContain("enable row level security");
-      expect(pulled).toContain("force row level security");
-      expect(pulled).toContain("pull does not write enable or force row level security");
+      expect(pulled).not.toContain("a later step writes policies");
+      expect(pulled).not.toContain("pull does not write enable or force row level security");
       await cli(cwd, ["generate", "init"]);
       const baselined = await cli(cwd, ["migrate", "baseline"]);
       expect(baselined).toContain("baselined baselined@0001_init");

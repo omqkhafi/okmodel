@@ -296,6 +296,33 @@ function coverageRequests(): readonly PlanRequest[] {
       postgres: 17,
       name: "set-generated",
     },
+    {
+      before: catalog([
+        ...bare.objects,
+        policyObject({
+          parent,
+          name: "own",
+          command: "select",
+          expression: "(true)",
+          force: false,
+          roles: ["app"],
+          provenance,
+        }),
+      ]),
+      after: catalog([
+        ...bare.objects,
+        policyObject({
+          parent,
+          name: "own",
+          command: "select",
+          expression: "(false)",
+          force: false,
+          roles: ["app"],
+          provenance,
+        }),
+      ]),
+      name: "alter-policy",
+    },
   ];
 }
 

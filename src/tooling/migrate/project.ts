@@ -28,6 +28,12 @@ import {
 } from "../../contracts/catalog/document.js";
 import { sha256 } from "../../contracts/sha256.js";
 import { OkmError } from "../../contracts/error.js";
+import { compileUserPolicies } from "../../dialects/pg/policy-compile.js";
+import { installPolicyCompiler } from "../../dialects/pg/policy-slot.js";
+import { policyObject } from "../../contracts/catalog/policy.js";
+import { normalizeRoles } from "../../dialects/pg/role/config.js";
+
+installPolicyCompiler(compileUserPolicies);
 import { assertProjectWarnings } from "../../runtime/warnings/config.js";
 import { missingPostgres, tagOutcome } from "../cli/outcome.js";
 import { cliNote } from "../cli/notices.js";
@@ -562,6 +568,7 @@ export async function checkProject(
     opened.built,
     projectFilterUses(cwd, opened.config),
     opened.config.warnings ?? {},
+    opened.config.roles,
   );
   const { assertIndexImmutable } = await import("./index-rules.js");
   await assertIndexImmutable(opened.built.catalog);
@@ -914,6 +921,34 @@ export async function openProject(project: string | ProjectContext): Promise<{
   };
 }
 
+function resolvePolicyRoles(source: Catalog, roles: RolesInput): Catalog {
+  const names = new Map(normalizeRoles(roles).map((entry) => [entry.key, entry.name]));
+  let changed = false;
+  const objects = source.objects.map((object) => {
+    if (object.kind !== "policy" || object.definition.roles === undefined) return object;
+    const next = object.definition.roles.map((role) => names.get(role) ?? role);
+    if (next.every((name, index) => name === object.definition.roles?.[index])) return object;
+    changed = true;
+    return policyObject({
+      parent: object.identity.parent,
+      name: object.identity.name,
+      command: object.definition.command,
+      expression: object.definition.expression,
+      force: object.definition.force,
+      ...(object.definition.restrictive === true ? { restrictive: true as const } : {}),
+      roles: next,
+      ...(object.definition.check !== undefined ? { check: object.definition.check } : {}),
+      ...(object.definition.checkOnly === true ? { checkOnly: true as const } : {}),
+      ...(object.definition.disabled === true ? { disabled: true as const } : {}),
+      ...(object.comment !== undefined ? { comment: object.comment } : {}),
+      owner: object.owner,
+      provenance: object.provenance,
+      dependencies: object.dependencies.map((edge) => edge.target),
+    });
+  });
+  return changed ? catalog(objects) : source;
+}
+
 function withRoles(built: Built, config: MigrateConfig, cwd: string): Built {
   const marks = ownershipMarks(built);
   const stamped = marks.size === 0 ? built.catalog : stampOwnership(built.catalog, marks);
@@ -931,11 +966,12 @@ function withRoles(built: Built, config: MigrateConfig, cwd: string): Built {
   if ((grants.size > 0 || catalogRememberedGrants(placed)) && roles === undefined) {
     throw grantsNeedRoles("the schema");
   }
+  const withPolicies = roles === undefined ? placed : resolvePolicyRoles(placed, roles);
   const catalog =
     roles === undefined
-      ? placed
+      ? withPolicies
       : attachRoles(
-          placed,
+          withPolicies,
           roles,
           exposureFor(built, roles),
           grants,

@@ -193,7 +193,7 @@ postgresTest(
       expect(pulled.text).toContain("active_projects: verified");
       expect(pulled.text).toContain("open_tasks: verified");
       expect(pulled.text).not.toContain("candidate-only");
-      expect(pulled.text).toContain("policies: 0");
+      expect(pulled.text).not.toContain("a later step writes policies");
       const source = readFileSync(join(cwd, "adopted/schema.ts"), "utf8");
       expect(source).toContain("fn(");
       const flat = source.replaceAll(/\s+/g, "");

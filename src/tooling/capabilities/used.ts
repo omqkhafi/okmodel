@@ -7,6 +7,7 @@
  */
 
 import { isDomain } from "../../contracts/catalog/enum.js";
+import { isGeneratedPolicy } from "../../contracts/catalog/policy.js";
 import type { Catalog, CatalogObject, Namespace } from "../../contracts/catalog/types.js";
 
 const RANGE_TYPES = new Set([
@@ -100,7 +101,22 @@ function note(used: Set<string>, object: CatalogObject): void {
   if (object.kind === "extension") used.add("extension");
   if (object.kind === "policy") {
     used.add("policies.table");
-    used.add("tenancy.rls");
+    if (isGeneratedPolicy(object)) {
+      used.add("tenancy.rls");
+      if (/::(integer|int4|bigint|int8|text)\b/.test(object.definition.expression)) {
+        used.add("tenancy.keyTypes");
+      }
+    } else if (object.definition.restrictive === true) {
+      used.add("policies.restrictive");
+    } else {
+      used.add("policies.permissive");
+    }
+    if (
+      object.definition.expression.includes("::text[]") ||
+      object.definition.check?.includes("::text[]")
+    ) {
+      used.add("session.list");
+    }
   }
   if (object.kind === "role" || object.kind === "grant" || object.kind === "defaultPrivilege") {
     used.add("roles.grants");
@@ -131,7 +147,8 @@ function noteComment(used: Set<string>, object: CatalogObject): void {
           kind === "function" ||
           kind === "trigger" ||
           kind === "sequence" ||
-          kind === "type"
+          kind === "type" ||
+          kind === "policy"
         ? `comment.${kind}`
         : undefined;
   if (key !== undefined) used.add(key);

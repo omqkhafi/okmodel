@@ -24,7 +24,9 @@ import { isDomain, sameEnumLabels } from "../../contracts/catalog/enum.js";
 import { fitIdentifier, identitySequenceName } from "../../contracts/catalog/identifier.js";
 import { identityKey, identityLabel, staticNamespace } from "../../contracts/catalog/identity.js";
 import { compareText } from "../../contracts/catalog/object.js";
+import { isGeneratedPolicy } from "../../contracts/catalog/policy.js";
 import { ddlStep } from "../../dialects/ddl-step.js";
+import { rlsToggleSteps } from "./policy-plan.js";
 import { assertForeignKeyTargets } from "./foreign-target.js";
 import { assertIndexRules } from "./index-rules.js";
 import {
@@ -41,6 +43,7 @@ import type {
   FunctionObject,
   IndexObject,
   MaterializedViewObject,
+  PolicyObject,
   TableObject,
   ViewColumn,
   ViewObject,
@@ -327,6 +330,7 @@ export function planMigration(
     readonly columns: readonly { readonly from: string; readonly to: string }[];
   }[] = [];
   const alters: { readonly before: ColumnObject; readonly after: ColumnObject }[] = [];
+  const policyAlters: PolicyObject[] = [];
   const enforcement: { readonly before: ConstraintObject; readonly after: ConstraintObject }[] = [];
   const storageReplaces: { readonly before: IndexObject; readonly after: IndexObject }[] = [];
   for (const item of beforeList) {
@@ -396,6 +400,12 @@ export function planMigration(
       storageReplaces.push({ before: previous, after: item.object });
       continue;
     }
+    if (previous.kind === "policy" && item.object.kind === "policy") {
+      if (policyShapeSame(previous, item.object)) {
+        if (!policyBodySame(previous, item.object)) policyAlters.push(item.object);
+        continue;
+      }
+    }
     dropKeys.add(item.key);
     createKeys.add(item.key);
   }
@@ -413,6 +423,7 @@ export function planMigration(
   requireReplacements(picklists, enums, replacements);
   recreateDependents(beforeList, afterList, alters, dropKeys, createKeys, picklists);
   recreateRoutineDependents(afterList, dropKeys, createKeys);
+  recreatePolicyDependents(afterList, dropKeys, createKeys, replaces);
   recreateViewDependents(afterList, dropKeys, createKeys);
   refuseRoutineDrops(beforeBy, afterBy, dropKeys);
   omitOwnedSequences(createKeys, afterBy, request.after);
@@ -519,6 +530,12 @@ export function planMigration(
       steps.push(...take(dialect.lower({ op: "drop-sequence", object, schema })));
     }
   };
+  for (const object of reverse) {
+    if (object.kind !== "policy" || isGeneratedPolicy(object)) continue;
+    const key = identityKey(object.identity);
+    if (!dropKeys.has(key) || deferred.has(key)) continue;
+    steps.push(...take(dialect.lower({ op: "drop-policy", object, schema })));
+  }
   // Triggers drop before functions even when the table drop would remove them.
   // View indexes, then views, drop before the tables they read. Never CASCADE.
   for (const object of reverse) if (object.kind === "trigger") emitDrop(object);
@@ -528,7 +545,7 @@ export function planMigration(
     if (object.kind === "view" || object.kind === "materializedView") emitDrop(object);
   }
   for (const object of reverse) {
-    if (object.kind !== "policy") continue;
+    if (object.kind !== "policy" || !isGeneratedPolicy(object)) continue;
     const key = identityKey(object.identity);
     if (!dropKeys.has(key) || deferred.has(key)) continue;
     steps.push(...take(dialect.lower({ op: "drop-policy", object, schema })));
@@ -680,8 +697,22 @@ export function planMigration(
     }
   }
   steps.push(...replacementDrops);
+  steps.push(
+    ...rlsToggleSteps(
+      renamed.objects,
+      request.after,
+      beforeBy,
+      afterBy,
+      createKeys,
+      dropKeys,
+      schema,
+    ),
+  );
+  for (const object of policyAlters) {
+    steps.push(...take(dialect.lower({ op: "alter-policy", object, schema })));
+  }
   for (const object of creationOrder(request.after)) {
-    if (object.kind !== "policy") continue;
+    if (object.kind !== "policy" || !isGeneratedPolicy(object)) continue;
     const key = identityKey(object.identity);
     if (!createKeys.has(key) || emitted.has(key)) continue;
     emitted.add(key);
@@ -730,6 +761,13 @@ export function planMigration(
         steps.push(...take(dialect.lower({ op: "create-matview", object, schema })));
       }
     }
+  }
+  for (const object of creationOrder(request.after)) {
+    if (object.kind !== "policy" || isGeneratedPolicy(object)) continue;
+    const key = identityKey(object.identity);
+    if (!createKeys.has(key) || emitted.has(key)) continue;
+    emitted.add(key);
+    steps.push(...take(dialect.lower({ op: "create-policy", object, schema })));
   }
   for (const object of creationOrder(request.after)) {
     if (object.kind !== "index" || !ownedByView(object)) continue;
@@ -1627,6 +1665,46 @@ function recreateDependents(
   }
 }
 
+function policyShapeSame(before: PolicyObject, after: PolicyObject): boolean {
+  return (
+    before.definition.command === after.definition.command &&
+    (before.definition.restrictive === true) === (after.definition.restrictive === true) &&
+    (before.definition.checkOnly === true) === (after.definition.checkOnly === true)
+  );
+}
+
+function policyBodySame(before: PolicyObject, after: PolicyObject): boolean {
+  return (
+    before.definition.expression === after.definition.expression &&
+    (before.definition.check ?? "") === (after.definition.check ?? "") &&
+    stable(before.definition.roles ?? []) === stable(after.definition.roles ?? [])
+  );
+}
+
+function recreatePolicyDependents(
+  afterList: readonly Indexed[],
+  dropKeys: Set<string>,
+  createKeys: Set<string>,
+  replaces: readonly { readonly kind: string; readonly after: FunctionObject | ViewObject }[],
+): void {
+  const changed = new Set<string>();
+  for (const item of replaces) {
+    if (item.kind === "function") changed.add(identityKey(item.after.identity));
+  }
+  for (const item of afterList) {
+    if (!dropKeys.has(item.key) || !createKeys.has(item.key)) continue;
+    if (item.object.kind === "function" || item.object.kind === "column") changed.add(item.key);
+  }
+  if (changed.size === 0) return;
+  for (const item of afterList) {
+    if (item.object.kind !== "policy") continue;
+    const hit = item.object.dependencies.some((edge) => changed.has(identityKey(edge.target)));
+    if (!hit) continue;
+    dropKeys.add(item.key);
+    createKeys.add(item.key);
+  }
+}
+
 function recreateRoutineDependents(
   afterList: readonly Indexed[],
   dropKeys: Set<string>,
@@ -1701,7 +1779,8 @@ function dependsOnChanged(
     object.kind !== "index" &&
     object.kind !== "constraint" &&
     object.kind !== "view" &&
-    object.kind !== "materializedView"
+    object.kind !== "materializedView" &&
+    object.kind !== "policy"
   ) {
     return false;
   }

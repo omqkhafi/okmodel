@@ -36,6 +36,7 @@ import {
   createTableSql,
   dropObjectSql,
   functionSql,
+  policyAlterPlan,
   policyCreatePlan,
   policyDropPlan,
   qualify,
@@ -240,6 +241,12 @@ function lowerChange(change: LogicalChange): readonly DdlStep[] {
     case "create-policy":
       return withObjectComment(
         policySteps(policyCreatePlan(change.object, change.schema), change.object),
+        change.object,
+        change.schema,
+      );
+    case "alter-policy":
+      return withObjectComment(
+        policySteps(policyAlterPlan(change.object, change.schema), change.object),
         change.object,
         change.schema,
       );

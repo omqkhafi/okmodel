@@ -105,6 +105,8 @@ export type Session = {
   readonly hooks: readonly SchemaHook[] | undefined;
   /** `db.with()` values as setting name and wire text, sorted by name. Absent on the root client. */
   readonly settings?: readonly (readonly [string, string])[];
+  /** SQL role for `SET LOCAL ROLE` on each unit. Absent when the session declares none. */
+  readonly role?: string;
   /**
    * Shared close. `for()` and `unscoped()` reuse the same promise.
    *
@@ -143,7 +145,7 @@ const SINGLE_ENDPOINT: RoutingDecision = {
  */
 export function createClient<
   S extends QuerySchema,
-  C extends { readonly hook: SchemaHook } | undefined = undefined,
+  C extends { readonly hook: SchemaHook; readonly role?: string } | undefined = undefined,
 >(
   schema: S,
   pool: DriverPool,
@@ -224,6 +226,7 @@ export function createClient<
       options.session === undefined
         ? schema.hooks
         : [...(schema.hooks ?? []), options.session.hook],
+    ...(options.session?.role !== undefined ? { role: options.session.role } : {}),
     closing,
   };
   return openClient(session) as unknown as Connected<S, C>;

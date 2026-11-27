@@ -244,12 +244,25 @@ export type DependencyEdge = {
 /** How a partitioned table assigns rows. */
 export type PartitionMethod = "range" | "list" | "hash";
 
+/**
+ * Table-level row security when no policy carries it.
+ *
+ * Absent means row security is off. Policies carry enable and force when
+ * the table has any, so this is set only for a table with no policy.
+ */
+export type RowSecurity = {
+  readonly enable: boolean;
+  readonly force: boolean;
+};
+
 /** Table definition. Columns, indexes, and constraints are their own objects. */
 export type TableDefinition = {
   readonly partition?: {
     readonly method: PartitionMethod;
     readonly columns: readonly string[];
   };
+  /** Enable and force when the table has no policy. Absent means off. */
+  readonly rowSecurity?: RowSecurity;
 };
 
 /**
@@ -693,19 +706,34 @@ export type DefaultPrivilegeObject = CatalogEnvelope<
   DefaultPrivilegeDefinition
 >;
 
-/** Which statements a policy covers. `all` is every command. `select` is reads. */
-export type PolicyCommand = "all" | "select";
+/** Which statements a policy covers. `all` is every command. */
+export type PolicyCommand = "all" | "select" | "insert" | "update" | "delete";
 
 /**
  * One row-level security policy.
  *
- * `expression` is the `USING` text, and the `WITH CHECK` text when `command`
- * is `all`. `force` is true when the table is `FORCE ROW LEVEL SECURITY`.
+ * `expression` is the `USING` text. For `all` it is also the `WITH CHECK`
+ * text when `check` is absent. `force` is true when the table is
+ * `FORCE ROW LEVEL SECURITY`. Optional fields are absent on the policies
+ * `rlsTenancy` emits, so those catalogs keep their hash.
  */
 export type PolicyDefinition = {
   readonly command: PolicyCommand;
   readonly expression: string;
   readonly force: boolean;
+  /** Present only for a restrictive policy. Absent means permissive. */
+  readonly restrictive?: true;
+  /**
+   * Role names in `TO`. Absent means `PUBLIC` for a policy the author wrote
+   * as public, and means no `TO` clause for a generated tenancy policy.
+   */
+  readonly roles?: readonly string[];
+  /** `WITH CHECK` when it differs from `USING`. */
+  readonly check?: string;
+  /** `INSERT`: `expression` is the `WITH CHECK` text and there is no `USING`. */
+  readonly checkOnly?: true;
+  /** The policy is stored while row security on the table is off. */
+  readonly disabled?: true;
 };
 
 /** A policy. Identity is `(parent, name)`. */

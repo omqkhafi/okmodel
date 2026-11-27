@@ -220,7 +220,6 @@ bunx okm pull
 ```text
 pulled 2 tables, 0 functions, 0 triggers, 0 views, 0 materialized views
 not pulled yet
-  policies: 0 — a later step writes policies
   roles: 0 — a later step writes roles and grants
   grants: 0 — a later step writes roles and grants
   default privileges: 0 — a later step writes roles and grants
@@ -230,7 +229,7 @@ not pulled yet
   rules: 0 — the catalog has no rule kind
 ```
 
-The `not pulled yet` list names what the database holds that `pull` does not write yet. Each count is how many it found. A non-zero count is something you carry over by hand.
+The `not pulled yet` list names what the database holds that `pull` does not write yet. Each count is how many it found. A non-zero count is something you carry over by hand. Policies are written into the table file as `policies()` with `sql` expressions.
 
 It wrote `schema.ts` and one file per table under `tables/`. The files below are as `pull` writes them. Column names are the database's own, so `author_id` stays `author_id`. When `oxfmt` is not on your `PATH`, `pull` prints a notice on stderr and writes the files unformatted, as shown here.
 

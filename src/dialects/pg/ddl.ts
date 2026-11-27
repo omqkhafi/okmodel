@@ -7,6 +7,7 @@
 
 import { isComposite } from "../../contracts/catalog/composite.js";
 import { isDomain } from "../../contracts/catalog/enum.js";
+import { isGeneratedPolicy } from "../../contracts/catalog/policy.js";
 import { fitIdentifier, printedIdentifier } from "../../contracts/catalog/identifier.js";
 import { identityKey } from "../../contracts/catalog/identity.js";
 import { creationOrder } from "../../contracts/catalog/document.js";
@@ -288,7 +289,13 @@ export function viewSql(object: ViewObject, schema: string, replace: boolean): s
 /** One policy statement and the planner kind that classifies it. */
 export type PolicyPlanStep = {
   readonly sql: string;
-  readonly kind: "enable-rls" | "create-policy" | "drop-policy" | "disable-rls";
+  readonly kind: "enable-rls" | "create-policy" | "alter-policy" | "drop-policy" | "disable-rls";
+};
+
+/** Whether row security is enabled and forced on a table. */
+export type RlsState = {
+  readonly enable: boolean;
+  readonly force: boolean;
 };
 
 /**
@@ -302,6 +309,9 @@ export type PolicyPlanStep = {
  * @returns Statements in apply order
  */
 export function policyCreatePlan(object: PolicyObject, schema: string): readonly PolicyPlanStep[] {
+  if (!isGeneratedPolicy(object)) {
+    return [{ sql: policySql(object, schema, "create"), kind: "create-policy" }];
+  }
   const table = qualify(schema, object.identity.parent.name);
   const name = quoteIdent(object.identity.name);
   const command = object.definition.command === "all" ? "all" : "select";
@@ -320,6 +330,81 @@ export function policyCreatePlan(object: PolicyObject, schema: string): readonly
 }
 
 /**
+ * `ALTER POLICY` for `TO`, `USING`, and `WITH CHECK`.
+ *
+ * `AS` and `FOR` are not altered here. Those drop and create the policy.
+ *
+ * @param object - Policy after the change
+ * @param schema - Concrete schema name
+ * @returns The alter statement
+ */
+export function policyAlterPlan(object: PolicyObject, schema: string): readonly PolicyPlanStep[] {
+  return [{ sql: policySql(object, schema, "alter"), kind: "alter-policy" }];
+}
+
+/**
+ * Enable, force, disable, and no-force statements for one table.
+ *
+ * Tightening is enable then force. Lowering is no-force then disable.
+ * A legacy `all` policy that already emits those statements is not passed here.
+ *
+ * @param table - SQL table name
+ * @param schema - Concrete schema name
+ * @param before - State in the previous catalog
+ * @param after - State in the next catalog
+ * @returns Statements in apply order
+ */
+export function rlsTogglePlan(
+  table: string,
+  schema: string,
+  before: RlsState,
+  after: RlsState,
+): readonly PolicyPlanStep[] {
+  const name = qualify(schema, table);
+  const steps: PolicyPlanStep[] = [];
+  if (!before.enable && after.enable) {
+    steps.push({ sql: `alter table ${name} enable row level security`, kind: "enable-rls" });
+  }
+  if (!before.force && after.force) {
+    steps.push({ sql: `alter table ${name} force row level security`, kind: "enable-rls" });
+  }
+  if (before.force && !after.force) {
+    steps.push({ sql: `alter table ${name} no force row level security`, kind: "disable-rls" });
+  }
+  if (before.enable && !after.enable) {
+    steps.push({ sql: `alter table ${name} disable row level security`, kind: "disable-rls" });
+  }
+  return steps;
+}
+
+function policySql(object: PolicyObject, schema: string, verb: "create" | "alter"): string {
+  const definition = object.definition;
+  const name = quoteIdent(object.identity.name);
+  const table = qualify(schema, object.identity.parent.name);
+  const head =
+    verb === "create"
+      ? `create policy ${name} on ${table} as ${definition.restrictive === true ? "restrictive" : "permissive"} for ${definition.command}`
+      : `alter policy ${name} on ${table}`;
+  const using = definition.checkOnly === true ? "" : ` using (${definition.expression})`;
+  const check =
+    definition.check !== undefined
+      ? ` with check (${definition.check})`
+      : definition.checkOnly === true
+        ? ` with check (${definition.expression})`
+        : "";
+  return `${head}${roleClause(definition.roles)}${using}${check}`;
+}
+
+function roleClause(roles: readonly string[] | undefined): string {
+  if (roles === undefined || roles.length === 0) return " to public";
+  return ` to ${roles.map(roleSql).join(", ")}`;
+}
+
+function roleSql(name: string): string {
+  return name.toLowerCase() === "public" ? "public" : quoteIdent(name);
+}
+
+/**
  * `DROP POLICY`, and for the `all` command policy `NO FORCE` and `DISABLE`.
  *
  * @param object - Policy to drop
@@ -332,7 +417,7 @@ export function policyDropPlan(object: PolicyObject, schema: string): readonly P
     sql: `drop policy ${quoteIdent(object.identity.name)} on ${table}`,
     kind: "drop-policy",
   };
-  if (object.definition.command !== "all") return [drop];
+  if (!isGeneratedPolicy(object) || object.definition.command !== "all") return [drop];
   return [
     drop,
     { sql: `alter table ${table} no force row level security`, kind: "disable-rls" },

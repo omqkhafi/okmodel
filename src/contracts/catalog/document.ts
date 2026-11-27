@@ -474,6 +474,10 @@ function rewriteTable(
     owner: object.owner,
     provenance: object.provenance,
     dependencies,
+    ...(object.comment !== undefined ? { comment: object.comment } : {}),
+    ...(object.definition.rowSecurity === undefined
+      ? {}
+      : { rowSecurity: object.definition.rowSecurity }),
     ...(partition === undefined
       ? {}
       : {
@@ -928,6 +932,20 @@ function rewriteTableName(
         local,
       ),
       force: object.definition.force,
+      ...(object.definition.restrictive === true ? { restrictive: true as const } : {}),
+      ...(object.definition.roles !== undefined ? { roles: object.definition.roles } : {}),
+      ...(object.definition.check !== undefined
+        ? {
+            check: rewriteExpr(
+              object.definition.check,
+              { from: change.from, to: change.to },
+              local,
+            ),
+          }
+        : {}),
+      ...(object.definition.checkOnly === true ? { checkOnly: true as const } : {}),
+      ...(object.definition.disabled === true ? { disabled: true as const } : {}),
+      ...(object.comment !== undefined ? { comment: object.comment } : {}),
       owner: object.owner,
       provenance: object.provenance,
       dependencies,
@@ -1094,10 +1112,16 @@ function definitionToJson(object: CatalogObject): Json {
   switch (object.kind) {
     case "table": {
       const partition = object.definition.partition;
-      if (partition === undefined) {
-        return {};
-      }
-      return { partition: { columns: partition.columns, method: partition.method } };
+      const rowSecurity = object.definition.rowSecurity;
+      if (partition === undefined && rowSecurity === undefined) return {};
+      return {
+        ...(partition === undefined
+          ? {}
+          : { partition: { columns: partition.columns, method: partition.method } }),
+        ...(rowSecurity === undefined
+          ? {}
+          : { rowSecurity: { enable: rowSecurity.enable, force: rowSecurity.force } }),
+      };
     }
     case "column": {
       const definition = object.definition;
@@ -1250,6 +1274,11 @@ function definitionToJson(object: CatalogObject): Json {
         command: object.definition.command,
         expression: object.definition.expression,
         force: object.definition.force,
+        ...(object.definition.restrictive === true ? { restrictive: true } : {}),
+        ...(object.definition.roles !== undefined ? { roles: [...object.definition.roles] } : {}),
+        ...(object.definition.check !== undefined ? { check: object.definition.check } : {}),
+        ...(object.definition.checkOnly === true ? { checkOnly: true } : {}),
+        ...(object.definition.disabled === true ? { disabled: true } : {}),
       };
     case "materializedView":
       return {
@@ -1366,7 +1395,7 @@ function parseTable(
   if (identity.kind !== "table") {
     catalogError("OKM1020", `Table object identity is ${identity.kind}, not a table.`);
   }
-  rejectUnknown(definition, ["partition"], "table definition");
+  rejectUnknown(definition, ["partition", "rowSecurity"], "table definition");
   const partition = definition.partition;
   return table({
     namespace: identity.namespace,
@@ -1375,6 +1404,9 @@ function parseTable(
     provenance,
     dependencies,
     ...(partition === undefined ? {} : { partition: parsePartition(partition) }),
+    ...(definition.rowSecurity === undefined
+      ? {}
+      : { rowSecurity: parseRowSecurity(definition.rowSecurity) }),
   });
 }
 
@@ -1914,21 +1946,51 @@ function parsePolicy(record: Record<string, unknown>): CatalogObject {
   const provenance = parseProvenance(record.provenance);
   const dependencies = parseDependencies(record.dependencies);
   const definition = requireRecord(record.definition, "definition");
-  rejectUnknown(definition, ["command", "expression", "force"], "policy definition");
+  rejectUnknown(
+    definition,
+    ["check", "checkOnly", "command", "disabled", "expression", "force", "restrictive", "roles"],
+    "policy definition",
+  );
   const command = requireString(definition.command, "policy command");
-  if (command !== "all" && command !== "select") {
+  if (
+    command !== "all" &&
+    command !== "select" &&
+    command !== "insert" &&
+    command !== "update" &&
+    command !== "delete"
+  ) {
     catalogError("OKM1020", `Policy ${identity.name} command is not supported.`);
   }
-  return policyObject({
-    parent: identity.parent,
-    name: identity.name,
-    command,
-    expression: requireString(definition.expression, "policy expression"),
-    force: requireBoolean(definition.force, "policy force"),
-    owner,
-    provenance,
-    dependencies,
-  });
+  const roles = definition.roles;
+  return withParsedComment(
+    policyObject({
+      parent: identity.parent,
+      name: identity.name,
+      command,
+      expression: requireString(definition.expression, "policy expression"),
+      force: requireBoolean(definition.force, "policy force"),
+      ...(definition.restrictive === true ? { restrictive: true as const } : {}),
+      ...(roles === undefined ? {} : { roles: requireStrings(roles, "policy roles") }),
+      ...(definition.check === undefined
+        ? {}
+        : { check: requireString(definition.check, "policy check") }),
+      ...(definition.checkOnly === true ? { checkOnly: true as const } : {}),
+      ...(definition.disabled === true ? { disabled: true as const } : {}),
+      owner,
+      provenance,
+      dependencies,
+    }),
+    record.comment,
+  );
+}
+
+function parseRowSecurity(value: unknown): { readonly enable: boolean; readonly force: boolean } {
+  const record = requireRecord(value, "row security");
+  rejectUnknown(record, ["enable", "force"], "row security");
+  return {
+    enable: requireBoolean(record.enable, "row security enable"),
+    force: requireBoolean(record.force, "row security force"),
+  };
 }
 
 function parseViewColumns(value: unknown): { readonly name: string; readonly dataType: string }[] {

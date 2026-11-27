@@ -5,7 +5,7 @@
  * carries the same class, kind, and table list.
  */
 
-import type { StepKind } from "./step-class.js";
+import type { MigrationClass, StepKind } from "./step-class.js";
 import { classOf } from "./step-class.js";
 import type { DdlStep, LoweredStep } from "./ddl.js";
 
@@ -21,7 +21,8 @@ const TABLE_PREFIX =
  * @param lock - Lock comment
  * @param transactional - Whether the step can share a transaction
  * @param extraTables - Tables the SQL does not name
- * @returns The step, with the class of `kind`
+ * @param migrationClass - Class for this statement. Omitted uses the kind's class
+ * @returns The step, with the class of `kind` unless `migrationClass` is set
  */
 export function ddlStep(
   sql: string,
@@ -30,12 +31,13 @@ export function ddlStep(
   lock: string,
   transactional = true,
   extraTables?: readonly string[],
+  migrationClass?: MigrationClass,
 ): LoweredStep {
   const tables = touchedTables(sql, lock, extraTables);
   return {
     sql,
     kind,
-    class: classOf(kind),
+    class: migrationClass ?? classOf(kind),
     action,
     lock,
     transactional,
