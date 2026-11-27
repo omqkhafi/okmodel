@@ -49,6 +49,8 @@ import {
 } from "./column.js";
 import { clearTypeGrants, rememberTypeGrant } from "./composite-mark.js";
 import { holdGenerated } from "./generated-hold.js";
+import { rememberGrants } from "./role/grant-slot.js";
+import { readSeriesCompiler } from "./series-slot.js";
 import {
   formatPostgresFloor,
   isPostgresMajor,
@@ -178,6 +180,14 @@ export type SchemaInput<TTables extends readonly AnyTable[], TTime extends TimeM
   readonly tenancy?: ColumnTenancy;
   readonly validation?: unknown;
   readonly extensions?: unknown;
+  /**
+   * Sequences declared once and used by columns, or owned by no column.
+   *
+   * A column-owned series does not need to be listed. Identity sequences are not listed.
+   */
+  readonly sequences?: readonly {
+    contribute(namespace: ReturnType<typeof staticNamespace>, objects: CatalogObject[]): void;
+  }[];
   readonly functions?: unknown;
   readonly triggers?: unknown;
   readonly views?: unknown;
@@ -354,6 +364,7 @@ const SCHEMA_KNOWN = new Set([
   "functions",
   "minPostgres",
   "requires",
+  "sequences",
   "tables",
   "tenancy",
   "traits",
@@ -707,6 +718,10 @@ export function schema<const TTables extends readonly AnyTable[]>(
         }
         contributeListed(config.triggers, objects, names);
         contributeListed(config.views, objects, names);
+        if (Array.isArray(config.sequences)) {
+          for (const item of config.sequences) item.contribute(namespace, objects);
+        }
+        rememberSequenceGrants(prepared);
         if (tablesWantPolicies(config.tables)) {
           const compile = readPolicyCompiler();
           if (compile === undefined) {
@@ -1141,12 +1156,14 @@ function compileTable(
       ? { origin: "file", name: item.name }
       : { origin: "file", name: item.name, source: item.source };
   const parent: ObjectRef = { namespace, name: sqlName };
+  const tableDependencies: ObjectIdentity[] = [];
   stage(jobs, () =>
     catalogTable({
       namespace,
       name: sqlName,
       provenance,
       ...(options?.comment !== undefined ? { comment: options.comment } : {}),
+      ...(tableDependencies.length > 0 ? { dependencies: tableDependencies } : {}),
     }),
   );
 
@@ -1186,6 +1203,7 @@ function compileTable(
             ...(provenance.source !== undefined ? { source: provenance.source } : {}),
           };
     const identity = column.state.identity;
+    const draft = column.state.seriesDraft;
     if (identity !== undefined) {
       const seqName = identitySequenceName(sqlName, columnSql);
       jobs.push((objects) => {
@@ -1193,7 +1211,6 @@ function compileTable(
         const seq = sequence({
           namespace,
           name: seqName,
-          // The sequence type is the column type. A bigint identity stays a bigint.
           dataType:
             column.state.baseType === "integer" || column.state.baseType === "smallint"
               ? column.state.baseType
@@ -1201,6 +1218,12 @@ function compileTable(
           provenance,
           dependencies: [{ kind: "table", namespace, name: sqlName }],
           ...(identity.comment !== undefined ? { comment: identity.comment } : {}),
+          ...(identity.start !== undefined ? { start: identity.start } : {}),
+          ...(identity.increment !== undefined ? { increment: identity.increment } : {}),
+          ...(identity.min !== undefined ? { min: identity.min } : {}),
+          ...(identity.max !== undefined ? { max: identity.max } : {}),
+          ...(identity.cache !== undefined ? { cache: identity.cache } : {}),
+          ...(identity.cycle === true ? { cycle: true } : {}),
         });
         objects.push(seq);
         pushCompiled(objects, column, {
@@ -1208,6 +1231,39 @@ function compileTable(
           name: columnSql,
           provenance: columnProvenance,
           dependencies: [seq.identity],
+        });
+      });
+    } else if (draft !== undefined) {
+      jobs.push((objects) => {
+        bindGenerated(column, handles, byField);
+        const compile = readSeriesCompiler();
+        if (compile === undefined) {
+          definition(
+            "Import sequence from okmodel/seq before schema() when a column uses sequence().",
+          );
+        }
+        compile({
+          tableName: item.name,
+          sqlName,
+          columnSql,
+          column,
+          draft,
+          options,
+          namespace,
+          provenance,
+          parent,
+          columnProvenance,
+          columns: byField,
+          handles,
+          tableDependencies,
+          objects,
+          finish: (dependencies) =>
+            pushCompiled(objects, column, {
+              parent,
+              name: columnSql,
+              provenance: columnProvenance,
+              ...(dependencies !== undefined ? { dependencies } : {}),
+            }),
         });
       });
     } else {
@@ -1326,6 +1382,37 @@ function compileTable(
     handles,
     ...archiveModel(item),
   };
+}
+
+function rememberSequenceGrants(prepared: readonly Prepared[]): void {
+  for (const item of prepared) {
+    for (const column of item.columns) {
+      const grants = column.state.identity?.grants;
+      if (grants === undefined) continue;
+      rememberGrants(
+        "sequence",
+        "public",
+        identitySequenceName(item.sqlName, column.sqlName),
+        grants,
+      );
+    }
+  }
+  for (const item of prepared) {
+    for (const column of item.columns) {
+      const draft = column.state.seriesDraft;
+      if (
+        draft?.grants === undefined ||
+        draft.reset !== undefined ||
+        draft.when !== undefined ||
+        (draft.scope?.length ?? 0) > 0
+      ) {
+        continue;
+      }
+      const name =
+        draft.name.length > 0 ? draft.name : identitySequenceName(item.sqlName, column.sqlName);
+      rememberGrants("sequence", "public", name, draft.grants);
+    }
+  }
 }
 
 function bindGenerated(

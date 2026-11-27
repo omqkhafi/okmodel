@@ -28,6 +28,7 @@ const RANGE_TYPES = new Set([
 export function featuresUsed(catalog: Catalog): readonly string[] {
   const used = new Set<string>();
   for (const object of catalog.objects) note(used, object);
+  noteStandaloneSequences(used, catalog);
   return [...used].sort();
 }
 
@@ -43,7 +44,28 @@ function note(used: Set<string>, object: CatalogObject): void {
   }
   if (object.kind === "column") {
     const definition = object.definition;
-    if (definition.identity !== undefined) used.add("schema.identity");
+    if (definition.identity !== undefined) {
+      used.add("schema.identity");
+      const identity = definition.identity;
+      if (
+        identity.always === false ||
+        identity.start !== undefined ||
+        identity.increment !== undefined ||
+        identity.min !== undefined ||
+        identity.max !== undefined ||
+        identity.cache !== undefined ||
+        identity.cycle === true
+      ) {
+        used.add("identity.options");
+      }
+    }
+    if (definition.defaultExpression?.includes("nextval(")) used.add("sequence.native");
+    if (definition.series !== undefined) {
+      used.add("sequence.counter");
+      if (definition.series.reset !== undefined) used.add("sequence.reset");
+      if (definition.series.when !== undefined) used.add("sequence.when");
+    }
+    if (definition.generated?.expression.includes("lpad(")) used.add("sequence.numbered");
     if (scalarType(definition.dataType) === "uuid") used.add("type.uuid");
     if (isUuidV7Default(definition.defaultExpression)) used.add("type.uuidv7");
     if (definition.dataType === "jsonb") used.add("type.jsonb");
@@ -121,11 +143,31 @@ function note(used: Set<string>, object: CatalogObject): void {
   if (object.kind === "role" || object.kind === "grant" || object.kind === "defaultPrivilege") {
     used.add("roles.grants");
   }
+  if (object.kind === "grant" && object.identity.object.kind === "sequence") {
+    used.add("grants.sequence");
+  }
   if (
     (object.kind === "view" || object.kind === "materializedView" || object.kind === "sequence") &&
     moved(object.identity.namespace)
   ) {
     used.add("namespace");
+  }
+}
+
+function noteStandaloneSequences(used: Set<string>, catalog: Catalog): void {
+  const identityNames = new Set<string>();
+  for (const object of catalog.objects) {
+    if (object.kind === "column" && object.definition.identity !== undefined) {
+      identityNames.add(`${object.identity.parent.name}_${object.identity.name}_seq`);
+    }
+    if (object.kind === "column" && object.definition.defaultExpression?.includes("nextval(")) {
+      used.add("sequence.native");
+    }
+  }
+  for (const object of catalog.objects) {
+    if (object.kind === "sequence" && !identityNames.has(object.identity.name)) {
+      used.add("sequence.native");
+    }
   }
 }
 

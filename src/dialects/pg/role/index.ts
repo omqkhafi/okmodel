@@ -459,6 +459,9 @@ function objectGrants(
     return readGrants("function", namespace, object.identity.name);
   }
   if (object.kind === "type") return readTypeGrant(namespace, object.identity.name);
+  if (object.kind === "sequence") {
+    return readGrants("sequence", namespace, object.identity.name);
+  }
   return undefined;
 }
 

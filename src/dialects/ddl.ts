@@ -237,6 +237,8 @@ const KIND_SQL: Readonly<Record<StepKind, RegExp>> = {
   "drop-index": /^drop index\b/,
   "rename-index": /^alter index\b.*\brename to\b/,
   "create-sequence": /^create sequence\b/,
+  "alter-sequence": /^alter sequence\b/,
+  "seed-counter": /^insert into\b.*\bokm_ctr_/,
   "drop-sequence": /^drop sequence\b/,
   "create-enum": /^create type\b.*\bas enum\b/,
   "recreate-enum": /^create type\b.*\bas enum\b/,

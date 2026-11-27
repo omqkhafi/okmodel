@@ -23,6 +23,7 @@ import type {
   IndexObject,
   PolicyObject,
   SequenceObject,
+  SeriesReset,
   TableObject,
 } from "../../contracts/catalog/types.js";
 import {
@@ -196,6 +197,10 @@ export function emitPull(
   const usedExports = new Set<string>();
   const identitySequences = new Set<string>();
   const tableExports = new Map<string, string>();
+  const sequences = new Map<string, SequenceObject>();
+  for (const object of source.objects) {
+    if (object.kind === "sequence") sequences.set(object.identity.name, object);
+  }
 
   for (const table of tables) {
     if (table.definition.partition !== undefined) continue;
@@ -236,6 +241,7 @@ export function emitPull(
       pulledColumns,
       casing,
       renames,
+      sequences,
     );
     if (planned === undefined) continue;
     if (planned.identitySequence !== undefined) identitySequences.add(planned.identitySequence);
@@ -246,9 +252,12 @@ export function emitPull(
   }
 
   const skippedKeys = new Set(skipped.map((item) => item.key));
+  const referenced = referencedSequences(source);
+  const sequenceCalls: string[] = [];
   for (const object of source.objects) {
     if (object.kind !== "sequence" || skippedKeys.has(identityKey(object.identity))) continue;
-    if (identitySequences.has(object.identity.name)) continue;
+    if (identitySequences.has(object.identity.name) || referenced.has(object.identity.name))
+      continue;
     const parent = object.dependencies.find((edge) => edge.target.kind === "table");
     const parentName =
       parent !== undefined && parent.target.kind === "table" ? parent.target.name : "";
@@ -258,15 +267,19 @@ export function emitPull(
         (table) => table.identity.name === parentName && table.definition.partition === undefined,
       );
     if (kept) continue;
-    skipped.push(
-      skip(
-        object,
-        "sequence",
-        object.identity.name,
-        "table() has no standalone sequence. An identity column writes its own",
-        statementFor(statements, object.identity.name),
-      ),
-    );
+    if (parentName.length > 0) {
+      skipped.push(
+        skip(
+          object,
+          "sequence",
+          object.identity.name,
+          "table() has no standalone sequence. An identity column writes its own",
+          statementFor(statements, object.identity.name),
+        ),
+      );
+      continue;
+    }
+    sequenceCalls.push(sequenceObjectCall(object));
   }
 
   const plan = review?.plan ?? planRoutines(source, tableExports);
@@ -312,6 +325,7 @@ export function emitPull(
       importExt,
       casing,
       needsSession,
+      sequenceCalls,
     ),
   });
   files.sort((left, right) => compare(left.path, right.path));
@@ -465,6 +479,7 @@ function planTable(
   pulledColumns: ReadonlyMap<string, ReadonlySet<string>>,
   casing: Casing | undefined,
   renames: string[],
+  sequences: ReadonlyMap<string, SequenceObject>,
 ): PlannedTable | undefined {
   const bag = byParent.get(table.identity.name) ?? {
     columns: [],
@@ -496,23 +511,32 @@ function planTable(
         (item) =>
           item.identity.name === identitySequence(table.identity.name, column.identity.name),
       );
-      const sequenceComment =
-        owned?.comment === undefined ? "" : `, comment: ${JSON.stringify(owned.comment)}`;
+      const options = identityOptionText(column, owned);
       const call =
         column.definition.dataType === "integer"
-          ? sequenceComment.length === 0
+          ? options.length === 0
             ? "t.integerIdentity()"
-            : `t.integerIdentity({${sequenceComment.slice(2)}})`
-          : sequenceComment.length === 0
+            : `t.integerIdentity({ ${options} })`
+          : options.length === 0
             ? "t.identity()"
-            : `t.identity({${sequenceComment.slice(2)}})`;
+            : `t.identity({ ${options} })`;
       const columnComment =
         column.comment === undefined ? "" : `.comment(${JSON.stringify(column.comment)})`;
       columnLines.push(`    ${jsKey(field)}: ${call}${columnComment}${renamed},`);
       emitted.add(column.identity.name);
       continue;
     }
-    const built = columnSource(column, field, enums, domains, composites, casing, label, renames);
+    const built = columnSource(
+      column,
+      field,
+      enums,
+      domains,
+      composites,
+      casing,
+      label,
+      renames,
+      sequences,
+    );
     if (built === undefined) {
       skipped.push(
         skip(
@@ -761,12 +785,12 @@ function planTable(
     const owned =
       identityColumn !== undefined &&
       sequence.identity.name ===
-        identitySequence(table.identity.name, identityColumn.identity.name) &&
-      sequence.definition.dataType === identityColumn.definition.dataType &&
-      sequence.definition.start === "1" &&
-      sequence.definition.increment === "1" &&
-      sequence.definition.cycle === false;
+        identitySequence(table.identity.name, identityColumn.identity.name);
     if (owned) continue;
+    const used = bag.columns.some(
+      (column) => nextvalTarget(column.definition.defaultExpression) === sequence.identity.name,
+    );
+    if (used) continue;
     skipped.push(
       skip(
         sequence,
@@ -781,6 +805,9 @@ function planTable(
   const columnText = rewriteForeign(columnLines, foreign);
   const needsTable = true;
   const imports = importLine(needsTable, needsIndex, needsSql);
+  const sequenceImport = columnLines.some((line) => line.includes("sequence("))
+    ? '\nimport { sequence } from "okmodel/seq";'
+    : "";
   const optionBlock =
     options.length === 0
       ? ""
@@ -788,7 +815,7 @@ function planTable(
   {
 ${options.join("\n")}
   }`;
-  const text = `${imports}
+  const text = `${imports}${sequenceImport}
 
 export const ${exportName} = table(
   ${JSON.stringify(exportName === table.identity.name ? table.identity.name : exportName)},
@@ -921,8 +948,28 @@ function columnSource(
   casing: Casing | undefined,
   label: string,
   renames: string[],
+  sequences: ReadonlyMap<string, SequenceObject> = new Map(),
 ): string | undefined {
   if (column.definition.identity !== undefined) return undefined;
+  const series = column.definition.series;
+  const nextval = nextvalTarget(column.definition.defaultExpression);
+  if (series !== undefined || nextval !== undefined) {
+    const found = nextval === undefined ? undefined : sequences.get(nextval);
+    let call =
+      series !== undefined
+        ? `${seriesCall(series)}.column(${seriesColumnOptions(series)})`
+        : `${found === undefined ? `sequence(${JSON.stringify(nextval)})` : sequenceObjectCall(found)}.column()`;
+    call += sqlNameCall(casing, field, column.identity.name, label, renames);
+    if (column.definition.nullable || column.definition.unvalidatedNotNull !== undefined) {
+      call += ".nullable()";
+    }
+    if (column.definition.generated !== undefined) {
+      const stored = column.definition.generated.stored ? "" : ", { stored: false }";
+      call += `.generated((columns) => sql\`${sqlBody(column.definition.generated.expression)}\`${stored})`;
+    }
+    if (column.comment !== undefined) call += `.comment(${JSON.stringify(column.comment)})`;
+    return call;
+  }
   const scalar = column.definition.dataType.replace(/(?:\[\])+$/, "");
   const labels = enums.get(column.definition.dataType);
   const domain = domains.get(column.definition.dataType);
@@ -1279,6 +1326,114 @@ function identitySequence(table: string, column: string): string {
   return `${table}_${column}_seq`;
 }
 
+function identityOptionText(column: ColumnObject, owned: SequenceObject | undefined): string {
+  const identity = column.definition.identity;
+  const parts: string[] = [];
+  if (identity?.always === false) parts.push('generated: "byDefault"');
+  if (identity?.start !== undefined && identity.start !== "1")
+    parts.push(`start: ${identity.start}`);
+  if (identity?.increment !== undefined && identity.increment !== "1") {
+    parts.push(`increment: ${identity.increment}`);
+  }
+  if (identity?.min !== undefined) parts.push(`min: ${identity.min}`);
+  if (identity?.max !== undefined) parts.push(`max: ${identity.max}`);
+  if (identity?.cache !== undefined) parts.push(`cache: ${identity.cache}`);
+  if (identity?.cycle === true) parts.push("cycle: true");
+  if (owned?.comment !== undefined) parts.push(`comment: ${JSON.stringify(owned.comment)}`);
+  return parts.join(", ");
+}
+
+function referencedSequences(source: Catalog): Set<string> {
+  const names = new Set<string>();
+  for (const object of source.objects) {
+    if (object.kind !== "column") continue;
+    const name = nextvalTarget(object.definition.defaultExpression);
+    if (name !== undefined) names.add(name);
+  }
+  return names;
+}
+
+function nextvalTarget(expression: string | undefined): string | undefined {
+  if (expression === undefined || !expression.startsWith("nextval('")) return undefined;
+  return /nextval\('(?:[\w]+\.)?([^']+)'/.exec(expression)?.[1];
+}
+
+function sequenceObjectCall(object: SequenceObject): string {
+  return sequenceCall(object.identity.name, {
+    as: object.definition.dataType,
+    start: object.definition.start,
+    increment: object.definition.increment,
+    ...(object.definition.min !== undefined ? { min: object.definition.min } : {}),
+    ...(object.definition.max !== undefined ? { max: object.definition.max } : {}),
+    ...(object.definition.cache !== undefined ? { cache: object.definition.cache } : {}),
+    cycle: object.definition.cycle,
+    ...(object.comment !== undefined ? { comment: object.comment } : {}),
+  });
+}
+
+function seriesCall(series: ColumnObject["definition"]["series"]): string {
+  if (series === undefined) return "sequence()";
+  return sequenceCall(series.name, {
+    as: series.as,
+    start: series.start,
+    increment: series.increment,
+    ...(series.min !== undefined ? { min: series.min } : {}),
+    ...(series.max !== undefined ? { max: series.max } : {}),
+    ...(series.cache !== undefined ? { cache: series.cache } : {}),
+    cycle: series.cycle === true,
+    ...(series.reset !== undefined ? { reset: series.reset } : {}),
+    ...(series.at !== undefined ? { at: series.at } : {}),
+    ...(series.comment !== undefined ? { comment: series.comment } : {}),
+  });
+}
+
+function sequenceCall(
+  name: string,
+  options: {
+    readonly as: string;
+    readonly start: string;
+    readonly increment: string;
+    readonly min?: string;
+    readonly max?: string;
+    readonly cache?: string;
+    readonly cycle: boolean;
+    readonly reset?: SeriesReset;
+    readonly at?: string;
+    readonly comment?: string;
+  },
+): string {
+  const parts: string[] = [];
+  if (options.as !== "bigint") parts.push(`as: ${JSON.stringify(options.as)}`);
+  if (options.start !== "1") parts.push(`start: ${options.start}`);
+  if (options.increment !== "1") parts.push(`increment: ${options.increment}`);
+  if (options.min !== undefined) parts.push(`min: ${options.min}`);
+  if (options.max !== undefined) parts.push(`max: ${options.max}`);
+  if (options.cache !== undefined) parts.push(`cache: ${options.cache}`);
+  if (options.cycle) parts.push("cycle: true");
+  if (typeof options.reset === "string") parts.push(`reset: ${JSON.stringify(options.reset)}`);
+  else if (options.reset !== undefined) {
+    parts.push(
+      `reset: { every: ${String(options.reset.every)}, unit: ${JSON.stringify(options.reset.unit)}, from: ${JSON.stringify(options.reset.from)} }`,
+    );
+  }
+  if (options.at !== undefined) parts.push(`at: ${JSON.stringify(options.at)}`);
+  if (options.comment !== undefined) parts.push(`comment: ${JSON.stringify(options.comment)}`);
+  const body = parts.length === 0 ? "" : `, { ${parts.join(", ")} }`;
+  return `sequence(${JSON.stringify(name)}${body})`;
+}
+
+function seriesColumnOptions(series: NonNullable<ColumnObject["definition"]["series"]>): string {
+  const parts: string[] = [];
+  if (series.by !== undefined) parts.push(`by: ${JSON.stringify(series.by)}`);
+  if (series.scope !== undefined && series.scope.length > 0) {
+    parts.push(`scope: [${series.scope.map((item) => JSON.stringify(item.name)).join(", ")}]`);
+  }
+  if (series.when !== undefined)
+    parts.push(`when: () => sql\`${series.when.replaceAll("`", "\\`")}\``);
+  if (series.moves === "renumber") parts.push('moves: "renumber"');
+  return parts.length === 0 ? "" : `{ ${parts.join(", ")} }`;
+}
+
 function schemaText(
   schemaFile: string,
   imports: readonly { readonly name: string; readonly file: string }[],
@@ -1294,12 +1449,14 @@ function schemaText(
   importExt: PullImportExt,
   casing: Casing | undefined,
   needsSession: boolean,
+  sequenceCalls: readonly string[] = [],
 ): string {
   const pgNames = ["schema"];
   if (routines.views.length > 0) pgNames.push("t");
   if (routines.needsIndex) pgNames.push("index");
   pgNames.sort();
   const lines = [`import { ${pgNames.join(", ")} } from "okmodel/pg";`];
+  if (sequenceCalls.length > 0) lines.push('import { sequence } from "okmodel/seq";');
   if (needsSession) lines.push('import "okmodel/policy";');
   if (extensions.length > 0) lines.push('import { extension } from "okmodel/ext";');
   for (const line of routines.imports) lines.push(line);
@@ -1334,10 +1491,17 @@ ${extensions.map((call) => `    ${call},`).join("\n")}
       : `,
   views: [${routines.views.join(", ")}]`;
   const body = routines.body.length === 0 ? "" : `\n${routines.body}`;
+  const sequenceBlock =
+    sequenceCalls.length === 0
+      ? ""
+      : `,
+  sequences: [
+${sequenceCalls.map((call) => `    ${call},`).join("\n")}
+  ]`;
   return `${lines.join("\n")}
 ${body}
 export default schema({
-  tables: [${tables}]${casingBlock}${extensionBlock}${functionBlock}${triggerBlock}${viewBlock},
+  tables: [${tables}]${casingBlock}${extensionBlock}${functionBlock}${triggerBlock}${viewBlock}${sequenceBlock},
 });
 `;
 }

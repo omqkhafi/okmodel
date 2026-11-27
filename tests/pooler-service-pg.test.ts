@@ -26,10 +26,13 @@ import { open as openBun } from "../src/adapters/pg/bunsql.js";
 import { open as openPg } from "../src/adapters/pg/nodepostgres.js";
 import { open as openPostgres } from "../src/adapters/pg/postgresjs.js";
 import type { DriverPool, ExecuteResult } from "../src/contracts/driver.js";
+import { catalog } from "../src/contracts/catalog/build.js";
 import { OkmError } from "../src/contracts/error.js";
 import { quoteIdent } from "../src/dialects/pg/ddl.js";
 import { schema, t, table } from "../src/dialects/pg/index.js";
+import { sequence } from "../src/dialects/pg/seq/index.js";
 import { primaryUrl } from "../packages/harness/src/topology.js";
+import { planMigration } from "../src/tooling/migrate/plan.js";
 import { connect } from "../src/runtime/pg/postgresjs.js";
 import { sessionSettings } from "../src/runtime/session/index.js";
 
@@ -83,6 +86,57 @@ if (POOLER_URL === undefined || POOLER_URL.length === 0) {
 
   test("set_config role through the pooler is OKM1923 for a non-member", async () => {
     await expectRoleRefused(url);
+  }, 30_000);
+
+  test("counter: two clients in one scope get different numbers", async () => {
+    const suffix = Date.now().toString(36);
+    const series = `pool${suffix}`;
+    const name = `docs_${suffix}`;
+    const tenantA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const built = schema({
+      tables: [
+        table(name, {
+          tenantId: t.uuid(),
+          number: sequence(series).column({ scope: ["tenantId"] }),
+        }),
+      ],
+    });
+    const plan = planMigration({ before: catalog([]), after: built.catalog, name: "pool" });
+    const hold = openPostgres({ url, max: 1 });
+    const other = openPostgres({ url, max: 1 });
+    try {
+      for (const step of plan.steps) await hold.execute(step.sql);
+      await hold.execute("begin");
+      await hold.execute(`insert into "${name}" ("tenantId") values ('${tenantA}')`);
+      let done = false;
+      const waiting = other
+        .execute(`insert into "${name}" ("tenantId") values ('${tenantA}') returning number`)
+        .then((result) => {
+          done = true;
+          return result.rows[0]?.[0];
+        });
+      await Bun.sleep(300);
+      expect(done).toBe(false);
+      await hold.execute("commit");
+      const second = await waiting;
+      const first = oneCell(
+        await hold.execute(
+          `select min(number)::text from "${name}" where "tenantId" = '${tenantA}'`,
+        ),
+      );
+      expect(second).not.toBe(first);
+    } finally {
+      await hold.execute(`drop table if exists "${name}" cascade`).catch(() => undefined);
+      await hold.execute(`drop table if exists "okm_ctr_${series}" cascade`).catch(() => undefined);
+      await hold
+        .execute(`drop function if exists "okm_next_${series}"(uuid, text)`)
+        .catch(() => undefined);
+      await hold
+        .execute(`drop function if exists "okm_assign_${series}_number"()`)
+        .catch(() => undefined);
+      await hold.close();
+      await other.close();
+    }
   }, 30_000);
 }
 

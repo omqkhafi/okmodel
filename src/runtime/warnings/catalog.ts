@@ -407,6 +407,62 @@ export const WARNING_RULES: readonly WarningRule[] = [
     safeAlternatives: [alt("OKM2117", "Keep the restrictive policy on insert, update, or delete.")],
     escapeHatches: [hatch("OKM2117")],
   },
+  {
+    code: "OKM2118",
+    rule: "counter-delete",
+    title: "Counter and DELETE",
+    summary:
+      "A table with a counter series also grants DELETE. Deleting a row leaves a gap. The number is not reused.",
+    fix: "Use archivable() so the row stays, or drop the DELETE grant.",
+    defaultLevel: "warn",
+    severity: "medium",
+    phase: "check",
+    evidence: "static",
+    safeAlternatives: [alt("OKM2118", "Declare the table with archivable().")],
+    escapeHatches: [hatch("OKM2118")],
+  },
+  {
+    code: "OKM2119",
+    rule: "reference-period",
+    title: "Reference omits the period",
+    summary:
+      "A number that resets has a unique index that does not include the period. The next period can collide with a previous one.",
+    fix: "Put the period in the unique index, or drop the unique index on the reference.",
+    defaultLevel: "warn",
+    severity: "medium",
+    phase: "check",
+    evidence: "static",
+    safeAlternatives: [alt("OKM2119", "Include the reset period in the unique index.")],
+    escapeHatches: [hatch("OKM2119")],
+  },
+  {
+    code: "OKM2120",
+    rule: "sequence-start",
+    title: "Sequence start changed",
+    summary:
+      "start changed on a sequence that already exists. The plan does not restart it. Existing values stay.",
+    fix: "Leave start as it is, or set the live value yourself with setval when you mean to.",
+    defaultLevel: "hint",
+    severity: "low",
+    phase: "check",
+    evidence: "static",
+    safeAlternatives: [alt("OKM2120", "Keep the previous start.")],
+    escapeHatches: [hatch("OKM2120")],
+  },
+  {
+    code: "OKM2123",
+    rule: "reference-year",
+    title: "Year needs a stable source",
+    summary:
+      "A generated reference takes a year from timestamptz. That expression is not immutable, so a unique index on it is refused.",
+    fix: "Use a date or timestamp column, or write at time zone with a constant zone. Do not use to_char for the reference.",
+    defaultLevel: "warn",
+    severity: "medium",
+    phase: "check",
+    evidence: "static",
+    safeAlternatives: [alt("OKM2123", "Take the year from date or timestamp, or at time zone.")],
+    escapeHatches: [hatch("OKM2123")],
+  },
 ];
 
 /**

@@ -276,7 +276,22 @@ export type ColumnDefinition = {
   readonly dataType: string;
   readonly nullable: boolean;
   readonly defaultExpression?: string;
-  readonly identity?: { readonly always: boolean };
+  readonly identity?: {
+    readonly always: boolean;
+    readonly start?: string;
+    readonly increment?: string;
+    readonly min?: string;
+    readonly max?: string;
+    readonly cache?: string;
+    readonly cycle?: boolean;
+  };
+  /**
+   * Counter series for a number people see.
+   *
+   * Absent on a native sequence and on every column that is not one.
+   * A schema that does not use it keeps the previous column hash.
+   */
+  readonly series?: SeriesDefinition;
   readonly generated?: { readonly stored: boolean; readonly expression: string };
   /**
    * Collation name, such as `C`.
@@ -453,12 +468,54 @@ export type CompositeDefinition = {
 /** A catalog type: an enum, a domain, or a composite. */
 export type TypeDefinition = EnumDefinition | DomainDefinition | CompositeDefinition;
 
+/** How a counter series starts again. A string is one calendar unit. */
+export type SeriesReset =
+  | "day"
+  | "week"
+  | "month"
+  | "quarter"
+  | "year"
+  | {
+      readonly every: number;
+      readonly unit: "day" | "week" | "month" | "quarter" | "year";
+      readonly from: string;
+    };
+
+/**
+ * One counter series, stored on the column that shows the number.
+ *
+ * `counter` is always true. A native sequence is a sequence object instead.
+ */
+export type SeriesDefinition = {
+  readonly name: string;
+  readonly as: "smallint" | "integer" | "bigint";
+  readonly start: string;
+  readonly increment: string;
+  readonly counter: true;
+  readonly min?: string;
+  readonly max?: string;
+  readonly cache?: string;
+  readonly cycle?: boolean;
+  readonly reset?: SeriesReset;
+  readonly at?: string;
+  readonly by?: string;
+  readonly byType?: string;
+  readonly scope?: readonly { readonly name: string; readonly type: string }[];
+  readonly when?: string;
+  readonly moves?: "renumber";
+  readonly comment?: string;
+};
+
 /** Sequence definition. Start and increment are decimal integers. */
 export type SequenceDefinition = {
   readonly dataType: "smallint" | "integer" | "bigint";
   readonly start: string;
   readonly increment: string;
   readonly cycle: boolean;
+  /** Present only when it is not the PostgreSQL default for this increment. */
+  readonly min?: string;
+  readonly max?: string;
+  readonly cache?: string;
 };
 
 /** Shared fields on every catalog object. */

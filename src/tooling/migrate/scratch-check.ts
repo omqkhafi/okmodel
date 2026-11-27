@@ -146,7 +146,8 @@ function refused(error: unknown, statement: string): ScratchVerdict {
 
 /** What the usual refusals mean, so the error says more than the server does. */
 const FIX: Readonly<Record<string, string>> = {
-  "42P17": "Use only immutable functions here: now(), concat(), and to_char(timestamptz) are not.",
+  "42P17":
+    "Use only immutable functions here. A year from timestamptz needs a date or timestamp column, or at time zone with a constant. numbered() must not use to_char.",
   "42883": "No such function or operator for those types. Cast an operand, or check the name.",
   "42703": "No such column. Check the column name.",
   "42601": "Syntax error. Check the expression.",

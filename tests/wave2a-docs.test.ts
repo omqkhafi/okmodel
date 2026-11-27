@@ -58,6 +58,7 @@ test("the doctor sample is formatReport for the documented database", () => {
     roleConfig: "not-set",
     extensions: { required: [], versions: new Map(), refusal: undefined },
     invokerGaps: [],
+    sequences: [],
   };
   const config: MigrateConfig = { schema: "./schema.ts" };
   const report = buildReport(

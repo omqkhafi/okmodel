@@ -113,6 +113,10 @@ import { assertLocked, assertSignature, staleLockCodes } from "../describe/lock.
 import { discoverRawCalls } from "../describe/scan.js";
 import { unmanagedComments } from "../migrate/drift.js";
 import { schemaAdvice } from "../migrate/schema-rules.js";
+import { sequence } from "../../dialects/pg/seq/index.js";
+import { attachRoles } from "../../dialects/pg/role/index.js";
+import { alterSequence, assertSeries } from "../../dialects/pg/seq/engine.js";
+import { sequenceFindings } from "../migrate/series-doctor.js";
 import { testingObjectConflict } from "../testing/conflict.js";
 import { refuseDataLoss } from "../migrate/data-loss.js";
 import { ledgerRequiredColumns, refuseForeignLedger } from "../migrate/ledger.js";
@@ -231,17 +235,17 @@ function thrown(code: string, bad: () => unknown, fixed: () => unknown): void {
 
 function reported(
   code: string,
-  bad: () => readonly string[],
-  fixed: () => readonly string[],
+  bad: () => readonly string[] | Promise<readonly string[]>,
+  fixed: () => readonly string[] | Promise<readonly string[]>,
 ): void {
   pairs.set(code, {
     bad: sourceOf(bad),
     fixed: sourceOf(fixed),
-    check: () => {
-      const got = bad();
+    check: async () => {
+      const got = await bad();
       if (!got.includes(code))
         throw new Error(`${code} bad reported ${got.join(", ") || "nothing"}`);
-      if (fixed().includes(code)) throw new Error(`${code} fixed still reports it`);
+      if ((await fixed()).includes(code)) throw new Error(`${code} fixed still reports it`);
     },
   });
 }
@@ -915,6 +919,7 @@ const quiet = {
   roleConfig: "not-set",
   extensions: { required: [], versions: new Map<string, string>(), refusal: undefined },
   invokerGaps: [],
+  sequences: [],
 } as const;
 
 function productionCodes(protection: "open" | "project", config: MigrateConfig): readonly string[] {
@@ -970,6 +975,261 @@ reported(
   "OKM2204",
   () => productionCodes("open", plain),
   () => productionCodes("project", plain),
+);
+
+const sequenceRoles = {
+  migration: { name: "okm_migrate" },
+  app: { name: "okm_app" },
+};
+
+reported(
+  "OKM2118",
+  () => {
+    const built = schema({
+      tables: [
+        table("docs", {
+          tenantId: t.uuid(),
+          number: sequence("doc_no").column({ scope: ["tenantId"] }),
+        }),
+      ],
+    });
+    const catalog = attachRoles(built.catalog, sequenceRoles);
+    return schemaAdvice({ catalog, model: built.model }, [], {}).advice.map((item) => item.code);
+  },
+  () => {
+    const built = schema({
+      tables: [
+        table(
+          "docs",
+          {
+            tenantId: t.uuid(),
+            number: sequence("doc_no").column({ scope: ["tenantId"] }),
+          },
+          { traits: [archivable()] },
+        ),
+      ],
+    });
+    const catalog = attachRoles(built.catalog, sequenceRoles);
+    return schemaAdvice({ catalog, model: built.model }, [], {}).advice.map((item) => item.code);
+  },
+);
+
+reported(
+  "OKM2119",
+  () => {
+    const built = schema({
+      tables: [
+        table(
+          "years",
+          {
+            issued: t.date(),
+            number: sequence("year_no", { reset: "year" }).column({ by: "issued" }),
+          },
+          { indexes: (columns) => [index(columns.number).unique()] },
+        ),
+      ],
+    });
+    return schemaAdvice({ catalog: built.catalog, model: built.model }, [], {}).advice.map(
+      (item) => item.code,
+    );
+  },
+  () => {
+    const built = schema({
+      tables: [
+        table("years", {
+          issued: t.date(),
+          number: sequence("year_no", { reset: "year" }).column({ by: "issued" }),
+        }),
+      ],
+    });
+    return schemaAdvice({ catalog: built.catalog, model: built.model }, [], {}).advice.map(
+      (item) => item.code,
+    );
+  },
+);
+
+reported(
+  "OKM2120",
+  () => {
+    const before = schema({ tables: [table("ids", { id: t.identity({ start: 1 }) })] }).catalog;
+    const after = schema({ tables: [table("ids", { id: t.identity({ start: 4 }) })] }).catalog;
+    return (planMigration({ before, after, name: "start" }).warnings ?? []).map(
+      (item) => item.code,
+    );
+  },
+  () => {
+    const after = schema({ tables: [table("ids", { id: t.identity({ start: 4 }) })] }).catalog;
+    return (planMigration({ before: after, after, name: "start" }).warnings ?? []).map(
+      (item) => item.code,
+    );
+  },
+);
+
+thrown(
+  "OKM2121",
+  () => {
+    const after = schema({
+      tables: [table("docs", { number: sequence({ min: 5, max: 1 }).column() })],
+    }).catalog;
+    assertSeries(after);
+  },
+  () => {
+    const after = schema({
+      tables: [table("docs", { number: sequence({ min: 1, max: 5 }).column() })],
+    }).catalog;
+    assertSeries(after);
+  },
+);
+
+thrown(
+  "OKM2122",
+  () => {
+    const after = schema({
+      tables: [table("docs", { number: t.bigint().defaultSql("nextval('missing'::regclass)") })],
+    }).catalog;
+    assertSeries(after);
+  },
+  () => {
+    const after = schema({
+      tables: [table("docs", { number: sequence().column() })],
+    }).catalog;
+    assertSeries(after);
+  },
+);
+
+thrown(
+  "OKM2124",
+  () => {
+    alterSequence(
+      { name: "n", definition: { dataType: "bigint", start: "1", increment: "1", cycle: false } },
+      { name: "n", definition: { dataType: "integer", start: "1", increment: "1", cycle: false } },
+      "public",
+    );
+  },
+  () => {
+    alterSequence(
+      { name: "n", definition: { dataType: "bigint", start: "1", increment: "1", cycle: false } },
+      { name: "n", definition: { dataType: "bigint", start: "1", increment: "1", cycle: false } },
+      "public",
+    );
+  },
+);
+
+reported(
+  "OKM2123",
+  () => {
+    const built = schema({
+      tables: [
+        table("years", {
+          issued: t.timestamptz(),
+          number: sequence("year_no", { reset: "year", at: "Asia/Riyadh" }).column({
+            by: "issued",
+          }),
+          reference: t.text().generated((columns) => {
+            const issued = columns.issued;
+            if (issued === undefined) return sql`0`;
+            return sql`extract(year from ${issued})`;
+          }),
+        }),
+      ],
+    });
+    return schemaAdvice({ catalog: built.catalog, model: built.model }, [], {}).advice.map(
+      (item) => item.code,
+    );
+  },
+  () => {
+    const built = schema({
+      tables: [
+        table("years", {
+          issued: t.timestamptz(),
+          number: sequence("year_no", { reset: "year", at: "Asia/Riyadh" }).column({
+            by: "issued",
+          }),
+          reference: t.text().generated((columns) => {
+            const issued = columns.issued;
+            if (issued === undefined) return sql`0`;
+            return sql`extract(year from ${issued} at time zone 'Asia/Riyadh')`;
+          }),
+        }),
+      ],
+    });
+    return schemaAdvice({ catalog: built.catalog, model: built.model }, [], {}).advice.map(
+      (item) => item.code,
+    );
+  },
+);
+
+function doctorRows(kind: "behind" | "clear" | "range" | "counter"): {
+  execute(text: string): Promise<{
+    rows: (string | null)[][];
+    count: number;
+    notices: [];
+  }>;
+} {
+  const marker =
+    '-- okm-series {"series":{"name":"doc_no","as":"bigint","start":"1","increment":"1","counter":true,"scope":[{"name":"tenant","type":"text"}]},"table":"docs","column":"number","counter":"okm_ctr_doc_no","next":"n","assign":"a","index":"i"}';
+  return {
+    async execute(text: string) {
+      if (text.includes("pg_sequence_last_value")) {
+        if (kind === "behind") {
+          return {
+            rows: [["ids_id_seq", "1", "9223372036854775807", null, "ids", "id"]],
+            count: 1,
+            notices: [],
+          };
+        }
+        if (kind === "range") {
+          return { rows: [["n_seq", "1", "100", "60", "", ""]], count: 1, notices: [] };
+        }
+        if (kind === "clear") {
+          return {
+            rows: [["ids_id_seq", "1", "9223372036854775807", "40", "ids", "id"]],
+            count: 1,
+            notices: [],
+          };
+        }
+        return { rows: [], count: 0, notices: [] };
+      }
+      if (text.includes("okm-series")) {
+        return kind === "counter"
+          ? { rows: [[marker]], count: 1, notices: [] }
+          : { rows: [], count: 0, notices: [] };
+      }
+      if (text.includes("okm_ctr_")) {
+        return { rows: [["1"]], count: 1, notices: [] };
+      }
+      if (text.includes("max(")) {
+        if (kind === "counter") return { rows: [["a", "", "5"]], count: 1, notices: [] };
+        return { rows: [["40"]], count: 1, notices: [] };
+      }
+      return { rows: [], count: 0, notices: [] };
+    },
+  };
+}
+
+async function doctorCodes(
+  kind: "behind" | "clear" | "range" | "counter",
+): Promise<readonly string[]> {
+  const findings = await sequenceFindings(doctorRows(kind), "public");
+  return findings.flatMap((item) => (item.code === undefined ? [] : [item.code]));
+}
+
+reported(
+  "OKM2205",
+  () => doctorCodes("behind"),
+  () => doctorCodes("clear"),
+);
+
+reported(
+  "OKM2206",
+  () => doctorCodes("range"),
+  () => doctorCodes("clear"),
+);
+
+reported(
+  "OKM2207",
+  () => doctorCodes("counter"),
+  () => doctorCodes("clear"),
 );
 
 reported(

@@ -328,6 +328,13 @@ async function driverFailure(promise: Promise<unknown>): Promise<DriverError> {
 
 test("refusal:schema.core", () => refuse("schema.core"));
 test("refusal:schema.identity", () => refuse("schema.identity"));
+test("refusal:identity.options", () => refuse("identity.options"));
+test("refusal:sequence.native", () => refuse("sequence.native"));
+test("refusal:sequence.counter", () => refuse("sequence.counter"));
+test("refusal:sequence.reset", () => refuse("sequence.reset"));
+test("refusal:sequence.when", () => refuse("sequence.when"));
+test("refusal:sequence.numbered", () => refuse("sequence.numbered"));
+test("refusal:grants.sequence", () => refuse("grants.sequence"));
 test("refusal:type.uuid", () => refuse("type.uuid"));
 test("refusal:type.uuidv7", () => refuse("type.uuidv7"));
 test("refusal:check.notEnforced", () => refuse("check.notEnforced"));
