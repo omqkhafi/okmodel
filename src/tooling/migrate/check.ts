@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { catalog } from "../../contracts/catalog/build.js";
 import { parseCatalog } from "../../contracts/catalog/document.js";
 import { isComposite } from "../../contracts/catalog/composite.js";
+import { isRange } from "../../contracts/catalog/range.js";
 import { isDomain } from "../../contracts/catalog/enum.js";
 import { identityKey } from "../../contracts/catalog/identity.js";
 import type {
@@ -498,6 +499,16 @@ function sameType(before: TypeDefinition, after: TypeDefinition): boolean {
   if (!beforeDomain && !afterDomain) {
     if (isComposite(before) || isComposite(after)) {
       return isComposite(before) && isComposite(after) && sameComposite(before, after);
+    }
+    if (isRange(before) || isRange(after)) {
+      return (
+        isRange(before) &&
+        isRange(after) &&
+        canonicalTypeName(before.subtype) === canonicalTypeName(after.subtype) &&
+        before.subtypeDiff === after.subtypeDiff &&
+        before.collation === after.collation &&
+        before.multirange === after.multirange
+      );
     }
     // Added labels are expand: readers of the previous catalog still see
     // every label they knew, in the same order.

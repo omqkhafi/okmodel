@@ -22,6 +22,7 @@ import {
   type BackfillSpec,
 } from "./backfill.js";
 import type { PlanStep } from "./plan.js";
+import { guardExclusion } from "./exclusion-probe.js";
 import { ensureExtensionSchemaSql, rememberExtensionSchema } from "./extensions.js";
 import { sessionFailure } from "./lost.js";
 import { migrationJournalGrants } from "./managed.js";
@@ -562,6 +563,7 @@ async function executePlanStep(
     const ensure = ensureExtensionSchemaSql(item.step.sql, run.schema ?? "public");
     if (ensure !== undefined) await connection.execute(ensure);
     assertPublicGrant(item.step.sql, run.policy.allowProtected === true);
+    await guardExclusion(connection, item.step.sql);
     await connection.execute(item.step.sql);
     await assertRevokeLanded(connection, item.step.sql);
     await rememberExtensionSchema(

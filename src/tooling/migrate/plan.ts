@@ -21,6 +21,7 @@ import {
 import { catalog } from "../../contracts/catalog/build.js";
 import { isComposite } from "../../contracts/catalog/composite.js";
 import { isDomain, sameEnumLabels } from "../../contracts/catalog/enum.js";
+import { isRange } from "../../contracts/catalog/range.js";
 import { fitIdentifier, identitySequenceName } from "../../contracts/catalog/identifier.js";
 import { identityKey, identityLabel, staticNamespace } from "../../contracts/catalog/identity.js";
 import { compareText } from "../../contracts/catalog/object.js";
@@ -89,6 +90,7 @@ import {
 } from "./generated-swap.js";
 import { sqlQuoteOpen } from "./sql-lex.js";
 import { compositeChanges } from "./composite-plan.js";
+import { rangeChanges } from "./range-plan.js";
 import { canonicalTypeName } from "./type-name.js";
 import {
   requireLowered,
@@ -696,6 +698,9 @@ export function planMigration(
         ? { confirmTypeChanges: request.confirmTypeChanges }
         : {}),
     }).flatMap((change) => take(dialect.lower(change))),
+    ...rangeChanges(beforeBy, afterBy, schema, request.confirmTypeChanges === true).flatMap(
+      (change) => take(dialect.lower(change)),
+    ),
   );
   for (const object of creationOrder(request.after)) {
     if (object.kind !== "extension") continue;
@@ -1198,6 +1203,15 @@ export function staleRenames(
       }
       continue;
     }
+    if (rename.kind === "range") {
+      const type = previous.objects.find(
+        (object) => object.kind === "type" && object.identity.name === rename.from,
+      );
+      if (type === undefined) {
+        messages.push(`Range renamedFrom ${rename.from} is not in the previous snapshot.`);
+      }
+      continue;
+    }
     if (rename.kind === "attribute") {
       const type = previous.objects.find(
         (object) => object.kind === "type" && object.identity.name === rename.type,
@@ -1231,6 +1245,10 @@ function applyRenames(source: Catalog, renames: readonly DeclaredRename[]): Cata
     current = renameTable(current, { namespace, from: rename.from, to: rename.to });
   }
   for (const rename of renames) {
+    if (rename.kind === "range") {
+      current = renameRangeType(current, rename);
+      continue;
+    }
     if (rename.kind === "attribute") {
       current = renameAttribute(current, rename);
       continue;
@@ -1241,6 +1259,50 @@ function applyRenames(source: Catalog, renames: readonly DeclaredRename[]): Cata
     current = renameColumn(current, { parent, from: rename.from, to: rename.to });
   }
   return current;
+}
+
+function renameRangeType(
+  source: Catalog,
+  rename: {
+    readonly from: string;
+    readonly to: string;
+    readonly multirangeFrom: string;
+    readonly multirangeTo: string;
+  },
+): Catalog {
+  const objects = source.objects.map((object) => {
+    if (
+      object.kind === "type" &&
+      object.identity.name === rename.from &&
+      isRange(object.definition)
+    ) {
+      return {
+        ...object,
+        identity: { ...object.identity, name: rename.to },
+        definition: { ...object.definition, multirange: rename.multirangeTo },
+      };
+    }
+    if (object.kind === "column") {
+      const dependencies = object.dependencies.map((edge) =>
+        edge.target.kind === "type" && edge.target.name === rename.from
+          ? { ...edge, target: { ...edge.target, name: rename.to } }
+          : edge,
+      );
+      const dataType =
+        object.definition.dataType === rename.from
+          ? rename.to
+          : object.definition.dataType === `${rename.from}[]`
+            ? `${rename.to}[]`
+            : object.definition.dataType === rename.multirangeFrom
+              ? rename.multirangeTo
+              : object.definition.dataType;
+      if (dataType === object.definition.dataType && dependencies === object.dependencies)
+        return object;
+      return { ...object, dependencies, definition: { ...object.definition, dataType } };
+    }
+    return object;
+  });
+  return catalog(objects);
 }
 
 function renameAttribute(
@@ -1308,6 +1370,25 @@ function renameSteps(
       ...take(dialect.lower({ op: "rename-table", schema, from: rename.from, to: rename.to })),
     );
     steps.push(...sequenceRenames(source, rename, schema, dialect));
+  }
+  for (const rename of renames) {
+    if (rename.kind !== "range") continue;
+    const exists = source.objects.some(
+      (object) => object.kind === "type" && object.identity.name === rename.from,
+    );
+    if (!exists) continue;
+    steps.push(
+      ...take(
+        dialect.lower({
+          op: "rename-type",
+          schema,
+          from: rename.from,
+          to: rename.to,
+          multirangeFrom: rename.multirangeFrom,
+          multirangeTo: rename.multirangeTo,
+        }),
+      ),
+    );
   }
   for (const rename of renames) {
     if (rename.kind !== "column") continue;
@@ -2800,6 +2881,12 @@ function forComparison(
     case "type":
       if (isDomain(object.definition)) {
         return { ...object.definition, base: canonicalTypeName(object.definition.base) };
+      }
+      if (isRange(object.definition)) {
+        return {
+          ...object.definition,
+          subtype: canonicalTypeName(object.definition.subtype),
+        };
       }
       if (isComposite(object.definition)) {
         const fields = object.definition.fields

@@ -8,6 +8,7 @@ import type { DeclaredComputed, KnownTables } from "./computed-types.js";
 import { OkmError, catalogError, throwNamed } from "../../contracts/error.js";
 import { withLocation } from "../../contracts/location.js";
 import { catalog } from "../../contracts/catalog/build.js";
+import { extensionObject } from "../../contracts/catalog/extension.js";
 import { enumType, sameEnumLabels } from "../../contracts/catalog/enum.js";
 import { staticNamespace } from "../../contracts/catalog/identity.js";
 import {
@@ -48,6 +49,8 @@ import {
   type ReferenceModifier,
 } from "./column.js";
 import { clearTypeGrants, rememberTypeGrant } from "./composite-mark.js";
+import { compileExclusion, type ExclusionSpec } from "./exclusion.js";
+import { rangeMark } from "./column-mark.js";
 import { holdGenerated } from "./generated-hold.js";
 import { rememberGrants } from "./role/grant-slot.js";
 import { readSeriesCompiler } from "./series-slot.js";
@@ -56,7 +59,9 @@ import {
   isPostgresMajor,
   minPostgresDefinition,
   parsePostgresFloor,
+  TEMPORAL_POSTGRES,
   UUIDV7_POSTGRES,
+  temporalNeedsPostgres,
   uuidv7NeedsPostgres,
   type PostgresMajor,
 } from "./floor.js";
@@ -387,7 +392,12 @@ type StoredOptions = {
   readonly comment?: string;
   readonly presets?: Readonly<Record<string, unknown>>;
   readonly unique?: Readonly<Record<string, readonly string[]>>;
-  readonly primaryKey?: readonly string[];
+  readonly primaryKey?:
+    | readonly string[]
+    | { readonly columns: readonly string[]; readonly withoutOverlaps?: true };
+  readonly exclusions?: (
+    columns: Readonly<Record<string, ColumnHandle>>,
+  ) => Readonly<Record<string, ExclusionSpec>>;
   readonly indexes?: (columns: Readonly<Record<string, ColumnHandle>>) => readonly IndexCall[];
   readonly checks?: Readonly<
     Record<
@@ -634,6 +644,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
   const accepted = acceptTables(config.tables);
   const jobs: CatalogJob[] = [];
   const prepared: Prepared[] = [];
+  const extra = { gist: false };
   const sqlNames = new Set<string>();
   const enums = new Map<string, EnumNote>();
 
@@ -649,6 +660,8 @@ export function schema<const TTables extends readonly AnyTable[]>(
       enums,
       schemaTraits,
       tenancy === undefined,
+      tenancy,
+      extra,
     );
     if (sqlNames.has(built.sqlName)) {
       catalogError(
@@ -666,7 +679,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
   const edges: FkEdge[] = [];
   for (const item of prepared) {
     compileForeignKeys(item, byName, accepted, jobs, edges);
-    compileNamedForeignKeys(item, byName, jobs);
+    compileNamedForeignKeys(item, byName, jobs, requires);
   }
   const model = {} as Record<string, TableModel>;
   const scopeFields =
@@ -718,6 +731,29 @@ export function schema<const TTables extends readonly AnyTable[]>(
         }
         contributeListed(config.triggers, objects, names);
         contributeListed(config.views, objects, names);
+        if (
+          objects.some(
+            (object) =>
+              object.kind === "constraint" &&
+              (object.definition.withoutOverlaps === true || object.definition.period === true),
+          )
+        ) {
+          refuseTemporal(requires);
+        }
+        if (
+          extra.gist &&
+          !objects.some(
+            (object) => object.kind === "extension" && object.identity.name === "btree_gist",
+          )
+        ) {
+          objects.push(
+            extensionObject({
+              name: "btree_gist",
+              schema: "public",
+              provenance: { origin: "file", name: "btree_gist" },
+            }),
+          );
+        }
         if (Array.isArray(config.sequences)) {
           for (const item of config.sequences) item.contribute(namespace, objects);
         }
@@ -1146,6 +1182,8 @@ function compileTable(
   enums: Map<string, EnumNote>,
   schemaTraits: readonly Trait[] | undefined,
   bare: boolean,
+  tenancy: ColumnTenancy | undefined,
+  extra: { gist: boolean },
 ): Prepared {
   const options = item.options as StoredOptions | undefined;
   const applied = openTableTraits(
@@ -1291,19 +1329,14 @@ function compileTable(
     const prepared: PreparedColumn = {
       field,
       sqlName: columnSql,
-      dataType: formatType(
-        column.state.typeDependency === undefined
-          ? column.state.baseType
-          : printedIdentifier(column.state.typeDependency),
-        column.state.dims,
-      ),
+      dataType: formatType(modelType(column.state), column.state.dims),
       state: column.state,
       time: column.state.time && (column.state.time.mode ?? codecs.timestamps),
     };
     columns.push(prepared);
     byField.set(field, prepared);
     bySql.set(prepared.sqlName, prepared);
-    handles[field] = columnHandle(prepared.sqlName);
+    handles[field] = columnHandle(prepared.sqlName, { dataType: prepared.dataType });
     if (column.state.primaryKey) {
       if (column.state.nullable) {
         catalogError("OKM1020", `Primary key ${item.name}.${field} is nullable.`);
@@ -1334,28 +1367,39 @@ function compileTable(
   }
 
   const optionPrimary = readPrimaryKey(item.name, options, byField);
+  if (optionPrimary.withoutOverlaps === true) refuseTemporal(requires);
   if (columnPrimary.length > 1) {
     catalogError(
       "OKM1020",
       `Table ${item.name} has more than one primary key (${columnPrimary.join(", ")}). One primary key is accepted.`,
     );
   }
-  if (columnPrimary.length > 0 && optionPrimary.length > 0) {
+  if (columnPrimary.length > 0 && optionPrimary.columns.length > 0) {
     catalogError(
       "OKM1020",
       `Table ${item.name} has two primary keys. One primary key is accepted.`,
     );
   }
-  const primary = optionPrimary.length > 0 ? optionPrimary : columnPrimary;
+  const primary = optionPrimary.columns.length > 0 ? optionPrimary.columns : columnPrimary;
   if (primary.length > 0) {
+    if (optionPrimary.withoutOverlaps === true) {
+      const last = bySql.get(primary[primary.length - 1] ?? "");
+      if (last === undefined || !isRangeDataType(last.dataType, last.state.encode)) {
+        definition(`Primary key ${item.name} WITHOUT OVERLAPS needs a range as its last column.`);
+      }
+    }
     stage(jobs, () =>
       constraint({
         parent,
         constraintKind: "primaryKey",
         columns: primary,
         provenance,
+        ...(optionPrimary.withoutOverlaps === true ? { withoutOverlaps: true as const } : {}),
       }),
     );
+  }
+  if (options?.exclusions !== undefined) {
+    compileTableExclusions(item.name, options, parent, provenance, byField, jobs, tenancy, extra);
   }
 
   if (options?.unique !== undefined) {
@@ -1517,6 +1561,10 @@ function pushCompiled(
   if (compiled.check !== undefined) objects.push(compiled.check);
   if (compiled.unique !== undefined) objects.push(compiled.unique);
   column.state.domain?.emit?.(input.parent.namespace, input.provenance, objects);
+  const ranged = rangeMark(column.state.encode);
+  if (ranged?.emit !== undefined) {
+    ranged.emit(input.parent, input.provenance, objects, input.name, column.state.nullable);
+  }
   const mark = compositeMark(column.state.encode);
   if (mark !== undefined) {
     if (column.state.generated?.stored === false) {
@@ -1789,6 +1837,7 @@ function compileNamedForeignKeys(
   item: Prepared,
   byName: ReadonlyMap<string, Prepared>,
   jobs: CatalogJob[],
+  requires: SchemaRequires | undefined,
 ): void {
   const keys = item.foreignKeys?.(item.handles);
   if (keys === undefined) return;
@@ -1808,12 +1857,31 @@ function compileNamedForeignKeys(
     const sqlOf = (found: Prepared, column: string): string =>
       (found.byField.get(column) ?? found.bySql.get(column))?.sqlName ?? column;
     const columns = spec.columns.map((column) => sqlOf(item, column));
+    if (spec.period === true) {
+      refuseTemporal(requires);
+      const local =
+        item.byField.get(spec.columns[spec.columns.length - 1] ?? "") ??
+        item.bySql.get(spec.columns[spec.columns.length - 1] ?? "");
+      const remoteName = spec.references.columns[spec.references.columns.length - 1] ?? "";
+      const remote = target.byField.get(remoteName) ?? target.bySql.get(remoteName);
+      if (
+        local === undefined ||
+        remote === undefined ||
+        !isRangeDataType(local.dataType, local.state.encode) ||
+        !isRangeDataType(remote.dataType, remote.state.encode)
+      ) {
+        definition(
+          `Foreign key ${item.tsName}.${name} PERIOD needs a range as the last column of each side.`,
+        );
+      }
+    }
     stage(jobs, () =>
       constraint({
         parent: item.parent,
         constraintKind: "foreignKey",
         name,
         columns,
+        ...(spec.period === true ? { period: true as const } : {}),
         nameKey: recoveredNameKey("foreignKey", item.parent.name, name, columns),
         provenance: item.provenance,
         ...(spec.comment !== undefined ? { comment: spec.comment } : {}),
@@ -2110,19 +2178,44 @@ function resolveRelations(
   return resolved;
 }
 
+function keyFields(
+  listed:
+    | readonly string[]
+    | { readonly columns: readonly string[]; readonly withoutOverlaps?: true },
+): readonly string[] {
+  if (isColumnList(listed)) return listed;
+  return listed.columns;
+}
+
+function keyOverlaps(
+  listed:
+    | readonly string[]
+    | { readonly columns: readonly string[]; readonly withoutOverlaps?: true },
+): boolean {
+  return !isColumnList(listed) && listed.withoutOverlaps === true;
+}
+
+function isColumnList(
+  listed: readonly string[] | { readonly columns: readonly string[] },
+): listed is readonly string[] {
+  return Array.isArray(listed);
+}
+
 function readPrimaryKey(
   tableName: string,
   options: StoredOptions | undefined,
   byField: ReadonlyMap<string, PreparedColumn>,
-): readonly string[] {
+): { readonly columns: readonly string[]; readonly withoutOverlaps?: true } {
   const listed = options?.primaryKey;
-  if (listed === undefined) return [];
-  if (!Array.isArray(listed) || listed.length === 0) {
+  if (listed === undefined) return { columns: [] };
+  const fields = keyFields(listed);
+  const withoutOverlaps = keyOverlaps(listed);
+  if (!Array.isArray(fields) || fields.length === 0) {
     definition(`Table ${tableName} primaryKey needs a column.`);
   }
   const columns: string[] = [];
   const seen = new Set<string>();
-  for (const field of listed) {
+  for (const field of fields) {
     if (typeof field !== "string" || field.length === 0 || seen.has(field)) {
       definition(`Table ${tableName} primaryKey repeats a column.`);
     }
@@ -2133,7 +2226,98 @@ function readPrimaryKey(
     }
     columns.push(column.sqlName);
   }
-  return columns;
+  return withoutOverlaps ? { columns, withoutOverlaps: true } : { columns };
+}
+
+function compileTableExclusions(
+  tableName: string,
+  options: StoredOptions,
+  parent: ObjectRef,
+  provenance: Provenance,
+  byField: ReadonlyMap<string, PreparedColumn>,
+  jobs: CatalogJob[],
+  tenancy: ColumnTenancy | undefined,
+  extra: { gist: boolean },
+): void {
+  const declared = options.exclusions?.(
+    Object.fromEntries(
+      [...byField.keys()].map((field) => {
+        const column = byField.get(field);
+        const dataType = column?.dataType;
+        return [
+          field,
+          columnHandle(column?.sqlName ?? field, dataType === undefined ? {} : { dataType }),
+        ];
+      }),
+    ),
+  );
+  if (declared === undefined) return;
+  const columns = new Map<string, { readonly sql: string; readonly dataType: string }>();
+  for (const [field, column] of byField) {
+    const info = { sql: column.sqlName, dataType: column.dataType };
+    columns.set(field, info);
+    columns.set(column.sqlName, info);
+  }
+  const tenantFields =
+    tenancy === undefined || tenancy.isPath?.(tableName) === true
+      ? []
+      : (tenancy.keys ?? [tenancy.key]);
+  const tenantKeys = tenantFields.flatMap((field) => {
+    const column = byField.get(field);
+    return column === undefined ? [field] : [field, column.sqlName];
+  });
+  for (const [key, spec] of Object.entries(declared)) {
+    const compiled = compileExclusion(
+      tableName,
+      key,
+      spec,
+      columns,
+      tenantKeys,
+      tenancy?.isPath?.(tableName) === true,
+    );
+    if (compiled.gist) extra.gist = true;
+    const name = `${parent.name}_${key}_excl`;
+    stage(jobs, () =>
+      constraint({
+        parent,
+        constraintKind: "exclusion",
+        name,
+        nameKey: key,
+        columns: compiled.elements.flatMap((element) =>
+          element.column === undefined ? [] : [element.column],
+        ),
+        exclusion: compiled.elements,
+        provenance,
+        ...(compiled.expression !== undefined ? { expression: compiled.expression } : {}),
+        ...(spec.deferrable === "deferred"
+          ? { deferrable: true, initially: "deferred" as const }
+          : spec.deferrable === "immediate"
+            ? { deferrable: true, initially: "immediate" as const }
+            : {}),
+        ...(spec.comment !== undefined ? { comment: spec.comment } : {}),
+      }),
+    );
+  }
+}
+
+function modelType(state: {
+  readonly baseType: string;
+  readonly typeDependency: string | undefined;
+}): string {
+  if (state.typeDependency === undefined || state.typeDependency !== state.baseType)
+    return state.baseType;
+  return printedIdentifier(state.typeDependency);
+}
+
+function isRangeDataType(dataType: string, encode: (value: unknown) => string): boolean {
+  return dataType.endsWith("range") || rangeMark(encode) !== undefined;
+}
+
+function refuseTemporal(requires: SchemaRequires | undefined): void {
+  const declared = parsePostgresFloor(requires?.postgres);
+  if (!(declared > 0) || declared >= TEMPORAL_POSTGRES) return;
+  const sentence = temporalNeedsPostgres();
+  throw new OkmError("OKM1812", sentence, { fix: { summary: sentence } });
 }
 
 /** Database default or client generator that replaces a bare `t.id()`. */

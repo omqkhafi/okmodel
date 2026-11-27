@@ -80,7 +80,20 @@ export {
   type TimeText,
 } from "./time.js";
 export { type TimeWithOffset } from "./temporal.js";
-export { daterange, int4range, int8range, numrange, tstzrange, type Range } from "./range.js";
+export {
+  datemultirange,
+  daterange,
+  int4multirange,
+  int4range,
+  int8multirange,
+  int8range,
+  nummultirange,
+  numrange,
+  tstzmultirange,
+  tstzrange,
+  type Range,
+} from "./range.js";
+export { range, type RangeOptions } from "./range-type.js";
 export { cidr, inet, macaddr, macaddr8 } from "./network.js";
 export { line, point, type Line, type Point } from "./geometry.js";
 export { ltree, tsvector } from "./search.js";
@@ -124,6 +137,10 @@ export { notIn } from "./ops/notIn.js";
 export { and } from "./ops/and.js";
 export { or } from "./ops/or.js";
 export { overlaps } from "./ops/overlaps.js";
+export { adjacent } from "./ops/adjacent.js";
+export { before } from "./ops/before.js";
+export { after } from "./ops/after.js";
+export { isEmpty } from "./ops/isEmpty.js";
 export { path } from "./ops/path.js";
 export { startsWith } from "./ops/startsWith.js";
 export { fragment, ident, type Fragment } from "./ops/fragment.js";

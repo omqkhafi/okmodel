@@ -29,7 +29,7 @@ export const plans = table("plans", {
 });
 ```
 
-A bound is `{ empty: false, lower, upper, lowerInclusive, upperInclusive }`. `{ empty: true }` is the empty range.
+A read returns `{ empty: false, lower, upper, lowerInclusive, upperInclusive }`. `{ empty: true }` is the empty range. A write also accepts a `[lower, upper)` tuple, and a null bound is unbounded. Custom ranges, exclusion constraints, and the range operators are on [Range types](/docs/schema/range-types).
 
 ## Network
 

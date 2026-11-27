@@ -28,6 +28,18 @@ export const NOT_ENFORCED_POSTGRES = 18 satisfies PostgresMajor;
 /** `VIRTUAL` generated columns. PostgreSQL 18. */
 export const VIRTUAL_POSTGRES = 18 satisfies PostgresMajor;
 
+/** `WITHOUT OVERLAPS` and `PERIOD`. PostgreSQL 18. */
+export const TEMPORAL_POSTGRES = 18 satisfies PostgresMajor;
+
+/**
+ * The sentence a temporal primary key or foreign key uses when the server is older.
+ *
+ * @returns The fix text
+ */
+export function temporalNeedsPostgres(): string {
+  return `WITHOUT OVERLAPS and PERIOD need PostgreSQL ${String(TEMPORAL_POSTGRES)}. Use an exclusion constraint on an older server.`;
+}
+
 /**
  * Accepts an integer major of {@link POSTGRES_FLOOR} or later.
  *

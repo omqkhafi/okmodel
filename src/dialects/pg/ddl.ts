@@ -7,6 +7,7 @@
 
 import { isComposite } from "../../contracts/catalog/composite.js";
 import { isDomain } from "../../contracts/catalog/enum.js";
+import { isRange } from "../../contracts/catalog/range.js";
 import { isGeneratedPolicy } from "../../contracts/catalog/policy.js";
 import { fitIdentifier, printedIdentifier } from "../../contracts/catalog/identifier.js";
 import { identityKey } from "../../contracts/catalog/identity.js";
@@ -647,7 +648,11 @@ export function createTableSql(tableObject: TableObject, source: Catalog, schema
   );
   const lines = listed.map((column) => columnSql(column, schema));
   if (primary !== undefined) {
-    const cols = primary.definition.columns.map((name) => quoteIdent(name)).join(", ");
+    const cols = keyList(
+      primary.definition.columns,
+      primary.definition.withoutOverlaps,
+      "without overlaps",
+    );
     lines.push(`constraint ${quoteIdent(primary.identity.name)} primary key (${cols})`);
   }
   const partition = tableObject.definition.partition;
@@ -683,7 +688,32 @@ function collateSql(collation: string | undefined): string {
   return ` collate ${quoteIdent(collation)}`;
 }
 
+function keyList(
+  columns: readonly string[],
+  marked: true | undefined,
+  keyword: "without overlaps" | "period",
+): string {
+  if (marked !== true || columns.length === 0)
+    return columns.map((name) => quoteIdent(name)).join(", ");
+  const head = columns.slice(0, -1).map((name) => quoteIdent(name));
+  const last = columns[columns.length - 1] ?? "";
+  const tail =
+    keyword === "period" ? `period ${quoteIdent(last)}` : `${quoteIdent(last)} without overlaps`;
+  return [...head, tail].join(", ");
+}
+
 function createTypeSql(object: TypeObject, schema: string): string {
+  if (isRange(object.definition)) {
+    const definition = object.definition;
+    const parts = [`subtype = ${sqlTypeName(definition.subtype)}`];
+    if (definition.subtypeDiff !== undefined) {
+      parts.push(`subtype_diff = ${sqlTypeName(definition.subtypeDiff)}`);
+    }
+    if (definition.collation !== undefined)
+      parts.push(`collation = ${quoteIdent(definition.collation)}`);
+    parts.push(`multirange_type_name = ${quoteIdent(definition.multirange)}`);
+    return `create type ${qualify(schema, object.identity.name)} as range (${parts.join(", ")})`;
+  }
   if (isComposite(object.definition)) {
     const body = object.definition.fields
       .map((field) => `${quoteIdent(field.name)} ${field.dataType}`)
@@ -842,12 +872,19 @@ function referenceSchema(object: ConstraintObject, schema: string): string {
   return schema;
 }
 
+function sqlTypeName(name: string): string {
+  if (/^[a-z_][a-z0-9_]*$/.test(name)) return name;
+  return quoteIdent(name);
+}
+
 function constraintBody(object: ConstraintObject, schema: string): string {
   const definition = object.definition;
   const columns = definition.columns.map((name) => quoteIdent(name)).join(", ");
   switch (definition.constraintKind) {
     case "primaryKey":
-      return `primary key (${columns})`;
+      return `primary key (${keyList(definition.columns, definition.withoutOverlaps, "without overlaps")})`;
+    case "exclusion":
+      return exclusionBody(definition);
     case "unique": {
       const nulls = definition.nullsNotDistinct ? " nulls not distinct" : "";
       return `unique${nulls} (${columns})${deferClause(definition)}`;
@@ -858,10 +895,13 @@ function constraintBody(object: ConstraintObject, schema: string): string {
     }
     case "foreignKey": {
       const references = definition.references;
+      const local = keyList(definition.columns, definition.period, "period");
+      const remote =
+        references === undefined ? "" : keyList(references.columns, definition.period, "period");
       const target =
         references === undefined
           ? ""
-          : ` references ${qualify(referenceSchema(object, schema), references.parent.name)} (${references.columns.map((name) => quoteIdent(name)).join(", ")})`;
+          : ` references ${qualify(referenceSchema(object, schema), references.parent.name)} (${remote})`;
       const listed = references?.onDeleteColumns;
       const list =
         listed !== undefined && listed.length > 0
@@ -872,11 +912,28 @@ function constraintBody(object: ConstraintObject, schema: string): string {
       const onUpdate =
         references?.onUpdate === undefined ? "" : ` on update ${references.onUpdate}`;
       const match = references?.match === "full" ? " match full" : "";
-      return `foreign key (${columns})${target}${match}${onDelete}${onUpdate}${deferClause(definition)}`;
+      return `foreign key (${local})${target}${match}${onDelete}${onUpdate}${deferClause(definition)}`;
     }
     default:
       return definition.constraintKind;
   }
+}
+
+function exclusionBody(definition: ConstraintObject["definition"]): string {
+  const elements = definition.exclusion ?? [];
+  const keys = elements
+    .map((element) => {
+      const target = element.expression ?? quoteIdent(element.column ?? "");
+      const operator =
+        element.operator === "eq" ? "=" : element.operator === "overlaps" ? "&&" : "-|-";
+      return `${target} with ${operator}`;
+    })
+    .join(", ");
+  const where =
+    definition.expression === undefined || definition.expression.length === 0
+      ? ""
+      : ` where (${definition.expression})`;
+  return `exclude using gist (${keys})${where}${deferClause(definition)}`;
 }
 
 function deferClause(definition: ConstraintObject["definition"]): string {

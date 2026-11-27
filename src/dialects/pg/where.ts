@@ -19,6 +19,10 @@ import type {
   Not,
   NotIn,
   Overlaps,
+  Adjacent,
+  Before,
+  After,
+  IsEmpty,
   Path,
   Pattern,
   RawPattern,
@@ -48,6 +52,26 @@ type TextOps =
 
 /** Array, jsonb, or range containment, plus overlap where that operator fits. */
 type StructuredOps<V> = Containment<"contains" | "containedBy", V> | Overlaps<V>;
+
+/** `[lower, upper)` when `V` is a range object or a list of them. Otherwise `never`. */
+type RangeTupleOf<V> = V extends readonly (infer E)[]
+  ? [RangeLeaf<E>] extends [never]
+    ? never
+    : readonly RangeLeaf<E>[]
+  : RangeLeaf<V>;
+
+type RangeLeaf<V> = V extends { readonly empty: false; readonly lower: infer L }
+  ? readonly [L | null, L | null]
+  : never;
+
+/** Range position operators. `contains` also accepts an element of the subtype. */
+type RangeOps<V> =
+  | StructuredOps<V | RangeTupleOf<V>>
+  | Adjacent<V | RangeTupleOf<V>>
+  | Before<V | RangeTupleOf<V>>
+  | After<V | RangeTupleOf<V>>
+  | IsEmpty
+  | Containment<"contains", unknown>;
 
 /** A JSON fragment. Containment matches part of a document, not the whole column type. */
 type JsonFragment =
@@ -88,7 +112,7 @@ type TypedOps<V> = [unknown] extends [V]
   :
       | (V extends string ? TextOps : never)
       | (V extends readonly unknown[] ? StructuredOps<V> : never)
-      | (V extends Range<unknown> ? StructuredOps<V> : never)
+      | (V extends Range<unknown> ? RangeOps<V> : never)
       | (IsJsonObject<V> extends true ? JsonOps : never);
 
 /** A where operand. Object columns take `eq`, not a bare object. */

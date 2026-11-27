@@ -33,6 +33,10 @@ export type OperatorName =
   | "inc"
   | "containedBy"
   | "overlaps"
+  | "adjacent"
+  | "before"
+  | "after"
+  | "isEmpty"
   | "hasKey"
   | "hasAnyKey"
   | "path"
@@ -68,6 +72,18 @@ export type Containment<Name extends "contains" | "containedBy", V> = Tagged<Nam
 
 /** Array or range overlap (`&&`). */
 export type Overlaps<V> = Tagged<"overlaps", V>;
+
+/** Range adjacency (`-|-`). */
+export type Adjacent<V> = Tagged<"adjacent", V>;
+
+/** Range strictly before (`<<`). */
+export type Before<V> = Tagged<"before", V>;
+
+/** Range strictly after (`>>`). */
+export type After<V> = Tagged<"after", V>;
+
+/** `isempty`. `true` keeps empty ranges. `false` keeps the rest. */
+export type IsEmpty = Tagged<"isEmpty", boolean>;
 
 /** One jsonb key (`jsonb_exists`). */
 export type HasKey = Tagged<"hasKey", string>;

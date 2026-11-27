@@ -31,6 +31,7 @@ import { readOnlyReprint } from "../../dialects/pg/introspect.js";
 import { assertIndexRules } from "../migrate/index-rules.js";
 import { schemaDeclarations } from "../../dialects/pg/declarations.js";
 import { enumColumn } from "../../dialects/pg/enum.js";
+import { range } from "../../dialects/pg/expr/index.js";
 import { extension } from "../../dialects/pg/ext/index.js";
 import { fn, triggerType } from "../../dialects/pg/fn/index.js";
 import {
@@ -1153,6 +1154,57 @@ reported(
             return sql`extract(year from ${issued} at time zone 'Asia/Riyadh')`;
           }),
         }),
+      ],
+    });
+    return schemaAdvice({ catalog: built.catalog, model: built.model }, [], {}).advice.map(
+      (item) => item.code,
+    );
+  },
+);
+
+reported(
+  "OKM2128",
+  () => {
+    const built = schema({
+      tables: [
+        table(
+          "holds",
+          {
+            id: t.identity(),
+            startsAt: t.timestamptz(),
+            endsAt: t.timestamptz(),
+          },
+          {
+            exclusions: (columns) => ({
+              one: { on: [[range(columns.startsAt, columns.endsAt), "overlaps"]] },
+            }),
+          },
+        ),
+      ],
+    });
+    return schemaAdvice({ catalog: built.catalog, model: built.model }, [], {}).advice.map(
+      (item) => item.code,
+    );
+  },
+  () => {
+    const built = schema({
+      tables: [
+        table(
+          "holds",
+          {
+            id: t.identity(),
+            startsAt: t.timestamptz(),
+            endsAt: t.timestamptz(),
+          },
+          {
+            checks: {
+              ordered: (columns) => sql`${columns.startsAt} < ${columns.endsAt}`,
+            },
+            exclusions: (columns) => ({
+              one: { on: [[range(columns.startsAt, columns.endsAt), "overlaps"]] },
+            }),
+          },
+        ),
       ],
     });
     return schemaAdvice({ catalog: built.catalog, model: built.model }, [], {}).advice.map(

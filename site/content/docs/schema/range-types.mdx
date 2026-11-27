@@ -1,0 +1,129 @@
+---
+title: Range types
+description: Built-in and custom range columns, exclusion constraints, and PostgreSQL 18 temporal keys.
+---
+
+A range column reads as `{ empty, lower, upper, lowerInclusive, upperInclusive }`. `{ empty: true }` has no bounds. A write, and a filter, accepts that object or a `[lower, upper)` tuple. A null bound is unbounded. The default bounds of a tuple are `[)`.
+
+Built-in columns are `t.int4range()`, `t.int8range()`, `t.numrange()`, `t.daterange()`, and `t.tstzrange()`. There is no `t.tsrange()`. Each has a multirange builder: `t.int4multirange()`, `t.int8multirange()`, `t.nummultirange()`, `t.datemultirange()`, and `t.tstzmultirange()`. An array of a range is `.array()`, and a read of that array goes through `to_jsonb`.
+
+The bound types are the same as the scalar columns. A `tstzrange` bound is a `Temporal.Instant`. Postgres may print an hour offset such as `+03`. That text decodes to an instant.
+
+## A custom range
+
+`t.range` sits next to `t.enum` and `t.composite`. An unused range is not a catalog object. A column declares it. The subtype diff of a built-in subtype is filled in. There is no `canonical` option.
+
+```ts
+import { table, t } from "okmodel/pg";
+
+const span = t.range("span", {
+  subtype: t.integer(),
+  comment: "a span of integers",
+  grants: { app: "read" },
+});
+
+table("marks", {
+  during: span,
+  many: span.multi(),
+  listed: span.array(),
+});
+```
+
+`grants: { app: "read" }` is `USAGE` on the type. `comment` is `COMMENT ON TYPE`. `okm access` lists the grant. A rename moves the range and its multirange together (`renamedFrom`). A change of subtype, diff, or collation builds a new type and swaps each plain column with `USING col::text::new` after `DROP DEFAULT`, behind `confirmTypeChanges`. An array or a function that uses the type is refused. The five constructors Postgres creates for the range stay out of `okm pull` and `okm check`.
+
+## Filters
+
+`contains` takes one element or a whole range. The element is cast to the subtype. `adjacent`, `before`, `after`, and `isEmpty` are the other range operators. They load with the operator compiler, when a query uses them.
+
+```ts
+import { adjacent, after, before, contains, isEmpty } from "okmodel/pg";
+
+await db.slots.find({ where: { during: contains(3) }, limit: 5 });
+await db.slots.find({ where: { during: contains([1, 4] as const) }, limit: 5 });
+await db.slots.find({ where: { during: adjacent([5, 9] as const) }, limit: 5 });
+await db.slots.find({ where: { during: before([5, 9] as const) }, limit: 5 });
+await db.slots.find({ where: { during: after([1, 4] as const) }, limit: 5 });
+await db.slots.find({ where: { during: isEmpty() }, limit: 5 });
+```
+
+## Expressions
+
+`okmodel/expr` adds `range(lower, upper, bounds?)`, and `lower`, `upper`, and `isEmpty` on a range. `rangeAgg` is `range_agg`. The constructors are immutable. `rangeAgg` is an aggregate, so it cannot sit in an exclusion or a generated column. `range()` needs two column handles of one subtype. `timestamp` without time zone is refused.
+
+A grouped view does not take `groupBy` on the query builder. Put `range_agg` in `q.sql`. The [Bookings](/docs/guides/bookings) guide does that and unions the taken time.
+
+## Exclusions
+
+`exclusions` is a table option. The key is the constraint name: `{table}_{key}_excl`. Each element is a column or `range()`, with `eq`, `overlaps`, or `adjacent`. A tenant key is added as `eq`. A `via()` table has no tenant column, so the exclusion must name a scope column. `eq` on a scalar needs `btree_gist`, and the planner adds that extension. `where` is the usual where object, or SQL you already printed, and it must be immutable. `now()` is refused. Store a buffer in its own column. `timestamptz + interval` is not immutable.
+
+```ts
+import { schema, sql, table, t } from "okmodel/pg";
+import { range } from "okmodel/expr";
+
+const spans = table(
+  "spans",
+  {
+    id: t.integer().primaryKey(),
+    resourceId: t.integer(),
+    startsAt: t.timestamptz(),
+    endsAt: t.timestamptz(),
+  },
+  {
+    checks: { ordered: (columns) => sql`${columns.startsAt} < ${columns.endsAt}` },
+    exclusions: (columns) => ({
+      one: {
+        on: [
+          [columns.resourceId, "eq"],
+          [range(columns.startsAt, columns.endsAt), "overlaps"],
+        ],
+      },
+    }),
+  },
+);
+
+export const app = schema({ casing: "snake", tables: [spans] });
+```
+
+A start/end pair without a check that the start is before the end warns OKM2128. A reversed pair fails in Postgres with `22000`.
+
+Adding an exclusion is a blocking step. It takes `AccessExclusiveLock` for the whole build. There is no `NOT VALID` form and no online path. A bounded read-only overlap check runs before the lock. When rows already overlap, the migration stops with "Nothing was changed." and the counts. A later change drops the constraint and adds the new one in one transaction. The lock timeout covers acquisition only. A partitioned table must name every partition column in the exclusion.
+
+An exclusion that exists in the database and is not declared is drift. `okm pull` writes it. A violation is the existing `exclusion` error and carries the constraint name. A deferred exclusion fails at `COMMIT` through the same mapping. `ON CONFLICT DO NOTHING` works. `DO UPDATE` cannot absorb an exclusion. A serialization failure (`40001`) uses the retry already on `tx()`.
+
+`UNIQUE ... WITHOUT OVERLAPS` is not a separate call. It is the primary key below.
+
+## Temporal keys
+
+PostgreSQL 18 accepts `withoutOverlaps: true` on a primary key and `period: true` on a foreign key. The range column is last. On an older server the plan is refused before any SQL, and the message points at `exclusions`.
+
+```ts
+import { table, t } from "okmodel/pg";
+
+const rooms = table(
+  "rooms",
+  { id: t.integer(), available: t.tstzrange() },
+  { primaryKey: { columns: ["id", "available"], withoutOverlaps: true } },
+);
+
+table(
+  "bookings",
+  {
+    roomId: t.integer(),
+    during: t.tstzrange(),
+  },
+  {
+    primaryKey: { columns: ["roomId", "during"], withoutOverlaps: true },
+    foreignKeys: () => ({
+      room: {
+        columns: ["roomId", "during"],
+        references: { table: "rooms", columns: ["id", "available"] },
+        period: true,
+      },
+    }),
+  },
+);
+```
+
+`rooms` is the table the foreign key names.
+
+The foreign key target has to be a primary key or a unique constraint. PostgreSQL 19.0 has no `FOR PORTION OF`. There is no API for it.

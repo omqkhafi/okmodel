@@ -85,8 +85,17 @@ export type Node =
         | "nullif"
         | "now"
         | "to_tsvector"
-        | "setweight";
+        | "setweight"
+        | "isempty"
+        | "range_agg";
       readonly args: readonly Node[];
+    }
+  | {
+      readonly k: "range";
+      readonly a: Node;
+      readonly b: Node;
+      readonly bounds: string;
+      readonly ctor: string;
     }
   | { readonly k: "concat"; readonly args: readonly Node[] }
   | { readonly k: "cast"; readonly e: Node; readonly to: CastTo }
@@ -367,14 +376,143 @@ export function and<const P extends readonly (Cond | Expr<boolean>)[]>(
   return make({ k: "and", parts: parts.map((part) => (isExpr(part) ? part[EXPR] : part)) });
 }
 
-/** `lower(text)`. */
-export function lower<const A extends Text>(value: A): Expr<string, NullOf<A>, Worst<VolOf<A>>> {
-  return make({ k: "fn", name: "lower", args: [lift(value)] });
+/** `lower(text)` or `lower(anyrange)`. */
+export function lower<const A extends Text>(value: A): Expr<string, NullOf<A>, Worst<VolOf<A>>>;
+export function lower<T, N extends boolean, V extends Volatility>(
+  value: T extends {
+    readonly empty: boolean;
+    readonly lower: unknown;
+    readonly lowerInclusive: boolean;
+  }
+    ? Expr<T, N, V>
+    : never,
+): T extends { readonly lower: infer L } ? Expr<L | null, N, V> : never;
+export function lower(value: Text | { readonly [EXPR]: Node }): Expr<unknown, boolean, Volatility> {
+  return make({ k: "fn", name: "lower", args: [lift(value as Text)] }) as Expr<
+    unknown,
+    boolean,
+    Volatility
+  >;
 }
 
-/** `upper(text)`. */
-export function upper<const A extends Text>(value: A): Expr<string, NullOf<A>, Worst<VolOf<A>>> {
-  return make({ k: "fn", name: "upper", args: [lift(value)] });
+/** `upper(text)` or `upper(anyrange)`. */
+export function upper<const A extends Text>(value: A): Expr<string, NullOf<A>, Worst<VolOf<A>>>;
+export function upper<T, N extends boolean, V extends Volatility>(
+  value: T extends {
+    readonly empty: boolean;
+    readonly upper: unknown;
+    readonly upperInclusive: boolean;
+  }
+    ? Expr<T, N, V>
+    : never,
+): T extends { readonly upper: infer L } ? Expr<L | null, N, V> : never;
+export function upper(value: Text | { readonly [EXPR]: Node }): Expr<unknown, boolean, Volatility> {
+  return make({ k: "fn", name: "upper", args: [lift(value as Text)] }) as Expr<
+    unknown,
+    boolean,
+    Volatility
+  >;
+}
+
+const RANGE_CTOR: Readonly<Record<string, string>> = {
+  timestamptz: "tstzrange",
+  date: "daterange",
+  integer: "int4range",
+  smallint: "int4range",
+  bigint: "int8range",
+  numeric: "numrange",
+};
+
+/**
+ * `ctor(a, b, bounds)`. The constructor comes from the column type.
+ *
+ * Builtin constructors are immutable. `timestamp` without time zone is refused:
+ * there is no `tsrange` column.
+ *
+ * @param a - Lower bound, or a column handle that carries `dataType`
+ * @param b - Upper bound
+ * @param bounds - Two-character bound flags. The default is `[)`
+ * @returns A range expression
+ */
+export function range<const A extends Named, const B extends Named>(
+  a: A,
+  b: B,
+  bounds = "[)",
+): Expr<unknown, boolean, "immutable"> {
+  if (!/^[[(][\])]$/.test(bounds)) {
+    throw new OkmError("OKM1060", `range bounds ${bounds} must be two of [ ] ( ).`, {
+      fix: { summary: "Pass [), (], [], or ()." },
+    });
+  }
+  const left = ctorOf(a);
+  const right = ctorOf(b);
+  if (left === undefined || right === undefined || left !== right) {
+    throw new OkmError(
+      "OKM1060",
+      "range() needs two columns of one subtype: timestamptz, date, integer, bigint, or numeric.",
+      { fix: { summary: "Pass column handles from the table callback." } },
+    );
+  }
+  return make({ k: "range", a: lift(a), b: lift(b), bounds, ctor: left }) as Expr<
+    unknown,
+    boolean,
+    "immutable"
+  >;
+}
+
+/**
+ * `isempty(anyrange)`. Immutable.
+ *
+ * @param value - Range column or expression
+ * @returns A boolean expression
+ */
+export function isEmpty<const A extends Text>(value: A): Expr<boolean, NullOf<A>, Worst<VolOf<A>>>;
+export function isEmpty<T, N extends boolean, V extends Volatility>(
+  value: T extends { readonly empty: boolean } ? Expr<T, N, V> : never,
+): Expr<boolean, N, V>;
+export function isEmpty(
+  value: Text | { readonly [EXPR]: Node },
+): Expr<boolean, boolean, Volatility> {
+  return make({ k: "fn", name: "isempty", args: [lift(value as Text)] }) as Expr<
+    boolean,
+    boolean,
+    Volatility
+  >;
+}
+
+/**
+ * `range_agg`. An aggregate, so it is not immutable and cannot sit in an exclusion.
+ *
+ * @param value - Range column or expression
+ * @returns The aggregate expression
+ */
+export function rangeAgg<T, N extends boolean, V extends Volatility>(
+  value: T extends { readonly empty: boolean } ? Expr<T, N, V> : never,
+): Expr<unknown, boolean, "volatile">;
+export function rangeAgg<T, N extends boolean, V extends Volatility>(
+  value: T extends { readonly empty: boolean } ? Expr<T, N, V> : never,
+): Expr<unknown, boolean, "volatile"> {
+  return make({ k: "fn", name: "range_agg", args: [lift(value)] }) as Expr<
+    unknown,
+    boolean,
+    "volatile"
+  >;
+}
+
+function ctorOf(value: unknown): string | undefined {
+  if (value === null || typeof value !== "object" || !("dataType" in value)) return undefined;
+  const dataType = value.dataType;
+  if (typeof dataType !== "string") return undefined;
+  if (
+    dataType === "timestamp" ||
+    (dataType.startsWith("timestamp(") && dataType.includes("without"))
+  ) {
+    throw new OkmError("OKM1060", "range() does not build tsrange. Use timestamptz.", {
+      fix: { summary: "Change the columns to timestamptz, or store the range yourself." },
+    });
+  }
+  const scalar = dataType.replace(/\(\d+(?:,\s*\d+)?\)$/, "");
+  return RANGE_CTOR[scalar] ?? RANGE_CTOR[dataType];
 }
 
 /** `length(text)`: characters. */

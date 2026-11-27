@@ -1,0 +1,234 @@
+---
+title: Bookings
+description: Keep two bookings off the same resource with an exclusion constraint.
+---
+
+Two bookings of one resource must not overlap. One table stores a start and an end. The other stores a range. Both use an exclusion constraint. A check keeps the start before the end. A buffer is a second range column, because `timestamptz + interval` is not immutable and an exclusion predicate cannot call it. A hold carries an `open` flag the application sets when the hold expires. An owner override is a row the exclusion does not cover. PostgreSQL 19.0 has no `FOR PORTION OF`. This API does not offer it.
+
+Detail lives on [Range types](/docs/schema/range-types).
+
+## Setup
+
+The program below is `book.ts`. The test that runs this page renders `app.catalog` and executes each statement on an empty database. `btree_gist` is created because the exclusion compares a plain integer with `=`.
+
+```sql title="book.sql"
+create extension "btree_gist" schema "public";
+
+create table "public"."bookings" (
+  "blocked_during" tstzrange not null,
+  "during" tstzrange not null,
+  "id" integer not null,
+  "override" boolean not null default false,
+  "resource_id" integer not null,
+  constraint "bookings_pkey" primary key ("id")
+);
+
+alter table "public"."bookings" add constraint "bookings_buffer_excl" exclude using gist ("resource_id" with =, "blocked_during" with &&) where ("override" = false);
+
+alter table "public"."bookings" add constraint "bookings_one_excl" exclude using gist ("resource_id" with =, "during" with &&) where ("override" = false);
+
+create table "public"."holds" (
+  "during" tstzrange not null,
+  "id" integer not null,
+  "open" boolean not null default true,
+  "resource_id" integer not null,
+  constraint "holds_pkey" primary key ("id")
+);
+
+alter table "public"."holds" add constraint "holds_one_excl" exclude using gist ("resource_id" with =, "during" with &&) where ("open" = true);
+
+create table "public"."spans" (
+  "ends_at" timestamptz not null,
+  "id" integer not null,
+  "resource_id" integer not null,
+  "starts_at" timestamptz not null,
+  constraint "spans_pkey" primary key ("id")
+);
+
+alter table "public"."spans" add constraint "spans_one_excl" exclude using gist ("resource_id" with =, tstzrange("starts_at", "ends_at", '[)') with &&);
+
+alter table "public"."spans" add constraint "spans_ordered_check" check (starts_at < ends_at);
+
+create view "public"."busy" with (security_invoker = true) as select resource_id as "resourceId", range_agg(during) as taken from bookings group by resource_id;
+```
+
+## Run it
+
+`spans` is the start/end pair. `range(startsAt, endsAt)` is the exclusion element, and the check `startsAt < endsAt` stops a reversed pair before it reaches the constraint. `bookings.during` is the range column. `blockedDuring` is the buffer you stored yourself. `where: { override: false }` leaves an owner row out of the constraint, so that row can overlap. `holds` uses `where: { open: true }`. Set `open` to false when the hold expires. A predicate that calls `now()` is refused.
+
+`rangeAgg(col("during"))` prints `range_agg("during")`. A grouped view has no `groupBy` on the query builder, so `busy` uses `q.sql` with that call. The union of the two bookings on resource 7 is one range, from 09:00 to 11:00. Resource 8 is a second resource and does not collide with resource 7.
+
+```ts title="book.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, sql, table, t } from "okmodel/pg";
+import { col, range, rangeAgg } from "okmodel/expr";
+import { view } from "okmodel/view";
+
+const spans = table(
+  "spans",
+  {
+    id: t.integer().primaryKey(),
+    resourceId: t.integer(),
+    startsAt: t.timestamptz(),
+    endsAt: t.timestamptz(),
+  },
+  {
+    checks: {
+      ordered: (columns) => sql`${columns.startsAt} < ${columns.endsAt}`,
+    },
+    exclusions: (columns) => ({
+      one: {
+        on: [
+          [columns.resourceId, "eq"],
+          [range(columns.startsAt, columns.endsAt), "overlaps"],
+        ],
+      },
+    }),
+  },
+);
+
+const bookings = table(
+  "bookings",
+  {
+    id: t.integer().primaryKey(),
+    resourceId: t.integer(),
+    during: t.tstzrange(),
+    blockedDuring: t.tstzrange(),
+    override: t.boolean().default(false),
+  },
+  {
+    exclusions: (columns) => ({
+      one: {
+        on: [
+          [columns.resourceId, "eq"],
+          [columns.during, "overlaps"],
+        ],
+        where: { override: false },
+      },
+      buffer: {
+        on: [
+          [columns.resourceId, "eq"],
+          [columns.blockedDuring, "overlaps"],
+        ],
+        where: { override: false },
+      },
+    }),
+  },
+);
+
+const holds = table(
+  "holds",
+  {
+    id: t.integer().primaryKey(),
+    resourceId: t.integer(),
+    during: t.tstzrange(),
+    open: t.boolean().default(true),
+  },
+  {
+    exclusions: (columns) => ({
+      one: {
+        on: [
+          [columns.resourceId, "eq"],
+          [columns.during, "overlaps"],
+        ],
+        where: { open: true },
+      },
+    }),
+  },
+);
+
+const busy = view("busy", { tables: [bookings] }, (q) =>
+  q.sql({
+    columns: [
+      { name: "resourceId", type: t.integer() },
+      { name: "taken", type: t.tstzmultirange() },
+    ],
+    query: sql`select resource_id as "resourceId", range_agg(during) as taken from bookings group by resource_id`,
+  }),
+);
+
+export const taken = rangeAgg(col("during"));
+
+export const app = schema({
+  casing: "snake",
+  defaults: { time: "temporal" },
+  tables: [spans, bookings, holds],
+  views: [busy],
+});
+
+export async function book(url: string): Promise<void> {
+  await using db = connect(url, { schema: app });
+  const start = Temporal.Instant.from("2024-06-01T09:00:00Z");
+  const mid = Temporal.Instant.from("2024-06-01T09:30:00Z");
+  const end = Temporal.Instant.from("2024-06-01T10:00:00Z");
+  const later = Temporal.Instant.from("2024-06-01T11:00:00Z");
+  const noon = Temporal.Instant.from("2024-06-01T12:00:00Z");
+  const nameOf = (error: unknown): string => {
+    const message = error instanceof Error ? error.message : "";
+    return /[a-z]+_[a-z]+_excl/.exec(message)?.[0] ?? message;
+  };
+
+  await db.spans.insert({ id: 1, resourceId: 7, startsAt: start, endsAt: end });
+  await db.spans.insert({ id: 2, resourceId: 8, startsAt: start, endsAt: end });
+  const clash = await db.spans
+    .insert({ id: 3, resourceId: 7, startsAt: mid, endsAt: later })
+    .catch((error: unknown) => error);
+  console.log(`pair: ${nameOf(clash)}`);
+
+  await db.bookings.insert({
+    id: 1,
+    resourceId: 7,
+    during: [start, end],
+    blockedDuring: [start, Temporal.Instant.from("2024-06-01T10:15:00Z")],
+    override: false,
+  });
+  const owner = await db.bookings.insert({
+    id: 2,
+    resourceId: 7,
+    during: [mid, later],
+    blockedDuring: [later, noon],
+    override: true,
+  });
+  console.log(`owner: ${String(owner.id)}`);
+  const buffered = await db.bookings
+    .insert({
+      id: 3,
+      resourceId: 7,
+      during: [later, noon],
+      blockedDuring: [Temporal.Instant.from("2024-06-01T10:00:00Z"), later],
+      override: false,
+    })
+    .catch((error: unknown) => error);
+  console.log(`buffer: ${nameOf(buffered)}`);
+
+  await db.holds.insert({ id: 1, resourceId: 3, during: [start, end], open: true });
+  const held = await db.holds
+    .insert({ id: 2, resourceId: 3, during: [mid, later], open: true })
+    .catch((error: unknown) => error);
+  console.log(`hold: ${nameOf(held)}`);
+  const expired = await db.holds.insert({
+    id: 3,
+    resourceId: 3,
+    during: [mid, later],
+    open: false,
+  });
+  console.log(`expired: ${String(expired.id)}`);
+
+  const rows = await db.views.busy.find({ limit: 5 });
+  const span = rows[0]?.taken[0];
+  const lower = span !== undefined && span.empty === false ? span.lower.toString() : "";
+  const upper = span !== undefined && span.empty === false ? span.upper.toString() : "";
+  console.log(`busy: ${String(rows[0]?.resourceId)} ${lower}/${upper}`);
+}
+```
+
+```text title="book.out"
+pair: spans_one_excl
+owner: 2
+buffer: bookings_buffer_excl
+hold: holds_one_excl
+expired: 3
+busy: 7 2024-06-01T09:00:00Z/2024-06-01T11:00:00Z
+```
+
+Adding an exclusion takes an `AccessExclusive` lock for the whole build. Overlapping rows already in the table stop the migration before that lock, with "Nothing was changed."

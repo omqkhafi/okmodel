@@ -14,7 +14,7 @@ import type {
 } from "../../contracts/catalog/types.js";
 import { readClientGenerator, type ClientFill } from "../../contracts/generator.js";
 import { readArray, writeArray } from "./array-literal.js";
-import { compositeMark, tagComposite } from "./column-mark.js";
+import { compositeMark, rangeMark, tagComposite } from "./column-mark.js";
 import type { Cond, ImmutableExpr } from "./expr/index.js";
 import { definition, rejected } from "./misuse.js";
 import { quoteLiteral } from "./quote.js";
@@ -221,6 +221,12 @@ export type ForeignKeySpec = {
   readonly match?: "full";
   readonly deferrable?: "deferred" | "immediate";
   readonly comment?: string;
+  /**
+   * PostgreSQL 18 `PERIOD` on the last column of each side.
+   *
+   * The last column is a range. An older server is refused before SQL.
+   */
+  readonly period?: true;
 };
 
 export type ReferenceOptions = {
@@ -293,9 +299,9 @@ export type ColumnInsert<TFlags extends ColumnFlags, TValue> =
     ? never
     : InsertKind<TFlags> extends "optional"
       ? TFlags["nullable"] extends true
-        ? TValue | null | undefined
-        : TValue | undefined
-      : TValue;
+        ? RangeWrite<TValue> | null | undefined
+        : RangeWrite<TValue> | undefined
+      : RangeWrite<TValue>;
 
 /**
  * Update shape of one column. Writable values are optional.
@@ -308,8 +314,27 @@ export type ColumnUpdate<TFlags extends ColumnFlags, TValue> = TFlags["omitUpdat
   : InsertKind<TFlags> extends "omit"
     ? never
     : TFlags["nullable"] extends true
-      ? TValue | null | undefined
-      : TValue | undefined;
+      ? RangeWrite<TValue> | null | undefined
+      : RangeWrite<TValue> | undefined;
+
+/**
+ * A range write also accepts a `[lower, upper)` tuple. Other columns do not.
+ *
+ * @typeParam TValue - Column value
+ */
+type RangeWrite<TValue> = [RangeTupleOf<TValue>] extends [never]
+  ? TValue
+  : TValue | RangeTupleOf<TValue>;
+
+type RangeTupleOf<TValue> = TValue extends readonly (infer E)[]
+  ? [RangeLeaf<E>] extends [never]
+    ? never
+    : readonly RangeLeaf<E>[]
+  : RangeLeaf<TValue>;
+
+type RangeLeaf<TValue> = TValue extends { readonly empty: false; readonly lower: infer L }
+  ? readonly [L | null, L | null]
+  : never;
 
 /**
  * Row shape of a builder.
@@ -847,6 +872,16 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
     if (!Number.isInteger(dims) || dims < 1 || dims > 6) {
       definition(`Array dims ${String(dims)} must be an integer from 1 to 6.`);
     }
+    const ranged = rangeMark(this.state.encode);
+    if (ranged !== undefined) {
+      const next = ranged.asArray(dims);
+      return rebuild<ArrayOf<TValue, D>, TFlags>(this.state as ColumnState<ArrayOf<TValue, D>>, {
+        dims,
+        accepts: ["Array"],
+        encode: next.encode,
+        decode: next.decode as (wire: string) => ArrayOf<TValue, D>,
+      });
+    }
     const mark = compositeMark(this.state.encode);
     if (mark !== undefined && !mark.array) {
       const next = mark.asArray(dims);
@@ -866,6 +901,28 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
       encode: (value) => writeArray(value, dims, elementEncode, raw),
       decode: (wire) => readArray(wire, dims, elementDecode) as ArrayOf<TValue, D>,
     });
+  }
+
+  /**
+   * The multirange of this range column.
+   *
+   * @returns A multirange column
+   */
+  multi(): ColumnBuilder<readonly TValue[], TFlags> {
+    const mark = rangeMark(this.state.encode);
+    if (mark === undefined || mark.kind !== "range") {
+      definition("multi() needs a range column.");
+    }
+    const next = mark.multi();
+    return rebuild<readonly TValue[], TFlags>(
+      this.state as unknown as ColumnState<readonly TValue[]>,
+      {
+        baseType: next.baseType,
+        accepts: ["Array"],
+        encode: next.encode,
+        decode: next.decode as (wire: string) => readonly TValue[],
+      },
+    );
   }
 }
 

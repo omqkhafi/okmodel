@@ -727,14 +727,15 @@ async function planLockText(
   if (!plan.steps.some((step) => step.weight !== undefined)) {
     return { annotate: (step) => annotateLock(step, estimates, aliases), skipped: false };
   }
-  const { planCounts, weightPhrase, widest, estimateMs } = await import("./weight.js");
+  const { exclusionPerMillion, planCounts, weightPhrase, widest, estimateMs } =
+    await import("./weight.js");
   const counts = await planCounts(target.url, catalogNamespace(config), plan.steps, estimates);
   return {
     annotate: (step) => {
       const base = annotateLock(step, estimates, aliases);
       if (step.weight === undefined) return base;
       const big = widest(step, counts);
-      return `${base}; ${weightPhrase(step.weight, big?.table ?? "", big?.count)}`;
+      return `${base}; ${weightPhrase(step.weight, big?.table ?? "", big?.count, exclusionPerMillion(step.sql, step.weight))}`;
     },
     weigh: (step) => {
       const big = step.weight === undefined ? undefined : widest(step, counts);

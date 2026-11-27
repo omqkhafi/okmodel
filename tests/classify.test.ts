@@ -65,6 +65,7 @@ const EXPECTED = [
   ["drop-domain-check", "contract"],
   ["rename-domain-check", "expand"],
   ["create-composite", "expand"],
+  ["create-range", "expand"],
   ["drop-composite", "contract"],
   ["add-attribute", "expand"],
   ["drop-attribute", "contract"],

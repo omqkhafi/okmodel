@@ -9,7 +9,13 @@
 
 import type { DriverConnection } from "../../contracts/driver.js";
 import { OkmError } from "../../contracts/error.js";
-import { UUIDV7_POSTGRES, VIRTUAL_POSTGRES, uuidv7NeedsPostgres } from "../../dialects/pg/floor.js";
+import {
+  TEMPORAL_POSTGRES,
+  UUIDV7_POSTGRES,
+  VIRTUAL_POSTGRES,
+  temporalNeedsPostgres,
+  uuidv7NeedsPostgres,
+} from "../../dialects/pg/floor.js";
 
 /** A migration the `uuidv7()` scan can read. Apply and check both pass this. */
 type UuidV7Source = {
@@ -108,6 +114,33 @@ export async function assertVirtualAvailable(
   if (major >= VIRTUAL_POSTGRES) return;
   const message = `A virtual generated column needs PostgreSQL ${String(VIRTUAL_POSTGRES)}. The server is PostgreSQL ${String(major)}. Use a STORED generated column, or upgrade. Nothing was changed.`;
   throw new OkmError("OKM1812", message, { fix: { summary: message } });
+}
+
+/**
+ * Refuses `WITHOUT OVERLAPS` and `PERIOD` on a server older than PostgreSQL 18.
+ *
+ * The check runs before the first statement. An exclusion constraint is the
+ * form an older server can store.
+ *
+ * @param connection - The reserved apply or check connection
+ * @param migrations - Migrations in apply order
+ * @throws OkmError OKM1812, before any statement of the plan runs
+ */
+export async function assertTemporalKeysAvailable(
+  connection: DriverConnection,
+  migrations: readonly UuidV7Source[],
+): Promise<void> {
+  const needs = migrations.some((migration) =>
+    migration.steps.some(
+      (step) => /\bwithout overlaps\b/i.test(step.sql) || /\bperiod\s+"/i.test(step.sql),
+    ),
+  );
+  if (!needs) return;
+  const result = await connection.execute("select current_setting('server_version_num')");
+  const major = Math.floor(Number(result.rows[0]?.[0] ?? "0") / 10_000);
+  if (major >= TEMPORAL_POSTGRES) return;
+  const message = `A temporal primary or foreign key needs PostgreSQL ${String(TEMPORAL_POSTGRES)}. The server is PostgreSQL ${String(major)}. ${temporalNeedsPostgres()} Nothing was changed.`;
+  throw new OkmError("OKM1812", message, { fix: { summary: temporalNeedsPostgres() } });
 }
 
 function columnOf(sql: string): string | undefined {

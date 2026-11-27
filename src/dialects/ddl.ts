@@ -253,6 +253,7 @@ const KIND_SQL: Readonly<Record<StepKind, RegExp>> = {
   "drop-domain-check": /^alter domain\b.*\bdrop constraint\b/,
   "rename-domain-check": /^alter domain\b.*\brename constraint\b/,
   "create-composite": /^create type\b.*\bas\s*\(/,
+  "create-range": /^create type\b.*\bas range\b/,
   "drop-composite": /^drop type\b/,
   "add-attribute": /^alter type\b.*\badd attribute\b/,
   "drop-attribute": /^alter type\b.*\bdrop attribute\b/,
@@ -553,6 +554,28 @@ export type LogicalChange =
       readonly type: string;
       readonly name: string;
       readonly dataType: string;
+    }
+  | {
+      readonly op: "rename-type";
+      readonly schema: string;
+      readonly from: string;
+      readonly to: string;
+      readonly multirangeFrom: string;
+      readonly multirangeTo: string;
+    }
+  | {
+      readonly op: "swap-range";
+      readonly schema: string;
+      readonly name: string;
+      readonly subtype: string;
+      readonly subtypeDiff?: string;
+      readonly collation?: string;
+      readonly multirange: string;
+      readonly columns: readonly {
+        readonly table: string;
+        readonly column: string;
+        readonly defaultExpression?: string;
+      }[];
     }
   | {
       readonly op: "swap-composite";

@@ -6,6 +6,7 @@
     "paginate",
     "required-column",
     "migrations-in-ci",
-    "from-prisma"
+    "from-prisma",
+    "bookings"
   ]
 }

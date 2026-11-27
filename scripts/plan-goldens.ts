@@ -345,6 +345,18 @@ function coverageRequests(): readonly PlanRequest[] {
       }).catalog,
       name: "seed-counter",
     },
+    {
+      before: catalog([]),
+      after: schema({
+        tables: [
+          defineTable("marks", {
+            id: t.identity(),
+            during: t.range("span", { subtype: t.integer() }),
+          }),
+        ],
+      }).catalog,
+      name: "create-range",
+    },
   ];
 }
 

@@ -150,6 +150,8 @@ A bare array or range is refused. Equality is `eq` and writes `=`. SQL casts the
 | `containedBy` | array, jsonb, range | an array, a JSON value, or a range | `containedBy(["a", "b"])` | `t."tags" <@ $1::text[]` |
 | `overlaps` | array, range | an array or a range | `overlaps(["a"])` | `t."tags" && $1::text[]` |
 
+`adjacent`, `before`, `after`, and `isEmpty` apply to a range. `contains` on a range also takes one element of the subtype. [Range types](/docs/schema/range-types) has the recipes.
+
 ## JSON
 
 `hasKey` and `hasAnyKey` are function calls, so the SQL has no `?`. `path` compares the text at the segments. A number casts it to numeric, a boolean to boolean, a string to text. The comparison is `eq`, `lt`, `lte`, `gt`, or `gte`.

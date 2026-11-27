@@ -156,6 +156,7 @@ const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/docs/schema/defaults": CirclePlus,
   "/docs/schema/enums-arrays-picklists": Shapes,
   "/docs/schema/composite-types": Boxes,
+  "/docs/schema/range-types": Clock,
   "/docs/schema/names-and-casing": CaseSensitive,
   "/docs/schema/visibility": Eye,
   "/docs/schema/validation": ShieldCheck,
@@ -210,6 +211,7 @@ const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/docs/guides/required-column": Columns3,
   "/docs/guides/migrations-in-ci": GitPullRequest,
   "/docs/guides/from-prisma": Map,
+  "/docs/guides/bookings": Hourglass,
 };
 
 /**

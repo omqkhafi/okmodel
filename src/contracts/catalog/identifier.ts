@@ -18,12 +18,13 @@ const SUFFIX_HEX = 8;
 const SUFFIX_BYTES = SUFFIX_HEX + 1;
 
 /** Why a constraint or index name is being generated. */
-export type NamePurpose = "primaryKey" | "unique" | "foreignKey" | "check" | "index";
+export type NamePurpose = "primaryKey" | "unique" | "foreignKey" | "check" | "exclusion" | "index";
 
 const NAME_TAG: { readonly [K in Exclude<NamePurpose, "primaryKey">]: string } = {
   unique: "key",
   foreignKey: "fkey",
   check: "check",
+  exclusion: "excl",
   index: "idx",
 };
 

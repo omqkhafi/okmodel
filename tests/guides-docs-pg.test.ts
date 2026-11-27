@@ -24,6 +24,8 @@ const guides = join(root, "site/content/docs/guides");
 const imports: readonly (readonly [string, string])[] = [
   ["okmodel/pg/postgresjs", join(root, "src/runtime/pg/postgresjs.ts")],
   ["okmodel/pg", join(root, "src/dialects/pg/index.ts")],
+  ["okmodel/expr", join(root, "src/dialects/pg/expr/index.ts")],
+  ["okmodel/view", join(root, "src/dialects/pg/view/index.ts")],
   ["okmodel/traits", join(root, "src/runtime/traits/index.ts")],
   ["okmodel/tenancy", join(root, "src/runtime/tenancy/index.ts")],
   ["okmodel/warnings", join(root, "src/runtime/warnings/index.ts")],
@@ -55,6 +57,11 @@ type Page = {
   list?(url: string): Promise<void>;
 };
 
+type Bookings = {
+  readonly app?: { readonly catalog: Catalog };
+  book?(url: string): Promise<void>;
+};
+
 postgresTest(
   gate,
   "the soft-delete guide archives, hides, and restores a row",
@@ -69,6 +76,25 @@ postgresTest(
     await apply(example, async (url) => {
       if (example.retire === undefined) throw new Error("archive.ts exports no retire");
       expect(await capture(() => example.retire!(url))).toBe(body(text, "text", "archive.out"));
+    });
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
+  "the bookings guide applies both exclusion recipes and reads range_agg",
+  async () => {
+    const text = readFileSync(join(guides, "bookings.mdx"), "utf8");
+    expect(titles(text)).toEqual(["sql:book.sql", "ts:book.ts", "text:book.out"]);
+    const example = await load<Bookings>(text, "book.ts");
+    if (example.app === undefined) throw new Error("book.ts exports no app");
+    expect(`${renderCatalog(example.app.catalog, "public").join(";\n\n")};\n`).toBe(
+      body(text, "sql", "book.sql"),
+    );
+    await apply(example, async (url) => {
+      if (example.book === undefined) throw new Error("book.ts exports no book");
+      expect(await capture(() => example.book!(url))).toBe(body(text, "text", "book.out"));
     });
   },
   60_000,

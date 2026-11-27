@@ -28,7 +28,7 @@ import {
   sealStoredChecks,
   unmanagedComments,
 } from "./drift.js";
-import { assertUuidV7Available } from "./engine.js";
+import { assertTemporalKeysAvailable, assertUuidV7Available } from "./engine.js";
 import {
   ensureExtensionSchemaSql,
   extensionStatement,
@@ -130,6 +130,7 @@ export async function replayCheckHistory(
   await inCheckTransaction(url, scratch, config, allowPooler, async (sql) => {
     const connection = driverOf(sql);
     await assertUuidV7Available(connection, history);
+    await assertTemporalKeysAvailable(connection, history);
     const session = newSession();
     const version = await sql<{ v: string }[]>`select current_setting('server_version_num') as v`;
     const postgres = Math.floor(Number(version[0]?.v ?? "0") / 10_000);
@@ -230,6 +231,7 @@ export async function proveCheckSnapshot(
       name: "provision",
     });
     await assertUuidV7Available(connection, [{ id: head.id, steps: planned.steps }]);
+    await assertTemporalKeysAvailable(connection, [{ id: head.id, steps: planned.steps }]);
     await runSteps(
       sql,
       connection,
@@ -249,6 +251,7 @@ export async function proveCheckSnapshot(
   const again = await inCheckTransaction(url, replayed, config, allowPooler, async (sql) => {
     const connection = driverOf(sql);
     await assertUuidV7Available(connection, history);
+    await assertTemporalKeysAvailable(connection, history);
     const session = newSession();
     for (const migration of history) {
       await replayMigration(sql, connection, replayed, config, migration, session, []);

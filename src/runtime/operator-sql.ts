@@ -21,6 +21,7 @@ import {
   operatorValue,
   type OperatorName,
 } from "../dialects/pg/operators.js";
+import { rangeMark } from "../dialects/pg/column-mark.js";
 import { fail, installOperatorSql, isRecord, quote, type Indexed, type Sink } from "./plan.js";
 import { emitSqlValue } from "./sql-fragment.js";
 
@@ -51,6 +52,17 @@ function emitStructured(
   }
   if (name === "contains" || name === "containedBy" || name === "overlaps") {
     emitContainment(column, ref, name, value, sink);
+    return;
+  }
+  if (name === "adjacent" || name === "before" || name === "after") {
+    emitRangeOp(column, ref, name, value, sink);
+    return;
+  }
+  if (name === "isEmpty") {
+    assertOperatorFits(column, name);
+    sink.text(value === false ? "not isempty(" : "isempty(");
+    sink.text(ref);
+    sink.text(")");
     return;
   }
   if (name === "hasKey" || name === "hasAnyKey") {
@@ -91,12 +103,55 @@ function emitContainment(
   sink: Sink,
 ): void {
   assertOperatorFits(column, name);
+  const mark = rangeMark(column.encode);
+  // Element containment (`::subtype`) and range containment (`::rangetype`)
+  // compile to different SQL. The plan cache keys marks, not values, so the
+  // shape has to be part of the key or the second query reuses the first cast.
+  if (name === "contains" && mark !== undefined) {
+    sink.mark(isRangeShaped(value) ? ":range" : ":elem");
+  }
+  if (name === "contains" && mark !== undefined && !isRangeShaped(value)) {
+    sink.text(ref);
+    sink.text(" @> ");
+    sink.param(mark.encodeBound(value));
+    sink.text("::");
+    sink.text(mark.subtype);
+    return;
+  }
   const op = name === "contains" ? " @> " : name === "containedBy" ? " <@ " : " && ";
   sink.text(ref);
   sink.text(op);
   sink.param(column.encode(value));
   sink.text("::");
   sink.text(sqlType(column.dataType, column));
+}
+
+function emitRangeOp(
+  column: ColumnModel,
+  ref: string,
+  name: "adjacent" | "before" | "after",
+  value: unknown,
+  sink: Sink,
+): void {
+  assertOperatorFits(column, name);
+  const op = name === "adjacent" ? " -|- " : name === "before" ? " << " : " >> ";
+  sink.text(ref);
+  sink.text(op);
+  sink.param(column.encode(value));
+  sink.text("::");
+  sink.text(sqlType(column.dataType, column));
+}
+
+function isRangeShaped(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    if (value.length === 2 && !isRangeObject(value[0]) && !isRangeObject(value[1])) return true;
+    return value.length > 0 && value.every((item) => isRangeObject(item));
+  }
+  return isRangeObject(value);
+}
+
+function isRangeObject(value: unknown): boolean {
+  return value !== null && typeof value === "object" && !Array.isArray(value) && "empty" in value;
 }
 
 function emitJsonKey(
