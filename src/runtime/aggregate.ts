@@ -34,6 +34,7 @@ import { isOperator, operatorName, operatorValue } from "../dialects/pg/operator
 import {
   cell,
   emitOperand,
+  emitPathJoins,
   emitWhere,
   fail,
   indexes,
@@ -42,6 +43,7 @@ import {
   list,
   orderNamesRelation,
   parseOrder,
+  pathGroup,
   projectExpr,
   quote,
   readLimit,
@@ -108,7 +110,15 @@ const FUNCTIONS = [
 
 type FieldGroup = { readonly kind: "field"; readonly column: ColumnModel };
 
-type Group = FieldGroup | BucketGroup;
+type PathGroup = { readonly kind: "path"; readonly key: string };
+
+type Group = FieldGroup | BucketGroup | PathGroup;
+
+type ResolvedPath = {
+  readonly expr: string;
+  readonly project: string;
+  readonly column: ColumnModel;
+};
 
 /** One aggregate a `having` may name: the SQL it writes and the column that encodes its operand. */
 type Slot = { readonly expr: string; readonly column: ColumnModel };
@@ -266,6 +276,7 @@ function plan(
     ...base,
     op: "aggregate" as const,
     build: statement(spec, buckets),
+    ...(record.groupBy !== undefined ? { groupBy: record.groupBy } : {}),
     ...(session.l !== undefined ? { limits: session.l } : {}),
     ...(dflt !== undefined ? { dl: ["groupBy", dflt] as const } : {}),
   };
@@ -552,7 +563,11 @@ function columns(table: Indexed, value: unknown, option: string): readonly Colum
 
 function groupNames(groups: readonly Group[]): readonly string[] {
   const names: string[] = [];
-  for (const group of groups) names.push(group.kind === "field" ? group.column.field : group.as);
+  for (const group of groups) {
+    names.push(
+      group.kind === "field" ? group.column.field : group.kind === "path" ? group.key : group.as,
+    );
+  }
   return names;
 }
 
@@ -572,6 +587,12 @@ function readGroups(
       if (buckets === undefined) fail("OKM1120", "bucket group");
       groups.push(buckets.readBucket(table, item, fields, aliases));
       bucketed = true;
+      continue;
+    }
+    if (typeof item === "string" && item.includes(".")) {
+      if (aliases.has(item)) fail("OKM1120", `group field ${item} clashes with a bucket as.`);
+      fields.add(item);
+      groups.push({ kind: "path", key: item });
       continue;
     }
     const column = typeof item === "string" ? table.columns.get(item) : undefined;
@@ -598,6 +619,12 @@ function readGroups(
 /** Writes `select ... from ... where ... group by ... order by ... limit`. */
 function statement(spec: Spec, buckets: BucketChunk | undefined): ReadBuild {
   return (schema, table, sink, outputs, call) => {
+    const resolved = new Map<string, ResolvedPath>();
+    if (call.dot === true) {
+      for (const group of spec.groups) {
+        if (group.kind === "path") resolved.set(group.key, pathGroup(table, group.key));
+      }
+    }
     sink.mark(
       `aggregate|${table.model.name}|g:${groupMark(spec.groups)}|c:${String(spec.count)}|${spec.calls
         .map((item) =>
@@ -621,6 +648,13 @@ function statement(spec: Spec, buckets: BucketChunk | undefined): ReadBuild {
             decode: group.column.decode,
           },
         );
+      } else if (group.kind === "path") {
+        const hit = resolved.get(group.key);
+        if (hit === undefined) fail("OKM1120", `Path ${group.key} was not prepared.`);
+        put(sink, outputs, wrote, hit.project, {
+          key: `g:${group.key}`,
+          decode: hit.column.decode,
+        });
       } else {
         if (buckets === undefined) fail("OKM1120", "bucket group");
         buckets.writeBucket(sink, outputs, wrote, group);
@@ -646,6 +680,7 @@ function statement(spec: Spec, buckets: BucketChunk | undefined): ReadBuild {
     sink.text(" from ");
     sink.text(quote(table.model.sql));
     sink.text(" t");
+    if (call.dot === true) emitPathJoins(schema, sink);
     emitWhere(schema, table, call.where, sink, "t", 0);
     if (spec.groups.length > 0) {
       sink.text(" group by ");
@@ -653,10 +688,10 @@ function statement(spec: Spec, buckets: BucketChunk | undefined): ReadBuild {
         if (buckets === undefined) fail("OKM1120", "bucket group");
         buckets.writeGrouped(sink, groupNames(spec.groups));
       } else {
-        sink.text(spec.groups.map((group) => fieldRef(group)).join(", "));
+        sink.text(spec.groups.map((group) => fieldRef(group, resolved)).join(", "));
       }
       if (spec.having !== undefined) emitHaving(schema, table, spec.having, spec.slots, sink);
-      emitGroupOrder(spec, call.orderBy, sink);
+      emitGroupOrder(spec, call.orderBy, sink, resolved);
     }
     if (call.limit !== undefined) {
       const limit = String(call.limit as number);
@@ -676,7 +711,12 @@ function statement(spec: Spec, buckets: BucketChunk | undefined): ReadBuild {
  * timestamp sorts as a timestamp and not as the text the select list returns.
  * With no `orderBy`, groups come in `groupBy` order.
  */
-function emitGroupOrder(spec: Spec, orderBy: unknown, sink: Sink): void {
+function emitGroupOrder(
+  spec: Spec,
+  orderBy: unknown,
+  sink: Sink,
+  resolved: ReadonlyMap<string, ResolvedPath>,
+): void {
   const names = groupNames(spec.groups);
   const keys = isRecord(orderBy) ? Object.keys(orderBy) : [];
   sink.text(" order by ");
@@ -686,7 +726,7 @@ function emitGroupOrder(spec: Spec, orderBy: unknown, sink: Sink): void {
         .map((group, index) =>
           spec.bucketed
             ? `${String(index + 1)} asc nulls last`
-            : `${fieldRef(group)} asc nulls last`,
+            : `${fieldRef(group, resolved)} asc nulls last`,
         )
         .join(", "),
     );
@@ -704,7 +744,7 @@ function emitGroupOrder(spec: Spec, orderBy: unknown, sink: Sink): void {
         ? (slot?.expr ?? fail("OKM1120", `orderBy ${key} is not a group or an aggregate.`))
         : spec.bucketed
           ? String(at + 1)
-          : fieldRef(group),
+          : fieldRef(group, resolved),
     );
     sink.text(parsed.dir === "asc" ? " asc" : " desc");
     sink.text(parsed.nulls === "first" ? " nulls first" : " nulls last");
@@ -719,7 +759,9 @@ function groupMark(groups: readonly Group[]): string {
     parts.push(
       group.kind === "field"
         ? group.column.field
-        : `b:${group.column.field}:${group.as}:${group.unit}:${String(group.shift)}`,
+        : group.kind === "path"
+          ? group.key
+          : `b:${group.column.field}:${group.as}:${group.unit}:${String(group.shift)}`,
     );
   }
   return parts.join(",");
@@ -729,7 +771,10 @@ function numericOption(option: string): boolean {
   return option === "sum" || option === "avg";
 }
 
-function fieldRef(group: Group): string {
+function fieldRef(group: Group, resolved: ReadonlyMap<string, ResolvedPath>): string {
+  if (group.kind === "path") {
+    return resolved.get(group.key)?.expr ?? fail("OKM1120", `Path ${group.key} was not prepared.`);
+  }
   if (group.kind !== "field") return fail("OKM1120", "bucket group");
   return `t.${quote(group.column.sql)}`;
 }

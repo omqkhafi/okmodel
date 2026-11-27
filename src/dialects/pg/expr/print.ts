@@ -6,7 +6,7 @@
  */
 
 import { OkmError } from "../../../contracts/error.js";
-import { quoteIdent } from "../ddl.js";
+import { compositeAccess } from "../path-sql.js";
 import { quoteLiteral } from "../quote.js";
 import type { Cond, Node, SettingTypes } from "./index.js";
 
@@ -27,7 +27,7 @@ export function printNode(
     case "col":
       return column(node.name);
     case "field":
-      return `(${printNode(node.e, column, cond)}).${quoteIdent(node.name)}`;
+      return compositeAccess(printNode(node.e, column, cond), [node.name]);
     case "lit":
       return literalSql(node.v);
     case "op":

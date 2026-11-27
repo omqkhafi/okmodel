@@ -70,6 +70,7 @@ type FieldSpec = {
   readonly encode: (value: unknown) => string;
   readonly decode: (wire: string) => unknown;
   readonly mark?: CompositeMark;
+  readonly accepts?: readonly string[];
   readonly enums: readonly CompositeEnumNote[];
   readonly extension?: string;
   readonly typeName?: string;
@@ -153,6 +154,7 @@ function readFields(typeName: string, fields: CompositeFieldMap): FieldSpec[] {
       encode: state.encode,
       decode: state.decode,
       ...(nested !== undefined ? { mark: nested } : {}),
+      ...(state.accepts !== undefined ? { accepts: state.accepts } : {}),
       enums: enumNotes(state, nested),
       ...(state.extension !== undefined ? { extension: state.extension } : {}),
       ...(state.typeDependency !== undefined ? { typeName: state.typeDependency } : {}),
@@ -238,6 +240,18 @@ function buildMark(
     fields,
     enums,
     fieldValue: (field, value) => fieldWire(name, specs, field, value),
+    fieldCodec: (field) => {
+      const spec = specs.find((item) => item.name === field);
+      if (spec === undefined) return undefined;
+      return {
+        dataType: spec.dataType,
+        nullable: spec.nullable,
+        encode: spec.encode,
+        decode: spec.decode,
+        ...(spec.accepts !== undefined ? { accepts: spec.accepts } : {}),
+        ...(spec.mark !== undefined ? { nested: spec.mark } : {}),
+      };
+    },
     declare: (namespace, provenance, objects) => {
       declare(name, specs, namespace, provenance, objects, options);
     },

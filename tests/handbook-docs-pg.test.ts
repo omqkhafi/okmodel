@@ -1,5 +1,5 @@
 /**
- * Handbook output fences on Read rows, How it works, and Tenancy run on a
+ * Handbook output fences on Read rows, Composite types, How it works, and Tenancy run on a
  * real Postgres. Each `text` or `sql` fence is the output of the fence above
  * it, so a change in the library or the page that moves the output fails here.
  */
@@ -52,6 +52,13 @@ postgresTest(
         "order-relation.out",
       ],
       [
+        "relation-path.ts",
+        "byName",
+        `insert into projects (name) values ('Beta'), ('Alpha');
+         insert into tasks (title, "projectId") values ('Write', 1), ('Plan', 2), ('Loose', null)`,
+        "relation-path.out",
+      ],
+      [
         "distinct.ts",
         "titles",
         `insert into notes (title, amount) values ('Hello', 5), ('Hello', 9), ('World', 3), ('World', null)`,
@@ -84,6 +91,26 @@ postgresTest(
     });
   },
   120_000,
+);
+
+postgresTest(
+  gate,
+  "Composite types prints the dotted field example",
+  async () => {
+    const page = readFileSync(join(docs, "schema/composite-types.mdx"), "utf8");
+    const example = await load(page, "composite-path.ts");
+    await apply(
+      example,
+      `insert into people (home) values
+        (jsonb_populate_record(null::address, '{"city":"Jeddah"}')),
+        (jsonb_populate_record(null::address, '{"city":"Riyadh"}'))`,
+      async (url) => {
+        const value = await call(example, "inRiyadh", url);
+        expect(`${Bun.inspect(value)}\n`).toBe(body(page, "text", "composite-path.out"));
+      },
+    );
+  },
+  60_000,
 );
 
 postgresTest(
@@ -272,7 +299,7 @@ async function capture(run: () => Promise<unknown>): Promise<string> {
 }
 
 function body(text: string, lang: string, title: string): string {
-  const pattern = /```(\w+) title="([^"]+)"\n([\s\S]*?)```/g;
+  const pattern = /```(\w+)[^\n]*?\btitle="([^"]+)"[^\n]*\n([\s\S]*?)```/g;
   for (const match of text.matchAll(pattern)) {
     if (match[1] === lang && match[2] === title) return match[3] ?? "";
   }

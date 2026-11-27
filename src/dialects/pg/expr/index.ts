@@ -294,8 +294,8 @@ export function col<T = unknown, N extends boolean = false>(name: string): Expr<
 /**
  * One field of a composite expression.
  *
- * Prints `(expr)."name"`. Indexes and generated columns use this. A query
- * path `"home.city"` is not this function.
+ * Prints `(expr)."name"`. Indexes, checks, and generated columns use this.
+ * `db.*` names the same field as `"home.city"`.
  *
  * @param expr - Composite expression, usually a column
  * @param name - Field name

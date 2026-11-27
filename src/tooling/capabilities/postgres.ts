@@ -170,6 +170,8 @@ export const POSTGRES_FEATURES = {
   "query.exprSelect": native("proof:query.exprSelect"),
   /** `"relation.column"` in select, where, groupBy, and orderBy is a join. */
   "query.toOnePath": native("proof:query.toOnePath"),
+  /** `"home.city"` and `"project.name"` in `db.*` where, select, orderBy, and groupBy. */
+  "query.paths": native("proof:query.paths"),
 } as const satisfies Registry;
 
 /** One Postgres feature key. */

@@ -149,7 +149,77 @@ export type ReadCall = {
   readonly dl?: readonly [key: string, value: number];
   /** Rows in a `page()`. The call's `limit` is one more, to learn whether a next page exists. */
   readonly size?: number;
+  /** Set when a key in `where`, `select`, `orderBy`, or `groupBy` contains `.`. */
+  readonly dot?: true;
+  /** Aggregate `groupBy`. Absent on every other read. The path module scans it. */
+  readonly groupBy?: unknown;
 };
+
+/** What the lazy path module installs. Planning calls it only after a dotted key. */
+type PathApi = {
+  prepare(schema: QuerySchema, call: ReadCall): void;
+  end(): void;
+  where(
+    schema: QuerySchema,
+    table: Indexed,
+    key: string,
+    value: unknown,
+    sink: Sink,
+    alias: string,
+    depth: number,
+  ): void;
+  column(table: Indexed, key: string): ColumnModel;
+  project(column: ColumnModel): string;
+  order(table: Indexed, key: string, value: unknown, sink: Sink, alias: string): void;
+  joins(schema: QuerySchema, sink: Sink): void;
+  group(
+    table: Indexed,
+    key: string,
+  ): { readonly expr: string; readonly project: string; readonly column: ColumnModel };
+};
+
+let pathApi: PathApi | undefined;
+
+/**
+ * Installs the dotted-path compiler.
+ *
+ * Called when `paths` loads. A second install replaces the first.
+ *
+ * @param api - Resolver for composite fields and to-one relations
+ */
+export function installPaths(api: PathApi): void {
+  pathApi = api;
+}
+
+function paths(): PathApi {
+  const api = pathApi;
+  if (api === undefined) fail("OKM1120", "A dotted path needs the path module.");
+  return api;
+}
+
+/**
+ * Writes to-one joins for a dotted read.
+ *
+ * @param schema - Connected schema
+ * @param sink - Statement under construction
+ */
+export function emitPathJoins(schema: QuerySchema, sink: Sink): void {
+  paths().joins(schema, sink);
+}
+
+/**
+ * Group and select SQL for one dotted aggregate key.
+ *
+ * @param table - The aggregate's table
+ * @param key - The dotted key
+ * @returns The raw group expression, the projected select expression, and the codec
+ */
+export function pathGroup(
+  table: Indexed,
+  key: string,
+): { readonly expr: string; readonly project: string; readonly column: ColumnModel } {
+  return paths().group(table, key);
+}
 
 /** What a finished read gives the warning slot: its plan and the decoded value. */
 export type ReadDone = { readonly plan: Plan; readonly value: unknown };
@@ -453,29 +523,67 @@ export function installOperatorSql(emit: OperatorEmit): void {
 }
 
 /**
- * Reports whether planning this read has to load the 0.2 operator module first.
- *
- * Equality, comparisons, and text patterns plan without it.
- *
- * @param schema - Connected schema
- * @param call - The read
- * @returns `true` when {@link installOperatorSql} has not run and the read needs it
- */
-/**
  * Bit 1: load the operator compiler. Bit 2: the order names a relation.
+ * Bit 4: a key contains `.` and the path module has to resolve it.
  *
- * Bit 1 stays clear once that compiler is installed. Bit 2 does not.
+ * Bit 1 stays clear once that compiler is installed. Bits 2 and 4 do not.
  *
  * @param schema - Connected schema
  * @param call - The read
- * @returns Bit 1, bit 2, both, or 0
+ * @returns Bits 1, 2, and 4, combined, or 0
  */
 export function readMarks(schema: QuerySchema, call: ReadCall): number {
   const table = indexes(schema).get(call.table);
   if (table === undefined) return 0;
-  const bits = orderScan(call.orderBy);
-  if (operatorEmit !== undefined) return bits & 2;
+  let bits = orderScan(call.orderBy);
+  if (sawDot(call.where) || sawList(call.select) || sawDot(call.orderBy) || sawList(call.groupBy)) {
+    bits |= 4;
+  }
+  if (operatorEmit !== undefined) return bits & 6;
   return (needsOperatorSql(table, call.where) ? 1 : 0) | bits;
+}
+
+/**
+ * True when an object key contains `.`.
+ *
+ * String values are not keys, so an email does not load the path module.
+ * `or`, `and`, and `not` are walked. Other operators are values.
+ *
+ * @param value - A `where` or `orderBy` value
+ * @returns `true` when a key contains `.`
+ */
+function sawDot(value: unknown): boolean {
+  if (isOperator(value)) {
+    const name = operatorName(value);
+    if (name === "or" || name === "and" || name === "not") return sawDot(operatorValue(value));
+    return false;
+  }
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      if (sawDot(value[index])) return true;
+    }
+    return false;
+  }
+  if (!isRecord(value)) return false;
+  for (const key of Object.keys(value)) {
+    if (key.includes(".") || sawDot(value[key])) return true;
+  }
+  return false;
+}
+
+/**
+ * True when a select or groupBy list names a dotted key.
+ *
+ * @param value - The list, or anything else
+ * @returns `true` when a string entry contains `.`
+ */
+function sawList(value: unknown): boolean {
+  if (!Array.isArray(value)) return false;
+  for (let index = 0; index < value.length; index += 1) {
+    const item = value[index];
+    if (typeof item === "string" && item.includes(".")) return true;
+  }
+  return false;
 }
 
 /**
@@ -570,6 +678,7 @@ export function needsOperatorSql(table: Indexed, value: unknown, key?: string): 
     }
     if (name === "not" || name === "eq") return needsOperatorSql(table, operatorValue(value), key);
     if (TEXT_OPERATORS.includes(`,${name},`)) {
+      if (key !== undefined && key.includes(".")) return true;
       const column = key === undefined ? undefined : table.columns.get(key);
       return column !== undefined && !isTextColumn(column.dataType);
     }
@@ -812,9 +921,11 @@ function emit(
   const previousView = activeView;
   activeScope = call.scope;
   activeView = call.archive;
+  if (call.dot === true) paths().prepare(schema, call);
   try {
     emitRead(schema, call, sink, outputs, hooks);
   } finally {
+    if (call.dot === true) paths().end();
     activeScope = previousScope;
     activeView = previousView;
   }
@@ -847,6 +958,7 @@ function emitRead(
     sink.text("select count(*)::text from ");
     sink.text(quote(table.model.sql));
     sink.text(" t");
+    if (call.dot === true) paths().joins(schema, sink);
     emitWhere(schema, table, call.where, sink, "t", 0);
     return;
   }
@@ -854,6 +966,7 @@ function emitRead(
     sink.text("select exists(select 1 from ");
     sink.text(quote(table.model.sql));
     sink.text(" t");
+    if (call.dot === true) paths().joins(schema, sink);
     emitWhere(schema, table, call.where, sink, "t", 0);
     sink.text(")::text");
     return;
@@ -866,7 +979,11 @@ function emitRead(
     const item = selected[index];
     if (item === undefined) continue;
     if (index > 0) sink.text(", ");
-    sink.text(projectExpr(`t.${quote(item.sql)}`, item.dataType, item.encode));
+    sink.text(
+      item.field.includes(".")
+        ? paths().project(item)
+        : projectExpr(`t.${quote(item.sql)}`, item.dataType, item.encode),
+    );
     sink.mark(`s:${item.field}`);
     outputs?.fields.push({ key: item.field, at: column, decode: item.decode });
     column += 1;
@@ -902,6 +1019,7 @@ function emitRead(
     hooks?.join(schema, include, sink, "t", `i${String(index)}`, 0);
   }
   rel?.join(sink);
+  if (call.dot === true) paths().joins(schema, sink);
   emitWhere(schema, table, call.where, sink, "t", 0, false, call.after);
   if (rel !== undefined) rel.order(sink);
   else emitOrder(table, call.orderBy, sink, "t");
@@ -1039,6 +1157,10 @@ function emitPredicate(
   alias: string,
   depth: number,
 ): void {
+  if (key.includes(".")) {
+    paths().where(schema, table, key, value, sink, alias, depth);
+    return;
+  }
   const relation = table.relations.get(key);
   if (relation !== undefined) {
     emitRelationFilter(schema, relation, value, sink, alias, depth);
@@ -1309,6 +1431,11 @@ export function emitOrder(table: Indexed, orderBy: unknown, sink: Sink, alias: s
   for (let index = 0; index < keys.length; index += 1) {
     const key = keys[index];
     if (key === undefined) continue;
+    if (key.includes(".")) {
+      if (index > 0) sink.text(", ");
+      paths().order(table, key, orderBy[key], sink, alias);
+      continue;
+    }
     const column = table.columns.get(key);
     if (column === undefined) unknownField(table, key);
     refuseHidden(column);
@@ -1443,6 +1570,10 @@ export function selectedColumns(table: Indexed, select: unknown): readonly Colum
   for (const name of select) {
     if (typeof name !== "string") {
       fail("OKM1120", "select must be a list of field names.");
+    }
+    if (name.includes(".")) {
+      columns.push(paths().column(table, name));
+      continue;
     }
     const column = table.columns.get(name);
     if (column === undefined) unknownField(table, name);
