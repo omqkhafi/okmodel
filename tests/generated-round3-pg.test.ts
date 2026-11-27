@@ -68,14 +68,12 @@ postgresTest(gate, "violating virtual rows stop apply and clean rows pass", asyn
   const database = await createIsolatedDatabase();
   const db = openPostgres(database.url);
   try {
-    const version = await db<{ version: string }[]>`show server_version_num`;
-    const major = Math.floor(Number(version[0]?.version ?? "0") / 10_000);
-    if (major < 18) return;
+    if ((await serverMajor(db)) < 18) return;
     await db.unsafe(
       `create table stats (qty integer, total integer generated always as (qty + 1) virtual not null)`,
     );
     await db.unsafe(`insert into stats (qty) values (1)`);
-    const bad = `alter table "public"."stats" alter column "total" set expression as (qty - qty)`;
+    const bad = `alter table "public"."stats" alter column "total" set expression as (nullif(qty, qty))`;
     let caught: unknown;
     try {
       await applyTarget({
@@ -122,6 +120,68 @@ postgresTest(gate, "violating virtual rows stop apply and clean rows pass", asyn
       "public",
       [{ sql: bad }],
     );
+    await db.unsafe(`insert into stats (qty) values (1)`);
+    const add = `alter table "public"."stats" add column "extra" integer generated always as (nullif(qty, qty)) virtual not null`;
+    let added: unknown;
+    try {
+      await applyTarget({
+        url: database.url,
+        target: "default",
+        protected: false,
+        migrations: [
+          {
+            id: "0002_add",
+            catalogHash: "add",
+            steps: [
+              {
+                sql: add,
+                kind: "add-column",
+                class: "expand",
+                action: "ddl",
+                lock: "ACCESS EXCLUSIVE",
+                transactional: true,
+              },
+            ],
+          },
+        ],
+      });
+    } catch (error) {
+      added = error;
+    }
+    expect(added).toBeInstanceOf(OkmError);
+    if (added instanceof OkmError) expect(added.code).toBe("OKM1922");
+    const missing = await db<{ n: string }[]>`
+      select count(*)::text as n from pg_attribute
+      where attrelid = 'stats'::regclass and attname = 'extra'
+    `;
+    expect(missing[0]?.n).toBe("0");
+    await db.unsafe(`delete from stats`);
+    await applyTarget({
+      url: database.url,
+      target: "default",
+      protected: false,
+      migrations: [
+        {
+          id: "0003_add",
+          catalogHash: "add-clean",
+          steps: [
+            {
+              sql: add,
+              kind: "add-column",
+              class: "expand",
+              action: "ddl",
+              lock: "ACCESS EXCLUSIVE",
+              transactional: true,
+            },
+          ],
+        },
+      ],
+    });
+    const present = await db<{ n: string }[]>`
+      select count(*)::text as n from pg_attribute
+      where attrelid = 'stats'::regclass and attname = 'extra'
+    `;
+    expect(present[0]?.n).toBe("1");
   } finally {
     await db.end({ timeout: 5 });
     await database.close();
@@ -198,7 +258,9 @@ postgresTest(gate, "rewrite weights match relfilenode and AccessExclusiveLock", 
     expect(exprStep?.weight).toBe("rewrite");
     expect(addStep?.weight).toBe("rewrite");
     expect(await rewrites(db, typeStep?.sql ?? "")).toBe(true);
-    expect(await rewrites(db, exprStep?.sql ?? "")).toBe(true);
+    if ((await serverMajor(db)) >= 17) {
+      expect(await rewrites(db, exprStep?.sql ?? "")).toBe(true);
+    }
     expect(await rewrites(db, addStep?.sql ?? "")).toBe(true);
   } finally {
     await db.end({ timeout: 5 });
@@ -322,6 +384,11 @@ postgresTest(
     }
   },
 );
+
+async function serverMajor(db: ReturnType<typeof openPostgres>): Promise<number> {
+  const rows = await db<{ server_version_num: string }[]>`show server_version_num`;
+  return Math.floor(Number(rows[0]?.server_version_num ?? "0") / 10_000);
+}
 
 async function rewrites(db: ReturnType<typeof openPostgres>, statement: string): Promise<boolean> {
   if (statement.length === 0) return false;
