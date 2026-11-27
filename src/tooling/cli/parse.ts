@@ -42,6 +42,10 @@ export type ParsedCli = {
   readonly dropAndAdd: boolean;
   /** `--fill table.column=<sql>`, repeated. */
   readonly fills: readonly string[];
+  /** `okm call --arg name=value`, repeated. */
+  readonly args: readonly string[];
+  /** `okm call --rollback`. */
+  readonly rollback: boolean;
   readonly schemas: readonly string[];
   /** `okm pull --import-ext`. `ts` when the flag is absent. */
   readonly importExt: "ts" | "js" | "none";
@@ -299,6 +303,8 @@ export function parseCli(argv: readonly string[]): ParsedCli {
     renames,
     dropAndAdd: values["drop-and-add"] === true,
     fills,
+    args: stringList(values.arg),
+    rollback: values.rollback === true,
     schemas: schemasOf(values.schema),
     importExt: importExtOf(stringValue(values["import-ext"])),
     casing: casingOf(stringValue(values.casing)),
@@ -404,6 +410,8 @@ function blank(flags: { readonly help: boolean; readonly json: boolean }): Parse
     renames: [],
     dropAndAdd: false,
     fills: [],
+    args: [],
+    rollback: false,
     schemas: [],
     importExt: "ts",
     casing: undefined,

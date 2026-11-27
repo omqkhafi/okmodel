@@ -43,7 +43,7 @@ export const KNOWN_BUGS: readonly KnownBug[] = [
     repro: [
       "// channel: okm check --target replica",
       'const tasks = table("tasks", { id: t.identity().primaryKey(), title: t.text() });',
-      'const touch = fn("touch", { returns: "trigger", language: "plpgsql", body: "begin return new; end", dependsOn: [tasks] });',
+      'const touch = fn("touch", { returns: triggerType, language: "plpgsql", body: "begin return new; end", dependsOn: [tasks] });',
       'const trig = trigger("tasks_when", { on: tasks, timing: "before", events: ["update"], level: "row", calls: touch, when: "OLD.title IS DISTINCT FROM NEW.title" });',
       "export const app = schema({ tables: [tasks], functions: [touch], triggers: [trig] });",
       "// OKM1896: hot standby cannot create the temporary table used to reprint WHEN",

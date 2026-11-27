@@ -14,7 +14,7 @@ import { catalog } from "../src/contracts/catalog/build.js";
 import type { Catalog, CatalogObject } from "../src/contracts/catalog/types.js";
 import { index, schema, sql as sqlText, table, t } from "../src/dialects/pg/index.js";
 import { introspectSchema, type CatalogQuery } from "../src/dialects/pg/introspect.js";
-import { fn, trigger } from "../src/dialects/pg/fn/index.js";
+import { fn, trigger, triggerType } from "../src/dialects/pg/fn/index.js";
 import { materializedView, view } from "../src/dialects/pg/view/index.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
@@ -279,7 +279,7 @@ function declared(fillfactor: number) {
     },
   );
   const touch = fn("note_touch", {
-    returns: "trigger",
+    returns: triggerType,
     language: "plpgsql",
     body: "begin return new; end",
     dependsOn: [notes],

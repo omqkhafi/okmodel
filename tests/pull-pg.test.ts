@@ -147,7 +147,7 @@ postgresTest(
       expect(first.text).toContain("note_open(note_status): verified");
       expect(first.text).toContain("open_notes: verified");
       expect(first.text).toContain("aggregates: 2");
-      expect(first.text).toContain("procedures: 0");
+      expect(first.text).not.toContain("procedures:");
       expect(first.text).toContain("event triggers: 0");
       expect(first.text).toContain("rules: 0");
       expect(readFileSync(join(cwd, "schema.ts"), "utf8")).toContain("fn(");

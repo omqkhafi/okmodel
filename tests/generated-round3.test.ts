@@ -9,7 +9,7 @@ import { expect, test } from "bun:test";
 
 import { catalogHash } from "../src/contracts/catalog/document.js";
 import { OkmError } from "../src/contracts/error.js";
-import { fn, trigger } from "../src/dialects/pg/fn/index.js";
+import { fn, trigger, triggerType } from "../src/dialects/pg/fn/index.js";
 import { index, schema, sql, table, t } from "../src/dialects/pg/index.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
 import { columnTenancy } from "../src/runtime/tenancy/index.js";
@@ -291,7 +291,7 @@ test("a before trigger when on a generated column is OKM1920", () => {
     total: t.integer().generated(() => sql`1`),
   });
   const touch = fn("touch_notes", {
-    returns: "trigger",
+    returns: triggerType,
     language: "plpgsql",
     body: sql`begin return new; end`,
     dependsOn: [notes],
@@ -354,8 +354,8 @@ test("a virtual column of a catalog type or calling a user function is OKM1920",
     total: t.integer().generated(() => sql`double_n(n)`, { stored: false }),
   });
   const doubleN = fn("double_n", {
-    arguments: [{ name: "n", type: "integer" }],
-    returns: "integer",
+    arguments: [{ name: "n", type: t.integer() }],
+    returns: t.integer(),
     language: "sql",
     volatility: "immutable",
     body: sql`select n * 2`,

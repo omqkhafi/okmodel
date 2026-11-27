@@ -69,6 +69,8 @@ test("B-33: a unique violation on a sensitive table keeps values out of cause", 
   expect(mapped.cause).not.toHaveProperty("detail");
   expect(mapped.cause).not.toHaveProperty("where");
   expect(mapped.cause).not.toHaveProperty("message");
+  expect(mapped.detail).toBeUndefined();
+  expect(mapped.hint).toBeUndefined();
 });
 
 test("E-1: a non-sensitive table omits bound values unless includeValues", () => {
@@ -78,11 +80,16 @@ test("E-1: a non-sensitive table omits bound values unless includeValues", () =>
     constraint: "plain_email_key",
     table: "plain",
     detail,
+    hint: "retry",
     cause: Object.assign(new Error(detail), { detail, parameters: ["ada@example.com"] }),
   });
   const mapped = mapPostgresError(driver, { schema: app });
   expect(mapped.kind).toBe("unique");
   expect(mapped.message.includes("ada@example.com")).toBe(false);
+  expect(mapped.detail).toBe(detail);
+  expect(mapped.hint).toBe("retry");
+  expect(JSON.stringify(mapped).includes("ada@example.com")).toBe(false);
+  expect(JSON.stringify(mapped.log()).includes("ada@example.com")).toBe(false);
   expect(mapped.values()).toBeUndefined();
   expect(mapped.cause).not.toHaveProperty("parameters");
   expect(mapped.cause).not.toHaveProperty("detail");
@@ -109,6 +116,7 @@ test("E-1: includeValues still redacts a sensitive column", () => {
   );
   expect(mapped.values()).toBeUndefined();
   leakNowhere(mapped, SECRET);
+  expect(mapped.detail).toBeUndefined();
   expect(mapped.cause).not.toHaveProperty("parameters");
   expect(mapped.cause).not.toHaveProperty("detail");
 });

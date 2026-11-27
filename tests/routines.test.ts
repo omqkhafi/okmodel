@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { catalog } from "../src/contracts/catalog/build.js";
 import { OkmError } from "../src/contracts/error.js";
 import { schemaDeclarations } from "../src/dialects/pg/declarations.js";
-import { fn, trigger } from "../src/dialects/pg/fn/index.js";
+import { fn, trigger, triggerType, type RoutineType } from "../src/dialects/pg/fn/index.js";
 import { schema, table, t } from "../src/dialects/pg/index.js";
 import { timestamps } from "../src/runtime/traits/index.js";
 import { repoRoot } from "../scripts/root.js";
@@ -24,11 +24,11 @@ const tasks = table("tasks", { id: t.text().primaryKey(), title: t.text() });
 
 test("plpgsql without dependsOn is OKM1824 and security definer without search_path is OKM1823", () => {
   const missing = capture(() =>
-    fn("touch", { returns: "trigger", language: "plpgsql", body: "begin return new; end" }),
+    fn("touch", { returns: triggerType, language: "plpgsql", body: "begin return new; end" }),
   );
   expect(missing.code).toBe("OKM1824");
   const empty = fn("touch", {
-    returns: "trigger",
+    returns: triggerType,
     language: "plpgsql",
     body: "begin return new; end",
     dependsOn: [],
@@ -36,7 +36,7 @@ test("plpgsql without dependsOn is OKM1824 and security definer without search_p
   expect(empty.argTypes).toEqual([]);
   const definer = capture(() =>
     fn("read", {
-      returns: "integer",
+      returns: t.integer(),
       language: "sql",
       security: "definer",
       body: "begin atomic select 1; end",
@@ -47,7 +47,7 @@ test("plpgsql without dependsOn is OKM1824 and security definer without search_p
 
 test("a when that names OLD and NEW tracks those columns (B-46)", () => {
   const touch = fn("touch", {
-    returns: "trigger",
+    returns: triggerType,
     language: "plpgsql",
     body: "begin return new; end",
     dependsOn: [tasks],
@@ -92,21 +92,21 @@ test("a when that names OLD and NEW tracks those columns (B-46)", () => {
 
 test("overloads are distinct and a plan creates tables, then functions, then triggers", () => {
   const byText = fn("slugify", {
-    arguments: [{ name: "title", type: "text" }],
-    returns: "text",
+    arguments: [{ name: "title", type: t.text() }],
+    returns: t.text(),
     language: "plpgsql",
     body: "begin return title; end",
     dependsOn: [{ table: tasks, column: "title" }],
   });
   const byCount = fn("slugify", {
-    arguments: [{ name: "n", type: "integer" }],
-    returns: "text",
+    arguments: [{ name: "n", type: t.integer() }],
+    returns: t.text(),
     language: "plpgsql",
     body: "begin return n::text; end",
     dependsOn: [tasks],
   });
   const touch = fn("touch", {
-    returns: "trigger",
+    returns: triggerType,
     language: "plpgsql",
     volatility: "volatile",
     body: "begin return new; end",
@@ -149,25 +149,25 @@ test("overloads are distinct and a plan creates tables, then functions, then tri
 test("a rename recreates a function and a trigger whose body mentions the old name", () => {
   const notes = table("notes", { id: t.identity(), title: t.text() });
   const length = fn("title_len", {
-    returns: "integer",
+    returns: t.integer(),
     language: "sql",
     body: 'select length("title")',
     dependsOn: [{ table: notes, column: "title" }],
   });
   const named = fn("notes_title_len", {
-    returns: "integer",
+    returns: t.integer(),
     language: "sql",
     body: 'select length("title")',
     dependsOn: [{ table: notes, column: "title" }],
   });
   const counted = fn("note_count", {
-    returns: "bigint",
+    returns: t.bigint(),
     language: "sql",
     body: 'select count(*) from "notes"',
     dependsOn: [notes],
   });
   const guard = fn("guard", {
-    returns: "trigger",
+    returns: triggerType,
     language: "plpgsql",
     body: "begin return new; end",
     dependsOn: [notes],
@@ -191,19 +191,19 @@ test("a rename recreates a function and a trigger whose body mentions the old na
     heading: t.text().renamedFrom("title"),
   });
   const lengthAfter = fn("title_len", {
-    returns: "integer",
+    returns: t.integer(),
     language: "sql",
     body: 'select length("heading")',
     dependsOn: [{ table: renamed, column: "heading" }],
   });
   const namedAfter = fn("notes_heading_len", {
-    returns: "integer",
+    returns: t.integer(),
     language: "sql",
     body: 'select length("heading")',
     dependsOn: [{ table: renamed, column: "heading" }],
   });
   const guardAfter = fn("guard", {
-    returns: "trigger",
+    returns: triggerType,
     language: "plpgsql",
     body: "begin return new; end",
     dependsOn: [renamed],
@@ -238,7 +238,7 @@ test("a rename recreates a function and a trigger whose body mentions the old na
 
   const posts = table("posts", { id: t.identity() }, { renamedFrom: "notes" });
   const countedAfter = fn("note_count", {
-    returns: "bigint",
+    returns: t.bigint(),
     language: "sql",
     body: 'select count(*) from "posts"',
     dependsOn: [posts],
@@ -257,8 +257,8 @@ test("a rename recreates a function and a trigger whose body mentions the old na
 });
 
 test("a compatible body change is create or replace and an incompatible one recreates the trigger", () => {
-  const before = declared("integer", "begin return 1; end");
-  const replaced = declared("integer", "begin return 2; end");
+  const before = declared(t.integer(), "begin return 1; end", true);
+  const replaced = declared(t.integer(), "begin return 2; end", true);
   const compatible = planMigration({
     before: before.catalog,
     after: replaced.catalog,
@@ -276,7 +276,7 @@ test("a compatible body change is create or replace and an incompatible one recr
 
   const incompatible = planMigration({
     before: before.catalog,
-    after: declared("text", "begin return 'a'; end").catalog,
+    after: declared(t.text(), "begin return 'a'; end").catalog,
     name: "returns",
   });
   const sql = incompatible.steps.map((step) => step.sql);
@@ -288,7 +288,7 @@ test("a compatible body change is create or replace and an incompatible one recr
 });
 
 test("dropping a table drops its trigger before its function, and a leftover dependent is refused", () => {
-  const app = declared("integer", "begin return 1; end");
+  const app = declared(t.integer(), "begin return 1; end", true);
   const sql = statements(app.catalog, catalog([]));
   expect(indexOf(sql, "drop trigger")).toBeLessThan(indexOf(sql, "drop function"));
   expect(indexOf(sql, "drop function")).toBeLessThan(indexOf(sql, "drop table"));
@@ -332,10 +332,10 @@ test("okm doctor explains a code and lists triggers", async () => {
     writeFileSync(
       join(cwd, "schema.ts"),
       [
-        `import { fn, trigger } from ${JSON.stringify(join(root, "src/dialects/pg/fn/index.ts"))};`,
+        `import { fn, trigger, triggerType } from ${JSON.stringify(join(root, "src/dialects/pg/fn/index.ts"))};`,
         `import { schema, table, t } from ${JSON.stringify(join(root, "src/dialects/pg/index.ts"))};`,
         'const tasks = table("tasks", { id: t.text().primaryKey() });',
-        'const touch = fn("touch", { returns: "trigger", language: "plpgsql", body: "begin return new; end", dependsOn: [tasks] });',
+        'const touch = fn("touch", { returns: triggerType, language: "plpgsql", body: "begin return new; end", dependsOn: [tasks] });',
         "export const app = schema({",
         "  tables: [tasks],",
         "  functions: [touch],",
@@ -361,14 +361,14 @@ test("okm doctor explains a code and lists triggers", async () => {
   }
 });
 
-function declared(returns: string, body: string) {
+function declared(returns: RoutineType, body: string, definer = false) {
   const slug = fn("slugify", {
-    arguments: [{ name: "title", type: "text" }],
+    arguments: [{ name: "title", type: t.text() }],
     returns,
     language: "plpgsql",
     body,
     dependsOn: [tasks],
-    ...(returns === "integer" ? { security: "definer" as const, searchPath: "public" } : {}),
+    ...(definer ? { security: "definer" as const, searchPath: "public" } : {}),
   });
   return schema({
     tables: [tasks],

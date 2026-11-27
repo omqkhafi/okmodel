@@ -22,6 +22,7 @@ import {
   table,
   text,
   uuid,
+  t,
 } from "../src/dialects/pg/index.js";
 import { fn } from "../src/dialects/pg/fn/index.js";
 import { materializedView, view } from "../src/dialects/pg/view/index.js";
@@ -80,10 +81,19 @@ test("a view, matview, enum, function, and policy drop in dependency order", asy
     tenancy: rlsTenancy({ key: "tenantId", type: "uuid" }),
     functions: [
       fn("note_open", {
-        returns: "boolean",
+        returns: t.boolean(),
         language: "sql",
         body: "select $1 = 'open'",
-        arguments: [{ name: "status", type: "note_status" }],
+        arguments: [
+          {
+            name: "status",
+            type: t.custom({
+              sqlType: "note_status",
+              encode: (value) => String(value),
+              decode: (wire) => wire,
+            }),
+          },
+        ],
         dependsOn: [notesWithStatus],
       }),
     ],

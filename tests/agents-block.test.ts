@@ -7,6 +7,7 @@ import { join } from "node:path";
 
 import { expect, test } from "bun:test";
 
+import { ensurePackedDocs } from "../scripts/docs-pack.js";
 import { repoRoot } from "../scripts/root.js";
 import { AGENTS_BLOCK_CAP, renderAgentsBlock } from "../src/tooling/agents/block.js";
 import { flagMentions, okmMentions } from "../src/tooling/agents/mentions.js";
@@ -84,6 +85,8 @@ test("the block names the guards that exist and no flag that does not", () => {
 });
 
 test("the skill and the public safety pages name only flags the CLI accepts", () => {
+  const root = repoRoot();
+  ensurePackedDocs(root);
   for (const path of [
     "skills/okmodel/SKILL.md",
     "docs/threat-model.md",
@@ -91,7 +94,7 @@ test("the skill and the public safety pages name only flags the CLI accepts", ()
     "docs/protection.md",
     "docs/migration-failure.md",
   ]) {
-    const text = readFileSync(join(repoRoot(), path), "utf8");
+    const text = readFileSync(join(root, path), "utf8");
     expect([path, ...flagMentions(text).bad]).toEqual([path]);
     expect(text).not.toContain("accept-destructive");
   }

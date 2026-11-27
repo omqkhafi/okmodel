@@ -86,7 +86,7 @@ test("destructive drops are errors and a create is not", () => {
   expect(codes(diff(labeled, table("tasks", { id: t.identity() })))).toContain("OKM1514");
   expect(codes(fromEmpty(labeled))).not.toContain("OKM1514");
 
-  const answer = fn("answer", { returns: "integer", language: "sql", body: "select 1" });
+  const answer = fn("answer", { returns: t.integer(), language: "sql", body: "select 1" });
   const withFn = schema({ tables: [tasks()], functions: [answer] });
   const withoutFn = schema({ tables: [tasks()] });
   expect(codes(plans(withFn, withoutFn))).toContain("OKM1515");
@@ -1360,8 +1360,8 @@ test("OKM1552 compares a stored domain check and a LANGUAGE sql body", () => {
     tables: [table("tasks", { n: t.domain("pos", t.integer(), "VALUE > 0") })],
     functions: [
       fn("by_id", {
-        arguments: [{ name: "n", type: "text" }],
-        returns: "text",
+        arguments: [{ name: "n", type: t.text() }],
+        returns: t.text(),
         language: "sql",
         body: "begin atomic select title from tasks where id = n; end",
       }),

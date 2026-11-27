@@ -1016,8 +1016,8 @@ export const app = schema({
   functions: [
     // plpgsql must name the tables it uses.
     fn("slug", {
-      arguments: [{ name: "title", type: "text" }],
-      returns: "text",
+      arguments: [{ name: "title", type: t.text() }],
+      returns: t.text(),
       language: "plpgsql",
       body: "begin return title; end",
       dependsOn: [tasks],
@@ -1038,7 +1038,7 @@ import { schema, table, t } from "okmodel/pg";
 
 const tasks = table("tasks", { id: t.text().primaryKey(), title: t.text() });
 const touch = fn("touch", {
-  returns: "trigger",
+  returns: triggerType,
   language: "plpgsql",
   volatility: "volatile",
   body: "begin return new; end",

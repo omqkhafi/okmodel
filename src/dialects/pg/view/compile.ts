@@ -17,6 +17,7 @@ import { toOneJoinSql } from "../path-sql.js";
 import { quoteLiteral } from "../quote.js";
 import type { AnyTable } from "../table.js";
 import { quoteIdent } from "../ddl.js";
+import { procArgOf } from "../fn/arg.js";
 
 /** One column of the printed view. */
 export type CompiledColumn = {
@@ -777,6 +778,10 @@ function isTable(value: object): value is AnyTable {
 }
 
 function literal(name: string, value: unknown): string {
+  const argument = procArgOf(value);
+  if (argument !== undefined) {
+    return `${quoteIdent(argument.routine)}.${quoteIdent(argument.name)}`;
+  }
   if (value === null) return "null";
   if (typeof value === "string") {
     if (value.includes("\0"))
@@ -789,6 +794,116 @@ function literal(name: string, value: unknown): string {
     return text.startsWith("-") ? `(${text})` : text;
   }
   refuse(name, "where can print a string, a number, a boolean, or null. Use q.sql for this value.");
+}
+
+/** One statement of a typed procedure body. */
+export type ProcedureStatement =
+  | {
+      readonly op: "find";
+      readonly source: object;
+      readonly options: Readonly<Record<string, unknown>>;
+    }
+  | {
+      readonly op: "aggregate";
+      readonly source: object;
+      readonly options: Readonly<Record<string, unknown>>;
+    }
+  | { readonly op: "sql"; readonly query: string }
+  | {
+      readonly op: "insert";
+      readonly source: object;
+      readonly options: { readonly values: Readonly<Record<string, unknown>> };
+    }
+  | {
+      readonly op: "update";
+      readonly source: object;
+      readonly options: {
+        readonly set: Readonly<Record<string, unknown>>;
+        readonly where?: unknown;
+      };
+    }
+  | {
+      readonly op: "delete";
+      readonly source: object;
+      readonly options: { readonly where?: unknown };
+    };
+
+/**
+ * Prints one procedure statement with the view printer.
+ *
+ * Find and aggregate use {@link compileView}. Insert, update, and delete use
+ * the same predicate and literal. Nothing is executed.
+ *
+ * @param name - Procedure name, for errors
+ * @param statement - One captured statement
+ * @param sources - Tables the body may touch
+ * @param names - Schema casing
+ * @returns Parameter-free SQL, without a trailing semicolon
+ */
+export function compileProcedureStatement(
+  name: string,
+  statement: ProcedureStatement,
+  sources: readonly object[],
+  names: Names,
+): string {
+  if (statement.op === "find" || statement.op === "aggregate") {
+    return compileView(name, statement, sources, names, () => {
+      refuse(name, "A procedure body reads a table, not a view.");
+    }).query;
+  }
+  if (statement.op === "sql") {
+    const query = statement.query.trim().replace(/;\s*$/, "");
+    if (query.length === 0) refuse(name, "The statement is empty.");
+    return query;
+  }
+  return compileMutation(name, statement, sources, names);
+}
+
+function compileMutation(
+  name: string,
+  statement: Exclude<ProcedureStatement, { readonly op: "find" | "aggregate" | "sql" }>,
+  sources: readonly object[],
+  names: Names,
+): string {
+  const from = openFrom(name, statement.source, sources, names, () => {
+    refuse(name, "A procedure body reads a table, not a view.");
+  });
+  const joins: Join[] = [];
+  if (statement.op === "delete") {
+    const where = statement.options.where;
+    const whereSql =
+      where === undefined ? "" : ` where ${predicate(name, from, where, names, joins, sources)}`;
+    return `delete from ${from.from}${whereSql}`;
+  }
+  if (from.table === undefined) refuse(name, "The statement needs a table.");
+  const table = quoteIdent(names.table(from.table));
+  if (statement.op === "insert") {
+    const values = statement.options.values;
+    const keys = Object.keys(values);
+    if (keys.length === 0) refuse(name, "insert needs values.");
+    const cols: string[] = [];
+    const vals: string[] = [];
+    for (const key of keys) {
+      const column = from.columns.get(key);
+      if (column === undefined) refuse(name, `Column ${key} is not on this table.`);
+      cols.push(quoteIdent(column.sql));
+      vals.push(literal(name, values[key]));
+    }
+    return `insert into ${table} (${cols.join(", ")}) values (${vals.join(", ")})`;
+  }
+  const set = statement.options.set;
+  const keys = Object.keys(set);
+  if (keys.length === 0) refuse(name, "update needs set.");
+  const assigns: string[] = [];
+  for (const key of keys) {
+    const column = from.columns.get(key);
+    if (column === undefined) refuse(name, `Column ${key} is not on this table.`);
+    assigns.push(`${quoteIdent(column.sql)} = ${literal(name, set[key])}`);
+  }
+  const where = statement.options.where;
+  const whereSql =
+    where === undefined ? "" : ` where ${predicate(name, from, where, names, joins, sources)}`;
+  return `update ${from.from} set ${assigns.join(", ")}${whereSql}`;
 }
 
 function decodeCount(wire: string): number {

@@ -2263,6 +2263,72 @@
     ]
   },
   {
+    "code": "OKM2125",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A security definer procedure touches a tenant table. The owner bypasses row security, so the procedure sees every tenant.",
+    "fix": "Make the procedure security invoker, or keep it off tenant tables.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Make the procedure security invoker.",
+        "docs": "docs/errors/OKM2125.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2125.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2125.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM2126",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A routine commits or rolls back inside an EXCEPTION block. The handler runs after the error, and the commit is easy to miss.",
+    "fix": "Commit in the main body, or leave the handler without transaction control.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Move COMMIT out of the EXCEPTION block.",
+        "docs": "docs/errors/OKM2126.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2126.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2126.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM2127",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A routine raises a custom SQLSTATE that raises does not name, or it uses a standard SQLSTATE class.",
+    "fix": "Declare the custom code in raises, and use a custom class for your own errors.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Add the code to raises, using a custom class such as C0001.",
+        "docs": "docs/errors/OKM2127.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2127.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2127.md#escape"
+      }
+    ]
+  },
+  {
     "code": "OKM2121",
     "kind": "invalid",
     "category": "input",

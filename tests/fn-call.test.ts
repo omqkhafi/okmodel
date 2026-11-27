@@ -9,22 +9,22 @@ import { expect, test } from "bun:test";
 import type { DriverPool } from "../src/contracts/driver.js";
 import { OkmError } from "../src/contracts/error.js";
 import { fn } from "../src/dialects/pg/fn/index.js";
-import { fragment, ident, schema, table, text, integer } from "../src/dialects/pg/index.js";
+import { fragment, ident, schema, table, text, integer, t } from "../src/dialects/pg/index.js";
 import { connect } from "../src/runtime/pg/postgresjs.js";
 
 const notes = table("notes", { id: text(), title: text(), n: integer() });
 const app = schema({ tables: [notes] });
 
 const slugify = fn("slugify", {
-  arguments: [{ name: "title", type: "text" }],
-  returns: "text",
+  arguments: [{ name: "title", type: t.text() }],
+  returns: t.text(),
   language: "sql",
   body: "select lower(title)",
 });
 
 const double = fn("double_n", {
-  arguments: [{ name: "n", type: "integer" }],
-  returns: "integer",
+  arguments: [{ name: "n", type: t.integer() }],
+  returns: t.integer(),
   language: "sql",
   body: "select n * 2",
 });

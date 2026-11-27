@@ -32,7 +32,7 @@ import { assertIndexRules } from "../migrate/index-rules.js";
 import { schemaDeclarations } from "../../dialects/pg/declarations.js";
 import { enumColumn } from "../../dialects/pg/enum.js";
 import { extension } from "../../dialects/pg/ext/index.js";
-import { fn } from "../../dialects/pg/fn/index.js";
+import { fn, triggerType } from "../../dialects/pg/fn/index.js";
 import {
   fragment,
   id,
@@ -569,11 +569,11 @@ thrown(
 thrown(
   "OKM1823",
   () => {
-    fn("read", { returns: "integer", language: "sql", security: "definer", body: "select 1" });
+    fn("read", { returns: t.integer(), language: "sql", security: "definer", body: "select 1" });
   },
   () => {
     fn("read", {
-      returns: "integer",
+      returns: t.integer(),
       language: "sql",
       security: "definer",
       body: "select 1",
@@ -585,11 +585,11 @@ thrown(
 thrown(
   "OKM1824",
   () => {
-    fn("touch", { returns: "trigger", language: "plpgsql", body: "begin return new; end" });
+    fn("touch", { returns: triggerType, language: "plpgsql", body: "begin return new; end" });
   },
   () => {
     fn("touch", {
-      returns: "trigger",
+      returns: triggerType,
       language: "plpgsql",
       body: "begin return new; end",
       dependsOn: [],
@@ -802,14 +802,14 @@ reported(
 reported(
   "OKM1515",
   () => {
-    const answer = fn("answer", { returns: "integer", language: "sql", body: "select 1" });
+    const answer = fn("answer", { returns: t.integer(), language: "sql", body: "select 1" });
     return schemaCodes(
       schema({ tables: [tasks()], functions: [answer] }),
       schema({ tables: [tasks()] }),
     );
   },
   () => {
-    const answer = fn("answer", { returns: "integer", language: "sql", body: "select 1" });
+    const answer = fn("answer", { returns: t.integer(), language: "sql", body: "select 1" });
     return schemaCodes(schema({ tables: [] }), schema({ tables: [tasks()], functions: [answer] }));
   },
 );
@@ -3187,7 +3187,7 @@ reported(
         tables: [table("notes", { id: t.integer().primaryKey() })],
         functions: [
           fn("read_notes", {
-            returns: "integer",
+            returns: t.integer(),
             language: "sql",
             security: "definer",
             searchPath: "public",
@@ -3203,7 +3203,7 @@ reported(
         tables: [table("notes", { id: t.integer().primaryKey() })],
         functions: [
           fn("read_notes", {
-            returns: "integer",
+            returns: t.integer(),
             language: "sql",
             security: "definer",
             searchPath: "public",
@@ -3363,6 +3363,109 @@ reported(
             { id: t.integer().primaryKey() },
             { policies: () => ({ open: { using: true } }) },
           ),
+        ],
+      }),
+    ),
+);
+
+reported(
+  "OKM2125",
+  () =>
+    adviceCodes(
+      schema({
+        tenancy: rlsTenancy({ key: "tenantId", type: "uuid" }),
+        tables: [table("notes", { id: t.integer().primaryKey() })],
+        functions: [
+          fn("close_notes", {
+            kind: "procedure",
+            security: "definer",
+            searchPath: "public",
+            language: "plpgsql",
+            dependsOn: [],
+            body: "begin update notes set id = id; end",
+          }),
+        ],
+      }),
+    ),
+  () =>
+    adviceCodes(
+      schema({
+        tenancy: rlsTenancy({ key: "tenantId", type: "uuid" }),
+        tables: [table("notes", { id: t.integer().primaryKey() })],
+        functions: [
+          fn("close_notes", {
+            kind: "procedure",
+            language: "plpgsql",
+            dependsOn: [],
+            body: "begin null; end",
+          }),
+        ],
+      }),
+    ),
+);
+
+reported(
+  "OKM2126",
+  () =>
+    adviceCodes(
+      schema({
+        tables: [],
+        functions: [
+          fn("save_batch", {
+            kind: "procedure",
+            commits: true,
+            language: "plpgsql",
+            dependsOn: [],
+            body: "begin exception when others then commit; end",
+          }),
+        ],
+      }),
+    ),
+  () =>
+    adviceCodes(
+      schema({
+        tables: [],
+        functions: [
+          fn("save_batch", {
+            kind: "procedure",
+            commits: true,
+            language: "plpgsql",
+            dependsOn: [],
+            body: "begin commit; end",
+          }),
+        ],
+      }),
+    ),
+);
+
+reported(
+  "OKM2127",
+  () =>
+    adviceCodes(
+      schema({
+        tables: [],
+        functions: [
+          fn("refuse", {
+            kind: "procedure",
+            language: "plpgsql",
+            dependsOn: [],
+            body: "begin raise exception 'closed' using errcode = 'C0001'; end",
+          }),
+        ],
+      }),
+    ),
+  () =>
+    adviceCodes(
+      schema({
+        tables: [],
+        functions: [
+          fn("refuse", {
+            kind: "procedure",
+            language: "plpgsql",
+            dependsOn: [],
+            raises: { closed: "C0001" },
+            body: "begin raise exception 'closed' using errcode = 'C0001'; end",
+          }),
         ],
       }),
     ),

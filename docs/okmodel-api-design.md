@@ -536,7 +536,7 @@ Every node carries: owner (`managed` / `external` / `ignored`), a canonical defi
 
 ```ts no-check="fn, trigger, and view depend on tasks from another section"
 export const touchUpdatedAt = fn("touch_updated_at", {
-  returns: "trigger", language: "plpgsql", volatility: "volatile",
+  returns: triggerType, language: "plpgsql", volatility: "volatile",
   body: sql`begin new."updatedAt" = now(); return new; end`, dependsOn: [tasks],
 });
 export const tasksTouch = trigger("tasks_touch", { on: tasks, timing: "before", events: ["update"], level: "row", calls: touchUpdatedAt });

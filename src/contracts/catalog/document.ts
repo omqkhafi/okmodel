@@ -27,7 +27,7 @@ import { compositeType, isComposite } from "./composite.js";
 import { domainType, enumType, isDomain } from "./enum.js";
 import { extensionObject } from "./extension.js";
 import { defaultPrivilegeObject, grantObject, roleObject } from "./privilege.js";
-import { functionObject, triggerObject } from "./routine.js";
+import { functionObject, retargetFunction, triggerObject } from "./routine.js";
 import { policyObject } from "./policy.js";
 import { materializedViewIndex, materializedViewObject, viewObject } from "./view.js";
 import {
@@ -412,23 +412,7 @@ function rewriteRenamedObject(
     case "extension":
       return retargeted(object, dependencies);
     case "function":
-      return functionObject({
-        namespace: object.identity.namespace,
-        name: object.identity.name,
-        arguments: object.definition.arguments,
-        returns: object.definition.returns,
-        language: object.definition.language,
-        volatility: object.definition.volatility,
-        security: object.definition.security,
-        body: object.definition.body,
-        owner: object.owner,
-        provenance: object.provenance,
-        dependencies,
-        ...(object.definition.searchPath !== undefined
-          ? { searchPath: object.definition.searchPath }
-          : {}),
-        ...(object.definition.atomic === true ? { atomic: true } : {}),
-      });
+      return retargetFunction(object, dependencies, object.definition.body);
     case "view":
     case "materializedView": {
       const local = object.dependencies.some(
@@ -863,23 +847,7 @@ function rewriteTableName(
     return { ...object, dependencies: dependencies.map((target) => ({ target })) };
   }
   if (object.kind === "function") {
-    return functionObject({
-      namespace: object.identity.namespace,
-      name: object.identity.name,
-      arguments: object.definition.arguments,
-      returns: object.definition.returns,
-      language: object.definition.language,
-      volatility: object.definition.volatility,
-      security: object.definition.security,
-      body: object.definition.body,
-      owner: object.owner,
-      provenance: object.provenance,
-      dependencies,
-      ...(object.definition.searchPath !== undefined
-        ? { searchPath: object.definition.searchPath }
-        : {}),
-      ...(object.definition.atomic === true ? { atomic: true } : {}),
-    });
+    return retargetFunction(object, dependencies, object.definition.body);
   }
   if (object.kind === "view" || object.kind === "materializedView") {
     const local = object.dependencies.some((edge) => {
@@ -1247,18 +1215,27 @@ function definitionToJson(object: CatalogObject): Json {
     }
     case "function": {
       const definition = object.definition;
+      const procedure = definition.routine === "procedure";
       return {
         arguments: definition.arguments.map((argument) => ({
           name: argument.name,
           type: argument.type,
+          ...(argument.mode !== undefined && argument.mode !== "in" ? { mode: argument.mode } : {}),
+          ...(argument.default !== undefined ? { default: argument.default } : {}),
         })),
         body: definition.body,
         language: definition.language,
-        returns: definition.returns,
+        ...(procedure ? { routine: "procedure" } : { returns: definition.returns }),
         security: definition.security,
-        volatility: definition.volatility,
+        ...(procedure ? {} : { volatility: definition.volatility }),
         ...(definition.atomic === true ? { atomic: true } : {}),
         ...(definition.searchPath !== undefined ? { searchPath: definition.searchPath } : {}),
+        ...(definition.commits === true ? { commits: true } : {}),
+        ...(definition.raises !== undefined
+          ? {
+              raises: definition.raises.map((item) => ({ code: item.code, name: item.name })),
+            }
+          : {}),
       };
     }
     case "trigger": {
@@ -1761,12 +1738,28 @@ function parseFunction(
   }
   rejectUnknown(
     definition,
-    ["arguments", "atomic", "body", "language", "returns", "searchPath", "security", "volatility"],
+    [
+      "arguments",
+      "atomic",
+      "body",
+      "commits",
+      "language",
+      "raises",
+      "returns",
+      "routine",
+      "searchPath",
+      "security",
+      "volatility",
+    ],
     "function definition",
   );
   const language = requireString(definition.language, "function language");
   if (language !== "sql" && language !== "plpgsql") {
     catalogError("OKM1020", `Function ${identity.name} language must be sql or plpgsql.`);
+  }
+  const procedure = definition.routine === "procedure";
+  if (definition.routine !== undefined && !procedure) {
+    catalogError("OKM1020", `Function ${identity.name} routine is not supported.`);
   }
   const volatility = parseVolatility(definition.volatility);
   const security = parseSecurity(definition.security);
@@ -1774,30 +1767,58 @@ function parseFunction(
     namespace: identity.namespace,
     name: identity.name,
     arguments: parseArguments(definition.arguments),
-    returns: requireString(definition.returns, "function returns"),
+    returns: procedure ? "" : requireString(definition.returns, "function returns"),
     language,
     body: requireString(definition.body, "function body"),
     owner,
     provenance,
     dependencies,
+    ...(procedure ? { routine: "procedure" as const } : {}),
     ...(volatility !== undefined ? { volatility } : {}),
     ...(security !== undefined ? { security } : {}),
     ...(definition.atomic === true ? { atomic: true } : {}),
+    ...(definition.commits === true ? { commits: true } : {}),
+    ...(definition.raises !== undefined ? { raises: parseRaises(definition.raises) } : {}),
     ...(definition.searchPath !== undefined
       ? { searchPath: requireString(definition.searchPath, "search path") }
       : {}),
   });
 }
 
-function parseArguments(value: unknown): { readonly name: string; readonly type: string }[] {
+function parseArguments(value: unknown): {
+  readonly name: string;
+  readonly type: string;
+  readonly mode?: "out" | "inout";
+  readonly default?: string;
+}[] {
   if (value === undefined) return [];
   if (!Array.isArray(value)) catalogError("OKM1020", "Function arguments must be an array.");
   return value.map((item) => {
     const record = requireRecord(item, "function argument");
-    rejectUnknown(record, ["name", "type"], "function argument");
+    rejectUnknown(record, ["default", "mode", "name", "type"], "function argument");
+    const mode = record.mode;
+    if (mode !== undefined && mode !== "out" && mode !== "inout") {
+      catalogError("OKM1020", "Argument mode is not supported.");
+    }
     return {
       name: requireString(record.name, "argument name"),
       type: requireString(record.type, "argument type"),
+      ...(mode === "out" || mode === "inout" ? { mode } : {}),
+      ...(record.default !== undefined
+        ? { default: requireString(record.default, "argument default") }
+        : {}),
+    };
+  });
+}
+
+function parseRaises(value: unknown): { readonly name: string; readonly code: string }[] {
+  if (!Array.isArray(value)) catalogError("OKM1020", "Function raises must be an array.");
+  return value.map((item) => {
+    const record = requireRecord(item, "function raise");
+    rejectUnknown(record, ["code", "name"], "function raise");
+    return {
+      name: requireString(record.name, "raise name"),
+      code: requireString(record.code, "raise code"),
     };
   });
 }
@@ -2160,7 +2181,14 @@ function parseRef(value: unknown): ObjectRef {
 }
 
 function parseGrantObject(value: unknown): {
-  readonly kind: "table" | "view" | "materializedView" | "sequence" | "function" | "namespace";
+  readonly kind:
+    | "table"
+    | "view"
+    | "materializedView"
+    | "sequence"
+    | "function"
+    | "procedure"
+    | "namespace";
   readonly namespace: Namespace;
   readonly name: string;
 } {
@@ -2173,11 +2201,12 @@ function parseGrantObject(value: unknown): {
     kind !== "materializedView" &&
     kind !== "sequence" &&
     kind !== "function" &&
+    kind !== "procedure" &&
     kind !== "namespace"
   ) {
     catalogError(
       "OKM1020",
-      `Grant object kind ${kind} must be table, view, materializedView, sequence, function, or namespace.`,
+      `Grant object kind ${kind} must be table, view, materializedView, sequence, function, procedure, or namespace.`,
     );
   }
   return {

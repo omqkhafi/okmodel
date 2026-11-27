@@ -113,7 +113,7 @@ export function writeQueryProject(
     ...(validate ? [`import "${libraryFile(dir, target, "runtime/validate/index")}";`] : []),
     `import { ${presets ? "inList, " : ""}many, ${through ? "manyThrough, " : ""}one, schema, table, t } from "${pg}";`,
     ...(extensionCount > 0 ? [`import { extension } from "${ext}";`] : []),
-    ...(routines ? [`import { fn, trigger } from "${fnEntry}";`] : []),
+    ...(routines ? [`import { fn, trigger, triggerType } from "${fnEntry}";`] : []),
     "",
   ];
   lines.push(
@@ -154,8 +154,8 @@ export function writeQueryProject(
   }
   if (routines) {
     lines.push(
-      'const countNotes = fn("count_notes", { returns: "bigint", language: "sql", body: "begin atomic select count(*) from note; end" });',
-      'const touchNote = fn("touch_note", { returns: "trigger", language: "plpgsql", body: "begin return new; end", dependsOn: [note] });',
+      'const countNotes = fn("count_notes", { returns: t.bigint(), language: "sql", body: "begin atomic select count(*) from note; end" });',
+      'const touchNote = fn("touch_note", { returns: triggerType, language: "plpgsql", body: "begin return new; end", dependsOn: [note] });',
       'const noteTouch = trigger("note_touch", { on: note, timing: "before", events: ["update"], level: "row", calls: touchNote });',
       "",
     );

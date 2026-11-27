@@ -101,7 +101,7 @@ async function assertGrant(runner: Runner, object: GrantObject): Promise<void> {
   const target = object.identity.object;
   const schema = target.namespace.form === "static" ? target.namespace.name : "public";
   const privilege = object.identity.privilege;
-  if (target.kind === "function") {
+  if (target.kind === "function" || target.kind === "procedure") {
     const open = target.name.lastIndexOf("(");
     const fn = open < 0 ? target.name : target.name.slice(0, open);
     const args = open < 0 ? "" : target.name.slice(open + 1, -1);

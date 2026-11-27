@@ -35,6 +35,7 @@ import {
   createObjectSql,
   createTableSql,
   dropObjectSql,
+  definerRevokeSql,
   functionSql,
   policyAlterPlan,
   policyCreatePlan,
@@ -177,16 +178,24 @@ function lowerChange(change: LogicalChange): readonly DdlStep[] {
     case "update-extension":
       return updateExtension(change.name, change.version);
     case "create-function":
-      return withObjectComment(
-        createRoutine(change.object, change.schema, "create-function"),
+      return withDefinerRevoke(
+        withObjectComment(
+          createRoutine(change.object, change.schema, "create-function"),
+          change.object,
+          change.schema,
+        ),
         change.object,
         change.schema,
       );
     case "drop-function":
       return dropRoutine(change.object, change.schema, "drop-function");
     case "replace-function":
-      return withObjectComment(
-        replaceRoutine(functionSql(change.object, change.schema, true), "replace-function"),
+      return withDefinerRevoke(
+        withObjectComment(
+          replaceRoutine(functionSql(change.object, change.schema, true), "replace-function"),
+          change.object,
+          change.schema,
+        ),
         change.object,
         change.schema,
       );
@@ -346,6 +355,16 @@ function withObjectComment(
   return [...steps, ...commentChange(object, schema, object.comment)];
 }
 
+function withDefinerRevoke(
+  steps: readonly DdlStep[],
+  object: FunctionObject,
+  schema: string,
+): readonly DdlStep[] {
+  const sql = definerRevokeSql(object, schema);
+  if (sql === undefined) return steps;
+  return [...steps, ddlStep(sql, "revoke", "ddl", ACCESS)];
+}
+
 function commentChange(
   object: CatalogObject,
   schema: string,
@@ -400,7 +419,7 @@ function commentTarget(object: CatalogObject, schema: string): string | undefine
     case "materializedView":
       return `materialized view ${qualify(schema, object.identity.name)}`;
     case "function":
-      return `function ${qualify(schema, object.identity.name)}(${object.identity.argTypes.join(", ")})`;
+      return `${object.definition.routine === "procedure" ? "procedure" : "function"} ${qualify(schema, object.identity.name)}(${object.identity.argTypes.join(", ")})`;
     case "trigger":
       return `trigger ${quoteIdent(object.identity.name)} on ${qualify(schema, object.identity.parent.name)}`;
     case "sequence":

@@ -187,7 +187,7 @@ export function dropObjectSql(object: CatalogObject, schema: string): string | u
     case "extension":
       return `drop extension ${quoteIdent(object.identity.name)}`;
     case "function":
-      return `drop function ${qualify(schema, object.identity.name)}(${object.identity.argTypes.join(", ")})`;
+      return `drop ${object.definition.routine === "procedure" ? "procedure" : "function"} ${qualify(schema, object.identity.name)}(${object.identity.argTypes.join(", ")})`;
     case "trigger":
       return `drop trigger ${quoteIdent(object.identity.name)} on ${qualify(schema, object.identity.parent.name)}`;
     case "view":
@@ -248,16 +248,39 @@ export function createObjectSql(object: CatalogObject, schema: string): string |
  */
 export function functionSql(object: FunctionObject, schema: string, replace: boolean): string {
   const definition = object.definition;
+  const procedure = definition.routine === "procedure";
   const args = definition.arguments
-    .map((argument) => `${quoteIdent(argument.name)} ${argument.type}`)
+    .map((argument) => {
+      const mode = argument.mode === undefined || argument.mode === "in" ? "" : ` ${argument.mode}`;
+      const fallback = argument.default === undefined ? "" : ` default ${argument.default}`;
+      return `${quoteIdent(argument.name)}${mode} ${argument.type}${fallback}`;
+    })
     .join(", ");
-  const head = `${replace ? "create or replace" : "create"} function ${qualify(schema, object.identity.name)}(${args})`;
+  const word = procedure ? "procedure" : "function";
+  const head = `${replace ? "create or replace" : "create"} ${word} ${qualify(schema, object.identity.name)}(${args})`;
   const security = ` security ${definition.security}`;
   const path =
     definition.searchPath === undefined ? "" : ` set search_path to ${definition.searchPath}`;
-  const tail = `returns ${definition.returns} language ${definition.language} ${definition.volatility}${security}${path}`;
+  const tail = procedure
+    ? `language ${definition.language}${security}${path}`
+    : `returns ${definition.returns} language ${definition.language} ${definition.volatility}${security}${path}`;
   if (definition.atomic) return `${head} ${tail} ${definition.body}`;
   return `${head} ${tail} as ${dollarQuote(definition.body)}`;
+}
+
+/**
+ * `REVOKE EXECUTE ... FROM PUBLIC` for a security definer routine.
+ *
+ * Procedures and functions both get it. Absent when the routine is invoker.
+ *
+ * @param object - Routine being created or replaced
+ * @param schema - Concrete schema name
+ * @returns The revoke, or `undefined` for an invoker
+ */
+export function definerRevokeSql(object: FunctionObject, schema: string): string | undefined {
+  if (object.definition.security !== "definer") return undefined;
+  const word = object.definition.routine === "procedure" ? "procedure" : "function";
+  return `revoke execute on ${word} ${qualify(schema, object.identity.name)}(${object.identity.argTypes.join(", ")}) from public`;
 }
 
 /**

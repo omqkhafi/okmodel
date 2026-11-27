@@ -99,7 +99,13 @@ export function mapPostgresError(error: unknown, options?: MapPostgresErrorOptio
     (kind === "not_null"
       ? "not_null"
       : reasonOf(kind, error.table, error.constraint, columns, options?.schema));
-  const redact = redactBound(error, options, columns);
+  const sensitive = needsSafeCause(
+    options?.schema,
+    error.table,
+    columns,
+    options?.table ?? statementTableOf(error),
+  );
+  const redact = sensitive || options?.includeValues !== true;
   const values = redact ? undefined : valuesOf(error.detail, columns);
   const code = kind === "outcome_unknown" ? "OKM1401" : kind;
   return new OkmError(code, summaryOf(kind, error, columns, fieldReason), {
@@ -110,6 +116,8 @@ export function mapPostgresError(error: unknown, options?: MapPostgresErrorOptio
     ...(columns.length > 0 ? { columns } : {}),
     ...(error.constraint !== undefined ? { constraint: error.constraint } : {}),
     ...(error.sqlstate !== undefined ? { sqlstate: error.sqlstate } : {}),
+    ...(error.detail !== undefined && !sensitive ? { detail: error.detail } : {}),
+    ...(error.hint !== undefined && !sensitive ? { hint: error.hint } : {}),
     batchIndex: error.batchIndex,
     cause: redact ? safeCause(error) : (error.cause ?? error),
     ...(values !== undefined ? { includeValues: true, values } : {}),
@@ -246,6 +254,7 @@ type DriverShape = {
   readonly table: string | undefined;
   readonly column: string | undefined;
   readonly detail: string | undefined;
+  readonly hint: string | undefined;
   readonly batchIndex: number | null;
   readonly kind: "timeout" | "cancelled" | "outcome_unknown" | undefined;
   readonly cause: unknown;

@@ -69,6 +69,7 @@ A failure that `okm` did not expect prints one line. Set `OKM_DEBUG=1`, or pass 
 
 | Command | Result |
 | --- | --- |
+| `call <routine>` | Calls one procedure. `--arg name=value` repeats. `--rollback` runs the call in a transaction and rolls it back. `--target` selects the database. Refused when the procedure commits. |
 | `build` | Writes the catalog under [out](/docs/reference/config#out). |
 | `catalog export` | Writes the catalog snapshot a dependent verifies. |
 | `check` | Lints the schema. Compares one database when a target is selected. |

@@ -97,6 +97,7 @@ export function mapDriverError(error: unknown, batchIndex?: number | null): unkn
       table: errorField(error, "table_name") ?? errorField(error, "table"),
       column: errorField(error, "column_name") ?? errorField(error, "column"),
       detail: errorField(error, "detail"),
+      hint: errorField(error, "hint"),
       cause: error,
       batchIndex,
     }),

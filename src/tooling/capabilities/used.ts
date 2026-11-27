@@ -146,6 +146,18 @@ function note(used: Set<string>, object: CatalogObject): void {
   if (object.kind === "grant" && object.identity.object.kind === "sequence") {
     used.add("grants.sequence");
   }
+  if (object.kind === "grant" && object.identity.object.kind === "procedure") {
+    used.add("grants.procedure");
+  }
+  if (object.kind === "function") {
+    const definition = object.definition;
+    if (definition.routine === "procedure") {
+      used.add("fn.procedure");
+      if (definition.commits === true) used.add("fn.procedure.commits");
+      if (definition.raises !== undefined && definition.raises.length > 0) used.add("fn.raises");
+    }
+    if (definition.security === "definer") used.add("fn.definerRevoke");
+  }
   if (
     (object.kind === "view" || object.kind === "materializedView" || object.kind === "sequence") &&
     moved(object.identity.namespace)
@@ -182,17 +194,19 @@ function noteComment(used: Set<string>, object: CatalogObject): void {
   const key =
     kind === "materializedView"
       ? "comment.matview"
-      : kind === "table" ||
-          kind === "column" ||
-          kind === "index" ||
-          kind === "view" ||
-          kind === "function" ||
-          kind === "trigger" ||
-          kind === "sequence" ||
-          kind === "type" ||
-          kind === "policy"
-        ? `comment.${kind}`
-        : undefined;
+      : kind === "function" && object.definition.routine === "procedure"
+        ? "comment.procedure"
+        : kind === "table" ||
+            kind === "column" ||
+            kind === "index" ||
+            kind === "view" ||
+            kind === "function" ||
+            kind === "trigger" ||
+            kind === "sequence" ||
+            kind === "type" ||
+            kind === "policy"
+          ? `comment.${kind}`
+          : undefined;
   if (key !== undefined) used.add(key);
 }
 

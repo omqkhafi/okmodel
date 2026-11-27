@@ -29,6 +29,7 @@ import type { DriverPool, ExecuteResult } from "../src/contracts/driver.js";
 import { catalog } from "../src/contracts/catalog/build.js";
 import { OkmError } from "../src/contracts/error.js";
 import { quoteIdent } from "../src/dialects/pg/ddl.js";
+import { fn } from "../src/dialects/pg/fn/index.js";
 import { schema, t, table } from "../src/dialects/pg/index.js";
 import { sequence } from "../src/dialects/pg/seq/index.js";
 import { primaryUrl } from "../packages/harness/src/topology.js";
@@ -79,6 +80,45 @@ if (POOLER_URL === undefined || POOLER_URL.length === 0) {
       await expectNoSettingLeak(url, driver.open);
     }, 30_000);
   }
+
+  test("a committing procedure keeps finished batches through transaction pooling", async () => {
+    const stamp = Math.random().toString(36).slice(2, 10);
+    const tableName = quoteIdent(`okm_batch_${stamp}`);
+    const routine = quoteIdent(`okm_take_${stamp}`);
+    const direct = postgres(primaryUrl(), { max: 1 });
+    const batches = table(`okm_batch_${stamp}`, { n: t.integer().primaryKey() });
+    const take = fn(`okm_take_${stamp}`, {
+      kind: "procedure",
+      commits: true,
+      dependsOn: [batches],
+      body: "begin commit; end",
+    });
+    const app = schema({ tables: [batches], functions: [take] });
+    try {
+      await direct.unsafe(`create table ${tableName} (n integer primary key)`);
+      await direct.unsafe(
+        `create procedure ${routine}() language plpgsql as $okm$ begin insert into ${tableName} (n) values (1); commit; insert into ${tableName} (n) values (2); commit; raise exception 'stop'; end $okm$`,
+      );
+      const pooled = connect(url, { schema: app, max: 1 });
+      try {
+        let failed: unknown;
+        try {
+          await take.run(pooled, {});
+        } catch (error) {
+          failed = error;
+        }
+        expect(failed).toBeTruthy();
+        const rows = await direct.unsafe(`select n from ${tableName} order by n`);
+        expect(rows.map((item) => Number(item.n))).toEqual([1, 2]);
+      } finally {
+        await pooled.close();
+      }
+    } finally {
+      await direct.unsafe(`drop procedure if exists ${routine}()`);
+      await direct.unsafe(`drop table if exists ${tableName}`);
+      await direct.end();
+    }
+  }, 20_000);
 
   test("a committed tenant setting is empty on a second client", async () => {
     await expectTenantCleared(url);

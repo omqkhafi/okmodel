@@ -186,7 +186,7 @@ test("one logical enum add can lower to two physical steps", () => {
 });
 
 test("one logical function create can lower to two physical steps", () => {
-  const read = fn("read_tasks", { returns: "integer", language: "sql", body: "select 1" });
+  const read = fn("read_tasks", { returns: t.integer(), language: "sql", body: "select 1" });
   const before = schema({ tables: [] }).catalog;
   const after = schema({ tables: [], functions: [read] }).catalog;
   const dialect: DdlDialect = {

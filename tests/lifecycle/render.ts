@@ -33,7 +33,9 @@ export function renderSchema(model: SchemaModel, root: string): string {
     lines.push(`import { pgTrgm } from ${source("src/dialects/pg/ext/pg-trgm.ts")};`);
   }
   if (model.triggers.length > 0) {
-    lines.push(`import { fn, trigger } from ${source("src/dialects/pg/fn/index.ts")};`);
+    lines.push(
+      `import { fn, trigger, triggerType } from ${source("src/dialects/pg/fn/index.ts")};`,
+    );
   }
   if (model.views.length > 0) {
     lines.push(`import { view } from ${source("src/dialects/pg/view/index.ts")};`);
@@ -55,7 +57,7 @@ export function renderSchema(model: SchemaModel, root: string): string {
     const first = model.tables[0];
     if (first !== undefined) {
       lines.push(
-        `const touch = fn("touch", { returns: "trigger", language: "plpgsql", body: "begin return new; end", dependsOn: [${first.key}] });`,
+        `const touch = fn("touch", { returns: triggerType, language: "plpgsql", body: "begin return new; end", dependsOn: [${first.key}] });`,
       );
     }
     for (const item of model.triggers) {

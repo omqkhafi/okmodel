@@ -198,7 +198,7 @@ function privilegesFor(
 }
 
 function readPreset(kind: string, where: string, key: string): readonly string[] {
-  if (kind === "function") throw bad(where, key);
+  if (kind === "function" || kind === "procedure") throw bad(where, key);
   if (kind === "schema" || kind === "type" || kind === "sequence") {
     return kind === "sequence" ? ["SELECT"] : ["USAGE"];
   }
@@ -262,7 +262,7 @@ function columnPrivileges(
 
 function allowedFor(kind: string): ReadonlySet<string> {
   if (kind === "sequence") return new Set(["usage", "select", "update"]);
-  if (kind === "function") return new Set(["execute"]);
+  if (kind === "function" || kind === "procedure") return new Set(["execute"]);
   if (kind === "schema") return new Set(["usage", "create"]);
   if (kind === "type") return new Set(["usage"]);
   if (kind === "materializedView") return new Set(["select", "maintain"]);

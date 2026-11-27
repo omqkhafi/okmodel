@@ -6,7 +6,7 @@
  * the SQL names a function body, a trigger, or a view query needs.
  */
 
-import { fn, trigger } from "../src/dialects/pg/fn/index.js";
+import { fn, trigger, triggerType } from "../src/dialects/pg/fn/index.js";
 import { caseName, type Casing } from "../src/dialects/pg/casing.js";
 import { id, index, one, schema, sql, table, t } from "../src/dialects/pg/index.js";
 import { materializedView, view } from "../src/dialects/pg/view/index.js";
@@ -113,7 +113,7 @@ export function columnFixture(casing: Casing | undefined) {
     },
   );
   const stamp = fn("stamp_unit", {
-    returns: "trigger",
+    returns: triggerType,
     language: "plpgsql",
     body: `begin new."${n("displayName")}" = upper(new."${n("displayName")}"); return new; end`,
     dependsOn: [{ table: orgUnits, column: n("displayName") }],

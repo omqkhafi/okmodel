@@ -310,6 +310,18 @@ export function renderRoutines(
     const names = [];
     if (plan.functions.length > 0) names.push("fn");
     if (plan.triggers.length > 0) names.push("trigger");
+    if (
+      plan.functions.some(
+        (item) =>
+          item.object.definition.returns === "void" ||
+          item.object.definition.arguments.some((argument) => argument.type === "void"),
+      )
+    ) {
+      names.push("voidType");
+    }
+    if (plan.functions.some((item) => item.object.definition.returns === "trigger")) {
+      names.push("triggerType");
+    }
     imports.push(`import { ${names.join(", ")} } from "okmodel/fn";`);
   }
   if (plan.views.length > 0) {
@@ -474,18 +486,26 @@ function dependFragment(
 
 function functionSource(item: PlannedFunction): string {
   const definition = item.object.definition;
+  const procedure = definition.routine === "procedure";
   const fields = [
+    procedure ? `kind: "procedure"` : "",
     definition.arguments.length > 0
       ? `arguments: [${definition.arguments
-          .map(
-            (argument) =>
-              `{ name: ${JSON.stringify(argument.name)}, type: ${JSON.stringify(argument.type)} }`,
-          )
+          .map((argument) => {
+            const mode =
+              argument.mode !== undefined && argument.mode !== "in"
+                ? `, mode: ${JSON.stringify(argument.mode)}`
+                : "";
+            const printed =
+              argument.default === undefined ? undefined : defaultValue(argument.default);
+            const fallback = printed === undefined ? "" : `, default: ${printed}`;
+            return `{ name: ${JSON.stringify(argument.name)}, type: ${routineTypeExpr(argument.type)}${mode}${fallback} }`;
+          })
           .join(", ")}]`
       : "",
-    `returns: ${JSON.stringify(definition.returns)}`,
+    procedure ? "" : `returns: ${routineTypeExpr(definition.returns)}`,
     `language: ${JSON.stringify(definition.language)}`,
-    definition.volatility !== "volatile"
+    !procedure && definition.volatility !== "volatile"
       ? `volatility: ${JSON.stringify(definition.volatility)}`
       : "",
     definition.security === "definer" ? `security: "definer"` : "",
@@ -493,11 +513,38 @@ function functionSource(item: PlannedFunction): string {
       ? `searchPath: ${JSON.stringify(definition.searchPath)}`
       : "",
     `body: ${JSON.stringify(definition.body)}`,
-    item.dependsOn.length > 0 || definition.language === "plpgsql"
+    definition.commits === true ? "commits: true" : "",
+    definition.raises !== undefined
+      ? `raises: { ${definition.raises.map((item) => `${item.name}: ${JSON.stringify(item.code)}`).join(", ")} }`
+      : "",
+    item.dependsOn.length > 0 || (definition.language === "plpgsql" && !definition.atomic)
       ? `dependsOn: [${item.dependsOn.join(", ")}]`
       : "",
   ].filter((field) => field.length > 0);
   return `const ${item.binding} = fn(${JSON.stringify(item.object.identity.name)}, {\n  ${fields.join(",\n  ")},\n});`;
+}
+
+function defaultValue(sql: string): string | undefined {
+  if (/^-?\d+(\.\d+)?$/.test(sql)) return sql;
+  if (sql === "true" || sql === "false" || sql === "null") return sql;
+  if (sql.startsWith("'") && sql.endsWith("'")) {
+    return JSON.stringify(sql.slice(1, -1).replaceAll("''", "'"));
+  }
+  return undefined;
+}
+
+function routineTypeExpr(dataType: string): string {
+  if (dataType === "void") return "voidType";
+  if (dataType === "trigger") return "triggerType";
+  if (dataType === "integer" || dataType === "int4") return "t.integer()";
+  if (dataType === "bigint" || dataType === "int8") return "t.bigint()";
+  if (dataType === "text") return "t.text()";
+  if (dataType === "boolean" || dataType === "bool") return "t.boolean()";
+  if (dataType === "uuid") return "t.uuid()";
+  const known = typeExpr(dataType);
+  if (known !== "t.text()") return known;
+  // An enum or domain is not text. t.custom keeps the SQL type the catalog stored.
+  return `t.custom({ sqlType: ${JSON.stringify(dataType)}, encode: (value) => String(value), decode: (wire) => wire })`;
 }
 
 function triggerSource(item: PlannedTrigger): string {

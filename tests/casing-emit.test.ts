@@ -337,7 +337,7 @@ describe("timestamps without casing", () => {
   });
 
   test("a function declared outside the schema is not renamed", () => {
-    const declared = fn("DoThing", { returns: "integer", language: "sql", body: "select 1" });
+    const declared = fn("DoThing", { returns: t.integer(), language: "sql", body: "select 1" });
     expect(declared.name).toBe("DoThing");
   });
 });

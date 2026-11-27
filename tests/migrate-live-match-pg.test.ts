@@ -205,9 +205,11 @@ postgresTest(
         `const trigger${String(position)} = trigger(${JSON.stringify(`tasks_when_${String(position)}`)}, { on: tasks, timing: "before", events: ["update"], level: "row", calls: touch, when: ${JSON.stringify(when)} });`,
     );
     const declarations = [
-      'import { fn, trigger } from "' + join(root, "src/dialects/pg/fn/index.ts") + '";',
+      'import { fn, trigger, triggerType } from "' +
+        join(root, "src/dialects/pg/fn/index.ts") +
+        '";',
       'const tasks = table("tasks", { id: t.integer().primaryKey(), n: t.integer() });',
-      'const touch = fn("touch", { returns: "trigger", language: "plpgsql", body: "begin return new; end", dependsOn: [tasks] });',
+      'const touch = fn("touch", { returns: triggerType, language: "plpgsql", body: "begin return new; end", dependsOn: [tasks] });',
       ...triggers,
     ];
     const list = spellings.map((_, position) => `trigger${String(position)}`).join(", ");

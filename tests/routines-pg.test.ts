@@ -11,7 +11,7 @@ import type { Sql } from "postgres";
 import { catalog } from "../src/contracts/catalog/build.js";
 import type { Catalog } from "../src/contracts/catalog/types.js";
 import { OkmError } from "../src/contracts/error.js";
-import { fn, trigger } from "../src/dialects/pg/fn/index.js";
+import { fn, trigger, triggerType } from "../src/dialects/pg/fn/index.js";
 import { introspectSchema, type CatalogQuery } from "../src/dialects/pg/introspect.js";
 import { sealViews } from "../src/dialects/pg/view/scratch.js";
 import { schema, table, t } from "../src/dialects/pg/index.js";
@@ -25,13 +25,13 @@ const gate = await loadPostgresGate();
 test("plpgsql without dependsOn is OKM1824 and security definer without search_path is OKM1823", () => {
   expect(
     capture(() =>
-      fn("touch", { returns: "trigger", language: "plpgsql", body: "begin return new; end" }),
+      fn("touch", { returns: triggerType, language: "plpgsql", body: "begin return new; end" }),
     ).code,
   ).toBe("OKM1824");
   expect(
     capture(() =>
       fn("read", {
-        returns: "integer",
+        returns: t.integer(),
         language: "sql",
         security: "definer",
         body: "begin atomic select 1; end",
@@ -88,8 +88,8 @@ postgresTest(
         tables: [tasks],
         functions: [
           fn("slugify", {
-            arguments: [{ name: "title", type: "text" }],
-            returns: "integer",
+            arguments: [{ name: "title", type: t.text() }],
+            returns: t.integer(),
             language: "plpgsql",
             body: "begin return 1; end",
             dependsOn: [tasks],
@@ -100,8 +100,8 @@ postgresTest(
         tables: [tasks],
         functions: [
           fn("slugify", {
-            arguments: [{ name: "title", type: "text" }],
-            returns: "text",
+            arguments: [{ name: "title", type: t.text() }],
+            returns: t.text(),
             language: "plpgsql",
             body: "begin return 'a'; end",
             dependsOn: [tasks],
@@ -204,19 +204,19 @@ postgresTest(
         tables: [tasks],
         functions: [
           fn("by_id", {
-            arguments: [{ name: "n", type: "text" }],
-            returns: "text",
+            arguments: [{ name: "n", type: t.text() }],
+            returns: t.text(),
             language: "sql",
             body: "begin atomic select title from tasks where id = n; end",
           }),
           fn("count_tasks", {
-            returns: "bigint",
+            returns: t.bigint(),
             language: "sql",
             body: "begin atomic select count(*) from tasks; end",
           }),
           fn("add_one", {
-            arguments: [{ name: "n", type: "integer" }],
-            returns: "integer",
+            arguments: [{ name: "n", type: t.integer() }],
+            returns: t.integer(),
             language: "sql",
             body: "begin atomic select n + 1; end",
           }),
@@ -247,14 +247,14 @@ postgresTest(
         tables: [tasks],
         functions: [
           fn("pick", {
-            arguments: [{ name: "n", type: "integer" }],
-            returns: "integer",
+            arguments: [{ name: "n", type: t.integer() }],
+            returns: t.integer(),
             language: "sql",
             body: "begin atomic select n + 1; end",
           }),
           fn("pick", {
-            arguments: [{ name: "s", type: "text" }],
-            returns: "text",
+            arguments: [{ name: "s", type: t.text() }],
+            returns: t.text(),
             language: "sql",
             body: "begin atomic select s || '!'; end",
           }),
@@ -287,11 +287,11 @@ postgresTest(
         functions: [
           fn("shape", {
             arguments: [
-              { name: "label", type: "varchar(20)" },
-              { name: "amount", type: "numeric(10,2)" },
-              { name: "flags", type: "int[]" },
+              { name: "label", type: t.varchar(20) },
+              { name: "amount", type: t.numeric(10, 2) },
+              { name: "flags", type: t.integer().array() },
             ],
-            returns: "integer",
+            returns: t.integer(),
             language: "sql",
             body: "begin atomic select cardinality(flags) + length(label) + amount::integer; end",
           }),
@@ -317,14 +317,14 @@ postgresTest(
         tables: [table("tasks", { id: t.text().primaryKey() })],
         functions: [
           fn("pick", {
-            arguments: [{ name: "label", type: "varchar(20)" }],
-            returns: "text",
+            arguments: [{ name: "label", type: t.varchar(20) }],
+            returns: t.text(),
             language: "sql",
             body: "begin atomic select label; end",
           }),
           fn("pick", {
-            arguments: [{ name: "n", type: "integer" }],
-            returns: "integer",
+            arguments: [{ name: "n", type: t.integer() }],
+            returns: t.integer(),
             language: "sql",
             body: "begin atomic select n + 1; end",
           }),
@@ -356,7 +356,7 @@ postgresTest(
         tables: [tasks],
         functions: [
           fn("count_tasks", {
-            returns: "bigint",
+            returns: t.bigint(),
             language: "sql",
             body: "begin atomic select count(*) from tasks; end",
           }),
@@ -381,7 +381,7 @@ postgresTest(
 
 function touch(tasks: ReturnType<typeof table>, body: string): ReturnType<typeof fn> {
   return fn("touch", {
-    returns: "trigger",
+    returns: triggerType,
     language: "plpgsql",
     body,
     dependsOn: [tasks],

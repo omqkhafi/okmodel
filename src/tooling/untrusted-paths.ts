@@ -92,6 +92,7 @@ export const UNTRUSTED_PATHS: readonly UntrustedPath[] = [
   { command: "raw sync", path: "data.lock", treatment: "none" },
   { command: "pull", path: "data.text", treatment: "text" },
   { command: "seed", path: "data.text", treatment: "text" },
+  { command: "call", path: "data.result", treatment: "text" },
   { command: "protect add", path: "data.hostDb", treatment: "none" },
   { command: "protect remove", path: "data.hostDb", treatment: "none" },
   { command: "protect list", path: "data.fingerprints[].hostDb", treatment: "none" },

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://okmodel.dev/schemas/cli-1/call.json",
+  "title": "okm call data",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "routine",
+    "rolledBack",
+    "result"
+  ],
+  "properties": {
+    "routine": {
+      "type": "string"
+    },
+    "rolledBack": {
+      "type": "boolean"
+    },
+    "result": {}
+  }
+}

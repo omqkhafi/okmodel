@@ -23,6 +23,7 @@ import {
   roleObject,
 } from "../../contracts/catalog/privilege.js";
 import { functionObject, triggerObject } from "../../contracts/catalog/routine.js";
+import { routineControl } from "./fn/control.js";
 import {
   materializedViewIndex,
   materializedViewObject,
@@ -522,13 +523,24 @@ export async function introspectSchema(
   for (const row of functions) {
     const name = text(row, "name");
     const language = text(row, "language");
-    const argTypes = splitTypes(text(row, "arg_types"));
+    const identityTypes = splitTypes(text(row, "identity_types"));
+    const procedure = text(row, "kind") === "p";
     if (language !== "sql" && language !== "plpgsql") {
       options?.notPulled?.push({
         kind: "function",
-        key: identityKey({ kind: "function", namespace, name, argTypes }),
+        key: identityKey({ kind: "function", namespace, name, argTypes: identityTypes }),
         label: name,
         reason: `not pulled yet: language ${language}`,
+      });
+      continue;
+    }
+    const modes = parseModes(text(row, "arg_modes"));
+    if (modes.some((mode) => mode === "variadic")) {
+      options?.notPulled?.push({
+        kind: "function",
+        key: identityKey({ kind: "function", namespace, name, argTypes: identityTypes }),
+        label: name,
+        reason: "not pulled yet: variadic",
       });
       continue;
     }
@@ -536,19 +548,27 @@ export async function introspectSchema(
     const atomic = language === "sql" && source.length === 0;
     const body = atomic ? atomicBody(text(row, "definition")) : source;
     const searchPath = searchPathOf(text(row, "config"));
-    const key = `${name}(${text(row, "arg_types")})`;
+    const key = `${name}(${text(row, "identity_types")})`;
+    const control = procedure ? routineControl(body) : undefined;
     objects.push(
       functionObject({
         namespace,
         name,
-        arguments: argumentList(row.arg_names, argTypes),
-        returns: text(row, "returns"),
+        arguments: argumentList(
+          row.arg_names,
+          splitTypes(text(row, "arg_types")),
+          modes,
+          text(row, "arg_defaults"),
+        ),
+        returns: procedure ? "" : text(row, "returns"),
         language,
-        volatility: volatilityOf(text(row, "volatility")),
+        ...(procedure ? {} : { volatility: volatilityOf(text(row, "volatility")) }),
         security: flag(row, "security") ? "definer" : "invoker",
         body,
         ...(searchPath !== undefined ? { searchPath } : {}),
         ...(atomic ? { atomic: true } : {}),
+        ...(procedure ? { routine: "procedure" as const } : {}),
+        ...(control?.commits === true ? { commits: true as const } : {}),
         provenance,
         ...(atomic ? { dependencies: atomicEdges.get(key) ?? [] } : {}),
       }),
@@ -1010,11 +1030,12 @@ async function readPrivileges(
     const privilege = text(row, "privilege").toUpperCase();
     const name = `${text(row, "name")}(${text(row, "args")})`;
     const target = built.find((object) => privilegeTarget(object) === `function:${name}`);
-    if (!EMITTED.has(privilege) || target === undefined) continue;
+    if (!EMITTED.has(privilege) || target === undefined || target.kind !== "function") continue;
+    const kind = target.definition.routine === "procedure" ? "procedure" : "function";
     objects.push(
       grantObject({
         role: text(row, "role"),
-        object: { kind: "function", namespace, name },
+        object: { kind, namespace, name },
         privilege,
         provenance,
         dependencies: [{ kind: "role", name: text(row, "role") }, target.identity],
@@ -1166,7 +1187,12 @@ function printedColumns(value: string): { name: string; dataType: string }[] {
   });
 }
 
-function argumentList(names: unknown, types: readonly string[]): { name: string; type: string }[] {
+function argumentList(
+  names: unknown,
+  types: readonly string[],
+  modes: readonly string[],
+  defaults: string,
+): { name: string; type: string; mode?: "out" | "inout"; default?: string }[] {
   const stored = Array.isArray(names)
     ? names.map((item) => String(item))
     : typeof names === "string" && names.startsWith("{")
@@ -1175,7 +1201,76 @@ function argumentList(names: unknown, types: readonly string[]): { name: string;
           .split(",")
           .filter((item) => item.length > 0)
       : [];
-  return types.map((type, index) => ({ name: stored[index] || `arg${String(index + 1)}`, type }));
+  const expressions = splitList(defaults);
+  let remaining = expressions.length;
+  const withDefault = types.map((_, index) => {
+    const mode = modes[index] ?? "in";
+    return mode !== "out" && mode !== "variadic";
+  });
+  const inputCount = withDefault.filter(Boolean).length;
+  const firstDefault = inputCount - remaining;
+  let seenInputs = 0;
+  return types.map((type, index) => {
+    const mode = modes[index] ?? "in";
+    const input = withDefault[index] === true;
+    let fallback: string | undefined;
+    if (input) {
+      if (seenInputs >= firstDefault && remaining > 0) {
+        fallback = expressions[expressions.length - remaining];
+        remaining -= 1;
+      }
+      seenInputs += 1;
+    }
+    return {
+      name: stored[index] || `arg${String(index + 1)}`,
+      type,
+      ...(mode === "out" || mode === "inout" ? { mode } : {}),
+      ...(fallback !== undefined ? { default: fallback } : {}),
+    };
+  });
+}
+
+function parseModes(value: string): string[] {
+  if (value.length === 0) return [];
+  const inner = value.startsWith("{") ? value.slice(1, -1) : value;
+  if (inner.length === 0) return [];
+  return inner.split(",").map((item) => {
+    if (item === "o") return "out";
+    if (item === "b") return "inout";
+    if (item === "v") return "variadic";
+    return "in";
+  });
+}
+
+function splitList(text: string): string[] {
+  if (text.length === 0) return [];
+  const parts: string[] = [];
+  let start = 0;
+  let depth = 0;
+  let quote = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (quote) {
+      if (char === "'" && text[index + 1] === "'") {
+        index += 1;
+        continue;
+      }
+      if (char === "'") quote = false;
+      continue;
+    }
+    if (char === "'") {
+      quote = true;
+      continue;
+    }
+    if (char === "(") depth += 1;
+    if (char === ")" && depth > 0) depth -= 1;
+    if (char === "," && depth === 0) {
+      parts.push(text.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  parts.push(text.slice(start).trim());
+  return parts.filter((item) => item.length > 0);
 }
 
 function splitTypes(value: string): string[] {
@@ -2556,17 +2651,24 @@ const EXTENSIONS = `
 const FUNCTIONS = `
   select p.proname as name, l.lanname as language, p.provolatile as volatility,
     p.prosecdef as security, coalesce(p.proconfig::text, '') as config, p.prosrc as body,
-    pg_get_function_result(p.oid) as returns, p.proargnames as arg_names,
+    case when p.prokind = 'p' then '' else pg_get_function_result(p.oid) end as returns,
+    p.prokind as kind, p.proargnames as arg_names,
+    coalesce(p.proargmodes::text, '') as arg_modes,
+    coalesce(pg_get_expr(p.proargdefaults, 0), '') as arg_defaults,
     (
       select coalesce(string_agg(format_type(t.oid, null), '|' order by t.ord), '')
       from unnest(p.proargtypes) with ordinality as t(oid, ord)
+    ) as identity_types,
+    (
+      select coalesce(string_agg(format_type(t.oid, null), '|' order by t.ord), '')
+      from unnest(coalesce(p.proallargtypes, p.proargtypes)) with ordinality as t(oid, ord)
     ) as arg_types,
     pg_get_functiondef(p.oid) as definition
   from pg_proc p
   join pg_namespace n on n.oid = p.pronamespace
   join pg_language l on l.oid = p.prolang
   where n.nspname = $1
-    and p.prokind = 'f'
+    and p.prokind in ('f', 'p')
     and not exists (
       select 1 from pg_depend d
       where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype in ('i', 'a', 'e')
@@ -2640,7 +2742,7 @@ const FUNCTION_DEPS = `
   where n.nspname = $1
     and d.deptype = 'n'
     and c.relkind in ('r', 'p')
-    and p.prokind = 'f'
+    and p.prokind in ('f', 'p')
     and p.prosrc = ''
 `;
 

@@ -463,6 +463,50 @@ export const WARNING_RULES: readonly WarningRule[] = [
     safeAlternatives: [alt("OKM2123", "Take the year from date or timestamp, or at time zone.")],
     escapeHatches: [hatch("OKM2123")],
   },
+  {
+    code: "OKM2125",
+    rule: "procedure-definer-tenant",
+    title: "Definer procedure on a tenant table",
+    summary:
+      "A security definer procedure touches a tenant table. The owner bypasses row security, so the procedure sees every tenant.",
+    fix: "Make the procedure security invoker, or keep it off tenant tables.",
+    defaultLevel: "warn",
+    severity: "high",
+    phase: "check",
+    evidence: "static",
+    safeAlternatives: [alt("OKM2125", "Make the procedure security invoker.")],
+    escapeHatches: [hatch("OKM2125")],
+  },
+  {
+    code: "OKM2126",
+    rule: "procedure-commit-handler",
+    title: "COMMIT inside an exception handler",
+    summary:
+      "A routine commits or rolls back inside an EXCEPTION block. The handler runs after the error, and the commit is easy to miss.",
+    fix: "Commit in the main body, or leave the handler without transaction control.",
+    defaultLevel: "warn",
+    severity: "medium",
+    phase: "check",
+    evidence: "static",
+    safeAlternatives: [alt("OKM2126", "Move COMMIT out of the EXCEPTION block.")],
+    escapeHatches: [hatch("OKM2126")],
+  },
+  {
+    code: "OKM2127",
+    rule: "procedure-errcode",
+    title: "Undeclared or standard SQLSTATE",
+    summary:
+      "A routine raises a custom SQLSTATE that raises does not name, or it uses a standard SQLSTATE class.",
+    fix: "Declare the custom code in raises, and use a custom class for your own errors.",
+    defaultLevel: "warn",
+    severity: "medium",
+    phase: "check",
+    evidence: "static",
+    safeAlternatives: [
+      alt("OKM2127", "Add the code to raises, using a custom class such as C0001."),
+    ],
+    escapeHatches: [hatch("OKM2127")],
+  },
 ];
 
 /**

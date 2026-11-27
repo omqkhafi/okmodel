@@ -1452,7 +1452,7 @@ function schemaText(
   sequenceCalls: readonly string[] = [],
 ): string {
   const pgNames = ["schema"];
-  if (routines.views.length > 0) pgNames.push("t");
+  if (routines.views.length > 0 || routines.body.includes("t.")) pgNames.push("t");
   if (routines.needsIndex) pgNames.push("index");
   pgNames.sort();
   const lines = [`import { ${pgNames.join(", ")} } from "okmodel/pg";`];

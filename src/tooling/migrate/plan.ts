@@ -395,8 +395,7 @@ export function planMigration(
     if (
       previous.kind === "function" &&
       item.object.kind === "function" &&
-      canonicalTypeName(previous.definition.returns) ===
-        canonicalTypeName(item.object.definition.returns)
+      sameRoutineShape(previous, item.object)
     ) {
       replaces.push({ kind: "function", before: previous, after: item.object });
       continue;
@@ -2702,6 +2701,25 @@ function deferrableOnly(
   return sameDefinition(aligned, right, schemas);
 }
 
+function sameRoutineShape(
+  before: Extract<CatalogObject, { kind: "function" }>,
+  after: Extract<CatalogObject, { kind: "function" }>,
+): boolean {
+  const beforeKind = before.definition.routine ?? "function";
+  const afterKind = after.definition.routine ?? "function";
+  if (beforeKind !== afterKind) return false;
+  if (
+    canonicalTypeName(before.definition.returns) !== canonicalTypeName(after.definition.returns)
+  ) {
+    return false;
+  }
+  const signature = (object: typeof before): string =>
+    object.definition.arguments
+      .map((argument) => `${argument.mode ?? "in"} ${canonicalTypeName(argument.type)}`)
+      .join(",");
+  return signature(before) === signature(after);
+}
+
 function sameDefinition(
   left: CatalogObject,
   right: CatalogObject,
@@ -2760,15 +2778,17 @@ function forComparison(
       return { ...object.definition, dataType: canonicalTypeName(object.definition.dataType) };
     case "view":
       return { ...object.definition, columns: canonicalColumns(object.definition.columns) };
-    case "function":
+    case "function": {
+      const { raises: _raises, ...definition } = object.definition;
       return {
-        ...object.definition,
-        returns: canonicalTypeName(object.definition.returns),
-        arguments: object.definition.arguments.map((argument) => ({
+        ...definition,
+        returns: canonicalTypeName(definition.returns),
+        arguments: definition.arguments.map((argument) => ({
           ...argument,
           type: canonicalTypeName(argument.type),
         })),
       };
+    }
     case "trigger":
       return {
         ...object.definition,
