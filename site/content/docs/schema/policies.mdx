@@ -1,0 +1,58 @@
+---
+title: "Policies"
+description: "Keyed row-level security policies, session values, and the role a statement runs as."
+---
+
+A policy is a keyed object on `table()`. The key is the stored name. Import `sessionSettings` from `okmodel/session` before `schema()` when a table sets `policies` or `rls`.
+
+```ts
+import { schema, table, t } from "okmodel/pg";
+import { sessionSettings } from "okmodel/session";
+
+const session = sessionSettings({
+  userId: { name: "app.user_id", type: "uuid" },
+  scopes: { name: "app.scopes", type: "text[]" },
+});
+
+const notes = table(
+  "notes",
+  { id: t.uuid().primaryKey(), ownerId: t.uuid() },
+  {
+    policies: () => ({
+      own: { using: { ownerId: session.handles.userId } },
+    }),
+  },
+);
+```
+
+`for` is `select`, `insert`, `update`, `delete`, or `all`. The default is `all`. One policy is one command. Compose several policies with ordinary functions. `as` is `permissive` (the default) or `restrictive`. Permissive policies OR. Restrictive policies AND.
+
+`to` is a role key from the roles config, a role name, or a list. The default is `app`. It is never `PUBLIC`. Write `to: "public"` when the policy is for PUBLIC. `using` and `check` take a `where` object, an expression, `true`, `false`, or `sql`.
+
+A table with policies and none that match the command and role is deny-all for a role that does not own the table. The owner is exempt unless the table is forced.
+
+`rls: true` enables row security. `rls: false` disables it. `{ force: true }` enables and forces. `{ enable: false, force: true }` stores force and does not enforce it. Omitting `rls` enables it when policies exist and leaves it off when they do not. Policies while row security is off are OKM2115 in `okm check`.
+
+`USING` hides a row. The statement succeeds and reports no row. `WITH CHECK` that fails is 42501. `SELECT` and `DELETE` cannot set `check`. `INSERT` cannot set `using`. An `UPDATE` with no `SELECT` policy for the same role matches zero rows (OKM2116). A restrictive `SELECT` policy also filters `INSERT ... RETURNING` and `DELETE ... RETURNING`: an insert of a row the select rejects is 42501, and a delete with `RETURNING` can remove fewer rows than the same delete without it. Put write restrictions on `for: "insert"`, `for: "update"`, or `for: "delete"`.
+
+## Session values
+
+`session.handles` comes from `sessionSettings()`. The compiler prints `(select nullif(current_setting('app.user_id', true), '')::uuid)`. A `text[]` setting prints the cast outside the subselect: `((select coalesce(nullif(current_setting('app.scopes', true), ''), '{}'))::text[])`. `includes(list, value)` prints `value = any (list)`.
+
+`sessionSettings(settings, { role })` runs `set_config('role', name, true)` as the first statement, then the settings, all transaction-local. `COMMIT` and `ROLLBACK` clear them. A session-level `SET` leaks to the next client on a transaction pool. A role the login is not a member of is OKM1923 (42501). On a host whose login role has `bypassrls`, the client must switch to a role that does not.
+
+`currentUser()` prints `(select current_user)`. `call("auth.uid", t.uuid(), { volatility: "stable" })` prints `(select auth.uid())`. A `security definer` function pins `search_path` (OKM1823). A definer that reads a forced table can see no rows (OKM2112).
+
+## Tenancy
+
+`columnTenancy`, `compositeTenancy`, and `rlsTenancy` take `type: "uuid" | "text" | "int" | "bigint"`. One composite declaration uses one type for every key. `for()` takes a string for `uuid`, `text`, and `bigint` (a decimal string or a JavaScript bigint) and a number for `int`. The generated `{table}_tenant` policy is permissive and stays forced. A policy with that name, or `{table}_unscoped_select`, is refused. Another policy on a tenant table is restrictive. A permissive one would OR with the tenant policy and widen isolation.
+
+## Checks
+
+A policy cycle, including a policy that reads its own table, is OKM1925 when the schema builds. PostgreSQL raises 42P17 at runtime. A policy filter column that is not the first column of an index is OKM2110. `sql` that calls `current_setting` or a function outside `(select ...)` is OKM2111. A role that owns the tables, is a superuser, or has `BYPASSRLS` is OKM2113. A `to` role that is not in the roles config is OKM2114.
+
+An undeclared policy on a managed table is drift. OKM does not drop it unless the plan says so, and a drop is a contract step. `okm pull` writes the policy in the `sql` form. `okm access <table|role>` lists, per command and role, which policies OR and which AND.
+
+Policies are not inherited by partitions. A grant on a partition bypasses the parent policies. `TRUNCATE` ignores row security.
+
+A count or a backfill under `FORCE`, or under `rlsTenancy`, does not report zero when the role cannot see the rows. A table with the unscoped select policy is counted with `app.unscoped`. Anything else is OKM1926.

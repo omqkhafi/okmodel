@@ -749,8 +749,36 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1709",
     title: "Session setting",
     summary:
-      "A sessionSettings() declaration or a db.with() value is not accepted: a name without a dot, a name that starts with a setting okm reserves for tenancy or is a built-in setting, a type that is not text, uuid, int, or bool, a value of the wrong type, an unknown key, or a required key that is missing. A client with a required setting refuses every statement until db.with() gives it. Nothing reached the database.",
+      "A sessionSettings() declaration or a db.with() value is not accepted: a name without a dot, a name that starts with a setting okm reserves for tenancy or is a built-in setting, a type that is not text, uuid, int, bool, or text[], a value of the wrong type, an unknown key, or a required key that is missing. A client with a required setting refuses every statement until db.with() gives it. Nothing reached the database.",
     fix: "Declare names like app.user_id, pass each value as its declared type, and call db.with({ ... }) with every required key before the first query.",
+  },
+  {
+    code: "OKM1924",
+    title: "Policy declaration",
+    summary:
+      "A table policy or rls option is not accepted: the wrong command for using or check, a name the tenancy policies already use, a permissive policy on a tenant table, or rls lowering a forced tenant table. Nothing reached the database.",
+    fix: "Give each policy one command, keep tenant policies restrictive, and do not turn off row security on an rlsTenancy table.",
+  },
+  {
+    code: "OKM1925",
+    title: "Policy cycle",
+    summary:
+      "A policy reads a table whose policies read it back, including a policy that reads its own table. PostgreSQL raises 42P17 when a non-bypass role runs that query. okm check refuses the schema first.",
+    fix: "Break the cycle. Read the other table through a security definer function that does not read back.",
+  },
+  {
+    code: "OKM1926",
+    title: "Forced count",
+    summary:
+      "A data probe or a backfill would count or update zero rows because the table forces row-level security and the role does not bypass it. okm refuses instead of reporting a silent zero.",
+    fix: "Run the count as a role that bypasses row-level security, or add the unscoped select policy for a probe. A backfill under force needs a bypass role.",
+  },
+  {
+    code: "OKM1923",
+    title: "SET ROLE refused",
+    summary:
+      "SET LOCAL ROLE failed with 42501. The login role is not a member of the session role. The transaction was rolled back.",
+    fix: "Grant the login role membership in the session role, with SET TRUE on PostgreSQL 16 and later.",
   },
   {
     code: "OKM1801",

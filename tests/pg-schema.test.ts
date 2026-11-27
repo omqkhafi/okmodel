@@ -262,10 +262,9 @@ test("later options are OKM1061 and say what to do instead", () => {
   expect(computed.code).toBe("OKM1061");
   expect(computed.message).toContain("Declare it in schema({ computed })");
   expect(computed.message).not.toContain("arrives later");
-  const policies = capture(() => table("tasks", { id: t.id() }, { policies: { read: true } }));
-  expect(policies.code).toBe("OKM1061");
-  expect(policies.message).toContain("arrives later");
-  expect(policies.message).not.toContain("M2");
+  expect(() =>
+    table("tasks", { id: t.id() }, { policies: () => ({ read: { using: true } }) }),
+  ).not.toThrow();
 });
 
 test("emitRowTypes keeps a jsonb type argument from the schema source", () => {

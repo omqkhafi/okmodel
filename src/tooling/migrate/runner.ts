@@ -12,6 +12,7 @@ import { OkmError } from "../../contracts/error.js";
 import { quoteIdent } from "../../dialects/pg/ddl.js";
 import { roleExists } from "../../dialects/pg/role/check.js";
 import { changesRole, createdRoleName, createRoleOnce } from "../../dialects/pg/role/sql.js";
+import { assertBackfillVisible } from "./data-probe.js";
 import {
   boundaryQuery,
   checkedCast,
@@ -600,6 +601,7 @@ async function runBackfill(
     await connection.execute("commit");
     return;
   }
+  await assertBackfillVisible((sql) => connection.execute(sql), run.schema ?? "public", spec.table);
   let last = stored?.lastKey ?? null;
   let rows = stored?.rows ?? 0;
   let batches = stored?.batches ?? 0;

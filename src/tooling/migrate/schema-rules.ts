@@ -11,7 +11,9 @@
 import type { Catalog, IndexDefinition, ObjectRef } from "../../contracts/catalog/types.js";
 import { OkmError } from "../../contracts/error.js";
 import type { TableModel } from "../../dialects/pg/model.js";
+import type { RolesInput } from "../../dialects/pg/role/config.js";
 import { warningRule, type WarningIgnore } from "../../runtime/warnings/catalog.js";
+import { policyFindings } from "./policy-rules.js";
 import type { WarningLevel, WarningRule } from "../../runtime/warnings/catalog.js";
 import { resolvedLevel } from "../../runtime/warnings/level.js";
 import { fieldsOf } from "../../runtime/presets.js";
@@ -95,6 +97,7 @@ export function schemaAdvice(
   input: SchemaAdviceInput,
   uses: readonly FilterUse[],
   config: SchemaAdviceConfig,
+  roles?: RolesInput,
 ): { readonly advice: readonly SchemaAdvice[]; readonly ignores: readonly IgnoreReport[] } {
   const groups = groupTables(input.catalog);
   const found = [
@@ -104,6 +107,7 @@ export function schemaAdvice(
     ...duplicateIndexes(input.catalog),
     ...genericPlanTrap(groups, input, uses),
     ...nullableMatchSimple(input.catalog),
+    ...policyFindings(input.catalog, roles),
   ].sort(compareFound);
   const ignore = config.ignore ?? [];
   const used = new Set<WarningIgnore>();

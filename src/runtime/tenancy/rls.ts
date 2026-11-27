@@ -102,22 +102,21 @@ type HookSession = {
   pool: DriverPool;
   readonly scope?: Tenant;
   readonly settings?: readonly Setting[];
+  readonly role?: string;
   readonly tx?: unknown;
   readonly schema: { readonly model: Model };
 };
 
 const guardChecks = new WeakMap<object, Map<number, Promise<void>>>();
 
-function openColumn(key: string, indexes: boolean | undefined): ColumnTenancy {
-  return (
-    columnTenancy as (input: {
-      readonly key: string;
-      readonly type: "uuid";
-      readonly indexes?: boolean;
-    }) => ColumnTenancy
-  )({
+function openColumn(
+  key: string,
+  type: "uuid" | "text" | "int" | "bigint",
+  indexes: boolean | undefined,
+): ColumnTenancy {
+  return columnTenancy({
     key,
-    type: "uuid",
+    type,
     ...(indexes !== undefined ? { indexes } : {}),
   });
 }
@@ -142,7 +141,7 @@ export function rlsTenancy<const Key>(input: {
     : Key extends string
       ? Key
       : "rlsTenancy() key must be a field name.";
-  readonly type: "uuid";
+  readonly type: "uuid" | "text" | "int" | "bigint";
   /** Prefix indexes with the tenant key. Omitted is true. */
   readonly indexes?: boolean;
 }): ColumnTenancy & { readonly key: Key extends string ? Key : string } {
@@ -163,8 +162,22 @@ export function rlsTenancy<const Key>(input: {
       },
     );
   }
+  if (
+    input.type !== "uuid" &&
+    input.type !== "text" &&
+    input.type !== "int" &&
+    input.type !== "bigint"
+  ) {
+    throw new OkmError(
+      "OKM1060",
+      `rlsTenancy() type ${String(input.type)} must be uuid, text, int, or bigint.`,
+      {
+        fix: { summary: 'Pass rlsTenancy({ key: "tenantId", type: "uuid" }).' },
+      },
+    );
+  }
   const prefixIndexes = readIndexPolicy(input.indexes, "rlsTenancy()");
-  const base = openColumn(input.key as string, prefixIndexes);
+  const base = openColumn(input.key as string, input.type, prefixIndexes);
   const key = base.key;
   let checker: (() => Promise<void>) | undefined;
   let armedFor: object | undefined;
@@ -320,15 +333,22 @@ function arm(
   if (!isSession(session) || session === armedFor) return;
   const raw = innerPool(session.pool);
   const tables = tenantTables(session.schema.model, key);
-  remember(() => checkEndpoint(raw, "primary", 0, tables), session);
+  remember(() => checkEndpoint(raw, "primary", 0, tables, session.role), session);
   if (session.scope === undefined || isWrapped(session.pool)) return;
   const inner = session.pool;
-  installGuard(inner, tables);
+  installGuard(inner, tables, session.role);
   const ensure = (): Promise<void> =>
     (inner as RoutedPool).okmGuardInstalled === true
       ? Promise.resolve()
-      : checkEndpoint(inner, "primary", 0, tables);
-  session.pool = wrapPool(inner, session.scope, session.settings, session.tx !== undefined, ensure);
+      : checkEndpoint(inner, "primary", 0, tables, session.role);
+  session.pool = wrapPool(
+    inner,
+    session.scope,
+    session.settings,
+    session.tx !== undefined,
+    ensure,
+    session.role,
+  );
 }
 
 function isSession(value: object | undefined): value is HookSession {
@@ -355,11 +375,11 @@ function tenantTables(model: Model, key: string): readonly TenantGuard[] {
  * pool. The router calls the guard before the statement, on the endpoint it
  * chose, so a replica is not cleared by a check that ran on the primary.
  */
-function installGuard(inner: DriverPool, tables: readonly TenantGuard[]): void {
+function installGuard(inner: DriverPool, tables: readonly TenantGuard[], role?: string): void {
   const routed = inner as RoutedPool;
   if (routed.okmEndpoints === undefined || routed.okmGuardInstalled === true) return;
   const guard = (endpoint: GuardEndpoint): Promise<void> =>
-    checkEndpoint(endpoint.pool, endpoint.name, endpoint.generation, tables);
+    checkEndpoint(endpoint.pool, endpoint.name, endpoint.generation, tables, role);
   for (const endpoint of routed.okmEndpoints()) {
     (endpoint.pool as { okmGuard?: (endpoint: GuardEndpoint) => Promise<void> }).okmGuard = guard;
   }
@@ -376,6 +396,7 @@ function checkEndpoint(
   endpoint: string,
   generation: number,
   tables: readonly TenantGuard[],
+  role?: string,
 ): Promise<void> {
   let generations = guardChecks.get(pool);
   if (generations === undefined) {
@@ -384,7 +405,7 @@ function checkEndpoint(
   }
   const existing = generations.get(generation);
   if (existing !== undefined) return existing;
-  const pending = verifyEndpoint(pool, endpoint, tables);
+  const pending = verifyEndpoint(pool, endpoint, tables, role);
   generations.set(generation, pending);
   void pending.catch(() => {
     if (generations.get(generation) === pending) generations.delete(generation);
@@ -396,6 +417,7 @@ async function verifyEndpoint(
   pool: DriverPool,
   endpoint: string,
   tables: readonly TenantGuard[],
+  role?: string,
 ): Promise<void> {
   const idents =
     tables.length === 0
@@ -415,14 +437,13 @@ async function verifyEndpoint(
   const policies =
     names.length === 0
       ? ""
-      : `, c.relname, c.relrowsecurity::text, c.relforcerowsecurity::text, p.polname, coalesce(pg_get_expr(p.polqual, p.polrelid), ''), coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '')`;
+      : `, c.relname, c.relrowsecurity::text, c.relforcerowsecurity::text, p.polname, coalesce(pg_get_expr(p.polqual, p.polrelid), ''), coalesce(pg_get_expr(p.polwithcheck, p.polrelid), ''), p.polpermissive::text`;
   const join =
     names.length === 0
       ? ""
       : ` left join unnest(${names}) as listed(relname) on true left join pg_class c on c.oid = to_regclass(listed.relname) and c.relkind = 'r' left join pg_policy p on p.polrelid = c.oid`;
-  const result = await pool.execute(
-    `select r.rolsuper::text, r.rolbypassrls::text, (${owns})::text${policies} from pg_roles r${join} where r.rolname = current_user`,
-  );
+  const sql = `select r.rolsuper::text, r.rolbypassrls::text, (${owns})::text${policies} from pg_roles r${join} where r.rolname = current_user`;
+  const result = await executeAsRole(pool, sql, role);
   const row = result.rows[0];
   if (row === undefined) {
     throw new OkmError(
@@ -446,6 +467,7 @@ async function verifyEndpoint(
 type LivePolicy = {
   readonly using: string;
   readonly check: string;
+  readonly permissive: boolean;
 };
 
 function assertPolicyRows(
@@ -471,7 +493,11 @@ function assertPolicyRows(
     }
     const policy = row[6];
     if (policy === undefined || policy === null || policy.length === 0) continue;
-    table.policies.set(policy, { using: row[7] ?? "", check: row[8] ?? "" });
+    table.policies.set(policy, {
+      using: row[7] ?? "",
+      check: row[8] ?? "",
+      permissive: row[9] !== "false",
+    });
   }
   for (const table of tables) {
     const found = live.get(table.name);
@@ -508,9 +534,66 @@ function assertPolicyRows(
       );
     }
     if (found.policies.size !== 2) {
-      policyError(table.name, "has a row-level security policy okm did not emit.", endpoint);
+      for (const [name, policy] of found.policies) {
+        if (name === `${table.name}_tenant` || name === `${table.name}_unscoped_select`) continue;
+        if (policy.permissive) {
+          policyError(
+            table.name,
+            "has a permissive policy besides the tenant policy. An extra policy on a tenant table must be restrictive.",
+            endpoint,
+          );
+        }
+      }
     }
   }
+}
+
+async function executeAsRole(
+  pool: DriverPool,
+  sql: string,
+  role: string | undefined,
+): Promise<{ readonly rows: readonly (readonly (string | null)[])[] }> {
+  if (role === undefined) return pool.execute(sql);
+  if (pool.reserve !== undefined) {
+    const conn = await pool.reserve();
+    try {
+      await conn.execute("begin");
+      await conn.execute("select set_config('role', $1, true)", [role]);
+      const result = await conn.execute(sql);
+      await conn.execute("commit");
+      return result;
+    } catch (error) {
+      await conn.execute("rollback").catch(() => undefined);
+      throw mapRoleRefusal(role, error);
+    } finally {
+      await conn.release();
+    }
+  }
+  try {
+    const results = await pool.batch([
+      { text: "begin" },
+      { text: "select set_config('role', $1, true)", params: [role] },
+      { text: sql },
+      { text: "commit" },
+    ]);
+    return results[2] ?? { rows: [] };
+  } catch (error) {
+    throw mapRoleRefusal(role, error);
+  }
+}
+
+function mapRoleRefusal(role: string, error: unknown): unknown {
+  if (typeof error === "object" && error !== null) {
+    const record = error as { code?: unknown; message?: unknown };
+    const message = typeof record.message === "string" ? record.message.toLowerCase() : "";
+    if ((record.code === "42501" || message.includes("42501")) && message.includes("set role")) {
+      return new OkmError("OKM1923", `SET ROLE ${role} was refused.`, {
+        kind: "forbidden",
+        fix: { summary: "Grant the login role membership in that role before using it." },
+      });
+    }
+  }
+  return error;
 }
 
 function policyError(table: string, detail: string, endpoint: string): never {

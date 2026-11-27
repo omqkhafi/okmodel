@@ -54,6 +54,8 @@ export type TableInput = CommonInput & {
   readonly namespace: Namespace;
   readonly name: string;
   readonly partition?: TableDefinition["partition"];
+  /** Enable and force when the table has no policy. */
+  readonly rowSecurity?: TableDefinition["rowSecurity"];
 };
 
 /** Input for {@link column}. */
@@ -133,8 +135,10 @@ export function table(input: TableInput): TableObject {
     namespace: input.namespace,
     name: input.name,
   };
-  const definition: TableDefinition =
-    input.partition === undefined ? {} : { partition: copyPartition(input.partition) };
+  const definition: TableDefinition = {
+    ...(input.partition === undefined ? {} : { partition: copyPartition(input.partition) }),
+    ...(input.rowSecurity === undefined ? {} : { rowSecurity: { ...input.rowSecurity } }),
+  };
   return objectOf("table", identity, input, definition, input.dependencies ?? []);
 }
 

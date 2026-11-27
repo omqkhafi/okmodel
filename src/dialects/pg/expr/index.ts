@@ -99,7 +99,10 @@ export type Node =
       readonly otherwise: Node;
     }
   | { readonly k: "setting"; readonly name: string; readonly type: SettingType }
-  | { readonly k: "and"; readonly parts: readonly (Cond | Node)[] };
+  | { readonly k: "and"; readonly parts: readonly (Cond | Node)[] }
+  | { readonly k: "user" }
+  | { readonly k: "call"; readonly name: string }
+  | { readonly k: "includes"; readonly list: Node; readonly value: Node };
 
 type Operand = Expr | string | number | bigint | boolean | null;
 /** A column handle. `name` is the SQL name. */
@@ -612,4 +615,60 @@ export function setting<const Ty extends SettingType>(
  */
 export function settingList(values: readonly (string | null)[]): string {
   return `{${values.map((value) => (value === null ? "NULL" : arrayElement(value, false))).join(",")}}`;
+}
+
+const CALL_NAME = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+$/;
+
+/**
+ * `current_user` as an InitPlan.
+ *
+ * The text is `(select current_user)`. A policy that calls it directly is
+ * planned once per statement.
+ *
+ * @returns The expression
+ */
+export function currentUser(): Expr<string, false, "stable"> {
+  return make({ k: "user" });
+}
+
+/**
+ * A provider function, called with no arguments inside an InitPlan.
+ *
+ * `call("auth.uid", t.uuid(), { volatility: "stable" })` prints
+ * `(select auth.uid())`. The name is schema-qualified identifiers. The type
+ * and volatility are for the checker. The SQL does not repeat them.
+ *
+ * @param name - Schema-qualified function, such as `auth.uid`
+ * @param _type - Result type. The printer does not emit a cast
+ * @param _options - Volatility. `stable` matches `auth.uid()`
+ * @returns The expression
+ */
+export function call(
+  name: string,
+  _type: unknown,
+  _options?: { readonly volatility?: Volatility },
+): Expr<unknown, boolean, Volatility> {
+  if (typeof name !== "string" || !CALL_NAME.test(name)) {
+    throw new OkmError("OKM1120", `call does not accept ${String(name)}.`, {
+      fix: { summary: "Pass a schema-qualified function, such as auth.uid." },
+    });
+  }
+  return make({ k: "call", name });
+}
+
+/**
+ * `value = any (list)`.
+ *
+ * The list keeps its own cast. A `text[]` setting prints the cast outside
+ * the subselect, which is the form PostgreSQL accepts.
+ *
+ * @param list - The array
+ * @param value - The element
+ * @returns The comparison
+ */
+export function includes(
+  list: Expr<readonly (string | null)[], boolean, Volatility>,
+  value: Expr<string, boolean, Volatility> | string,
+): Expr<boolean, boolean, Volatility> {
+  return make({ k: "includes", list: lift(list), value: lift(value) });
 }

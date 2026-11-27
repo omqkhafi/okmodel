@@ -13,12 +13,15 @@ import { definition } from "./misuse.js";
 import type { AnyTable } from "./table.js";
 
 /**
- * A guarded uuid column, one per tenant table.
+ * A guarded tenant column, one per tenant table.
  *
  * Insert and update omit it. The client fills it from the scope.
+ * `int` is a number. `uuid`, `text`, and `bigint` are strings.
  */
-export type TenantFields<Key extends string> = {
-  readonly [K in Key]: ColumnBuilder<string, FlagTrue<PlainFlags, "guarded">>;
+export type TenantJs<Type extends string> = Type extends "int" ? number : string;
+
+export type TenantFields<Key extends string, Type extends string = "uuid"> = {
+  readonly [K in Key]: ColumnBuilder<TenantJs<Type>, FlagTrue<PlainFlags, "guarded">>;
 };
 
 /**
@@ -63,7 +66,7 @@ export type ColumnTenancy = {
   readonly key: string;
   /** Every tenant field, in declaration order. One entry for column tenancy. */
   readonly keys?: readonly string[];
-  readonly type: "uuid";
+  readonly type: "uuid" | "text" | "int" | "bigint";
   readonly strategy: string;
   /** Tables with the tenant column, widened uniques, and composite references. */
   rewrite(tables: readonly AnyTable[], names: Names): readonly AnyTable[];

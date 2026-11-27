@@ -34,7 +34,13 @@ export async function accessReport(
   readonly grants: readonly AccessGrant[];
   readonly memberships: readonly { readonly role: string; readonly memberOf: string }[];
   readonly unmanaged: readonly string[];
-  readonly policies: readonly string[];
+  readonly policies: readonly {
+    readonly command: string;
+    readonly role: string;
+    readonly or: readonly string[];
+    readonly and: readonly string[];
+    readonly warnings: readonly string[];
+  }[];
 }> {
   if (config.roles === undefined) {
     throw new OkmError(
@@ -98,9 +104,94 @@ export async function accessReport(
       unmanaged: extra.rows
         .map((row) => String(row[0] ?? ""))
         .filter((name) => name.length > 0 && !named.has(name)),
-      policies: [],
+      policies: await policyPart(pool, tableName, roleName),
     };
   } finally {
     await pool.close();
   }
+}
+
+const COMMANDS: Readonly<Record<string, string>> = {
+  "*": "all",
+  r: "select",
+  a: "insert",
+  w: "update",
+  d: "delete",
+};
+
+async function policyPart(
+  pool: {
+    execute(
+      sql: string,
+      params?: readonly string[],
+    ): Promise<{ rows: readonly (readonly (string | null)[])[] }>;
+  },
+  tableName: string,
+  roleName: string,
+): Promise<
+  readonly {
+    readonly command: string;
+    readonly role: string;
+    readonly or: readonly string[];
+    readonly and: readonly string[];
+    readonly warnings: readonly string[];
+  }[]
+> {
+  const rows = await pool.execute(
+    `select c.relname, p.polname, p.polcmd, p.polpermissive::text,
+            coalesce((
+              select string_agg(r.rolname, ',' order by r.rolname)
+              from pg_roles r
+              where r.oid = any(p.polroles)
+            ), 'public')
+     from pg_policy p
+     join pg_class c on c.oid = p.polrelid
+     join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = 'public'
+       and (($1 <> '' and c.relname = $1) or ($2 <> '' and (
+         p.polroles = '{}'::oid[]
+         or exists (select 1 from pg_roles r where r.oid = any(p.polroles) and r.rolname = $2)
+       )))
+     order by c.relname, p.polname`,
+    [tableName, roleName],
+  );
+  const groups = new Map<string, { or: string[]; and: string[] }>();
+  const selectRoles = new Set<string>();
+  const restrictiveSelect = new Set<string>();
+  for (const row of rows.rows) {
+    const command = COMMANDS[String(row[2] ?? "")] ?? String(row[2] ?? "");
+    const roles = String(row[4] ?? "public").split(",");
+    const permissive = String(row[3] ?? "") === "true";
+    const policy = String(row[1] ?? "");
+    for (const role of roles) {
+      const key = `${command}\0${role}`;
+      const group = groups.get(key) ?? { or: [], and: [] };
+      if (permissive) group.or.push(policy);
+      else group.and.push(policy);
+      groups.set(key, group);
+      if (command === "select" || command === "all") selectRoles.add(role);
+      if (!permissive && command === "select") restrictiveSelect.add(role);
+    }
+  }
+  return [...groups.entries()].map(([key, group]) => {
+    const [command, role] = key.split("\0");
+    const warnings: string[] = [];
+    if (command === "update" && role !== undefined && !selectRoles.has(role)) {
+      warnings.push("UPDATE with no SELECT policy for this role matches zero rows");
+    }
+    if (
+      role !== undefined &&
+      restrictiveSelect.has(role) &&
+      (command === "insert" || command === "delete")
+    ) {
+      warnings.push("a restrictive SELECT policy changes RETURNING for this role");
+    }
+    return {
+      command: command ?? "",
+      role: role ?? "",
+      or: group.or,
+      and: group.and,
+      warnings,
+    };
+  });
 }

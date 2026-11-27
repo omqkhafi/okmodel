@@ -609,14 +609,33 @@ export async function introspectSchema(
     const parent = parents.get(parentName);
     if (parent === undefined) continue;
     const command = policyCommand(text(row, "command"));
-    if (command === undefined || text(row, "enabled") !== "true") continue;
+    if (command === undefined) continue;
+    const using = text(row, "using_expr");
+    const check = text(row, "check_expr");
+    const roles = text(row, "roles");
+    const comment = text(row, "comment");
+    const legacy =
+      (command === "all" || command === "select") &&
+      text(row, "permissive") !== "false" &&
+      roles.length === 0 &&
+      (check.length === 0 || check === using);
     objects.push(
       policyObject({
         parent,
         name: text(row, "name"),
         command,
-        expression: text(row, "using_expr"),
+        expression: command === "insert" && using.length === 0 ? check : using,
         force: text(row, "force") === "true",
+        ...(legacy
+          ? {}
+          : {
+              ...(text(row, "permissive") === "false" ? { restrictive: true as const } : {}),
+              ...(roles.length === 0 ? {} : { roles: roles.split(",") }),
+              ...(check.length > 0 && check !== using && command !== "insert" ? { check } : {}),
+              ...(command === "insert" ? { checkOnly: true as const } : {}),
+              ...(text(row, "enabled") === "true" ? {} : { disabled: true as const }),
+            }),
+        ...(comment.length > 0 ? { comment } : {}),
         provenance,
         dependencies: [{ kind: "table", namespace, name: parentName }],
       }),
@@ -2553,6 +2572,17 @@ const POLICIES = `
     p.polname as name,
     p.polcmd as command,
     coalesce(pg_get_expr(p.polqual, p.polrelid), '') as using_expr,
+    coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '') as check_expr,
+    p.polpermissive::text as permissive,
+    coalesce((
+      select string_agg(r.rolname, ',' order by r.rolname)
+      from pg_roles r
+      where r.oid = any (p.polroles)
+    ), '') as roles,
+    coalesce((
+      select d.description from pg_description d
+      where d.objoid = p.oid and d.classoid = 'pg_policy'::regclass
+    ), '') as comment,
     c.relforcerowsecurity::text as force,
     c.relrowsecurity::text as enabled
   from pg_policy p
@@ -2603,9 +2633,14 @@ function viewOptionsOf(options: string): {
   return { invoker, barrier, checkOption, storage };
 }
 
-function policyCommand(command: string): "all" | "select" | undefined {
+function policyCommand(
+  command: string,
+): "all" | "select" | "insert" | "update" | "delete" | undefined {
   if (command === "*") return "all";
   if (command === "r") return "select";
+  if (command === "a") return "insert";
+  if (command === "w") return "update";
+  if (command === "d") return "delete";
   return undefined;
 }
 

@@ -14,13 +14,14 @@ import { isGeneratedCompositeCheck } from "../../dialects/pg/composite.js";
 import { isDomain } from "../../contracts/catalog/enum.js";
 import { identityKey } from "../../contracts/catalog/identity.js";
 import { deterministicName } from "../../contracts/catalog/identifier.js";
-import { qualify, renderCatalog } from "../../dialects/pg/ddl.js";
+import { renderCatalog } from "../../dialects/pg/ddl.js";
 import type {
   Catalog,
   CatalogObject,
   ColumnObject,
   ConstraintObject,
   IndexObject,
+  PolicyObject,
   SequenceObject,
   TableObject,
 } from "../../contracts/catalog/types.js";
@@ -91,7 +92,6 @@ export type PullEmission = {
 };
 
 const DEFERRED: readonly { readonly kind: string; readonly reason: string }[] = [
-  { kind: "policy", reason: "a later step writes policies" },
   { kind: "role", reason: "a later step writes roles and grants" },
   { kind: "grant", reason: "a later step writes roles and grants" },
   { kind: "defaultPrivilege", reason: "a later step writes roles and grants" },
@@ -297,8 +297,6 @@ export function emitPull(
       ),
     );
   }
-  appendRowLevelSecurity(source, skipped);
-
   const verdictList = review?.verdicts ?? [];
   const routines = renderRoutines(plan, new Map(verdictList.map((item) => [item.key, item])));
   files.push({
@@ -399,7 +397,7 @@ export function formatPullReport(
   }
   for (const finding of findings) lines.push(`  finding: ${finding}`);
   lines.push(verb === "imported" ? "not imported" : "not pulled yet");
-  const deferredKinds = ["policy", "role", "grant", "defaultPrivilege"];
+  const deferredKinds = ["role", "grant", "defaultPrivilege"];
   for (const kind of deferredKinds) {
     const rows = skipped.filter((item) => item.kind === kind);
     const reason = deferredReason(kind);
@@ -447,6 +445,7 @@ type ParentBag = {
   constraints: ConstraintObject[];
   indexes: IndexObject[];
   sequences: SequenceObject[];
+  policies: PolicyObject[];
 };
 
 function planTable(
@@ -468,6 +467,7 @@ function planTable(
     constraints: [],
     indexes: [],
     sequences: [],
+    policies: [],
   };
   const names = new Set<string>();
   const fields = new Map<string, string>();
@@ -746,6 +746,11 @@ function planTable(
     options.push("    indexes: (columns) => [");
     options.push(...indexLines);
     options.push("    ],");
+  }
+  const policyLines = policyOptions(bag.policies);
+  if (policyLines.length > 0) {
+    options.push(...policyLines);
+    needsSql = true;
   }
 
   for (const sequence of bag.sequences) {
@@ -1377,16 +1382,28 @@ function groupByParent(source: Catalog): Map<string, ParentBag> {
   const ensure = (name: string): ParentBag => {
     const found = map.get(name);
     if (found !== undefined) return found;
-    const bag: ParentBag = { columns: [], constraints: [], indexes: [], sequences: [] };
+    const bag: ParentBag = {
+      columns: [],
+      constraints: [],
+      indexes: [],
+      sequences: [],
+      policies: [],
+    };
     map.set(name, bag);
     return bag;
   };
   for (const object of source.objects) {
-    if (object.kind === "column" || object.kind === "constraint" || object.kind === "index") {
+    if (
+      object.kind === "column" ||
+      object.kind === "constraint" ||
+      object.kind === "index" ||
+      object.kind === "policy"
+    ) {
       const bag = ensure(object.identity.parent.name);
       if (object.kind === "column") bag.columns.push(object);
       else if (object.kind === "constraint") bag.constraints.push(object);
-      else bag.indexes.push(object);
+      else if (object.kind === "index") bag.indexes.push(object);
+      else bag.policies.push(object);
       continue;
     }
     if (object.kind === "sequence") {
@@ -1551,50 +1568,51 @@ function kindLabel(kind: string): string {
   return `${kind}s`;
 }
 
-const ROW_LEVEL_REASON = "pull does not write enable or force row level security";
-
 /**
- * One enable line per table that has a policy, and a force line when any of
- * those policies recorded `FORCE ROW LEVEL SECURITY`.
+ * Policy options `okm pull` writes. The expression is the `sql` form.
  *
- * Introspection stores both facts on the policy. The files do not, so check
- * after baseline must not be the first place the operator hears about them.
- * Keys are not catalog identities: `skippedKeys` must not treat a column as
- * skipped because it shares a name with this note.
+ * @param policies - Policies on one table
+ * @returns Option lines, including `rls` when it differs from the default
  */
-function appendRowLevelSecurity(source: Catalog, skipped: PullSkip[]): void {
-  const tables = new Map<string, { schema: string; force: boolean }>();
-  for (const object of source.objects) {
-    if (object.kind !== "policy") continue;
-    const namespace = object.identity.parent.namespace;
-    const schema = namespace.form === "static" ? namespace.name : "public";
-    const name = object.identity.parent.name;
-    const current = tables.get(`${schema}\0${name}`);
-    if (current === undefined) {
-      tables.set(`${schema}\0${name}`, { schema, force: object.definition.force });
-    } else if (object.definition.force) {
-      current.force = true;
-    }
+function policyOptions(policies: readonly PolicyObject[]): string[] {
+  if (policies.length === 0) return [];
+  const lines = ["    policies: () => ({"];
+  let force = false;
+  let disabled = true;
+  for (const policy of [...policies].sort((left, right) =>
+    compare(left.identity.name, right.identity.name),
+  )) {
+    const definition = policy.definition;
+    if (definition.force) force = true;
+    if (definition.disabled !== true) disabled = false;
+    const fields = [`for: "${definition.command}"`];
+    if (definition.restrictive === true) fields.push('as: "restrictive"');
+    const roles = definition.roles;
+    fields.push(roles === undefined ? 'to: "public"' : `to: ${roleLiteral(roles)}`);
+    if (definition.checkOnly === true) fields.push(`check: ${sqlFence(definition.expression)}`);
+    else fields.push(`using: ${sqlFence(definition.expression)}`);
+    if (definition.check !== undefined) fields.push(`check: ${sqlFence(definition.check)}`);
+    if (policy.comment !== undefined) fields.push(`comment: ${JSON.stringify(policy.comment)}`);
+    lines.push(`      ${definitionKey(policy.identity.name)}: { ${fields.join(", ")} },`);
   }
-  for (const [key, info] of tables) {
-    const name = key.slice(info.schema.length + 1);
-    const table = qualify(info.schema, name);
-    skipped.push({
-      key: `row-level-security\0${info.schema}\0${name}\0enable`,
-      kind: "rowLevelSecurity",
-      label: `${name} enable`,
-      reason: ROW_LEVEL_REASON,
-      sql: `alter table ${table} enable row level security`,
-    });
-    if (!info.force) continue;
-    skipped.push({
-      key: `row-level-security\0${info.schema}\0${name}\0force`,
-      kind: "rowLevelSecurity",
-      label: `${name} force`,
-      reason: ROW_LEVEL_REASON,
-      sql: `alter table ${table} force row level security`,
-    });
-  }
+  lines.push("    }),");
+  if (disabled && force) lines.push("    rls: { enable: false, force: true },");
+  else if (disabled) lines.push("    rls: false,");
+  else if (force) lines.push("    rls: { force: true },");
+  return lines;
+}
+
+function definitionKey(name: string): string {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ? name : JSON.stringify(name);
+}
+
+function roleLiteral(roles: readonly string[]): string {
+  if (roles.length === 1) return JSON.stringify(roles[0]);
+  return `[${roles.map((role) => JSON.stringify(role)).join(", ")}]`;
+}
+
+function sqlFence(text: string): string {
+  return `sql\`${text.replaceAll("\\", "\\\\").replaceAll("`", "\\`").replaceAll("${", "\\${")}\``;
 }
 
 function counted(count: number, one: string, many: string): string {

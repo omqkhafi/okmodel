@@ -53,6 +53,12 @@ export function printNode(
     }
     case "setting":
       return settingSql(node.name, node.type);
+    case "user":
+      return "(select current_user)";
+    case "call":
+      return `(select ${node.name}())`;
+    case "includes":
+      return `${printNode(node.value, column, cond)} = any (${printNode(node.list, column, cond)})`;
     case "and":
       return node.parts
         .map((part) => `(${isNode(part) ? printNode(part, column, cond) : cond(part)})`)

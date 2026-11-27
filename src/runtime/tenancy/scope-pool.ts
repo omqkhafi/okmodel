@@ -183,15 +183,22 @@ function rootPool(pool: DriverPool): DriverPool {
 export function preludeOf(
   tenant: Tenant | undefined,
   settings: readonly Setting[] | undefined,
+  role?: string,
 ): Statement {
-  if (tenant !== undefined && (settings === undefined || settings.length === 0)) {
+  if (
+    role === undefined &&
+    tenant !== undefined &&
+    (settings === undefined || settings.length === 0)
+  ) {
     if ("unscoped" in tenant) return { text: "select set_config('app.unscoped', 'on', true)" };
     return { text: "select set_config('app.tenant', $1, true)", params: [tenant.value] };
   }
-  const pairs: Setting[] = [...(settings ?? [])];
+  const pairs: Setting[] = [];
+  if (role !== undefined) pairs.push(["role", role]);
   if (tenant !== undefined) {
-    pairs.unshift("unscoped" in tenant ? ["app.unscoped", "on"] : ["app.tenant", tenant.value]);
+    pairs.push("unscoped" in tenant ? ["app.unscoped", "on"] : ["app.tenant", tenant.value]);
   }
+  pairs.push(...(settings ?? []));
   const calls = pairs.map((_, at) => `set_config($${2 * at + 1}, $${2 * at + 2}, true)`);
   return { text: `select ${calls.join(", ")}`, params: pairs.flat() };
 }
@@ -209,12 +216,13 @@ export function preludeOf(
 export function scopeKeyOf(
   tenant: Tenant | undefined,
   settings: readonly Setting[] | undefined,
+  role?: string,
 ): string {
   const head =
     tenant === undefined ? "" : "unscoped" in tenant ? `u:${tenant.unscoped}` : tenant.value;
-  return settings === undefined || settings.length === 0
-    ? head
-    : `${head}\n${JSON.stringify(settings)}`;
+  const body =
+    settings === undefined || settings.length === 0 ? head : `${head}\n${JSON.stringify(settings)}`;
+  return role === undefined ? body : `${role}\n${body}`;
 }
 
 /**
@@ -238,9 +246,10 @@ export function wrapPool(
   settings: readonly Setting[] | undefined,
   inside: boolean,
   ensure: () => Promise<void> = () => Promise.resolve(),
+  role?: string,
 ): DriverPool {
-  const setting = preludeOf(tenant, settings);
-  const key = scopeKeyOf(tenant, settings);
+  const setting = preludeOf(tenant, settings, role);
+  const key = scopeKeyOf(tenant, settings, role);
   const unscoped = tenant !== undefined && "unscoped" in tenant;
   const state = inside ? scopeState(rootPool(inner)) : undefined;
   if (state !== undefined) queueScope(inner, setting, key, state);
@@ -267,7 +276,7 @@ export function wrapPool(
       if (isReadSql(text)) {
         return runScopedRead(inner, text, params, setting, options, tenant === undefined);
       }
-      const results = await inner.batch([setting, statementOf(text, params)], options);
+      const results = await batchScoped(inner, [setting, statementOf(text, params)], options);
       const result = results[1];
       if (result === undefined) {
         throw new OkmError("OKM1111", "The driver returned no result for the statement.", {
@@ -308,7 +317,8 @@ export function wrapPool(
         }
         return results;
       }
-      const results = await inner.batch(
+      const results = await batchScoped(
+        inner,
         [setting, ...statements.map((statement) => statementOf(statement.text, statement.params))],
         options,
       );
@@ -348,7 +358,7 @@ async function runScopedRead(
     // Neon over HTTP has no connection to hold. Settings alone run the read in
     // the one transaction([...]) the prelude opens.
     if (batched) {
-      const results = await inner.batch([setting, statementOf(text, params)], options);
+      const results = await batchScoped(inner, [setting, statementOf(text, params)], options);
       const result = results[1];
       if (result !== undefined) return result;
     }
@@ -457,6 +467,40 @@ function acquire(state: ScopeState): Promise<() => void> {
   );
 }
 
+async function batchScoped(
+  inner: DriverPool,
+  statements: readonly Statement[],
+  options: ExecuteOptions | undefined,
+): Promise<readonly ExecuteResult[]> {
+  try {
+    return await inner.batch(statements, options);
+  } catch (error) {
+    mapSetRole(statements[0], error);
+  }
+}
+
+function mapSetRole(setting: Statement | undefined, error: unknown): never {
+  const params = setting?.params;
+  const role = params?.[0] === "role" && typeof params[1] === "string" ? params[1] : undefined;
+  if (role !== undefined && deniedSetRole(error)) {
+    throw new OkmError("OKM1923", `SET ROLE ${role} was refused.`, {
+      kind: "forbidden",
+      fix: { summary: "Grant the login role membership in that role before using it." },
+    });
+  }
+  throw error;
+}
+
+function deniedSetRole(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const record = error as { code?: unknown; message?: unknown; cause?: unknown };
+  const message = typeof record.message === "string" ? record.message.toLowerCase() : "";
+  if ((record.code === "42501" || message.includes("42501")) && message.includes("set role")) {
+    return true;
+  }
+  return record.cause !== undefined && deniedSetRole(record.cause);
+}
+
 /**
  * Queues `set_config` as soon as the transaction client exists.
  *
@@ -467,13 +511,18 @@ function queueScope(inner: DriverPool, setting: Statement, key: string, state: S
   if (state.last === key || state.pending !== undefined) return;
   const epoch = state.epoch;
   state.sets += 1;
-  const run = inner.execute(setting.text, setting.params).then(() => {
-    // Every statement waits for `pending` before it sets, so nothing ran
-    // between this write and here and the next statement of this scope can skip it.
-    if (state.pending !== run) return;
-    state.pending = undefined;
-    if (state.epoch === epoch) state.last = key;
-  });
+  const run = inner.execute(setting.text, setting.params).then(
+    () => {
+      // Every statement waits for `pending` before it sets, so nothing ran
+      // between this write and here and the next statement of this scope can skip it.
+      if (state.pending !== run) return;
+      state.pending = undefined;
+      if (state.epoch === epoch) state.last = key;
+    },
+    (error: unknown) => {
+      mapSetRole(setting, error);
+    },
+  );
   state.pending = run;
   void run.catch(() => {
     if (state.pending === run) state.pending = undefined;
@@ -492,7 +541,11 @@ async function ensureScope(
   if (state.last === key) return;
   const epoch = state.epoch;
   state.sets += 1;
-  await inner.execute(setting.text, setting.params);
+  try {
+    await inner.execute(setting.text, setting.params);
+  } catch (error) {
+    mapSetRole(setting, error);
+  }
   if (state.epoch !== epoch) return;
   state.last = key;
 }

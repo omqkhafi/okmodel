@@ -255,19 +255,25 @@ export async function invalidIndexReport(
  * though `attnotnull` is set. Empty when there is no such column.
  */
 /**
- * Drops live policies when the schema declares none.
+ * Drops live policies whose table is not in the author catalog.
  *
- * Enable, force, and the policy itself are one plan (drop policy, then
- * disable row level security). Omitting the policy objects omits that plan.
- * The full live catalog stays available for the NOT NULL NOT VALID note.
+ * A policy on a managed table that the schema does not declare is drift.
+ * Dropping it is a contract step. A policy on a table okm does not manage
+ * stays out of the plan.
  */
 function withoutUnmanagedPolicies(live: Catalog, author: Catalog): Catalog {
-  if (author.objects.some((object) => object.kind === "policy")) return live;
-  if (!live.objects.some((object) => object.kind === "policy")) return live;
-  return {
-    version: live.version,
-    objects: live.objects.filter((object) => object.kind !== "policy"),
-  };
+  const managed = new Set<string>();
+  for (const object of author.objects) {
+    if (object.kind === "table") managed.add(object.identity.name);
+  }
+  let dropped = false;
+  const objects = live.objects.filter((object) => {
+    if (object.kind !== "policy") return true;
+    if (managed.has(object.identity.parent.name)) return true;
+    dropped = true;
+    return false;
+  });
+  return dropped ? { version: live.version, objects } : live;
 }
 
 function unvalidatedNotNull(live: Catalog, author: Catalog): string {

@@ -285,6 +285,7 @@ const KIND_SQL: Readonly<Record<StepKind, RegExp>> = {
   "enable-rls":
     /^alter table\b.*\b(?:enable row level security|(?<!no )force row level security)\b/,
   "create-policy": /^create policy\b/,
+  "alter-policy": /^alter policy\b/,
   "drop-policy": /^drop policy\b/,
   "disable-rls": /^alter table\b.*\b(?:disable row level security|no force row level security)\b/,
   "raw-sql": /.+/,
@@ -658,6 +659,11 @@ export type LogicalChange =
     }
   | {
       readonly op: "create-policy";
+      readonly object: PolicyObject;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "alter-policy";
       readonly object: PolicyObject;
       readonly schema: string;
     }

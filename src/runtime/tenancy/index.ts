@@ -9,7 +9,7 @@
 import { assertIdentifier } from "../../contracts/catalog/identifier.js";
 import { OkmError } from "../../contracts/error.js";
 import { ColumnBuilder, retarget, type ReferenceModifier } from "../../dialects/pg/column.js";
-import { uuid } from "../../dialects/pg/keys.js";
+import { assertTenantKeyType, tenantKey, tenantWire, type TenantKeyType } from "./key-type.js";
 import { definition, refuseGlobalTenantIndexes } from "../../dialects/pg/misuse.js";
 import type { Names } from "../../dialects/pg/casing.js";
 import type { AnyTable } from "../../dialects/pg/table.js";
@@ -72,36 +72,39 @@ export function global(reason: string): { readonly kind: "global"; readonly reas
  * @param input - Field name, `uuid`, and whether indexes are prefixed
  * @returns The object `schema()` applies
  */
-export function columnTenancy<const Key>(input: {
+export function columnTenancy<const Key, const Type extends TenantKeyType>(input: {
   readonly key: Key extends readonly unknown[]
     ? "columnTenancy() takes one key. Use compositeTenancy()."
     : Key extends string
       ? Key
       : "columnTenancy() key must be a field name.";
-  readonly type: "uuid";
+  readonly type: Type;
   /** Prefix indexes with the tenant key. Omitted is true. */
   readonly indexes?: boolean;
-}): ColumnTenancy & { readonly key: Key extends string ? Key : string } {
+}): ColumnTenancy & { readonly key: Key extends string ? Key : string; readonly type: Type } {
   if (input === undefined || typeof input !== "object") {
     definition("columnTenancy() needs { key, type }.");
   }
-  if (input.type !== "uuid") {
-    definition(`columnTenancy() type ${String(input.type)} must be uuid.`);
+  if (typeof input.type !== "string") {
+    definition("columnTenancy() type must be uuid, text, int, or bigint.");
   }
+  assertTenantKeyType(input.type, "columnTenancy()");
   if (typeof input.key !== "string" || input.key.length === 0) {
     definition("columnTenancy() key must be a field name.");
   }
   assertIdentifier(input.key, "tenancy key");
   const prefixIndexes = readIndexPolicy(input.indexes, "columnTenancy()");
   const key = input.key;
-  const column = uuid().guarded();
-  const encode = column.state.encode;
+  const built = tenantKey(input.type);
+  const column = built.column;
+  const encode = built.encode;
+  const stamp = built.stamp;
   const tenants = new Set<string>();
   const globals = new Map<string, string>();
   const exemptions = new Map<string, { name: string; reason: string }[]>();
   const api: ColumnTenancy & { readonly key: string } = {
     key,
-    type: "uuid",
+    type: input.type,
     strategy: "column",
     rewrite(tables, names) {
       tenants.clear();
@@ -130,12 +133,12 @@ export function columnTenancy<const Key>(input: {
     },
     stamp(table, rows, scope) {
       if (!tenants.has(table)) return;
-      stampRows(key, table, rows, scope);
+      stampRows(key, table, rows, scope, stamp);
     },
     client(spec): TenancyClient {
       const names = spec.scoped ? spec.names : spec.names.filter((name) => !tenants.has(name));
       if (spec.scoped) return { names };
-      return { names, ...bindClient(key, encode, spec.open) };
+      return { names, ...bindClient(key, input.type, spec.open) };
     },
     rules(table, source, scope) {
       return tenancyRules(table, source, scope, tenants, globals, exemptions);
@@ -167,7 +170,10 @@ export function columnTenancy<const Key>(input: {
       throw new OkmError("OKM1701", `Table ${table} is tenant-scoped. Call for({ ${key} }).`);
     },
   };
-  return api as ColumnTenancy & { readonly key: Key extends string ? Key : string };
+  return api as ColumnTenancy & {
+    readonly key: Key extends string ? Key : string;
+    readonly type: Type;
+  };
 }
 
 function rewriteTables(
@@ -438,6 +444,7 @@ function stampRows(
   table: string,
   rows: Record<string, unknown>[],
   scope: TenantCall | undefined,
+  stamp: (wire: string) => string | number,
 ): void {
   if (scope === undefined || "unscoped" in scope) {
     throw new OkmError(
@@ -445,30 +452,28 @@ function stampRows(
       `insert on ${table} has no tenant. Call for({ ${key} }) so the scope can set it.`,
     );
   }
-  for (const row of rows) row[key] = scope.value;
+  const value = stamp(scope.value);
+  for (const row of rows) row[key] = value;
 }
 
 function bindClient(
   key: string,
-  encode: (value: string) => string,
+  type: TenantKeyType,
   openScope: (scope: TenantCall) => unknown,
 ): { for: (input: unknown) => unknown; unscoped: (reason: string) => unknown } {
+  const expect = type === "int" ? "an integer" : type === "bigint" ? "a bigint" : `a ${type}`;
   return {
     for: (input: unknown) => {
       if (typeof input !== "object" || input === null || Array.isArray(input)) {
         throw new OkmError("OKM1701", `for() needs { ${key} }.`);
       }
       const record = input as Record<string, unknown>;
-      const value = record[key];
-      if (typeof value !== "string" || value.length === 0) {
-        throw new OkmError("OKM1701", `for() needs { ${key} } as a uuid.`);
-      }
+      const value = tenantWire(type, record[key], `for() needs { ${key} } as ${expect}.`);
       for (const name of Object.keys(record)) {
         if (name !== key) {
           throw new OkmError("OKM1701", `for() accepts ${key}. ${name} is not the tenant key.`);
         }
       }
-      encode(value);
       return openScope({ value });
     },
     unscoped: (reason: string) => {

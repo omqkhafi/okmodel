@@ -11,11 +11,18 @@
 
 import { OkmError } from "../../contracts/error.js";
 import type { DriverPool } from "../../contracts/driver.js";
+import { setting, settingList, type Expr } from "../../dialects/pg/expr/index.js";
 import type { SchemaHook } from "../../dialects/pg/model.js";
+import type { RolesInput } from "../../dialects/pg/role/config.js";
+import { normalizeRoles } from "../../dialects/pg/role/config.js";
+import { compileUserPolicies } from "../../dialects/pg/policy-compile.js";
+import { installPolicyCompiler } from "../../dialects/pg/policy-slot.js";
 import { INNER, isWrapped, wrapPool, type Setting } from "../tenancy/scope-pool.js";
 
+installPolicyCompiler(compileUserPolicies);
+
 /** Column types a setting can declare. The value is text on the wire. */
-export type SettingType = "text" | "uuid" | "int" | "bool";
+export type SettingType = "text" | "uuid" | "int" | "bool" | "text[]";
 
 /** One declared setting. */
 export type SettingDecl = {
@@ -29,11 +36,43 @@ export type SettingDecl = {
 /** Declared settings by the key `db.with()` takes. */
 export type SettingMap = Readonly<Record<string, SettingDecl>>;
 
-type ValueOf<T extends SettingType> = T extends "int"
-  ? number
-  : T extends "bool"
-    ? boolean
-    : string;
+type ValueOf<T extends SettingType> = T extends "text[]"
+  ? readonly (string | null)[]
+  : T extends "int"
+    ? number
+    : T extends "bool"
+      ? boolean
+      : string;
+
+type HandleOf<T extends SettingType> = T extends "text[]"
+  ? readonly (string | null)[]
+  : T extends "int"
+    ? number
+    : T extends "bool"
+      ? boolean
+      : string;
+
+/**
+ * One handle per declared setting.
+ *
+ * A policy reads it as `(select nullif(current_setting('app.user_id', true), '')::uuid)`.
+ * A list prints the cast outside the subselect.
+ */
+export type SessionHandles<M extends SettingMap> = {
+  readonly [K in keyof M]: Expr<HandleOf<M[K]["type"]>, boolean, "stable">;
+};
+
+/**
+ * Options for {@link sessionSettings}.
+ *
+ * `role` is a logical role key from `roles`, or a role name when `roles` is
+ * omitted. The first statement of each unit is `set_config('role', name, true)`,
+ * which is `SET LOCAL ROLE`.
+ */
+export type SessionOptions = {
+  readonly role?: string;
+  readonly roles?: RolesInput;
+};
 
 type RequiredKey<M extends SettingMap> = {
   readonly [K in keyof M]: M[K] extends { readonly required: true } ? K : never;
@@ -60,6 +99,10 @@ export type SessionContext<M extends SettingMap = SettingMap> = {
   readonly "~settings"?: M;
   /** The client hook `connect` installs. */
   readonly hook: SchemaHook;
+  /** One expression per key, for a policy `using` or `check`. */
+  readonly handles: SessionHandles<M>;
+  /** SQL role name for `SET LOCAL ROLE`, when `role` was set. */
+  readonly role?: string;
 };
 
 type Entry = {
@@ -71,7 +114,7 @@ type Entry = {
 
 type Pairs = readonly Setting[];
 
-const TYPES: readonly string[] = ["text", "uuid", "int", "bool"];
+const TYPES: readonly string[] = ["text", "uuid", "int", "bool", "text[]"];
 const NAME = /^[a-z_][a-z0-9_$]*(\.[a-z_][a-z0-9_$]*)+$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const OWN = ["app.tenant", "app.unscoped"];
@@ -103,11 +146,15 @@ function bad(message: string, fix: string): never {
  * It does not authenticate. A role that can run SQL can set the same names.
  *
  * @typeParam M - The declared settings
- * @param settings - Key to `{ name, type, required? }`. Types: text, uuid, int, bool
- * @returns The context `connect({ session })` takes
+ * @param settings - Key to `{ name, type, required? }`. Types: text, uuid, int, bool, text[]
+ * @param options - Logical role to `SET LOCAL ROLE`, and the roles config that names it
+ * @returns The context `connect({ session })` takes, including `handles`
  * @throws OkmError OKM1709 for a name or type that is not accepted
  */
-export function sessionSettings<const M extends SettingMap>(settings: M): SessionContext<M> {
+export function sessionSettings<const M extends SettingMap>(
+  settings: M,
+  options?: SessionOptions,
+): SessionContext<M> {
   if (typeof settings !== "object" || settings === null || Array.isArray(settings)) {
     bad("sessionSettings() takes an object of settings.", "Pass { key: { name, type } }.");
   }
@@ -139,7 +186,10 @@ export function sessionSettings<const M extends SettingMap>(settings: M): Sessio
       );
     }
     if (!TYPES.includes(type)) {
-      bad(`Setting ${key} type ${String(type)} is not accepted.`, "Types: text, uuid, int, bool.");
+      bad(
+        `Setting ${key} type ${String(type)} is not accepted.`,
+        "Types: text, uuid, int, bool, text[].",
+      );
     }
     if (required !== undefined && required !== true) {
       bad(
@@ -152,7 +202,33 @@ export function sessionSettings<const M extends SettingMap>(settings: M): Sessio
     names.add(lower);
     entries.push({ key, name: lower, type, required: required === true });
   }
-  return { hook: (target, ctx) => install(target, ctx, entries) };
+  const role = resolveRole(options?.role, options?.roles);
+  return {
+    hook: (target, ctx) => install(target, ctx, entries),
+    handles: handlesOf(entries) as SessionHandles<M>,
+    ...(role !== undefined ? { role } : {}),
+  };
+}
+
+function resolveRole(role: string | undefined, roles: RolesInput | undefined): string | undefined {
+  if (role === undefined) return undefined;
+  if (roles === undefined) return role;
+  const found = normalizeRoles(roles).find((entry) => entry.key === role);
+  return found === undefined ? role : found.name;
+}
+
+function handlesOf(
+  entries: readonly Entry[],
+): Readonly<Record<string, Expr<unknown, boolean, "stable">>> {
+  const handles: Record<string, Expr<unknown, boolean, "stable">> = {};
+  for (const entry of entries) handles[entry.key] = setting(entry.name, wireType(entry.type));
+  return handles;
+}
+
+function wireType(type: SettingType): "text" | "uuid" | "integer" | "boolean" | "text[]" {
+  if (type === "int") return "integer";
+  if (type === "bool") return "boolean";
+  return type;
 }
 
 function install(
@@ -171,6 +247,7 @@ function install(
         pool: DriverPool;
         readonly scope?: object;
         readonly settings?: Pairs;
+        readonly role?: string;
         readonly tx?: object;
         readonly schema: { readonly tenancy?: { readonly strategy?: string } };
       }
@@ -185,7 +262,14 @@ function install(
   // Under rls a scoped client sets the tenant and these in one statement.
   if (held.settings.length === 0 || isWrapped(held.pool)) return;
   if (held.scope !== undefined && held.schema.tenancy?.strategy === "rls") return;
-  held.pool = wrapPool(held.pool, undefined, held.settings, held.tx !== undefined);
+  held.pool = wrapPool(
+    held.pool,
+    undefined,
+    held.settings,
+    held.tx !== undefined,
+    () => Promise.resolve(),
+    held.role,
+  );
 }
 
 function merge(entries: readonly Entry[], was: Pairs | undefined, values: unknown): Pairs {
@@ -218,6 +302,14 @@ function wire(entry: Entry, value: unknown): string {
       break;
     case "int":
       if (typeof value === "number" && Number.isSafeInteger(value)) return String(value);
+      break;
+    case "text[]":
+      if (
+        Array.isArray(value) &&
+        value.every((item) => item === null || (typeof item === "string" && !item.includes("\0")))
+      ) {
+        return settingList(value as (string | null)[]);
+      }
       break;
     default:
       if (typeof value === "boolean") return value ? "true" : "false";
