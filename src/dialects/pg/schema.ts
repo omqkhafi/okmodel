@@ -712,10 +712,10 @@ export function schema<const TTables extends readonly AnyTable[]>(
           if (compile === undefined) {
             throw new OkmError(
               "OKM1924",
-              "Import sessionSettings from okmodel/session before schema() when a table sets policies or rls.",
+              "Import okmodel/policy before schema() when a table sets policies or rls.",
               {
                 fix: {
-                  summary: "Import sessionSettings from okmodel/session in the schema module.",
+                  summary: "Import okmodel/policy in the file that calls schema().",
                 },
               },
             );

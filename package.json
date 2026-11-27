@@ -93,6 +93,10 @@
       "types": "./dist/runtime/session/index.d.ts",
       "import": "./dist/runtime/session/index.js"
     },
+    "./policy": {
+      "types": "./dist/dialects/pg/policy.d.ts",
+      "import": "./dist/dialects/pg/policy.js"
+    },
     "./testing": {
       "types": "./dist/tooling/testing/index.d.ts",
       "import": "./dist/tooling/testing/index.js"

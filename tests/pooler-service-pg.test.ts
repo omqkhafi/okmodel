@@ -15,13 +15,21 @@
  * so a `SET` outside a transaction stays on that server connection.
  */
 
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { expect, test } from "bun:test";
+import postgres from "postgres";
 
 import { open as openBun } from "../src/adapters/pg/bunsql.js";
 import { open as openPg } from "../src/adapters/pg/nodepostgres.js";
 import { open as openPostgres } from "../src/adapters/pg/postgresjs.js";
 import type { DriverPool, ExecuteResult } from "../src/contracts/driver.js";
+import { OkmError } from "../src/contracts/error.js";
+import { quoteIdent } from "../src/dialects/pg/ddl.js";
 import { schema, t, table } from "../src/dialects/pg/index.js";
+import { primaryUrl } from "../packages/harness/src/topology.js";
 import { connect } from "../src/runtime/pg/postgresjs.js";
 import { sessionSettings } from "../src/runtime/session/index.js";
 
@@ -68,6 +76,14 @@ if (POOLER_URL === undefined || POOLER_URL.length === 0) {
       await expectNoSettingLeak(url, driver.open);
     }, 30_000);
   }
+
+  test("a committed tenant setting is empty on a second client", async () => {
+    await expectTenantCleared(url);
+  }, 20_000);
+
+  test("set_config role through the pooler is OKM1923 for a non-member", async () => {
+    await expectRoleRefused(url);
+  }, 30_000);
 }
 
 /**
@@ -225,4 +241,128 @@ async function expectNoSettingLeak(url: string, open: Opener): Promise<void> {
     await second.close().catch(() => undefined);
     await admin.close().catch(() => undefined);
   }
+}
+
+/**
+ * `set_config(..., true)` dies at COMMIT. A second client on the pooler
+ * reads the tenant setting as empty.
+ *
+ * @param url - Transaction-mode pooler URL
+ */
+async function expectTenantCleared(url: string): Promise<void> {
+  const first = postgres(url, { max: 1 });
+  const second = postgres(url, { max: 1 });
+  try {
+    await first.begin(async (tx) => {
+      await tx.unsafe("select set_config('app.tenant', 'acme', true)");
+      const inside = await tx<{ tenant: string | null }[]>`
+        select current_setting('app.tenant', true) as tenant
+      `;
+      expect(inside[0]?.tenant).toBe("acme");
+    });
+    const outside = await second<{ tenant: string | null }[]>`
+      select current_setting('app.tenant', true) as tenant
+    `;
+    expect(outside[0]?.tenant ?? "").toBe("");
+  } finally {
+    await first.end({ timeout: 5 });
+    await second.end({ timeout: 5 });
+  }
+}
+
+/**
+ * A login that is not a member of the target role gets OKM1923.
+ *
+ * The CI service pooler logs in as a superuser, and a superuser may
+ * `SET ROLE` anyone. This starts its own PgBouncer as a non-superuser when
+ * the binary is on PATH. Without that binary the assertion is skipped.
+ *
+ * @param _url - Unused. The server is the topology primary.
+ */
+async function expectRoleRefused(_url: string): Promise<void> {
+  if (Bun.which("pgbouncer") === null) return;
+  const admin = postgres(primaryUrl(), { max: 1 });
+  const login = `pool_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+  const target = `want_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+  const password = crypto.randomUUID();
+  const dir = mkdtempSync(join(tmpdir(), "okm-role-pooler-"));
+  const port = 6435;
+  let child: Bun.Subprocess | undefined;
+  try {
+    await admin.unsafe(
+      `create role ${quoteIdent(login)} login password ${quoteLiteral(password)} nosuperuser nocreatedb nocreaterole`,
+    );
+    await admin.unsafe(`create role ${quoteIdent(target)} nologin`);
+    const database = new URL(primaryUrl()).pathname.slice(1);
+    await admin.unsafe(`grant connect on database ${quoteIdent(database)} to ${quoteIdent(login)}`);
+    const server = new URL(primaryUrl());
+    writeFileSync(join(dir, "users.txt"), `"${login}" "${password}"\n`);
+    writeFileSync(
+      join(dir, "pgbouncer.ini"),
+      [
+        "[databases]",
+        `okm = host=${server.hostname} port=${server.port} dbname=${database} user=${login} password=${password}`,
+        "[pgbouncer]",
+        "listen_addr = 127.0.0.1",
+        `listen_port = ${String(port)}`,
+        "auth_type = trust",
+        `auth_file = ${join(dir, "users.txt")}`,
+        "pool_mode = transaction",
+        "",
+      ].join("\n"),
+    );
+    child = Bun.spawn(["pgbouncer", join(dir, "pgbouncer.ini")], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    await waitForPort(port);
+    const notes = table("pool_notes", { id: t.integer().primaryKey() });
+    const app = schema({ tables: [notes] });
+    const session = sessionSettings(
+      { marker: { name: "app.pool_marker", type: "text" } },
+      { role: target },
+    );
+    const db = connect(`postgres://${login}@127.0.0.1:${String(port)}/okm`, {
+      schema: app,
+      session,
+      max: 1,
+    });
+    let caught: unknown;
+    try {
+      await db.with({ marker: "x" }).pool_notes.find({ limit: 1 });
+    } catch (error) {
+      caught = error;
+    } finally {
+      await db.close();
+    }
+    expect(caught).toBeInstanceOf(OkmError);
+    if (caught instanceof OkmError) expect(caught.code).toBe("OKM1923");
+  } finally {
+    child?.kill();
+    if (child !== undefined) await child.exited;
+    rmSync(dir, { recursive: true, force: true });
+    await admin.unsafe(`drop role if exists ${quoteIdent(login)}`).catch(() => undefined);
+    await admin.unsafe(`drop role if exists ${quoteIdent(target)}`).catch(() => undefined);
+    await admin.end({ timeout: 5 });
+  }
+}
+
+function quoteLiteral(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+async function waitForPort(port: number): Promise<void> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const socket = await Bun.connect({
+      hostname: "127.0.0.1",
+      port,
+      socket: { data() {} },
+    }).catch(() => undefined);
+    if (socket !== undefined) {
+      socket.end();
+      return;
+    }
+    await Bun.sleep(200);
+  }
+  throw new Error(`pgbouncer did not open 127.0.0.1:${String(port)}`);
 }

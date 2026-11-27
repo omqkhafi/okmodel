@@ -19,6 +19,10 @@ Holds `sha256`, `throwNamed`, `nearestName`, `catalogError`, and the catalog bui
 
 The schema API: column builders, `table`, `schema`, `index`, operators, `one`, `many`, `manyThrough`, `morph`, `morphMany`, and `morphTo`. It also exports `bucket`, `matches`, `relevance`, `rowNumber`, `rank`, `denseRank`, `runningTotal`, `fragment`, `ident`, `raw`, and `explain`. `raw` and `explain` take a table handle. An app that does not import them drops them. `ExplainResult` is the `explain` return type. Catalog compilation, row-type emit, Postgres error mapping, and the operator tag helpers are not exported.
 
+## `okmodel/policy`
+
+Installs the policy compiler. Import it in the file that calls `schema()` when a table sets `policies` or `rls`. It exports `compileUserPolicies`. `okmodel/session` does not install the compiler.
+
 ## `okmodel/expr`
 
 Typed SQL expressions as plain data: `col`, the arithmetic, text, `cast`, `jsonText`, date and time, `caseWhen`, `now`, and `setting` helpers, `settingList`, and the `Expr`, `ImmutableExpr`, and `StableExpr` types. It prints no SQL and is not part of the application entry. See [Expressions](/docs/reference/expr).

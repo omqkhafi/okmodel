@@ -623,6 +623,12 @@
       "kind": "stable"
     }
   ],
+  "okmodel/policy": [
+    {
+      "name": "compileUserPolicies",
+      "kind": "stable"
+    }
+  ],
   "okmodel/session": [
     {
       "name": "SessionContext",
