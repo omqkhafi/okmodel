@@ -157,7 +157,7 @@ test("field() prints a composite field", () => {
   expect(printIndexText(field(col("home"), "city"), (name) => name)).toBe('("home")."city"');
 });
 
-test("proof:grants.type", () => {
+test("composite grants plan usage on the type", () => {
   const app = schema({
     tables: [
       table("people", {

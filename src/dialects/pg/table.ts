@@ -350,8 +350,8 @@ export type TableOptions<TColumns> = {
    * Keyed row-level security policies.
    *
    * The function returns one policy per key. The key is the stored name.
-   * Import `sessionSettings` from `okmodel/session` in this module so the
-   * compiler is installed before the catalog is read.
+   * Import `okmodel/policy` in this module so the compiler is installed
+   * before the catalog is read.
    */
   readonly policies?: () => import("./policy-compile.js").PolicyMap;
   /**

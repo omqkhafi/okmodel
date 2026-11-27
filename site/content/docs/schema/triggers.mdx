@@ -6,6 +6,8 @@ description: "Triggers. Identity is the table plus the name."
 
 `on`, `timing`, `events`, `level`, and `calls` are required. `timing` is `"before"`, `"after"`, or `"instead"`. `"instead"` is written `instead of`. `events` is `"insert"`, `"update"`, `"delete"`, or `"truncate"`, stored in that order. `level` is `"row"` or `"statement"`.
 
+`NEW` of a virtual generated column is null in a `BEFORE` row trigger and in an `AFTER` row trigger. `NEW` of a stored generated column is null only in `BEFORE`. A `BEFORE` trigger `when` that names a generated column is OKM1920.
+
 ### call
 
 One before-update row trigger. `calls` is a function in this schema.

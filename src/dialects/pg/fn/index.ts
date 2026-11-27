@@ -441,6 +441,17 @@ export function trigger(name: string, options: TriggerOptions): TriggerDeclarati
             { fix: { summary: "Name a column of the table the trigger is on." } },
           );
         }
+        if (options.timing === "before" && generatedWhen(built, parent.name, column)) {
+          throw new OkmError(
+            "OKM1920",
+            `Trigger ${name} when references generated column ${column}. PostgreSQL refuses a generated column in a BEFORE row trigger.`,
+            {
+              fix: {
+                summary: "Read the column in an AFTER row trigger, or repeat its expression.",
+              },
+            },
+          );
+        }
       }
       return [
         triggerObject({
@@ -524,6 +535,18 @@ function tableRef(table: AnyTable, built: unknown): ObjectRef {
   throw new OkmError("OKM1020", `Table ${table.name} is not in the catalog.`, {
     fix: { summary: "List the table in schema({ tables })." },
   });
+}
+
+function generatedWhen(built: unknown, table: string, column: string): boolean {
+  if (!Array.isArray(built)) return false;
+  for (const object of built) {
+    if (!isRecord(object) || object.kind !== "column" || !isRecord(object.identity)) continue;
+    const parent = object.identity.parent;
+    if (object.identity.name !== column || !isRecord(parent) || parent.name !== table) continue;
+    const definition = object.definition;
+    return isRecord(definition) && definition.generated !== undefined;
+  }
+  return false;
 }
 
 function hasIdentity(built: unknown, identity: ObjectIdentity): boolean {

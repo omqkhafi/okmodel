@@ -289,7 +289,13 @@ export function viewSql(object: ViewObject, schema: string, replace: boolean): s
 /** One policy statement and the planner kind that classifies it. */
 export type PolicyPlanStep = {
   readonly sql: string;
-  readonly kind: "enable-rls" | "create-policy" | "alter-policy" | "drop-policy" | "disable-rls";
+  readonly kind:
+    | "enable-rls"
+    | "create-policy"
+    | "alter-policy"
+    | "policy-public"
+    | "drop-policy"
+    | "disable-rls";
 };
 
 /** Whether row security is enabled and forced on a table. */
@@ -310,7 +316,13 @@ export type RlsState = {
  */
 export function policyCreatePlan(object: PolicyObject, schema: string): readonly PolicyPlanStep[] {
   if (!isGeneratedPolicy(object)) {
-    return [{ sql: policySql(object, schema, "create"), kind: "create-policy" }];
+    return [
+      {
+        sql: policySql(object, schema, "create"),
+        kind:
+          roleClause(object.definition.roles) === " to public" ? "policy-public" : "create-policy",
+      },
+    ];
   }
   const table = qualify(schema, object.identity.parent.name);
   const name = quoteIdent(object.identity.name);
@@ -339,7 +351,12 @@ export function policyCreatePlan(object: PolicyObject, schema: string): readonly
  * @returns The alter statement
  */
 export function policyAlterPlan(object: PolicyObject, schema: string): readonly PolicyPlanStep[] {
-  return [{ sql: policySql(object, schema, "alter"), kind: "alter-policy" }];
+  return [
+    {
+      sql: policySql(object, schema, "alter"),
+      kind: roleClause(object.definition.roles) === " to public" ? "policy-public" : "alter-policy",
+    },
+  ];
 }
 
 /**

@@ -767,6 +767,20 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     fix: "Break the cycle. Read the other table through a security definer function that does not read back.",
   },
   {
+    code: "OKM1927",
+    title: "Generated column swap",
+    summary:
+      "Changing a column between stored and virtual drops it and adds it again. An index or a constraint that still depends on the column would be lost. Nothing was planned.",
+    fix: "Drop that index or constraint in the same change, or keep the column's storage.",
+  },
+  {
+    code: "OKM1928",
+    title: "Virtual column fill",
+    summary:
+      "A virtual generated column is becoming a plain column. The values were never stored, so the change needs an explicit fill. Nothing was planned.",
+    fix: "Pass --fill table.column=<expression> for that column.",
+  },
+  {
     code: "OKM1926",
     title: "Forced count",
     summary:

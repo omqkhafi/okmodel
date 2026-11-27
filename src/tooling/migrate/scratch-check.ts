@@ -134,7 +134,12 @@ function refused(error: unknown, statement: string): ScratchVerdict {
     sqlstate: code,
     statement,
     error: new OkmError("OKM1848", `Postgres refused it: ${message} (SQLSTATE ${code}).`, {
-      fix: { summary: FIX[code] ?? "Change the statement so Postgres accepts it." },
+      fix: {
+        summary: [
+          FIX[code] ?? "Change the statement so Postgres accepts it.",
+          ...expressionHints(statement),
+        ].join(" "),
+      },
     }),
   };
 }
@@ -146,6 +151,33 @@ const FIX: Readonly<Record<string, string>> = {
   "42703": "No such column. Check the column name.",
   "42601": "Syntax error. Check the expression.",
 };
+
+function expressionHints(statement: string): readonly string[] {
+  const text = statement.toLowerCase();
+  const hints: string[] = [];
+  if (/\b(?:concat_ws|concat|format|array_to_string)\s*\(/.test(text)) {
+    hints.push(
+      "concat, concat_ws, format, and array_to_string are not immutable. Write || with coalesce.",
+    );
+  }
+  if (/\bto_tsvector\s*\(\s*[^,)]+\)/.test(text)) {
+    hints.push(
+      "A one-argument to_tsvector is not immutable. Pass the configuration as the first argument.",
+    );
+  }
+  if (/\bto_char\s*\(/.test(text)) {
+    hints.push("to_char is not immutable. Use extract.");
+  }
+  if (/\bdate_trunc\s*\([^)]*\bdate\b/.test(text) || /\bdate_trunc\s*\(/.test(text)) {
+    hints.push("date_trunc of a date is not immutable. Cast the date to timestamp first.");
+  }
+  if (/::\s*date\b/.test(text)) hints.push("text::date is not immutable.");
+  if (/\bnow\s*\(/.test(text)) hints.push("now() is not immutable.");
+  if (/::\s*timestamptz\b|::\s*timestamp with time zone\b/.test(text)) {
+    hints.push("A timestamptz cast is not immutable. Use at time zone 'const'.");
+  }
+  return hints;
+}
 
 function field(error: unknown, name: string): string | undefined {
   if (typeof error !== "object" || error === null || !(name in error)) return undefined;

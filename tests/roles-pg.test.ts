@@ -18,6 +18,7 @@ import { OkmError } from "../src/contracts/error.js";
 import { quoteIdent } from "../src/dialects/pg/ddl.js";
 import { introspectSchema, type CatalogQuery } from "../src/dialects/pg/introspect.js";
 import { schema, table, t } from "../src/dialects/pg/index.js";
+import { rememberGrants } from "../src/dialects/pg/role/grant-slot.js";
 import { attachRoles } from "../src/dialects/pg/role/index.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
@@ -57,7 +58,9 @@ postgresTest(
         `create role ${quoteIdent(app)} login password 'secret' nosuperuser nocreatedb nocreaterole`,
       );
       const tasks = table("tasks", { id: t.text().primaryKey(), title: t.text() });
-      const declared = attachRoles(schema({ tables: [tasks] }).catalog, {
+      const source = schema({ tables: [tasks] }).catalog;
+      rememberGrants("namespace", "public", "public", { migration: ["usage", "create"] });
+      const declared = attachRoles(source, {
         migration: { name: mig },
         app: { name: app },
       });

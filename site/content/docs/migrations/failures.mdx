@@ -77,6 +77,8 @@ The table is generated from `STEP_KINDS`, `postgresHasProbe`, and `unitMode`. Do
 | `drop-column` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `set-column-type` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `set-generated` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-expression` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `alter-constraint` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `set-not-null` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `drop-not-null` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `set-default` | yes | no | rolls back with the history row; the next apply runs the step again | — |
@@ -147,6 +149,7 @@ The table is generated from `STEP_KINDS`, `postgresHasProbe`, and `unitMode`. Do
 | `enable-rls` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `create-policy` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `alter-policy` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `policy-public` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `drop-policy` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `disable-rls` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `raw-sql` | yes, unless the statement cannot share a transaction | when CONCURRENTLY | rolls back when the statement can share a transaction; a concurrent index follows the probe; any other committed statement stops until a declared probe or a person marks retry | OKM1553, OKM1556, OKM1557 |

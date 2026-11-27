@@ -1366,7 +1366,8 @@ async function readOnlyUnit(
         return result;
       } catch (error) {
         await conn.execute("rollback").catch(() => undefined);
-        throw error;
+        const { mapScopeError } = await import("./tenancy/scope-pool.js");
+        throw mapScopeError(prelude, error);
       }
     } finally {
       await conn.release();
@@ -1402,7 +1403,8 @@ function readOnlyStream(
         await conn.execute("commit");
       } catch (error) {
         await conn.execute("rollback").catch(() => undefined);
-        throw error;
+        const { mapScopeError } = await import("./tenancy/scope-pool.js");
+        throw mapScopeError(prelude, error);
       }
     } finally {
       await conn.release();

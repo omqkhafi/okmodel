@@ -132,6 +132,8 @@ export type ProbeRequest = {
   readonly which: "null" | "notNull" | "blank" | "rows";
   /** Rows the subquery reads before the count stops being exact. Defaults to {@link PROBE_LIMIT}. */
   readonly limit?: number;
+  /** Predicate that replaces the column predicate. The caller quotes it. */
+  readonly where?: string;
 };
 
 /** One answer from {@link probeTarget}. */
@@ -248,13 +250,15 @@ export async function probeConnection(
 export function probeSql(schema: string, request: ProbeRequest): string {
   const table = qualify(schema, request.table);
   const where =
-    request.which === "rows" || request.column === undefined
-      ? "true"
-      : request.which === "null"
-        ? `${quoteIdent(request.column)} is null`
-        : request.which === "notNull"
-          ? `${quoteIdent(request.column)} is not null`
-          : `${quoteIdent(request.column)} = ''`;
+    request.where !== undefined
+      ? request.where
+      : request.which === "rows" || request.column === undefined
+        ? "true"
+        : request.which === "null"
+          ? `${quoteIdent(request.column)} is null`
+          : request.which === "notNull"
+            ? `${quoteIdent(request.column)} is not null`
+            : `${quoteIdent(request.column)} = ''`;
   return `select count(*)::text as c from (select 1 from ${table} where ${where} limit ${String((request.limit ?? PROBE_LIMIT) + 1)}) as okm_n`;
 }
 

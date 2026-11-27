@@ -88,6 +88,7 @@ import {
 import { driverUrl } from "./driver-url.js";
 import type { DeclaredRename } from "../../dialects/pg/declarations.js";
 import postgres from "postgres";
+import { refuseGeneratedRows } from "./generated-probe.js";
 import { refuseBlocking, weightedSteps } from "./weight.js";
 
 /** One step with its index in the migration file. */
@@ -373,6 +374,7 @@ export async function applyTarget(request: ApplyRequest): Promise<ApplyReport> {
     request.onLocked?.();
     await refuseEmptyRequired(connection, request);
     await refuseHeavySteps(connection, request);
+    await refuseGeneratedApply(connection, request);
     if (request.lintDirectory !== undefined) {
       await refusePendingLint(connection, request.lintDirectory, request.migrations);
     }
@@ -1362,6 +1364,21 @@ async function doneSteps(
  * @param connection - Reserved connection, after the advisory lock
  * @param request - The apply request
  */
+async function refuseGeneratedApply(
+  connection: DriverConnection,
+  request: ApplyRequest,
+): Promise<void> {
+  const done = (await doneSteps(connection, request.migrations)) ?? new Set<string>();
+  const steps = request.migrations.flatMap((migration) =>
+    applyUnits(migration, done).flatMap((unit) => unit.steps.map((item) => item.step)),
+  );
+  await refuseGeneratedRows(
+    (text, params) => connection.execute(text, params),
+    concreteSchema(request),
+    steps,
+  );
+}
+
 async function refuseHeavySteps(
   connection: DriverConnection,
   request: ApplyRequest,

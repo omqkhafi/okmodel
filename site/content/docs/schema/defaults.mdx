@@ -163,6 +163,8 @@ export const notes = table("notes", {
 
 `.generated((columns) => expression)` is `generated always as (expression) stored`. The callback receives column handles. Insert and update omit the column. A read returns the value. `{ stored: false }` emits `VIRTUAL` and needs PostgreSQL 18.
 
+In a row trigger, `NEW` of a virtual column is null in `BEFORE` and `AFTER`. `NEW` of a stored column is null only in `BEFORE`. A `BEFORE` trigger `when` that names a generated column is OKM1920: PostgreSQL refuses it. A nullable `VIRTUAL` column of `varchar(n)`, `numeric(p,s)`, or `smallint` is OKM1060. Use `STORED`, drop `.nullable()`, or a wider type.
+
 | | STORED | VIRTUAL |
 | --- | --- | --- |
 | Use it when | The value must be indexed directly, be a key, be referenced by a foreign key, be replicated, or be read in a trigger | The value is cheap and read-only, or you are adding a computed value to a big table without a rewrite, plus an expression index |

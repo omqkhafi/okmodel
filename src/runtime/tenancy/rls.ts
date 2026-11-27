@@ -584,9 +584,11 @@ async function executeAsRole(
 
 function mapRoleRefusal(role: string, error: unknown): unknown {
   if (typeof error === "object" && error !== null) {
-    const record = error as { code?: unknown; message?: unknown };
+    const record = error as { code?: unknown; sqlstate?: unknown; message?: unknown };
     const message = typeof record.message === "string" ? record.message.toLowerCase() : "";
-    if ((record.code === "42501" || message.includes("42501")) && message.includes("set role")) {
+    const privilege =
+      record.code === "42501" || record.sqlstate === "42501" || message.includes("42501");
+    if (privilege && message.includes("set role")) {
       return new OkmError("OKM1923", `SET ROLE ${role} was refused.`, {
         kind: "forbidden",
         fix: { summary: "Grant the login role membership in that role before using it." },

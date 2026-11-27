@@ -7,6 +7,7 @@
  */
 
 import { catalogError } from "../error.js";
+import { heldIndex } from "./held.js";
 import { assertCommentText, identitySequenceName } from "./identifier.js";
 import { sha256 } from "../sha256.js";
 import { canonicalJson, type Json } from "./json.js";
@@ -192,7 +193,7 @@ export function catalogHash(source: Catalog): string {
     if (
       object.kind === "column" &&
       object.definition.generated !== undefined &&
-      /^#\d+$/.test(object.definition.generated.expression)
+      heldIndex(object.definition.generated.expression) !== undefined
     ) {
       catalogError(
         "OKM1020",

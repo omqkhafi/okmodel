@@ -16,7 +16,7 @@ import { createIsolatedDatabase } from "../packages/harness/src/postgres.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
 import { assertBackfillVisible, probeTarget } from "../src/tooling/migrate/data-probe.js";
 import { sessionSettings } from "../src/runtime/session/index.js";
-import "../src/dialects/pg/policy-compile.js";
+import "../src/dialects/pg/policy.js";
 
 const gate = await loadPostgresGate();
 

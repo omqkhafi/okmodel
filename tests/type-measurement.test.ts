@@ -79,7 +79,7 @@ test("the feature-using query probes have their own ceilings (D176)", () => {
   const base = budgetReport(rows);
   const within = {
     ...base,
-    queryValidate: row("query-200-validate", 200, 34_826, 7_130),
+    queryValidate: row("query-200-validate", 200, 34_826, 7_131),
     queryFeatures: [row("query-200+page+aggregate+through", 200, 44_354, 7_817)],
     queryPresets: row("query-200+presets", 200, 30_118, 7_830),
     queryTx: row("query-200+tx", 200, 35_841, 7_629),
@@ -91,7 +91,7 @@ test("the feature-using query probes have their own ceilings (D176)", () => {
   expect(ceilingProblems(within)).toEqual([]);
   const over = {
     ...base,
-    queryValidate: row("query-200-validate", 200, 34_827, 7_131),
+    queryValidate: row("query-200-validate", 200, 34_827, 7_132),
     queryFeatures: [row("query-200+page+aggregate+through", 200, 44_355, 7_818)],
     queryPresets: row("query-200+presets", 200, 30_119, 7_831),
     queryTx: row("query-200+tx", 200, 35_842, 7_630),

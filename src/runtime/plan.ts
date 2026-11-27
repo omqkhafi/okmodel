@@ -14,7 +14,7 @@ import {
   operatorValue,
   type OperatorName,
 } from "../dialects/pg/operators.js";
-import { compositeMark } from "../dialects/pg/column.js";
+import { compositeMark } from "../dialects/pg/column-mark.js";
 import {
   type ColumnModel,
   type QuerySchema,

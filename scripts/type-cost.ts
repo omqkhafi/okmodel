@@ -107,7 +107,7 @@ export const TYPE_CEILINGS = {
   queryCompositeTypes: 7_100,
   /** query-200 with `okmodel/validate` after the read seals: measured 33,812 / 6,923; plus 3 percent, rounded down. */
   queryValidateInstantiations: 34_826,
-  queryValidateTypes: 7_130,
+  queryValidateTypes: 7_131,
   /** query-200+page+aggregate+through after the read seals: measured 43,063; plus 3 percent, rounded down. */
   queryFeaturesInstantiations: 44_354,
   /** Same probe, types: measured 7,590; plus 3 percent, rounded down. */

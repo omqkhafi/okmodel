@@ -66,7 +66,19 @@ import {
 } from "./classify.js";
 import { extensionAlterSteps } from "./extensions.js";
 import { omitManagedObjects } from "./managed.js";
-import { bareCheck, enforcementSteps, stepsForExistingTable, type SafeStep } from "./safe.js";
+import {
+  bareCheck,
+  deferrableSteps,
+  enforcementSteps,
+  stepsForExistingTable,
+  type SafeStep,
+} from "./safe.js";
+import {
+  assertGeneratedSwap,
+  generatedColumnChange,
+  ungenerateSteps,
+  type ColumnFill,
+} from "./generated-swap.js";
 import { sqlQuoteOpen } from "./sql-lex.js";
 import { compositeChanges } from "./composite-plan.js";
 import { canonicalTypeName } from "./type-name.js";
@@ -230,6 +242,13 @@ export type PlanRequest = {
    * (an estimate). Arrays, nested composites, and functions are still refused.
    */
   readonly confirmTypeChanges?: boolean;
+  /**
+   * SQL that fills a virtual column when it becomes a plain column.
+   *
+   * The statement is `UPDATE ... SET column = expression`. A stored column
+   * keeps its values and does not need one.
+   */
+  readonly columnFills?: readonly ColumnFill[];
 };
 
 /** One column removed and one column added on the same table. */
@@ -331,6 +350,8 @@ export function planMigration(
   }[] = [];
   const alters: { readonly before: ColumnObject; readonly after: ColumnObject }[] = [];
   const policyAlters: PolicyObject[] = [];
+  const deferrable: ConstraintObject[] = [];
+  const ungenerate: { readonly before: ColumnObject; readonly after: ColumnObject }[] = [];
   const enforcement: { readonly before: ConstraintObject; readonly after: ConstraintObject }[] = [];
   const storageReplaces: { readonly before: IndexObject; readonly after: IndexObject }[] = [];
   for (const item of beforeList) {
@@ -404,6 +425,29 @@ export function planMigration(
       if (policyShapeSame(previous, item.object)) {
         if (!policyBodySame(previous, item.object)) policyAlters.push(item.object);
         continue;
+      }
+    }
+    if (
+      previous.kind === "constraint" &&
+      item.object.kind === "constraint" &&
+      deferrableOnly(previous, item.object, extensionSchemas)
+    ) {
+      deferrable.push(item.object);
+      continue;
+    }
+    if (previous.kind === "column" && item.object.kind === "column") {
+      const change = generatedColumnChange(previous, item.object);
+      if (change === "ungenerate") {
+        ungenerate.push({ before: previous, after: item.object });
+        continue;
+      }
+      if (change === "swap") {
+        assertGeneratedSwap(
+          previous,
+          item.object,
+          request.after.objects,
+          request.confirmTypeChanges === true,
+        );
       }
     }
     dropKeys.add(item.key);
@@ -583,6 +627,12 @@ export function planMigration(
   }
   steps.push(...extensionAlterSteps(beforeBy, afterBy, dropKeys, dialect));
 
+  steps.push(...deferrableSteps(deferrable, schema));
+  steps.push(
+    ...ungenerate.flatMap((change) =>
+      ungenerateSteps(change.before, change.after, schema, request.columnFills ?? []),
+    ),
+  );
   for (const change of alters) {
     const aligned = alignedColumnType(change.before, change.after);
     steps.push(
@@ -2588,6 +2638,27 @@ function commentDiffSteps(
     );
   }
   return steps;
+}
+
+function deferrableOnly(
+  left: ConstraintObject,
+  right: ConstraintObject,
+  schemas: ReadonlyMap<string, readonly string[]>,
+): boolean {
+  const kind = right.definition.constraintKind;
+  if (kind !== "foreignKey" && kind !== "unique" && kind !== "primaryKey") {
+    return false;
+  }
+  if (sameDefinition(left, right, schemas)) return false;
+  const aligned: ConstraintObject = {
+    ...left,
+    definition: {
+      ...left.definition,
+      deferrable: right.definition.deferrable,
+      initially: right.definition.initially,
+    },
+  };
+  return sameDefinition(aligned, right, schemas);
 }
 
 function sameDefinition(

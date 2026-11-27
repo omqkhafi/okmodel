@@ -1,0 +1,66 @@
+/**
+ * Asks Postgres whether a generated expression is immutable, before apply.
+ *
+ * `okm check` and `okm plan` run every generated expression, including one
+ * written with `sql` and one `okm pull` stored, through {@link checkScratch}.
+ * The scratch column is STORED so PGlite can judge it. A non-immutable
+ * expression is OKM1848 here, not at apply.
+ */
+
+import type { Catalog } from "../../contracts/catalog/types.js";
+import { quoteIdent } from "../../dialects/pg/ddl.js";
+import { sealGenerated } from "../../dialects/pg/generated-print.js";
+import { checkScratch } from "./scratch-check.js";
+
+/**
+ * Refuses a generated expression the scratch database will not store.
+ *
+ * @param source - Catalog whose generated columns are checked
+ * @param url - Provisioned database. Omitted uses the in-memory scratch database
+ */
+export async function assertGeneratedImmutable(source: Catalog, url?: string): Promise<void> {
+  sealGenerated(source);
+  const statements: string[] = [];
+  for (const object of source.objects) {
+    if (object.kind !== "column" || object.definition.generated === undefined) continue;
+    const parent = object.identity.parent.name;
+    const siblings = source.objects.flatMap((item) => {
+      if (item.kind !== "column" || item.identity.parent.name !== parent) return [];
+      if (item.identity.name === object.identity.name) return [];
+      return [`${quoteIdent(item.identity.name)} ${item.definition.dataType}`];
+    });
+    siblings.push(
+      `${quoteIdent(object.identity.name)} ${object.definition.dataType} generated always as (${object.definition.generated.expression}) stored`,
+    );
+    statements.push(
+      `create table ${quoteIdent(`okm_g_${String(statements.length)}`)} (${siblings.join(", ")})`,
+    );
+  }
+  if (statements.length === 0) return;
+  const verdict = await scratchGenerated(statements, url);
+  if (!verdict.ok) throw verdict.error;
+}
+
+/**
+ * Runs the scratch statements on `url` when that database accepts them.
+ *
+ * A missing database or a read-only target falls back to the in-memory
+ * scratch database. One process pays for that fallback once.
+ *
+ * @param statements - One `CREATE TABLE` per generated column
+ * @param url - Target database, when the project has one
+ * @returns The verdict
+ */
+async function scratchGenerated(
+  statements: readonly string[],
+  url: string | undefined,
+): Promise<Awaited<ReturnType<typeof checkScratch>>> {
+  if (url === undefined) return checkScratch(statements);
+  try {
+    const verdict = await checkScratch(statements, { url });
+    if (!verdict.ok && verdict.sqlstate === "25006") return checkScratch(statements);
+    return verdict;
+  } catch {
+    return checkScratch(statements);
+  }
+}

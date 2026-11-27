@@ -5,6 +5,7 @@
  * in {@link heldGenerated} and the catalog stores `#` plus the index.
  */
 
+import { heldIndex, heldToken } from "../../contracts/catalog/held.js";
 import type { ColumnHandle } from "./table.js";
 
 /** One held value and the field-to-SQL map that prints it. */
@@ -20,7 +21,7 @@ export const heldGenerated: {
  * @returns `true` when tooling has not printed it yet
  */
 export function isHeldExpression(expression: string): boolean {
-  return /^#\d+$/.test(expression);
+  return heldIndex(expression) !== undefined;
 }
 
 /**
@@ -43,5 +44,5 @@ export function holdGenerated(
   }
   const id = heldGenerated.length;
   heldGenerated.push({ value, names });
-  return `#${String(id)}`;
+  return heldToken(id);
 }

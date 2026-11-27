@@ -150,6 +150,9 @@ jobs:
         run: |
           curl -sS https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /usr/share/keyrings/pgdg.gpg
           echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] http://apt.postgresql.org/pub/repos/apt noble-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          # ubuntu-24.04's packages.microsoft.com list answers 403, and apt
+          # then refuses the whole update. Drop it so the PGDG install runs.
+          sudo rm -f /etc/apt/sources.list.d/*microsoft*
           sudo apt-get update && sudo apt-get install -y pgbouncer
 
       - name: Pooler refusal proof

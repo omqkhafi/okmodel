@@ -1300,7 +1300,7 @@ function schemaText(
   if (routines.needsIndex) pgNames.push("index");
   pgNames.sort();
   const lines = [`import { ${pgNames.join(", ")} } from "okmodel/pg";`];
-  if (needsSession) lines.push('import "okmodel/session";');
+  if (needsSession) lines.push('import "okmodel/policy";');
   if (extensions.length > 0) lines.push('import { extension } from "okmodel/ext";');
   for (const line of routines.imports) lines.push(line);
   const sorted = [...imports].sort((left, right) => compare(left.name, right.name));

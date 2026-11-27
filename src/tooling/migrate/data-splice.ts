@@ -40,6 +40,7 @@ export function unfilledRequired(
     );
     const match = set ?? add;
     if (match === null) continue;
+    if (/\bgenerated\s+always\b/i.test(step.sql)) continue;
     if (add !== null && /\bdefault\b/.test(step.sql)) continue;
     const table = lastIdent(match[1] ?? "");
     const column = unquote(match[2] ?? "");

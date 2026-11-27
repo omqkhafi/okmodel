@@ -336,6 +336,18 @@ function covers(fields: readonly string[], keys: readonly string[]): boolean {
   return true;
 }
 
+function tenantClear(action: unknown, keys: readonly string[]): string | undefined {
+  if (action === "set null" || action === "set default") return action;
+  if (action === null || typeof action !== "object") return undefined;
+  const record = action as {
+    readonly setNull?: readonly string[];
+    readonly setDefault?: readonly string[];
+  };
+  if (record.setNull?.some((name) => keys.includes(name)) === true) return "set null";
+  if (record.setDefault?.some((name) => keys.includes(name)) === true) return "set default";
+  return undefined;
+}
+
 function widenReference(
   keys: readonly string[],
   table: string,
@@ -346,9 +358,7 @@ function widenReference(
 ): ReferenceModifier | undefined {
   const targetKind = kind.get(reference.table);
   if (targetKind !== "tenant") return undefined;
-  const action = [reference.onDelete, reference.onUpdate].find(
-    (item) => item === "set null" || item === "set default",
-  );
+  const action = tenantClear(reference.onDelete, keys) ?? tenantClear(reference.onUpdate, keys);
   if (action !== undefined) {
     definition(
       `Foreign key ${table}.${field} includes ${keys.join(", ")}, so ${action} cannot clear it. Accepted actions: cascade, restrict, no action.`,

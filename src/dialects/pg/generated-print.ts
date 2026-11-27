@@ -7,7 +7,8 @@
 
 import { OkmError } from "../../contracts/error.js";
 import type { Catalog, ColumnObject, IndexObject } from "../../contracts/catalog/types.js";
-import { heldGenerated, isHeldExpression } from "./generated-hold.js";
+import { heldIndex } from "../../contracts/catalog/held.js";
+import { heldGenerated } from "./generated-hold.js";
 import { printIndexText } from "./index-print.js";
 import { quoteIdent } from "./ddl.js";
 
@@ -29,6 +30,12 @@ export function sealGenerated(catalog: Catalog): void {
   for (const object of catalog.objects) {
     if (object.kind !== "column" || object.definition.generated === undefined) continue;
     const generated = object.definition.generated;
+    refuseLimitedVirtual(
+      object.definition.dataType,
+      generated.stored,
+      object.definition.nullable,
+      `${object.identity.parent.name}.${object.identity.name}`,
+    );
     const expression = expand(generated.expression);
     (generated as { expression: string }).expression = expression;
     columns.push({
@@ -39,12 +46,14 @@ export function sealGenerated(catalog: Catalog): void {
     });
   }
   refuseGeneratedShape(catalog, columns);
+  refuseVirtualCatalog(catalog);
   rewriteVirtualIndexes(catalog, columns);
 }
 
 function expand(expression: string): string {
-  if (!isHeldExpression(expression)) return expression;
-  const item = heldGenerated[Number(expression.slice(1))];
+  const index = heldIndex(expression);
+  if (index === undefined) return expression;
+  const item = heldGenerated[index];
   if (item === undefined) {
     throw new OkmError("OKM1920", "A generated expression was not held.", {
       fix: { summary: "Call schema() again in this process, then plan." },
@@ -141,6 +150,73 @@ function refuseGeneratedShape(catalog: Catalog, columns: readonly GeneratedColum
               summary: "Index the column itself. OKM compiles that to the column's expression.",
             },
           },
+        );
+      }
+    }
+  }
+}
+
+/**
+ * Refuses a nullable virtual column whose type PostgreSQL rejects (BUG #19812).
+ *
+ * The check lives here, beside `sealGenerated`, so the planner sees it without
+ * pulling `misuse.ts` into the connect graph through the dynamic import of
+ * this module.
+ *
+ * @param dataType - Column type as it will be emitted
+ * @param stored - `false` when the column is virtual
+ * @param nullable - Whether the column accepts null
+ * @param where - Column name for the message
+ */
+function refuseLimitedVirtual(
+  dataType: string,
+  stored: boolean | undefined,
+  nullable: boolean,
+  where: string,
+): void {
+  if (stored !== false || !nullable) return;
+  const type = dataType.trim().toLowerCase();
+  const limited =
+    /^(?:character varying|varchar)\s*\(/.test(type) ||
+    /^(?:numeric|decimal)\s*\(/.test(type) ||
+    type === "smallint" ||
+    type === "int2";
+  if (!limited) return;
+  throw new OkmError(
+    "OKM1060",
+    `${where} is a nullable VIRTUAL ${dataType}. PostgreSQL refuses that combination. Use STORED, drop .nullable(), or a wider type (text, integer, or numeric).`,
+  );
+}
+
+function refuseVirtualCatalog(catalog: Catalog): void {
+  const types = new Set<string>();
+  const functions: string[] = [];
+  for (const object of catalog.objects) {
+    if (object.kind === "type") types.add(object.identity.name);
+    if (object.kind === "function") functions.push(object.identity.name);
+  }
+  for (const object of catalog.objects) {
+    if (object.kind !== "column" || object.definition.generated?.stored !== false) continue;
+    const where = `${object.identity.parent.name}.${object.identity.name}`;
+    const base = object.definition.dataType
+      .replace(/\[\]/g, "")
+      .replace(/\s*\(.*\)$/, "")
+      .trim();
+    if (types.has(base)) {
+      throw new OkmError(
+        "OKM1920",
+        `Virtual column ${where} has type ${base}. PostgreSQL refuses that (0A000).`,
+        { fix: { summary: "Store the column." } },
+      );
+    }
+    const expression = object.definition.generated.expression;
+    for (const name of functions) {
+      const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      if (new RegExp(`\\b${escaped}\\s*\\(`, "i").test(expression)) {
+        throw new OkmError(
+          "OKM1920",
+          `Virtual column ${where} calls ${name}. PostgreSQL refuses a user-defined function in a virtual expression (0A000).`,
+          { fix: { summary: "Store the column, or call only a built-in function." } },
         );
       }
     }

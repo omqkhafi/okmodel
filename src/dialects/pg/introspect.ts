@@ -62,8 +62,9 @@ export type IntrospectOptions = {
   /**
    * Read-only role.
    *
-   * Schema `USAGE` is read for this role only. Other roles keep the schema
-   * privileges they already have.
+   * Schema `USAGE` for this role is always read. `USAGE` and `CREATE` granted
+   * to a managed role that is not the schema owner are read too. The owner's
+   * implicit privileges stay out.
    */
   readonly reportingRole?: string;
   /**
@@ -903,6 +904,33 @@ const SCHEMA_USAGE = `select 1 as ok
     )
   limit 1`;
 
+/**
+ * `USAGE` and `CREATE` on the schema for a role that is not the owner.
+ *
+ * Public and the owner stay out. The owner keeps those privileges implicitly.
+ */
+const SCHEMA_GRANTS = `select r.rolname as role, a.privilege_type as privilege
+  from pg_namespace n
+  cross join lateral aclexplode(n.nspacl) as a
+  join pg_roles r on r.oid = a.grantee
+  where n.nspname = $1
+    and n.nspacl is not null
+    and a.grantee <> 0
+    and a.grantee <> n.nspowner
+    and a.privilege_type in ('USAGE', 'CREATE')`;
+
+/** `USAGE` on an enum, a domain, or a composite. Range types stay out. */
+const TYPE_GRANTS = `select t.typname as name, r.rolname as role, a.privilege_type as privilege
+  from pg_type t
+  join pg_namespace n on n.oid = t.typnamespace
+  cross join lateral aclexplode(t.typacl) as a
+  join pg_roles r on r.oid = a.grantee
+  where n.nspname = $1
+    and t.typtype in ('e', 'd', 'c')
+    and t.typacl is not null
+    and a.grantee <> 0
+    and a.grantee <> t.typowner`;
+
 const DEFAULT_PRIVILEGES = `select owner_role.rolname as for_role, grantee.rolname as grantee,
   case d.defaclobjtype when 'S' then 'sequence' when 'f' then 'function' else 'table' end as object_kind,
   a.privilege_type as privilege
@@ -926,16 +954,20 @@ async function readPrivileges(
   reportingRole: string | undefined,
 ): Promise<CatalogObject[]> {
   const managed = new Set(managedRoles);
-  const [roles, relations, functions, defaults, columns, usage] = await Promise.all([
-    runner.query(ROLES, []),
-    runner.query(RELATION_GRANTS, [concrete]),
-    runner.query(FUNCTION_GRANTS, [concrete]),
-    runner.query(DEFAULT_PRIVILEGES, [concrete]),
-    runner.query(COLUMN_GRANTS, [concrete]),
-    reportingRole === undefined
-      ? Promise.resolve([])
-      : runner.query(SCHEMA_USAGE, [concrete, reportingRole]),
-  ]);
+  const [roles, relations, functions, defaults, columns, usage, types, schemas] = await Promise.all(
+    [
+      runner.query(ROLES, []),
+      runner.query(RELATION_GRANTS, [concrete]),
+      runner.query(FUNCTION_GRANTS, [concrete]),
+      runner.query(DEFAULT_PRIVILEGES, [concrete]),
+      runner.query(COLUMN_GRANTS, [concrete]),
+      reportingRole === undefined
+        ? Promise.resolve([])
+        : runner.query(SCHEMA_USAGE, [concrete, reportingRole]),
+      runner.query(TYPE_GRANTS, [concrete]),
+      runner.query(SCHEMA_GRANTS, [concrete]),
+    ],
+  );
   const objects: CatalogObject[] = [];
   for (const row of roles) {
     const name = text(row, "rolname");
@@ -1055,6 +1087,41 @@ async function readPrivileges(
       }),
     );
   }
+  for (const row of types) {
+    const privilege = text(row, "privilege").toUpperCase();
+    const role = text(row, "role");
+    const name = text(row, "name");
+    const target = built.find((object) => privilegeTarget(object) === `type:${name}`);
+    if (!EMITTED.has(privilege) || !managed.has(role) || target === undefined) continue;
+    objects.push(
+      grantObject({
+        role,
+        object: { kind: "type", namespace, name },
+        privilege,
+        provenance,
+        dependencies: [{ kind: "role", name: role }, target.identity],
+      }),
+    );
+  }
+  const seenSchema = new Set<string>();
+  if (usage.length > 0 && reportingRole !== undefined) seenSchema.add(`${reportingRole}\0USAGE`);
+  for (const row of schemas) {
+    const privilege = text(row, "privilege").toUpperCase();
+    const role = text(row, "role");
+    if (!EMITTED.has(privilege) || !managed.has(role)) continue;
+    const key = `${role}\0${privilege}`;
+    if (seenSchema.has(key)) continue;
+    seenSchema.add(key);
+    objects.push(
+      grantObject({
+        role,
+        object: { kind: "namespace", namespace, name: logical },
+        privilege,
+        provenance,
+        dependencies: [{ kind: "role", name: role }],
+      }),
+    );
+  }
   return objects;
 }
 
@@ -1070,6 +1137,7 @@ function privilegeTarget(object: CatalogObject): string {
   if (object.kind === "function") {
     return `function:${object.identity.name}(${object.identity.argTypes.join(",")})`;
   }
+  if (object.kind === "type") return `type:${object.identity.name}`;
   return "";
 }
 

@@ -1163,6 +1163,24 @@
     "docs": "docs/errors/OKM1925.md"
   },
   {
+    "code": "OKM1927",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "Changing a column between stored and virtual drops it and adds it again. An index or a constraint that still depends on the column would be lost. Nothing was planned.",
+    "fix": "Drop that index or constraint in the same change, or keep the column's storage.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1927.md"
+  },
+  {
+    "code": "OKM1928",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A virtual generated column is becoming a plain column. The values were never stored, so the change needs an explicit fill. Nothing was planned.",
+    "fix": "Pass --fill table.column=<expression> for that column.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1928.md"
+  },
+  {
     "code": "OKM1926",
     "kind": "invalid",
     "category": "input",

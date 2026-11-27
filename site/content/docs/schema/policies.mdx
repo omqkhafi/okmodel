@@ -3,10 +3,11 @@ title: "Policies"
 description: "Keyed row-level security policies, session values, and the role a statement runs as."
 ---
 
-A policy is a keyed object on `table()`. The key is the stored name. Import `sessionSettings` from `okmodel/session` before `schema()` when a table sets `policies` or `rls`. `okm pull` writes `import "okmodel/session"` for the same reason.
+A policy is a keyed object on `table()`. The key is the stored name. Import `okmodel/policy` in the file that calls `schema()` before `schema()` runs when a table sets `policies` or `rls`. `okm pull` writes `import "okmodel/policy"` for the same reason. Session values still come from `okmodel/session`.
 
 ```ts
 import { schema, table, t } from "okmodel/pg";
+import "okmodel/policy";
 import { sessionSettings } from "okmodel/session";
 
 const session = sessionSettings({
@@ -27,7 +28,7 @@ const notes = table(
 
 `for` is `select`, `insert`, `update`, `delete`, or `all`. The default is `all`. One policy is one command. Compose several policies with ordinary functions. `as` is `permissive` (the default) or `restrictive`. Permissive policies OR. Restrictive policies AND.
 
-`to` is a role key from the roles config, a role name, or a list. The default is `app`. It is never `PUBLIC`. Write `to: "public"` when the policy is for PUBLIC. `using` and `check` take a `where` object, an expression, `true`, `false`, or `sql`.
+`to` is a role key from the roles config, a role name, or a list. The default is `app`. It is never `PUBLIC`. Write `to: "public"` when the policy is for PUBLIC. Creating that policy, or widening an existing policy to PUBLIC, is a protected step (`--allow-protected`), the same as a grant to PUBLIC. `using` and `check` take a `where` object, an expression, `true`, `false`, or `sql`.
 
 A table with policies and none that match the command and role is deny-all for a role that does not own the table. The owner is exempt unless the table is forced.
 
@@ -55,4 +56,4 @@ An undeclared policy on a managed table is drift. OKM does not drop it unless th
 
 Policies are not inherited by partitions. A grant on a partition bypasses the parent policies. `TRUNCATE` ignores row security.
 
-A count or a backfill under `FORCE`, or under `rlsTenancy`, does not report zero when the role cannot see the rows. A table with the unscoped select policy is counted with `app.unscoped`. Anything else is OKM1926.
+A count or a backfill under `FORCE`, or under `rlsTenancy`, does not report zero when the role cannot see the rows. A table with the unscoped select policy is counted with `app.unscoped`. Anything else is OKM1926. A backfill under `FORCE` needs a migration role with `BYPASSRLS` or a superuser. An RDS master user was not verified.

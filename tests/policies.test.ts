@@ -20,6 +20,7 @@ import { printIndexText } from "../src/dialects/pg/index-print.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
 import { policyFindings } from "../src/tooling/migrate/policy-rules.js";
 import { sessionSettings } from "../src/runtime/session/index.js";
+import "../src/dialects/pg/policy.js";
 import { rlsTenancy } from "../src/runtime/tenancy/index.js";
 import { tenantWire } from "../src/runtime/tenancy/key-type.js";
 
@@ -265,5 +266,6 @@ test("public is stored with no role list and is not the default", () => {
   });
   const step = created.steps.find((item) => item.sql.startsWith("create policy"));
   expect(step?.sql).toContain(" to public");
-  expect(step?.class).toBe("expand");
+  expect(step?.kind).toBe("policy-public");
+  expect(step?.class).toBe("contract");
 });
