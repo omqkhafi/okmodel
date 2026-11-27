@@ -431,6 +431,7 @@ test("refusal:matview.refresh", () => refuse("matview.refresh"));
 test("refusal:view.dependencyOrder", () => refuse("view.dependencyOrder"));
 test("refusal:query.exprSelect", () => refuse("query.exprSelect"));
 test("refusal:query.toOnePath", () => refuse("query.toOnePath"));
+test("refusal:query.paths", () => refuse("query.paths"));
 
 test("closed profile keeps the most restrictive observer costs", () => {
   const closed = closedRegistry();

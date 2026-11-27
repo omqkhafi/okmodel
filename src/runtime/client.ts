@@ -688,6 +688,7 @@ export function readHandle(
       call = (await import("./text-search.js")).applyTextSearch(session.schema, call);
     }
     const mark = readMarks(session.schema, call);
+    if ((mark & 4) !== 0) await import("./paths.js");
     if ((mark & 2) !== 0 && call.rel === undefined) {
       call = (await import("./order-relation.js")).attach(session.schema, call);
     }
@@ -703,6 +704,7 @@ export function readHandle(
       call = limits.limit(session, call);
       if (session.w !== undefined) decode = limits.watch(session, call, warnStack, decode);
     }
+    if ((mark & 4) !== 0) call = { ...call, dot: true };
     session.w?.(session.schema, call, warnStack);
     const bound = bindCall(session.schema, call, hooks);
     let plan = session.cache.get(bound.key);

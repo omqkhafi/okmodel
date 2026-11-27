@@ -13,6 +13,17 @@ import type {
   Provenance,
 } from "../../contracts/catalog/types.js";
 
+/** One field a dotted read encodes, decodes, and prints. */
+export type CompositeFieldCodec = {
+  readonly dataType: string;
+  readonly nullable: boolean;
+  readonly encode: (value: unknown) => string;
+  readonly decode: (wire: string) => unknown;
+  readonly accepts?: readonly string[];
+  /** Present when the field is itself a composite. */
+  readonly nested?: CompositeMark;
+};
+
 /** One field the mark exposes to indexes, checks, and introspection recovery. */
 export type CompositeFieldMark = {
   readonly name: string;
@@ -50,6 +61,13 @@ export type CompositeMark = {
     name: string,
     value: unknown,
   ) => { readonly wire: string; readonly dataType: string };
+  /**
+   * The field's codec.
+   *
+   * Absent when `name` is not a field. A query path uses this. A missing
+   * field is not OKM1210: the caller raises OKM1120.
+   */
+  readonly fieldCodec: (name: string) => CompositeFieldCodec | undefined;
   readonly declare: (
     namespace: Namespace,
     provenance: Provenance,

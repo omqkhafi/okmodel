@@ -38,7 +38,46 @@ A domain over a composite is refused. That domain breaks the jsonb write path.
 
 `field(col("home"), "city")` in `okmodel/expr` prints `(home).city`. An index on that expression, and a unique index on the whole column, both work. A check, a view, and a generated expression use the same print.
 
-Updating with the whole value replaces the composite. A partial object is a type error. One field is `SET home.city = ...`, including when the column is NULL. `(home).city` is a syntax error in `SET`.
+`where`, `select`, `orderBy`, and `groupBy` name that field as `"home.city"`. The SQL is `("home")."city"`. `(home).city` is only valid in an expression. A bigint or numeric field is read as `::text` and decoded with the field's codec. A nested field is `"home.geo.city"`. An enum or domain field uses that field's operators. An array field takes `eq` and `contains`.
+
+A to-one path uses the same dotted form a view uses: `"project.name"`, or a field of that row, `"author.home.city"`. One relation, then a column or a composite field. The joined table keeps its tenant and archive predicates. A second relation is refused before any SQL.
+
+Updating with the whole value replaces the composite. A partial object is a type error. One field is `set: { "home.city": "Riyadh" }`, which prints `SET "home"."city"`, including when the column is NULL. `(home).city` is a syntax error in `SET`.
+
+```ts title="composite-path.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const address = t.composite("address", {
+  city: t.text(),
+});
+
+const people = table("people", {
+  id: t.identity().primaryKey(),
+  home: address,
+});
+
+export const app = schema({ tables: [people] });
+
+export async function inRiyadh(url: string) {
+  await using db = connect(url, { schema: app });
+  return await db.people.find({
+    where: { "home.city": "Riyadh" },
+    select: ["id", "home.city"],
+    orderBy: { "home.city": "asc" },
+    limit: 10,
+  });
+}
+```
+
+```text title="composite-path.out"
+[
+  {
+    id: "2",
+    "home.city": "Riyadh",
+  }
+]
+```
 
 ## Changes
 

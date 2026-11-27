@@ -13,6 +13,7 @@ import { ColumnBuilder, formatType, type ColumnState } from "../column.js";
 import { EXPR_AS, isExpr, nodeOf, type Node } from "../expr/index.js";
 import { printNode } from "../expr/print.js";
 import { isOperator, operatorName, operatorValue } from "../operators.js";
+import { toOneJoinSql } from "../path-sql.js";
 import { quoteLiteral } from "../quote.js";
 import type { AnyTable } from "../table.js";
 import { quoteIdent } from "../ddl.js";
@@ -608,7 +609,9 @@ function joinRelation(
     joins.push({
       relation,
       alias,
-      sql: `left join ${quoteIdent(names.table(target))} ${alias} on ${alias}.${quoteIdent(targetKey)} = t.${quoteIdent(fk)}`,
+      sql: toOneJoinSql(quoteIdent(names.table(target)), alias, "t", [
+        [quoteIdent(fk), quoteIdent(targetKey)],
+      ]),
     });
   }
   const columns = new Map<string, ColumnRef>();
