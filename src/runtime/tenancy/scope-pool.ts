@@ -101,7 +101,7 @@ export async function runReadOnly(
     return result;
   } catch (error) {
     await conn.execute("rollback").catch(() => undefined);
-    throw error;
+    mapSetRole(prelude, error);
   }
 }
 
@@ -135,7 +135,7 @@ export async function* streamHeld(
     await conn.execute("commit");
   } catch (error) {
     await conn.execute("rollback").catch(() => undefined);
-    throw error;
+    mapSetRole(prelude, error);
   }
 }
 
@@ -479,6 +479,20 @@ async function batchScoped(
   }
 }
 
+/**
+ * Turns a refused `set_config('role', …)` into OKM1923.
+ *
+ * A mapped driver error keeps SQLSTATE `42501` on `sqlstate`. The read-only
+ * unit calls this because that path does not go through {@link wrapPool}.
+ * Any other error is rethrown.
+ *
+ * @param setting - The prelude that may set the role
+ * @param error - The failure from that prelude or the statement after it
+ */
+export function mapScopeError(setting: Statement, error: unknown): never {
+  mapSetRole(setting, error);
+}
+
 function mapSetRole(setting: Statement | undefined, error: unknown): never {
   const params = setting?.params;
   const role = params?.[0] === "role" && typeof params[1] === "string" ? params[1] : undefined;
@@ -493,11 +507,16 @@ function mapSetRole(setting: Statement | undefined, error: unknown): never {
 
 function deniedSetRole(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
-  const record = error as { code?: unknown; message?: unknown; cause?: unknown };
+  const record = error as {
+    code?: unknown;
+    sqlstate?: unknown;
+    message?: unknown;
+    cause?: unknown;
+  };
   const message = typeof record.message === "string" ? record.message.toLowerCase() : "";
-  if ((record.code === "42501" || message.includes("42501")) && message.includes("set role")) {
-    return true;
-  }
+  const privilege =
+    record.code === "42501" || record.sqlstate === "42501" || message.includes("42501");
+  if (privilege && message.includes("set role")) return true;
   return record.cause !== undefined && deniedSetRole(record.cause);
 }
 
