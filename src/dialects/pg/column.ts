@@ -397,6 +397,8 @@ export type OpenColumn<TValue> = {
   readonly enumLabels?: readonly string[];
   /** Comment on the enum type this column introduces. */
   readonly enumComment?: string;
+  /** Usage grants on the enum type this column introduces. */
+  readonly enumGrants?: unknown;
   readonly domain?: {
     readonly base: string;
     readonly check: string;
@@ -878,6 +880,7 @@ export function openColumn<TValue, TFlags extends ColumnFlags>(
     typeDependency: input.typeDependency,
     enumLabels: input.enumLabels,
     enumComment: input.enumComment,
+    enumGrants: input.enumGrants,
     domain: input.domain,
     primaryKey: input.primaryKey === true,
     typeLabel: input.typeLabel,
