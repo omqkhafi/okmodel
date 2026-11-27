@@ -92,9 +92,11 @@ const SEQUENCE = ["USAGE", "SELECT"] as const;
  * Adds role, grant, and default-privilege objects to a catalog.
  *
  * Objects without `grants` keep the baseline: `app` receives DML, execute, and
- * sequence usage; `reporting` receives select. An object with `grants` uses
- * that option as the truth for managed roles. Role rows are external, so the
- * plan does not create them.
+ * sequence usage; `reporting` receives select. A type without `grants` is left
+ * alone. PostgreSQL already grants USAGE on a type to PUBLIC, so a baseline
+ * grant would rewrite every schema that has an enum. An object with `grants`
+ * uses that option as the truth for managed roles. Role rows are external, so
+ * the plan does not create them.
  *
  * @param source - Catalog from `schema()`
  * @param input - Migration role, application role, and any custom roles
@@ -216,6 +218,7 @@ export function contributeRoles(
       }
       continue;
     }
+    if (ref.kind === "type") continue;
     for (const privilege of privilegesFor(ref.kind)) {
       objects.push(
         grantObject({
