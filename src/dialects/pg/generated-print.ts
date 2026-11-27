@@ -9,7 +9,6 @@ import { OkmError } from "../../contracts/error.js";
 import type { Catalog, ColumnObject, IndexObject } from "../../contracts/catalog/types.js";
 import { heldIndex } from "../../contracts/catalog/held.js";
 import { heldGenerated } from "./generated-hold.js";
-import { refuseLimitedVirtual } from "./generated-limit.js";
 import { printIndexText } from "./index-print.js";
 import { quoteIdent } from "./ddl.js";
 
@@ -155,6 +154,38 @@ function refuseGeneratedShape(catalog: Catalog, columns: readonly GeneratedColum
       }
     }
   }
+}
+
+/**
+ * Refuses a nullable virtual column whose type PostgreSQL rejects (BUG #19812).
+ *
+ * The check lives here, beside `sealGenerated`, so the planner sees it without
+ * pulling `misuse.ts` into the connect graph through the dynamic import of
+ * this module.
+ *
+ * @param dataType - Column type as it will be emitted
+ * @param stored - `false` when the column is virtual
+ * @param nullable - Whether the column accepts null
+ * @param where - Column name for the message
+ */
+function refuseLimitedVirtual(
+  dataType: string,
+  stored: boolean | undefined,
+  nullable: boolean,
+  where: string,
+): void {
+  if (stored !== false || !nullable) return;
+  const type = dataType.trim().toLowerCase();
+  const limited =
+    /^(?:character varying|varchar)\s*\(/.test(type) ||
+    /^(?:numeric|decimal)\s*\(/.test(type) ||
+    type === "smallint" ||
+    type === "int2";
+  if (!limited) return;
+  throw new OkmError(
+    "OKM1060",
+    `${where} is a nullable VIRTUAL ${dataType}. PostgreSQL refuses that combination. Use STORED, drop .nullable(), or a wider type (text, integer, or numeric).`,
+  );
 }
 
 function refuseVirtualCatalog(catalog: Catalog): void {
