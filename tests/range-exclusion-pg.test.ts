@@ -35,7 +35,7 @@ import {
 import type { CatalogQuery } from "../src/dialects/pg/introspect.js";
 import { introspectSchema } from "../src/dialects/pg/introspect.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
-import { openPostgres, withPostgresSchema } from "../packages/harness/src/postgres.js";
+import { withPostgresSchema } from "../packages/harness/src/postgres.js";
 import { primaryUrl } from "../packages/harness/src/topology.js";
 import { connect } from "../src/runtime/pg/postgresjs.js";
 import { columnTenancy } from "../src/runtime/tenancy/index.js";
@@ -462,27 +462,50 @@ postgresTest(
         ),
       ],
     });
-    const steps = planMigration({
+    const text = planMigration({
       before: catalog([]),
       after: temporal.catalog,
       schema: "public",
       name: "temporal",
-    }).steps;
-    const text = steps.map((step) => step.sql).join("\n");
+    })
+      .steps.map((step) => step.sql)
+      .join("\n");
     expect(text).toContain("without overlaps");
     expect(text).toContain('period "during"');
-    const sql = openPostgres();
-    try {
+    await withPostgresSchema(async (sql, schemaName) => {
+      const steps = planMigration({
+        before: catalog([]),
+        after: temporal.catalog,
+        schema: schemaName,
+        name: "temporal",
+      }).steps;
+      const version = await sql<{ v: string }[]>`select current_setting('server_version_num') as v`;
+      const major = Math.floor(Number(version[0]?.v ?? "0") / 10_000);
       const error = await assertTemporalKeysAvailable(probing(sql), [
         { id: "temporal", steps },
       ]).catch((caught: unknown) => caught);
-      expect(error).toBeInstanceOf(OkmError);
-      expect((error as OkmError).code).toBe("OKM1812");
-      expect((error as OkmError).message).toContain("exclusion");
-      expect((error as OkmError).message).toContain("Nothing was changed.");
-    } finally {
-      await sql.end({ timeout: 5 });
-    }
+      if (major < 18) {
+        expect(error).toBeInstanceOf(OkmError);
+        expect((error as OkmError).code).toBe("OKM1812");
+        expect((error as OkmError).message).toContain("exclusion");
+        expect((error as OkmError).message).toContain("Nothing was changed.");
+        return;
+      }
+      expect(error).toBeUndefined();
+      for (const step of steps) await sql.unsafe(step.sql);
+      await sql.unsafe(
+        `insert into rooms (id, available) values (1, tstzrange('2024-01-01T00:00:00Z', '2024-01-02T00:00:00Z', '[)'))`,
+      );
+      await sql.unsafe(
+        `insert into bookings (room_id, during) values (1, tstzrange('2024-01-01T00:00:00Z', '2024-01-02T00:00:00Z', '[)'))`,
+      );
+      const overlap = await sql
+        .unsafe(
+          `insert into rooms (id, available) values (1, tstzrange('2024-01-01T12:00:00Z', '2024-01-03T00:00:00Z', '[)'))`,
+        )
+        .catch((caught: unknown) => caught);
+      expect(overlap).toMatchObject({ code: "23P01" });
+    });
   },
   30_000,
 );
