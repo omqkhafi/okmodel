@@ -6,6 +6,8 @@ description: A Postgres composite is one value with named fields. Writes use jso
 A composite is a named row type. Declare it next to `t.enum` and `t.domain`, and use it as a column. An unused composite is not in the catalog. A column, or a field of a composite that a column uses, is what records it.
 
 ```ts
+import { table, t } from "okmodel/pg";
+
 export const address = t.composite("address", {
   street: t.text(),
   city: t.text(),
@@ -36,7 +38,7 @@ A domain over a composite is refused. That domain breaks the jsonb write path.
 
 `field(col("home"), "city")` in `okmodel/expr` prints `(home).city`. An index on that expression, and a unique index on the whole column, both work. A check, a view, and a generated expression use the same print.
 
-Updating with the whole value replaces the composite. A partial object is a type error. One field is `SET (home).city = ...`, including when the column is NULL.
+Updating with the whole value replaces the composite. A partial object is a type error. One field is `SET home.city = ...`, including when the column is NULL. `(home).city` is a syntax error in `SET`.
 
 ## Changes
 

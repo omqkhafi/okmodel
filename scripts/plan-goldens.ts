@@ -12,6 +12,7 @@ import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { catalog } from "../src/contracts/catalog/build.js";
+import { compositeType } from "../src/contracts/catalog/composite.js";
 import { canonicalJson, type Json } from "../src/contracts/catalog/json.js";
 import { staticNamespace } from "../src/contracts/catalog/identity.js";
 import { column, sequence, table } from "../src/contracts/catalog/object.js";
@@ -19,6 +20,7 @@ import { policyObject } from "../src/contracts/catalog/policy.js";
 import { defaultPrivilegeObject, roleObject } from "../src/contracts/catalog/privilege.js";
 import { sha256 } from "../src/contracts/sha256.js";
 import type { DdlStep } from "../src/dialects/ddl.js";
+import { schemaDeclarations } from "../src/dialects/pg/declarations.js";
 import { schema, t, table as defineTable } from "../src/dialects/pg/index.js";
 import { formatPlanJson } from "../src/tooling/migrate/plan-json.js";
 import {
@@ -148,6 +150,137 @@ function coverageRequests(): readonly PlanRequest[] {
       before: catalog([role, privilege]),
       after: catalog([role]),
       name: "revoke-default",
+    },
+    {
+      before: catalog([]),
+      after: schema({
+        tables: [
+          defineTable("people", {
+            id: t.identity(),
+            home: t.composite("address", { street: t.text(), city: t.text() }),
+          }),
+        ],
+      }).catalog,
+      name: "create-composite",
+    },
+    {
+      before: schema({
+        tables: [
+          defineTable("people", {
+            id: t.identity(),
+            home: t.composite("address", { street: t.text(), city: t.text() }),
+          }),
+        ],
+      }).catalog,
+      after: catalog([]),
+      name: "drop-composite",
+    },
+    {
+      before: schema({
+        tables: [
+          defineTable("people", {
+            id: t.identity(),
+            home: t.composite("address", { street: t.text(), city: t.text() }),
+          }),
+        ],
+      }).catalog,
+      after: schema({
+        tables: [
+          defineTable("people", {
+            id: t.identity(),
+            home: t.composite("address", {
+              street: t.text(),
+              city: t.text(),
+              note: t.text().nullable(),
+            }),
+          }),
+        ],
+      }).catalog,
+      name: "add-attribute",
+    },
+    {
+      before: schema({
+        tables: [
+          defineTable("people", {
+            id: t.identity(),
+            home: t.composite("address", { street: t.text(), city: t.text(), zip: t.text() }),
+          }),
+        ],
+      }).catalog,
+      after: schema({
+        tables: [
+          defineTable("people", {
+            id: t.identity(),
+            home: t.composite("address", { street: t.text(), city: t.text() }),
+          }),
+        ],
+      }).catalog,
+      name: "drop-attribute",
+    },
+    (() => {
+      const after = schema({
+        tables: [
+          defineTable("people", {
+            id: t.identity(),
+            home: t.composite("address", {
+              street: t.text(),
+              city: t.text().renamedFrom("town"),
+            }),
+          }),
+        ],
+      });
+      return {
+        before: schema({
+          tables: [
+            defineTable("people", {
+              id: t.identity(),
+              home: t.composite("address", { street: t.text(), town: t.text() }),
+            }),
+          ],
+        }).catalog,
+        after: after.catalog,
+        renames: schemaDeclarations(after).renames,
+        name: "rename-attribute",
+      };
+    })(),
+    {
+      before: catalog([
+        compositeType({
+          namespace,
+          name: "address",
+          provenance,
+          fields: [{ name: "city", dataType: "text", nullable: false }],
+        }),
+      ]),
+      after: catalog([
+        compositeType({
+          namespace,
+          name: "address",
+          provenance,
+          fields: [{ name: "city", dataType: "integer", nullable: false }],
+        }),
+      ]),
+      name: "alter-attribute",
+    },
+    {
+      before: schema({
+        tables: [
+          defineTable("people", {
+            id: t.identity(),
+            home: t.composite("address", { city: t.text() }),
+          }),
+        ],
+      }).catalog,
+      after: schema({
+        tables: [
+          defineTable("people", {
+            id: t.identity(),
+            home: t.composite("address", { city: t.integer() }),
+          }),
+        ],
+      }).catalog,
+      confirmTypeChanges: true,
+      name: "set-composite-column",
     },
   ];
 }
