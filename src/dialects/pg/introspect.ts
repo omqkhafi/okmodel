@@ -626,6 +626,7 @@ export async function introspectSchema(
         command,
         expression: command === "insert" && using.length === 0 ? check : using,
         force: text(row, "force") === "true",
+        ...(text(row, "enabled") === "true" ? {} : { disabled: true as const }),
         ...(legacy
           ? {}
           : {
@@ -633,7 +634,6 @@ export async function introspectSchema(
               ...(roles.length === 0 ? {} : { roles: roles.split(",") }),
               ...(check.length > 0 && check !== using && command !== "insert" ? { check } : {}),
               ...(command === "insert" ? { checkOnly: true as const } : {}),
-              ...(text(row, "enabled") === "true" ? {} : { disabled: true as const }),
             }),
         ...(comment.length > 0 ? { comment } : {}),
         provenance,

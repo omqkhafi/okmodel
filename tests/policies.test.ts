@@ -236,6 +236,25 @@ test("an update policy without a select policy warns", () => {
   expect(found.some((item) => item.rule.code === "OKM2116")).toBe(true);
 });
 
+test("a disabled generated policy plans enable row level security", () => {
+  const declared = schema({
+    tenancy: rlsTenancy({ key: "tenantId", type: "uuid" }),
+    tables: [table("notes", { id: t.integer().primaryKey() })],
+  }).catalog;
+  const live = {
+    version: declared.version,
+    objects: declared.objects.map((object) =>
+      object.kind === "policy"
+        ? { ...object, definition: { ...object.definition, disabled: true as const } }
+        : object,
+    ),
+  };
+  const plan = planMigration({ before: live, after: declared, name: "enable" });
+  const sql = plan.steps.map((step) => step.sql).join("\n");
+  expect(sql).toContain("enable row level security");
+  expect(sql.includes("drop policy")).toBe(false);
+});
+
 test("public is stored with no role list and is not the default", () => {
   const built = notes(() => ({ open: { to: "public", using: true } }));
   expect(policyOf(built, "open").definition.roles).toBeUndefined();
