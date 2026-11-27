@@ -387,11 +387,11 @@ function unknown(table: Indexed, path: string): never {
 function projected(sql: string, column: ColumnModel): string {
   if (compositeMark(column.encode) !== undefined)
     return projectExpr(sql, column.dataType, column.encode);
-  if (unsafe(column.dataType)) return `(${sql})::text`;
+  if (textCast(column.dataType)) return `(${sql})::text`;
   return projectExpr(sql, column.dataType, column.encode);
 }
 
-function unsafe(dataType: string): boolean {
+function textCast(dataType: string): boolean {
   const base = dataType.replace(/(?:\[\])+$/, "");
   return base === "bigint" || base === "decimal" || base.startsWith("numeric");
 }

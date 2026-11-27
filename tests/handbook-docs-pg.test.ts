@@ -299,7 +299,7 @@ async function capture(run: () => Promise<unknown>): Promise<string> {
 }
 
 function body(text: string, lang: string, title: string): string {
-  const pattern = /```(\w+) title="([^"]+)"\n([\s\S]*?)```/g;
+  const pattern = /```(\w+)[^\n]*?\btitle="([^"]+)"[^\n]*\n([\s\S]*?)```/g;
   for (const match of text.matchAll(pattern)) {
     if (match[1] === lang && match[2] === title) return match[3] ?? "";
   }
