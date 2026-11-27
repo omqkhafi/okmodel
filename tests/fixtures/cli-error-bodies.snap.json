@@ -21,8 +21,8 @@
     "code": "OKM1021",
     "kind": "invalid",
     "category": "input",
-    "summary": "A foreign key is missing its target table or column, or the target is ambiguous.",
-    "fix": "Name the referenced table and columns. The error lists the columns that exist on the target.",
+    "summary": "A foreign key is missing its target table or column, or the target is ambiguous. Use foreignKeys for a composite key.",
+    "fix": "Name the referenced table and columns with foreignKeys or references(). The error lists the columns that exist on the target.",
     "retryable": false,
     "docs": "docs/errors/OKM1021.md"
   },
@@ -1914,6 +1914,28 @@
     ]
   },
   {
+    "code": "OKM2108",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A composite foreign key has a nullable column and MATCH SIMPLE. PostgreSQL skips the check when any column of the key is null.",
+    "fix": "Use match: \"full\", or make every column of the key not null.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "match: \"full\" checks the whole key.",
+        "docs": "docs/errors/OKM2108.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2108.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2108.md#escape"
+      }
+    ]
+  },
+  {
     "code": "OKM1891",
     "kind": "invalid",
     "category": "input",
@@ -2029,6 +2051,33 @@
     "fix": "Leave the role as declared. Nothing was changed.",
     "retryable": false,
     "docs": "docs/errors/OKM1914.md"
+  },
+  {
+    "code": "OKM1920",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A generated column is virtual where PostgreSQL refuses it, names another generated column, or a base column it uses would be dropped.",
+    "fix": "Use STORED, drop the dependent first, or change the expression.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1920.md"
+  },
+  {
+    "code": "OKM1921",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "The referenced columns are not a primary key, a unique constraint, or a non-partial unique index.",
+    "fix": "Add that key on the target, or point the foreign key at the columns that already have one.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1921.md"
+  },
+  {
+    "code": "OKM1922",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "Existing rows would violate a check or NOT NULL on a virtual generated column. Nothing was changed.",
+    "fix": "Change the expression or the rows, then plan again.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1922.md"
   },
   {
     "code": "OKM1899",

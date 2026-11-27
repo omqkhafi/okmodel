@@ -101,8 +101,11 @@ export type Node =
   | { readonly k: "and"; readonly parts: readonly (Cond | Node)[] };
 
 type Operand = Expr | string | number | bigint | boolean | null;
-type Num = Expr<number, boolean, Volatility> | number;
-type Text = Expr<string, boolean, Volatility> | string;
+/** A column handle. `name` is the SQL name. */
+type Named = { readonly name: string };
+
+type Num = Expr<number, boolean, Volatility> | number | Named;
+type Text = Expr<string, boolean, Volatility> | string | Named;
 
 type VolOf<A> = A extends Expr<unknown, boolean, infer V> ? V : "immutable";
 type NullOf<A> = A extends Expr<unknown, infer N, Volatility> ? N : A extends null ? true : false;
@@ -215,6 +218,17 @@ export function isExpr(value: unknown): value is Expr {
   return typeof value === "object" && value !== null && EXPR in value;
 }
 
+function isNamed(value: unknown): value is Named {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "name" in value &&
+    typeof value.name === "string" &&
+    !("text" in value) &&
+    !(EXPR in value)
+  );
+}
+
 /**
  * Reads the plain data node of an expression.
  *
@@ -246,6 +260,7 @@ function make<T, N extends boolean, V extends Volatility>(node: Node): Expr<T, N
 
 function lift(value: unknown): Node {
   if (isExpr(value)) return value[EXPR];
+  if (isNamed(value)) return { k: "col", name: value.name };
   if (value === null || typeof value === "boolean" || typeof value === "bigint") {
     return { k: "lit", v: value };
   }
@@ -253,9 +268,9 @@ function lift(value: unknown): Node {
   if (typeof value === "number" && Number.isFinite(value)) return { k: "lit", v: value };
   throw new OkmError(
     "OKM1120",
-    "An expression operand is an expression, a string, a finite number, a bigint, a boolean, or null.",
+    "An expression operand is an expression, a column, a string, a finite number, a bigint, a boolean, or null.",
     {
-      fix: { summary: "Pass one of those. Dates and objects go through cast or a column." },
+      fix: { summary: "Pass one of those. Dates and other objects go through cast or a column." },
     },
   );
 }

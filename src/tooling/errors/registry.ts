@@ -86,8 +86,9 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   {
     code: "OKM1021",
     title: "Foreign key target",
-    summary: "A foreign key is missing its target table or column, or the target is ambiguous.",
-    fix: "Name the referenced table and columns. The error lists the columns that exist on the target.",
+    summary:
+      "A foreign key is missing its target table or column, or the target is ambiguous. Use foreignKeys for a composite key.",
+    fix: "Name the referenced table and columns with foreignKeys or references(). The error lists the columns that exist on the target.",
   },
   {
     code: "OKM1022",
@@ -1172,6 +1173,30 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     summary:
       "A managed role is a superuser, has CREATEROLE, has BYPASSRLS without a reason, owns a table, or membership options were asked on PostgreSQL 15. A CREATEROLE role that is not a superuser cannot alter a role it did not create.",
     fix: "Leave the role as declared. Nothing was changed.",
+    since: "0.10",
+  },
+  {
+    code: "OKM1920",
+    title: "Generated column",
+    summary:
+      "A generated column is virtual where PostgreSQL refuses it, names another generated column, or a base column it uses would be dropped.",
+    fix: "Use STORED, drop the dependent first, or change the expression.",
+    since: "0.10",
+  },
+  {
+    code: "OKM1921",
+    title: "Foreign key target",
+    summary:
+      "The referenced columns are not a primary key, a unique constraint, or a non-partial unique index.",
+    fix: "Add that key on the target, or point the foreign key at the columns that already have one.",
+    since: "0.10",
+  },
+  {
+    code: "OKM1922",
+    title: "Generated values",
+    summary:
+      "Existing rows would violate a check or NOT NULL on a virtual generated column. Nothing was changed.",
+    fix: "Change the expression or the rows, then plan again.",
     since: "0.10",
   },
   {

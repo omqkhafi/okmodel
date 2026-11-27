@@ -26,7 +26,7 @@ export type CompilableColumn = {
     readonly defaultSql: string | undefined;
     readonly collation: string | undefined;
     readonly identity: { readonly always: boolean } | undefined;
-    readonly generated: { readonly stored: boolean; readonly expression: string } | undefined;
+    readonly generated: { readonly stored: boolean; readonly expression?: string } | undefined;
     readonly unique:
       | { readonly reason: string | undefined; readonly global: boolean | undefined }
       | undefined;
@@ -119,7 +119,14 @@ export function compileColumn(
     ...(state.collation !== undefined ? { collation: state.collation } : {}),
     ...(state.identity !== undefined ? { identity: { always: state.identity.always } } : {}),
     ...(state.comment !== undefined ? { comment: state.comment } : {}),
-    ...(state.generated !== undefined ? { generated: state.generated } : {}),
+    ...(state.generated?.expression !== undefined
+      ? {
+          generated: {
+            stored: state.generated.stored,
+            expression: state.generated.expression,
+          },
+        }
+      : {}),
     ...(dependencies.length > 0 || (input.dependencies?.length ?? 0) > 0
       ? { dependencies: [...dependencies, ...(input.dependencies ?? [])] }
       : {}),

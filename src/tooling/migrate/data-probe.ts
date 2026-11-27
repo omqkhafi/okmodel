@@ -7,6 +7,7 @@
  */
 
 import { isConnectionFailure } from "../../contracts/connection.js";
+import { OkmError } from "../../contracts/error.js";
 import { qualify, quoteIdent } from "../../dialects/pg/ddl.js";
 import { driverUrl } from "./driver-url.js";
 import { OPTIONAL_CONNECT_SECONDS } from "./optional-read.js";
@@ -424,6 +425,19 @@ function pgArray(text: string | null): string[] {
 function isMissingRelation(error: unknown): boolean {
   const text = error instanceof Error ? error.message : String(error);
   return text.includes("42P01") || text.includes("42703") || text.includes("does not exist");
+}
+
+/**
+ * Stops before the first step when a virtual generated column would reject rows.
+ *
+ * @param count - Violating rows from the bounded probe
+ * @param detail - What the rows violate
+ * @throws OkmError OKM1922 when `count` is greater than zero
+ */
+export function refuseGeneratedProbe(count: number, detail: string): void {
+  if (count === 0) return;
+  const message = `${String(count)} rows would violate ${detail}. Nothing was changed.`;
+  throw new OkmError("OKM1922", message, { fix: { summary: "Nothing was changed." } });
 }
 
 function isTimeout(error: unknown): boolean {

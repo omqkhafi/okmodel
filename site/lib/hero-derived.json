@@ -1274,8 +1274,28 @@
       "diff": [
         {
           "n": null,
+          "mark": "del",
+          "text": "import { schema, table, t } from \"okmodel/pg\";"
+        },
+        {
+          "n": 1,
+          "mark": "add",
+          "text": "import { schema, sql, table, t } from \"okmodel/pg\";"
+        },
+        {
+          "n": 2,
+          "mark": "ctx",
+          "text": ""
+        },
+        {
+          "n": 3,
+          "mark": "ctx",
+          "text": "const authors = table(\"authors\", {"
+        },
+        {
+          "n": null,
           "mark": "fold",
-          "text": "8 unchanged lines"
+          "text": "5 unchanged lines"
         },
         {
           "n": 9,
@@ -1290,7 +1310,7 @@
         {
           "n": 11,
           "mark": "add",
-          "text": "  search: t.tsvector().generated(\"to_tsvector('simple', title)\"),"
+          "text": "  search: t.tsvector().generated((c) => sql`to_tsvector('simple', ${c.title})`),"
         },
         {
           "n": 12,

@@ -15,6 +15,7 @@ import {
   assertStoredText,
   identitySequenceName,
   printedIdentifier,
+  recoveredNameKey,
 } from "../../contracts/catalog/identifier.js";
 import {
   compareText,
@@ -41,8 +42,10 @@ import {
   formatType,
   retimed,
   type ColumnState,
+  type ForeignKeySpec,
   type ReferenceModifier,
 } from "./column.js";
+import { holdGenerated } from "./generated-hold.js";
 import {
   formatPostgresFloor,
   isPostgresMajor,
@@ -383,6 +386,9 @@ type StoredOptions = {
         }
     >
   >;
+  readonly foreignKeys?: (
+    columns: Readonly<Record<string, ColumnHandle>>,
+  ) => Readonly<Record<string, ForeignKeySpec>>;
 };
 
 /** Fields `schema()` reads from a column. Avoids instantiating {@link ColumnBuilder}. */
@@ -439,6 +445,10 @@ type Prepared = {
   readonly archive?: ArchiveModel;
   /** Own and trait presets, merged. Absent when the table has none. */
   readonly presets?: Readonly<Record<string, unknown>> | undefined;
+  readonly foreignKeys?: (
+    columns: Readonly<Record<string, ColumnHandle>>,
+  ) => Readonly<Record<string, ForeignKeySpec>>;
+  readonly handles: Readonly<Record<string, ColumnHandle>>;
 };
 
 /**
@@ -642,6 +652,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
   const edges: FkEdge[] = [];
   for (const item of prepared) {
     compileForeignKeys(item, byName, accepted, jobs, edges);
+    compileNamedForeignKeys(item, byName, jobs);
   }
   const model = {} as Record<string, TableModel>;
   const scopeFields =
@@ -1125,6 +1136,7 @@ function compileTable(
     if (identity !== undefined) {
       const seqName = identitySequenceName(sqlName, columnSql);
       jobs.push((objects) => {
+        bindGenerated(column, handles, byField);
         const seq = sequence({
           namespace,
           name: seqName,
@@ -1147,6 +1159,7 @@ function compileTable(
       });
     } else {
       jobs.push((objects) => {
+        bindGenerated(column, handles, byField);
         pushCompiled(objects, column, {
           parent,
           name: columnSql,
@@ -1249,8 +1262,30 @@ function compileTable(
     relationOptions: relationInput(item.name, options),
     ...(applied !== undefined ? { traits: applied.traits } : {}),
     presets: applied?.presets ?? options?.presets,
+    ...(options?.foreignKeys !== undefined ? { foreignKeys: options.foreignKeys } : {}),
+    handles,
     ...archiveModel(item),
   };
+}
+
+function bindGenerated(
+  column: ColumnView,
+  handles: Readonly<Record<string, ColumnHandle>>,
+  byField: ReadonlyMap<string, PreparedColumn>,
+): void {
+  const generated = column.state.generated;
+  if (
+    generated === undefined ||
+    generated.build === undefined ||
+    generated.expression !== undefined
+  ) {
+    return;
+  }
+  (generated as { expression: string }).expression = holdGenerated(
+    generated.build,
+    handles,
+    (field) => byField.get(field)?.sqlName ?? field,
+  );
 }
 
 function uniqueTargets(
@@ -1472,6 +1507,25 @@ function compileChecks(
   }
 }
 
+type NormalizedReference = Omit<ReferenceModifier, "onDelete"> & {
+  readonly onDelete?: "cascade" | "restrict" | "no action" | "set null" | "set default";
+};
+
+function normalizedReference(
+  reference: ReferenceModifier | undefined,
+): NormalizedReference | undefined {
+  if (reference === undefined) return undefined;
+  const onDelete = reference.onDelete;
+  if (onDelete === undefined || typeof onDelete === "string") {
+    return reference as NormalizedReference;
+  }
+  return {
+    ...reference,
+    onDelete: "setNull" in onDelete ? "set null" : "set default",
+    onDeleteColumns: "setNull" in onDelete ? onDelete.setNull : onDelete.setDefault,
+  };
+}
+
 function compileForeignKeys(
   item: Prepared,
   byName: ReadonlyMap<string, Prepared>,
@@ -1480,7 +1534,7 @@ function compileForeignKeys(
   edges: FkEdge[],
 ): void {
   for (const column of item.columns) {
-    const reference = column.state.references;
+    const reference = normalizedReference(column.state.references);
     if (reference === undefined) {
       continue;
     }
@@ -1501,7 +1555,10 @@ function compileForeignKeys(
         `Foreign key ${item.tsName}.${column.field} on ${target.tsName} has ${localColumns.length} local columns and ${targetColumns.length} target columns.`,
       );
     }
-    if (reference.onDelete === "set null" || reference.onUpdate === "set null") {
+    if (
+      (reference.onDelete === "set null" || reference.onUpdate === "set null") &&
+      reference.onDeleteColumns === undefined
+    ) {
       for (const local of localColumns) {
         if (!local.state.nullable) {
           definition(
@@ -1537,7 +1594,16 @@ function compileForeignKeys(
           columns: remoteNames,
           ...(reference.onDelete !== undefined ? { onDelete: reference.onDelete } : {}),
           ...(reference.onUpdate !== undefined ? { onUpdate: reference.onUpdate } : {}),
+          ...(reference.match === "full" ? { match: "full" as const } : {}),
+          ...(reference.onDeleteColumns !== undefined
+            ? { onDeleteColumns: reference.onDeleteColumns }
+            : {}),
         },
+        ...(reference.deferrable === "deferred"
+          ? { deferrable: true, initially: "deferred" as const }
+          : reference.deferrable === "immediate"
+            ? { deferrable: true, initially: "immediate" as const }
+            : {}),
         ...(reference.comment !== undefined ? { comment: reference.comment } : {}),
       }),
     );
@@ -1548,6 +1614,58 @@ function compileForeignKeys(
       local: localNames,
       remote: remoteNames,
     });
+  }
+}
+
+function compileNamedForeignKeys(
+  item: Prepared,
+  byName: ReadonlyMap<string, Prepared>,
+  jobs: CatalogJob[],
+): void {
+  const keys = item.foreignKeys?.(item.handles);
+  if (keys === undefined) return;
+  for (const name of Object.keys(keys)) {
+    const spec = keys[name];
+    if (spec === undefined) continue;
+    const reference = normalizedReference({
+      table: spec.references.table,
+      columns: spec.references.columns,
+      ...(spec.onDelete !== undefined ? { onDelete: spec.onDelete } : {}),
+      ...(spec.onUpdate !== undefined ? { onUpdate: spec.onUpdate } : {}),
+      ...(spec.match !== undefined ? { match: spec.match } : {}),
+      ...(spec.deferrable !== undefined ? { deferrable: spec.deferrable } : {}),
+    });
+    const target = reference === undefined ? undefined : byName.get(reference.table);
+    if (reference === undefined || target === undefined) continue;
+    const sqlOf = (found: Prepared, column: string): string =>
+      (found.byField.get(column) ?? found.bySql.get(column))?.sqlName ?? column;
+    const columns = spec.columns.map((column) => sqlOf(item, column));
+    stage(jobs, () =>
+      constraint({
+        parent: item.parent,
+        constraintKind: "foreignKey",
+        name,
+        columns,
+        nameKey: recoveredNameKey("foreignKey", item.parent.name, name, columns),
+        provenance: item.provenance,
+        ...(spec.comment !== undefined ? { comment: spec.comment } : {}),
+        references: {
+          parent: target.parent,
+          columns: spec.references.columns.map((column) => sqlOf(target, column)),
+          ...(reference.onDelete !== undefined ? { onDelete: reference.onDelete } : {}),
+          ...(reference.onUpdate !== undefined ? { onUpdate: reference.onUpdate } : {}),
+          ...(reference.match === "full" ? { match: "full" as const } : {}),
+          ...(reference.onDeleteColumns !== undefined
+            ? { onDeleteColumns: reference.onDeleteColumns }
+            : {}),
+        },
+        ...(reference.deferrable === "deferred"
+          ? { deferrable: true, initially: "deferred" as const }
+          : reference.deferrable === "immediate"
+            ? { deferrable: true, initially: "immediate" as const }
+            : {}),
+      }),
+    );
   }
 }
 
@@ -1606,7 +1724,7 @@ function resolveTarget(
       found.push(match);
     }
     if (found.length !== 1 && reference.along === undefined) {
-      keyFail(item, column, `on ${target.tsName} is ambiguous.`, accepted);
+      keyFail(item, column, `on ${target.tsName} is ambiguous. Use foreignKeys.`, accepted);
     }
     return found;
   }

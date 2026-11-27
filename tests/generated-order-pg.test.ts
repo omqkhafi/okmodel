@@ -8,7 +8,7 @@
 import { expect } from "bun:test";
 
 import { open as openPostgresJs } from "../src/adapters/pg/postgresjs.js";
-import { identity, schema, table, text, tsvector } from "../src/dialects/pg/index.js";
+import { identity, schema, sql, table, text, tsvector } from "../src/dialects/pg/index.js";
 import { testing } from "../src/tooling/testing/index.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
@@ -18,7 +18,7 @@ const docs = schema({
     table("docs", {
       id: identity(),
       title: text(),
-      search: tsvector().generated("to_tsvector('english', title)"),
+      search: tsvector().generated((c) => sql`to_tsvector('english', ${c.title!})`),
     }),
   ],
 });

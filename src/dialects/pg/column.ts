@@ -5,19 +5,28 @@
  * not build a codec table. `.validate()` stores rules and does not run them.
  */
 
-import {
-  REFERENTIAL_ACTIONS,
-  referentialAction,
-  type CatalogObject,
-  type Namespace,
-  type Provenance,
-  type ReferentialAction,
+import type {
+  CatalogObject,
+  Namespace,
+  Provenance,
+  ReferentialAction,
 } from "../../contracts/catalog/types.js";
 import { readClientGenerator, type ClientFill } from "../../contracts/generator.js";
 import { readArray, writeArray } from "./array-literal.js";
+import type { Cond, ImmutableExpr } from "./expr/index.js";
 import { definition, rejected } from "./misuse.js";
 import { quoteLiteral } from "./quote.js";
+import type { ColumnHandle, SqlText } from "./table.js";
 import type { TimeCodec, TimeMode, TimeSpec } from "./time.js";
+
+/** What `.generated()` accepts. A stable or volatile helper is a compile error. */
+export type GeneratedSource = ImmutableExpr | SqlText | Cond;
+
+/** `onDelete` as an action, or a PostgreSQL 15 column list. */
+export type DeleteAction =
+  | ReferentialAction
+  | { readonly setNull: readonly string[] }
+  | { readonly setDefault: readonly string[] };
 
 /** Flags that decide the row, insert, and update shapes of one column. */
 export type ColumnFlags = {
@@ -118,7 +127,7 @@ export type SqlForm = "raw" | "quote" | "json" | "jsonb" | "cast";
  */
 export type ReferenceModifier = {
   readonly table: string;
-  readonly onDelete?: ReferentialAction;
+  readonly onDelete?: DeleteAction;
   readonly onUpdate?: ReferentialAction;
   /** Target columns. Several columns make a composite foreign key. */
   readonly columns?: readonly string[];
@@ -128,6 +137,17 @@ export type ReferenceModifier = {
    * Set when the key is composite. Absent on a single-column reference.
    */
   readonly along?: readonly string[];
+  /** `full` emits `MATCH FULL`. Absent is `MATCH SIMPLE`. */
+  readonly match?: "full";
+  /** `deferred` or `immediate`. Absent is `NOT DEFERRABLE`. */
+  readonly deferrable?: "deferred" | "immediate";
+  /**
+   * Columns `ON DELETE SET NULL` or `SET DEFAULT` clears.
+   *
+   * Absent when the action names no column list. PostgreSQL accepts the
+   * list only on delete.
+   */
+  readonly onDeleteColumns?: readonly string[];
   /** Comment on the foreign key. Absent means unmanaged. */
   readonly comment?: string;
 };
@@ -135,10 +155,33 @@ export type ReferenceModifier = {
 /**
  * Options for {@link ColumnBuilder.references}.
  */
+/**
+ * One named foreign key on a table.
+ *
+ * `columns` and `references.columns` are field names or SQL names. The key
+ * of the `foreignKeys` object is the stored constraint name.
+ */
+export type ForeignKeySpec = {
+  readonly columns: readonly string[];
+  readonly references: {
+    readonly table: string;
+    readonly columns: readonly string[];
+  };
+  readonly onDelete?: DeleteAction;
+  readonly onUpdate?: ReferentialAction;
+  readonly match?: "full";
+  readonly deferrable?: "deferred" | "immediate";
+  readonly comment?: string;
+};
+
 export type ReferenceOptions = {
-  readonly onDelete?: ReferentialAction;
+  readonly onDelete?: DeleteAction;
   readonly onUpdate?: ReferentialAction;
   readonly columns?: readonly string[];
+  /** `full` emits `MATCH FULL`. Absent is `MATCH SIMPLE`. */
+  readonly match?: "full";
+  /** `deferred` or `immediate`. Absent is `NOT DEFERRABLE`. */
+  readonly deferrable?: "deferred" | "immediate";
   /** Comment on the foreign key. Absent means unmanaged. */
   readonly comment?: string;
 };
@@ -266,7 +309,13 @@ export type ColumnState<TValue> = {
    */
   readonly idSource: "implicit" | "column" | undefined;
   readonly identity: { readonly always: boolean; readonly comment?: string } | undefined;
-  readonly generated: { readonly stored: boolean; readonly expression: string } | undefined;
+  readonly generated:
+    | {
+        readonly stored: boolean;
+        readonly expression?: string;
+        readonly build?: (columns: Readonly<Record<string, ColumnHandle>>) => GeneratedSource;
+      }
+    | undefined;
   readonly unique:
     | { readonly reason: string | undefined; readonly global: boolean | undefined }
     | undefined;
@@ -586,20 +635,22 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
   /**
    * Stores a generated expression. Insert and update omit the column.
    *
-   * @param expression - SQL expression
-   * @param options - `stored` defaults to true
+   * The callback receives column handles. An immutable expression, a where
+   * object, or `sql` text is accepted. A stable or volatile helper is a
+   * compile error. `sql` is judged by PostgreSQL. Stored is the default.
+   * `{ stored: false }` is `VIRTUAL`.
+   *
+   * @param build - Expression for this column
+   * @param options - `stored: false` emits `VIRTUAL`
    * @returns The same column, generated
    */
   generated(
-    expression: string,
-    options?: { readonly stored?: boolean },
+    build: (columns: Readonly<Record<string, ColumnHandle>>) => GeneratedSource,
+    options?: { readonly stored?: false },
   ): ColumnBuilder<TValue, WithGenerated<TFlags>> {
-    if (expression.length === 0) {
-      definition("generated() must be a non-empty SQL expression.");
-    }
     return rebuild<TValue, WithGenerated<TFlags>>(this.state, {
       ...DEFAULTED,
-      generated: { stored: options?.stored !== false, expression },
+      generated: { stored: options?.stored !== false, build },
     });
   }
 
@@ -679,17 +730,8 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
     if (table.length === 0) {
       definition("references() needs a table name.");
     }
-    const onDelete = readAction(options?.onDelete, "onDelete");
-    const onUpdate = readAction(options?.onUpdate, "onUpdate");
-    const columns = readReferenceColumns(options?.columns);
     return rebuild<TValue, TFlags>(this.state, {
-      references: {
-        table,
-        ...(onDelete !== undefined ? { onDelete } : {}),
-        ...(onUpdate !== undefined ? { onUpdate } : {}),
-        ...(columns !== undefined ? { columns } : {}),
-        ...(options?.comment !== undefined ? { comment: options.comment } : {}),
-      },
+      references: { table, ...options },
     });
   }
 
@@ -875,40 +917,6 @@ export function sqlOf<TValue>(state: ColumnState<TValue>, value: TValue): string
     return quoteLiteral(encoded);
   }
   return encoded;
-}
-
-function readAction(
-  action: ReferentialAction | undefined,
-  role: string,
-): ReferentialAction | undefined {
-  if (action === undefined) {
-    return undefined;
-  }
-  if (referentialAction(action) === undefined) {
-    definition(
-      `references() ${role} ${action} is not a referential action. Accepted actions: ${REFERENTIAL_ACTIONS.join(", ")}.`,
-    );
-  }
-  return action;
-}
-
-function readReferenceColumns(
-  columns: readonly string[] | undefined,
-): readonly string[] | undefined {
-  if (columns === undefined) {
-    return undefined;
-  }
-  if (columns.length === 0) {
-    definition("references() columns must name at least one target column.");
-  }
-  const copy: string[] = [];
-  for (const name of columns) {
-    if (name.length === 0) {
-      definition("references() columns must be non-empty names.");
-    }
-    copy.push(name);
-  }
-  return copy;
 }
 
 /**

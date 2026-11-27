@@ -8,6 +8,7 @@ import { OkmError } from "../src/contracts/index.js";
 import { staticNamespace, table, type Provenance } from "../src/contracts/internal.js";
 import { catalog, catalogHash } from "../src/contracts/catalog/document.js";
 import { compileColumn } from "../src/dialects/pg/compile.js";
+import { sealGenerated } from "../src/dialects/pg/generated-print.js";
 import { json } from "../src/dialects/pg/json.js";
 import {
   bigint,
@@ -28,6 +29,9 @@ import {
   int4range,
   int8range,
   integer,
+  schema,
+  sql,
+  table as declareTable,
   interval,
   jsonb,
   line,
@@ -200,8 +204,13 @@ test("keys, identity, generated, and extensions record the catalog fields", () =
   const generated = compileColumn(identity(), input);
   expect(generated.column.definition.identity).toEqual({ always: true });
   expect(generated.column.definition.defaultExpression).toBeUndefined();
-  const expression = compileColumn(integer().generated("1", { stored: true }), input);
-  expect(expression.column.definition.generated).toEqual({ stored: true, expression: "1" });
+  const built = schema({
+    tables: [declareTable("stats", { total: integer().generated(() => sql`1`) })],
+  });
+  sealGenerated(built.catalog);
+  const expression = built.catalog.objects.find((object) => object.kind === "column");
+  if (expression?.kind !== "column") throw new Error("expected a column");
+  expect(expression.definition.generated).toEqual({ stored: true, expression: "1" });
   const citextColumn = compileColumn(citext(), input);
   expect(citextColumn.column.dependencies).toContainEqual({
     target: { kind: "extension", name: "citext" },

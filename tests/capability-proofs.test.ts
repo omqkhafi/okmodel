@@ -263,12 +263,115 @@ test("proof:index.expression", () => {
 
 test("proof:column.generated", () => {
   const built = schema({
-    tables: [table("stats", { total: t.integer().generated("1") })],
+    tables: [table("stats", { total: t.integer().generated(() => sql`1`) })],
   });
   const column = built.catalog.objects.find((object) => object.kind === "column");
   if (column?.kind !== "column") throw new Error("expected a column");
   expect(column.definition.generated?.expression).toBe("1");
   expect(featuresUsed(built.catalog)).toContain("column.generated");
+});
+
+test("proof:column.generatedExpression", () => {
+  const built = schema({
+    tables: [
+      table("stats", { qty: t.integer(), total: t.integer().generated((c) => sql`${c.qty!}`) }),
+    ],
+  });
+  expect(featuresUsed(built.catalog)).toContain("column.generatedExpression");
+});
+
+test("proof:column.generatedVirtual", () => {
+  const built = schema({
+    tables: [table("stats", { total: t.integer().generated(() => sql`1`, { stored: false }) })],
+  });
+  expect(featuresUsed(built.catalog)).toContain("column.generatedVirtual");
+});
+
+test("proof:foreignKey.composite", () => {
+  const built = schema({
+    tables: [
+      table("users", { org: t.integer(), id: t.integer() }, { primaryKey: ["org", "id"] }),
+      table(
+        "posts",
+        { org: t.integer(), id: t.integer() },
+        {
+          foreignKeys: () => ({
+            posts_user: {
+              columns: ["org", "id"],
+              references: { table: "users", columns: ["org", "id"] },
+            },
+          }),
+        },
+      ),
+    ],
+  });
+  expect(featuresUsed(built.catalog)).toContain("foreignKey.composite");
+});
+
+test("proof:foreignKey.deferrable", () => {
+  const built = schema({
+    tables: [
+      table("users", { id: t.integer().primaryKey() }),
+      table(
+        "posts",
+        { authorId: t.integer() },
+        {
+          foreignKeys: () => ({
+            posts_author: {
+              columns: ["authorId"],
+              references: { table: "users", columns: ["id"] },
+              deferrable: "deferred",
+            },
+          }),
+        },
+      ),
+    ],
+  });
+  expect(featuresUsed(built.catalog)).toContain("foreignKey.deferrable");
+});
+
+test("proof:foreignKey.setNullColumns", () => {
+  const built = schema({
+    tables: [
+      table("users", { id: t.integer().primaryKey() }),
+      table(
+        "posts",
+        { authorId: t.integer().nullable() },
+        {
+          foreignKeys: () => ({
+            posts_author: {
+              columns: ["authorId"],
+              references: { table: "users", columns: ["id"] },
+              onDelete: { setNull: ["authorId"] },
+            },
+          }),
+        },
+      ),
+    ],
+  });
+  expect(featuresUsed(built.catalog)).toContain("foreignKey.setNullColumns");
+});
+
+test("proof:foreignKey.matchFull", () => {
+  const built = schema({
+    tables: [
+      table("users", { id: t.integer().primaryKey() }),
+      table(
+        "posts",
+        { authorId: t.integer() },
+        {
+          foreignKeys: () => ({
+            posts_author: {
+              columns: ["authorId"],
+              references: { table: "users", columns: ["id"] },
+              match: "full",
+            },
+          }),
+        },
+      ),
+    ],
+  });
+  expect(featuresUsed(built.catalog)).toContain("foreignKey.matchFull");
 });
 
 test("proof:namespace", () => {

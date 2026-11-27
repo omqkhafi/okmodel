@@ -11,7 +11,7 @@ import { catalog } from "../../contracts/catalog/build.js";
 import { OkmError, catalogError } from "../../contracts/error.js";
 import { domainType, enumType } from "../../contracts/catalog/enum.js";
 import { identityKey, staticNamespace } from "../../contracts/catalog/identity.js";
-import { isReservedIdentifier } from "../../contracts/catalog/identifier.js";
+import { isReservedIdentifier, recoveredNameKey } from "../../contracts/catalog/identifier.js";
 import { extensionObject } from "../../contracts/catalog/extension.js";
 import { column, constraint, index, sequence, table } from "../../contracts/catalog/object.js";
 import { policyObject } from "../../contracts/catalog/policy.js";
@@ -303,7 +303,8 @@ export async function introspectSchema(
     const parentName = text(row, "parent");
     const parent = parents.get(parentName) ?? { namespace, name: parentName };
     const identity = text(row, "identity");
-    const generated = text(row, "generated") === "s";
+    const generatedFlag = text(row, "generated");
+    const generated = generatedFlag === "s" || generatedFlag === "v";
     const expression = text(row, "expression");
     const collation = text(row, "collation");
     const sequenceName = text(row, "sequence");
@@ -331,7 +332,7 @@ export async function introspectSchema(
       provenance,
       ...(extra.length > 0 ? { dependencies: extra } : {}),
       ...(identity === "a" || identity === "d" ? { identity: { always: identity === "a" } } : {}),
-      ...(generated ? { generated: { stored: true, expression } } : {}),
+      ...(generated ? { generated: { stored: generatedFlag !== "v", expression } } : {}),
       ...(!generated && identity !== "a" && identity !== "d" && expression.length > 0
         ? { defaultExpression: expression }
         : {}),
@@ -357,6 +358,8 @@ export async function introspectSchema(
     const definition = text(row, "definition");
     const onDelete = actionAfter(definition, "delete");
     const onUpdate = actionAfter(definition, "update");
+    const onDeleteColumns = deleteColumnList(definition);
+    const matchFull = /\bmatch full\b/i.test(definition);
     if (listed(options, "constraint", parent, name, [name, ...columns, ...refColumns])) continue;
     if (
       leaveReserved(options?.reserved, "constraint", parent, name, [
@@ -388,6 +391,8 @@ export async function introspectSchema(
               columns: refColumns,
               ...(onDelete !== undefined ? { onDelete } : {}),
               ...(onUpdate !== undefined ? { onUpdate } : {}),
+              ...(matchFull ? { match: "full" as const } : {}),
+              ...(onDeleteColumns !== undefined ? { onDeleteColumns } : {}),
             },
           }
         : {}),
@@ -2514,20 +2519,7 @@ function constraintNameKey(
   name: string,
   columns: readonly string[],
 ): string {
-  if (kind === "primaryKey") return "pkey";
-  const tag = kind === "unique" ? "key" : kind === "foreignKey" ? "fkey" : "check";
-  const prefix = `${parent}_`;
-  const suffix = `_${tag}`;
-  if (
-    name.startsWith(prefix) &&
-    name.endsWith(suffix) &&
-    name.length > prefix.length + suffix.length
-  ) {
-    return name.slice(prefix.length, -suffix.length);
-  }
-  if (kind === "check") return name;
-  if (columns.length > 0) return columns.join("_");
-  return tag;
+  return recoveredNameKey(kind, parent, name, columns);
 }
 
 function readCheckExpression(row: Record<string, unknown>): string {
@@ -2656,6 +2648,17 @@ function unwrapTriggerWhen(expression: string): string {
     }
   }
   return body;
+}
+
+function deleteColumnList(definition: string): readonly string[] | undefined {
+  const match = /on delete set (?:null|default) \(([^)]*)\)/i.exec(definition);
+  const body = match?.[1];
+  if (body === undefined) return undefined;
+  const names = body
+    .split(",")
+    .map((name) => name.trim().replaceAll('"', ""))
+    .filter((name) => name.length > 0);
+  return names.length > 0 ? names : undefined;
 }
 
 function actionAfter(

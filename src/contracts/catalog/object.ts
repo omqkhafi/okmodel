@@ -97,6 +97,8 @@ export type ConstraintInput = CommonInput & {
     readonly columns: readonly string[];
     readonly onDelete?: ReferentialAction;
     readonly onUpdate?: ReferentialAction;
+    readonly match?: "full";
+    readonly onDeleteColumns?: readonly string[];
   };
   readonly deferrable?: boolean;
   readonly initially?: "immediate" | "deferred";
@@ -300,7 +302,10 @@ export function constraint(input: ConstraintInput): ConstraintObject {
       input.references.columns.length === 0 ||
       columns.length === 0
     ) {
-      catalogError("OKM1021", `Foreign key on ${input.parent.name} is missing its target.`);
+      catalogError(
+        "OKM1021",
+        `Foreign key on ${input.parent.name} is missing its target. Use foreignKeys or references().`,
+      );
     }
   } else if (input.constraintKind === "check") {
     if (input.expression === undefined || input.expression.length === 0) {
@@ -362,6 +367,10 @@ export function constraint(input: ConstraintInput): ConstraintObject {
             columns: [...references.columns],
             ...(references.onDelete !== undefined ? { onDelete: references.onDelete } : {}),
             ...(references.onUpdate !== undefined ? { onUpdate: references.onUpdate } : {}),
+            ...(references.match === "full" ? { match: "full" as const } : {}),
+            ...(references.onDeleteColumns !== undefined
+              ? { onDeleteColumns: [...references.onDeleteColumns] }
+              : {}),
           },
         }
       : {}),

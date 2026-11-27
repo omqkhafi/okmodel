@@ -103,6 +103,7 @@ export function schemaAdvice(
     ...missingFilterIndexes(groups, input, uses),
     ...duplicateIndexes(input.catalog),
     ...genericPlanTrap(groups, input, uses),
+    ...nullableMatchSimple(input.catalog),
   ].sort(compareFound);
   const ignore = config.ignore ?? [];
   const used = new Set<WarningIgnore>();
@@ -524,6 +525,33 @@ function genericPlanTrap(
         });
       }
     }
+  }
+  return found;
+}
+
+function nullableMatchSimple(catalog: Catalog): Found[] {
+  const rule = warningRule("nullable-match-simple");
+  if (rule === undefined) return [];
+  const nullable = new Set<string>();
+  for (const object of catalog.objects) {
+    if (object.kind === "column" && object.definition.nullable) {
+      nullable.add(`${refKey(object.identity.parent)}.${object.identity.name}`);
+    }
+  }
+  const found: Found[] = [];
+  for (const object of catalog.objects) {
+    if (object.kind !== "constraint" || object.definition.constraintKind !== "foreignKey") continue;
+    if (object.definition.columns.length < 2 || object.definition.references?.match === "full")
+      continue;
+    const parent = refKey(object.identity.parent);
+    if (!object.definition.columns.some((name) => nullable.has(`${parent}.${name}`))) continue;
+    found.push({
+      rule,
+      table: object.identity.parent.name,
+      target: `${object.identity.parent.name}.${object.identity.name}`,
+      reason:
+        "A nullable column in a composite foreign key with MATCH SIMPLE skips the check when that column is null.",
+    });
   }
   return found;
 }
