@@ -771,7 +771,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     title: "Forced count",
     summary:
       "A data probe or a backfill would count or update zero rows because the table forces row-level security and the role does not bypass it. okm refuses instead of reporting a silent zero.",
-    fix: "Count as a role that bypasses row-level security, or add the unscoped select policy for a probe. A backfill under force needs a bypass role.",
+    fix: "Count as a role that is exempt from row-level security, or use the select policy rlsTenancy adds for a full-table count. A backfill under force needs an exempt role.",
   },
   {
     code: "OKM1923",

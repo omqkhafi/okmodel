@@ -25,8 +25,8 @@ import { fitIdentifier, identitySequenceName } from "../../contracts/catalog/ide
 import { identityKey, identityLabel, staticNamespace } from "../../contracts/catalog/identity.js";
 import { compareText } from "../../contracts/catalog/object.js";
 import { isGeneratedPolicy } from "../../contracts/catalog/policy.js";
-import { rlsTogglePlan, type RlsState } from "../../dialects/pg/ddl.js";
 import { ddlStep } from "../../dialects/ddl-step.js";
+import { rlsToggleSteps } from "./policy-plan.js";
 import { assertForeignKeyTargets } from "./foreign-target.js";
 import { assertIndexRules } from "./index-rules.js";
 import {
@@ -1703,81 +1703,6 @@ function recreatePolicyDependents(
     dropKeys.add(item.key);
     createKeys.add(item.key);
   }
-}
-
-function rlsToggleSteps(
-  before: readonly CatalogObject[],
-  after: Catalog,
-  beforeBy: ReadonlyMap<string, CatalogObject>,
-  afterBy: ReadonlyMap<string, CatalogObject>,
-  createKeys: ReadonlySet<string>,
-  dropKeys: ReadonlySet<string>,
-  schema: string,
-): readonly PlanStep[] {
-  const tables = new Set<string>();
-  for (const object of [...before, ...after.objects]) {
-    if (handsOff(object)) continue;
-    if (object.kind === "policy") tables.add(object.identity.parent.name);
-    if (object.kind === "table" && object.definition.rowSecurity !== undefined) {
-      tables.add(object.identity.name);
-    }
-  }
-  const covered = legacyRlsTables(beforeBy, afterBy, createKeys, dropKeys);
-  const steps: PlanStep[] = [];
-  for (const table of tables) {
-    if (covered.has(table)) continue;
-    const planned = rlsTogglePlan(
-      table,
-      schema,
-      rlsStateOf(before, table),
-      rlsStateOf(after.objects, table),
-    );
-    for (const item of planned) {
-      steps.push(...take([ddlStep(item.sql, item.kind, "ddl", "ACCESS EXCLUSIVE", true, [table])]));
-    }
-  }
-  return steps;
-}
-
-function legacyRlsTables(
-  beforeBy: ReadonlyMap<string, CatalogObject>,
-  afterBy: ReadonlyMap<string, CatalogObject>,
-  createKeys: ReadonlySet<string>,
-  dropKeys: ReadonlySet<string>,
-): Set<string> {
-  const tables = new Set<string>();
-  for (const [key, object] of [...beforeBy, ...afterBy]) {
-    if (object.kind !== "policy" || !isGeneratedPolicy(object)) continue;
-    if (object.definition.command !== "all" || object.definition.force !== true) continue;
-    const creating = createKeys.has(key) && afterBy.get(key) === object;
-    const dropping = dropKeys.has(key) && beforeBy.get(key) === object;
-    if (creating || dropping) tables.add(object.identity.parent.name);
-  }
-  return tables;
-}
-
-function rlsStateOf(objects: readonly CatalogObject[], table: string): RlsState {
-  let enable = false;
-  let force = false;
-  let policies = 0;
-  for (const object of objects) {
-    if (object.kind !== "policy" || handsOff(object) || object.identity.parent.name !== table)
-      continue;
-    policies += 1;
-    if (object.definition.disabled !== true) enable = true;
-    if (object.definition.force) force = true;
-  }
-  if (policies > 0) return { enable, force };
-  for (const object of objects) {
-    if (
-      object.kind === "table" &&
-      object.identity.name === table &&
-      object.definition.rowSecurity
-    ) {
-      return object.definition.rowSecurity;
-    }
-  }
-  return { enable: false, force: false };
 }
 
 function recreateRoutineDependents(

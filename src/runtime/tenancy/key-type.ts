@@ -8,7 +8,7 @@
 import { OkmError } from "../../contracts/error.js";
 import type { ColumnBuilder, FlagTrue, PlainFlags } from "../../dialects/pg/column.js";
 import { bigint, integer } from "../../dialects/pg/integer.js";
-import { uuid } from "../../dialects/pg/keys.js";
+import { encodeUuid, uuid } from "../../dialects/pg/keys.js";
 import { definition } from "../../dialects/pg/misuse.js";
 import { text } from "../../dialects/pg/text.js";
 
@@ -107,5 +107,6 @@ export function tenantWire(type: TenantKeyType, value: unknown, message: string)
   if (typeof value !== "string" || (type === "uuid" && value.length === 0)) {
     throw new OkmError("OKM1701", message);
   }
+  if (type === "uuid") encodeUuid(value);
   return value;
 }
