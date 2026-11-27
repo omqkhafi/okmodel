@@ -83,6 +83,19 @@ export async function accessReport(
        order by c.relname, g.rolname, a.privilege_type`,
       [tableName, roleName],
     );
+    const typeGrants = await pool.execute(
+      `select g.rolname as role, a.privilege_type, t.typname, o.rolname as grantor
+       from pg_type t
+       join pg_namespace n on n.oid = t.typnamespace
+       cross join lateral aclexplode(t.typacl) a
+       join pg_roles g on g.oid = a.grantee
+       join pg_roles o on o.oid = a.grantor
+       where n.nspname = 'public'
+         and t.typtype in ('e', 'd', 'c', 'r')
+         and (($1 <> '' and t.typname = $1) or ($2 <> '' and g.rolname = $2))
+       order by t.typname, g.rolname, a.privilege_type`,
+      [tableName, roleName],
+    );
     const members =
       roleName.length > 0
         ? [roleName]
@@ -116,6 +129,12 @@ export async function accessReport(
             grantor: String(row[3] ?? ""),
           };
         }),
+        ...typeGrants.rows.map((row) => ({
+          role: String(row[0] ?? ""),
+          privilege: String(row[1] ?? ""),
+          object: `type ${String(row[2] ?? "")}`,
+          grantor: String(row[3] ?? ""),
+        })),
         ...routines.rows.map((row) => ({
           role: String(row[0] ?? ""),
           privilege: String(row[1] ?? ""),

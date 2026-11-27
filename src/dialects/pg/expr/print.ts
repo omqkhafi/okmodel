@@ -34,6 +34,8 @@ export function printNode(
       return `(${printNode(node.a, column, cond)} ${node.op} ${printNode(node.b, column, cond)})`;
     case "fn":
       return `${node.name}(${node.args.map((arg) => printNode(arg, column, cond)).join(", ")})`;
+    case "range":
+      return `${node.ctor}(${printNode(node.a, column, cond)}, ${printNode(node.b, column, cond)}, ${quoteLiteral(node.bounds)})`;
     case "concat":
       return `(${node.args.map((arg) => `coalesce(${printNode(arg, column, cond)}, '')`).join(" || ")})`;
     case "cast":

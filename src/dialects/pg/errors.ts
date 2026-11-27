@@ -539,7 +539,7 @@ function fieldKey(
 }
 
 function nameKeyOf(rest: string): string | undefined {
-  const tags = ["_fkey", "_check", "_key"] as const;
+  const tags = ["_fkey", "_excl", "_check", "_key"] as const;
   for (const tag of tags) {
     if (rest.endsWith(tag) && rest.length > tag.length) return rest.slice(0, -tag.length);
   }
@@ -629,6 +629,10 @@ function summaryOf(
   }
   if (kind === "driver") return stripRowValues(error.message);
   const where = place(error.table, columns);
+  if (kind === "exclusion") {
+    const name = error.constraint === undefined ? "" : ` ${error.constraint}`;
+    return `${label}${name} on ${where ?? "the row"} (${fieldReason})`;
+  }
   if (where === undefined) return label;
   if (fieldReason === kind) return `${label} on ${where}`;
   return `${label} on ${where} (${fieldReason})`;

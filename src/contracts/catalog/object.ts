@@ -22,6 +22,7 @@ import {
   type ConstraintDefinition,
   type ConstraintKind,
   type ConstraintObject,
+  type ExclusionElement,
   type DependencyEdge,
   type IndexDefinition,
   type IndexElement,
@@ -115,6 +116,9 @@ export type ConstraintInput = CommonInput & {
   readonly deferrable?: boolean;
   readonly initially?: "immediate" | "deferred";
   readonly nullsNotDistinct?: boolean;
+  readonly exclusion?: readonly ExclusionElement[];
+  readonly withoutOverlaps?: true;
+  readonly period?: true;
 };
 
 /** Input for {@link sequence}. */
@@ -329,6 +333,25 @@ export function constraint(input: ConstraintInput): ConstraintObject {
     if (input.expression === undefined || input.expression.length === 0) {
       catalogError("OKM1020", `Check on ${input.parent.name} needs an expression.`);
     }
+  } else if (input.constraintKind === "exclusion") {
+    if (input.exclusion === undefined || input.exclusion.length === 0) {
+      catalogError("OKM1020", `Exclusion on ${input.parent.name} needs an element.`);
+    }
+    for (const element of input.exclusion ?? []) {
+      if (
+        (element.column === undefined) === (element.expression === undefined) ||
+        (element.column !== undefined && element.expression !== undefined)
+      ) {
+        catalogError(
+          "OKM1020",
+          `Exclusion on ${input.parent.name} needs a column or an expression.`,
+        );
+      }
+      if (element.column !== undefined) assertIdentifier(element.column, "exclusion column");
+      if (element.expression !== undefined) {
+        assertStoredText(element.expression, "exclusion expression");
+      }
+    }
   } else if (columns.length === 0) {
     catalogError("OKM1020", `${input.constraintKind} on ${input.parent.name} needs a column.`);
   }
@@ -378,6 +401,11 @@ export function constraint(input: ConstraintInput): ConstraintObject {
     initially,
     nullsNotDistinct,
     ...(input.expression !== undefined ? { expression: input.expression } : {}),
+    ...(input.exclusion !== undefined
+      ? { exclusion: input.exclusion.map((element) => ({ ...element })) }
+      : {}),
+    ...(input.withoutOverlaps === true ? { withoutOverlaps: true as const } : {}),
+    ...(input.period === true ? { period: true as const } : {}),
     ...(references !== undefined
       ? {
           references: {

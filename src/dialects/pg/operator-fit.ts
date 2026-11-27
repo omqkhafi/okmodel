@@ -8,6 +8,7 @@
 
 import { OkmError } from "../../contracts/error.js";
 import { writeArray } from "./array-literal.js";
+import { rangeMark } from "./column-mark.js";
 
 /** Column family the operator table uses. */
 export type OperatorFamily = "text" | "array" | "json" | "jsonb" | "range" | "tsvector" | "scalar";
@@ -20,6 +21,10 @@ const FAMILIES: Readonly<Record<string, readonly OperatorFamily[]>> = {
   contains: ["text", "array", "jsonb", "range"],
   containedBy: ["array", "jsonb", "range"],
   overlaps: ["array", "range"],
+  adjacent: ["range"],
+  before: ["range"],
+  after: ["range"],
+  isEmpty: ["range"],
   hasKey: ["jsonb"],
   hasAnyKey: ["jsonb"],
   path: ["json", "jsonb"],
@@ -60,7 +65,21 @@ const ACCEPTED: Readonly<Record<OperatorFamily, readonly string[]>> = {
   ],
   jsonb: ["eq", "not", "contains", "containedBy", "hasKey", "hasAnyKey", "path", "json.set"],
   json: ["eq", "not", "path", "json.set"],
-  range: ["eq", "not", "lt", "lte", "gt", "gte", "contains", "containedBy", "overlaps"],
+  range: [
+    "eq",
+    "not",
+    "lt",
+    "lte",
+    "gt",
+    "gte",
+    "contains",
+    "containedBy",
+    "overlaps",
+    "adjacent",
+    "before",
+    "after",
+    "isEmpty",
+  ],
   tsvector: ["eq", "not", "matches", "relevance"],
   scalar: ["eq", "not", "lt", "lte", "gt", "gte", "between", "inList", "notIn", "inc"],
 };
@@ -76,8 +95,12 @@ const REGCONFIG = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$/;
  * @param dataType - Column `dataType`
  * @returns The operator family
  */
-export function columnFamily(dataType: string): OperatorFamily {
+export function columnFamily(
+  dataType: string,
+  encode?: (value: unknown) => string,
+): OperatorFamily {
   if (dataType.endsWith("[]")) return "array";
+  if (encode !== undefined && rangeMark(encode) !== undefined) return "range";
   if (dataType === "jsonb") return "jsonb";
   if (dataType === "json") return "json";
   if (dataType === "tsvector") return "tsvector";
@@ -104,13 +127,18 @@ export function columnFamily(dataType: string): OperatorFamily {
  * @param name - Operator name
  */
 export function assertOperatorFits(
-  column: { readonly field: string; readonly dataType: string },
+  column: {
+    readonly field: string;
+    readonly dataType: string;
+    readonly encode?: (value: unknown) => string;
+  },
   name: string,
 ): void {
   const families = FAMILIES[name];
   if (families === undefined) return;
-  if (families.includes(columnFamily(column.dataType))) return;
-  const accepted = ACCEPTED[columnFamily(column.dataType)];
+  const family = columnFamily(column.dataType, column.encode);
+  if (families.includes(family)) return;
+  const accepted = ACCEPTED[family];
   const search =
     (name === "matches" || name === "relevance") && columnFamily(column.dataType) === "text"
       ? " Search needs a column built for search, not a plain text column."

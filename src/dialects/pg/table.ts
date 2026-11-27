@@ -51,6 +51,8 @@ export type ColumnHandle = {
   readonly order?: "desc";
   readonly nulls?: "first" | "last";
   readonly opclass?: string;
+  /** SQL type. `range()` reads it. Indexes ignore it. */
+  readonly dataType?: string;
 };
 
 /**
@@ -62,7 +64,12 @@ export type ColumnHandle = {
  */
 export function columnHandle(
   name: string,
-  extra?: { readonly order?: "desc"; readonly nulls?: "first" | "last"; readonly opclass?: string },
+  extra?: {
+    readonly order?: "desc";
+    readonly nulls?: "first" | "last";
+    readonly opclass?: string;
+    readonly dataType?: string;
+  },
 ): ColumnHandle {
   return {
     name,
@@ -304,7 +311,12 @@ export type TableOptions<TColumns> = {
    * A single-column key can use this or `.primaryKey()` on the column.
    * One table has one primary key.
    */
-  readonly primaryKey?: readonly (keyof TColumns & string)[];
+  readonly primaryKey?:
+    | readonly (keyof TColumns & string)[]
+    | {
+        readonly columns: readonly (keyof TColumns & string)[];
+        readonly withoutOverlaps: true;
+      };
   readonly sqlName?: string;
   readonly renamedFrom?: string;
   readonly comment?: string;
@@ -387,6 +399,13 @@ export type TableOptions<TColumns> = {
    * Table and column names are strings, so the column type does not cycle.
    */
   readonly foreignKeys?: (columns: Handles<TColumns>) => Readonly<Record<string, ForeignKeySpec>>;
+  /**
+   * Exclusion constraints. The key is the name stem. The stored name is
+   * `{table}_{key}_excl`.
+   */
+  readonly exclusions?: (
+    columns: Handles<TColumns>,
+  ) => Readonly<Record<string, import("./exclusion.js").ExclusionSpec>>;
 };
 
 /**
@@ -547,6 +566,7 @@ const TABLE_KNOWN = new Set([
   "presets",
   "rls",
   "primaryKey",
+  "exclusions",
   "reference",
   "relations",
   "renamedFrom",

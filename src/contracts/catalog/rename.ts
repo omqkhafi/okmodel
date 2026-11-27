@@ -13,6 +13,13 @@ export type DeclaredRename =
       readonly to: string;
     }
   | {
+      readonly kind: "range";
+      readonly from: string;
+      readonly to: string;
+      readonly multirangeFrom: string;
+      readonly multirangeTo: string;
+    }
+  | {
       readonly kind: "attribute";
       /** Composite type name. */
       readonly type: string;

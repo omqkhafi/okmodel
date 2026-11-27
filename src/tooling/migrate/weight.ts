@@ -95,16 +95,36 @@ export function weightPhrase(
   weight: StepWeight,
   table: string,
   count: TableRows | undefined,
+  perMillion?: number,
 ): string {
+  const rate = perMillion ?? MS_PER_MILLION[weight];
   const lead = `${weight} step`;
   if (count === undefined) {
-    return `${lead}, ${String(MS_PER_MILLION[weight] / 1_000)} s per million rows (an estimate)`;
+    return `${lead}, ${String(rate / 1_000)} s per million rows (an estimate)`;
   }
   const size = count.least
     ? `${count.rows.toLocaleString("en-US")} or more rows`
     : aboutRows(count.rows).slice("about ".length);
-  const time = durationPhrase(estimateMs(weight, count.rows));
+  const time = durationPhrase(Math.round((count.rows / 1_000_000) * rate));
   return `${lead} on ${table}, ${size}: ${count.least ? "at least " : ""}${time} (an estimate, not a measurement)`;
+}
+
+/**
+ * The labelled rate for an exclusion build.
+ *
+ * The global blocking rate stays 45 s. An `EXCLUDE USING gist` step prints
+ * 44.7 s per million rows. There is no online path and no `NOT VALID` form.
+ *
+ * @param sql - Step text
+ * @param weight - Step weight
+ * @returns Milliseconds per million rows, or `undefined` to use the global rate
+ */
+export function exclusionPerMillion(
+  sql: string,
+  weight: StepWeight | undefined,
+): number | undefined {
+  if (weight === "blocking" && /exclude using gist/i.test(sql)) return 44_700;
+  return undefined;
 }
 
 /**
@@ -265,7 +285,7 @@ export async function refuseBlocking(
     }
     if (big.count.rows <= BLOCKING_ROWS) continue;
     lines.push(
-      `${item.migrationId} step ${String(item.index + 1)}: ${weightPhrase(item.weight, big.table, big.count)}.`,
+      `${item.migrationId} step ${String(item.index + 1)}: ${weightPhrase(item.weight, big.table, big.count, exclusionPerMillion(item.step.sql, item.weight))}.`,
     );
   }
   if (lines.length === 0) return;

@@ -406,6 +406,10 @@ Codes are in numeric order. Ranges are schema `OKM1000`, queries and capabilitie
 | <a id="okm2119" />[`OKM2119`](#okm2119) | `invalid` | A number that resets has a unique index that does not include the period. The next period can collide with a previous one. | `docs/errors/OKM2119.md` |
 | <a id="okm2120" />[`OKM2120`](#okm2120) | `invalid` | start changed on a sequence that already exists. The plan does not restart it. Existing values stay. | `docs/errors/OKM2120.md` |
 | <a id="okm2123" />[`OKM2123`](#okm2123) | `invalid` | A generated reference takes a year from timestamptz. That expression is not immutable, so a unique index on it is refused. | `docs/errors/OKM2123.md` |
+| <a id="okm2125" />[`OKM2125`](#okm2125) | `invalid` | A security definer procedure touches a tenant table. The owner bypasses row security, so the procedure sees every tenant. | `docs/errors/OKM2125.md` |
+| <a id="okm2126" />[`OKM2126`](#okm2126) | `invalid` | A routine commits or rolls back inside an EXCEPTION block. The handler runs after the error, and the commit is easy to miss. | `docs/errors/OKM2126.md` |
+| <a id="okm2127" />[`OKM2127`](#okm2127) | `invalid` | A routine raises a custom SQLSTATE that raises does not name, or it uses a standard SQLSTATE class. | `docs/errors/OKM2127.md` |
+| <a id="okm2128" />[`OKM2128`](#okm2128) | `invalid` | An exclusion builds a range from a start and an end, and no check says the start comes first. A reversed pair fails with 22000 when the row is written. | `docs/errors/OKM2128.md` |
 | <a id="okm2121" />[`OKM2121`](#okm2121) | `invalid` | A sequence or counter has min above max, a start outside that range, or a start outside the column type. | `docs/errors/OKM2121.md` |
 | <a id="okm2122" />[`OKM2122`](#okm2122) | `invalid` | A column still defaults to a sequence that is not in the catalog, or a counter's scope, reset, or type would change in place. | `docs/errors/OKM2122.md` |
 | <a id="okm2124" />[`OKM2124`](#okm2124) | `invalid` | PostgreSQL cannot change a sequence type in place. A smaller type is refused, and so is any other in-place change of as. | `docs/errors/OKM2124.md` |

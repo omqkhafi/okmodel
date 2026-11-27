@@ -11,6 +11,7 @@ import { catalog } from "../../contracts/catalog/build.js";
 import { foldSeries } from "./seq/engine.js";
 import { OkmError, catalogError } from "../../contracts/error.js";
 import { compositeType, isComposite } from "../../contracts/catalog/composite.js";
+import { rangeType } from "../../contracts/catalog/range.js";
 import { domainType, enumType } from "../../contracts/catalog/enum.js";
 import { identityKey, staticNamespace } from "../../contracts/catalog/identity.js";
 import { isReservedIdentifier, recoveredNameKey } from "../../contracts/catalog/identifier.js";
@@ -219,6 +220,7 @@ export async function introspectSchema(
     viewDeps,
     policies,
     comments,
+    ranges,
   ] = await Promise.all([
     runner.query(TABLES, params),
     runner.query(COLUMNS, params),
@@ -236,6 +238,7 @@ export async function introspectSchema(
     runner.query(VIEW_DEPENDENCIES, params),
     runner.query(POLICIES, params),
     runner.query(COMMENTS, params),
+    runner.query(RANGES, params),
   ]);
   const objects: CatalogObject[] = [];
   const parents = new Map<string, ObjectRef>();
@@ -324,6 +327,24 @@ export async function introspectSchema(
     compositeNames.add(name);
     objects.push(compositeType({ namespace, name, fields, provenance }));
   }
+  const rangeNames = new Set<string>();
+  for (const row of ranges) {
+    const name = text(row, "name");
+    rangeNames.add(name);
+    const diff = text(row, "subtype_diff");
+    const collation = text(row, "collation");
+    objects.push(
+      rangeType({
+        namespace,
+        name,
+        subtype: text(row, "subtype"),
+        multirange: text(row, "multirange"),
+        provenance,
+        ...(diff.length > 0 ? { subtypeDiff: diff } : {}),
+        ...(collation.length > 0 ? { collation } : {}),
+      }),
+    );
+  }
   const extensionHomes = new Map<string, string>();
   for (const row of extensions) extensionHomes.set(text(row, "name"), text(row, "schema"));
   for (const row of columns) {
@@ -347,7 +368,8 @@ export async function introspectSchema(
     if (
       enumLabels.has(scalarType) ||
       domainNames.has(scalarType) ||
-      compositeNames.has(scalarType)
+      compositeNames.has(scalarType) ||
+      rangeNames.has(scalarType)
     ) {
       extra.push({ kind: "type", namespace, name: scalarType });
     }
@@ -404,12 +426,22 @@ export async function introspectSchema(
     ) {
       continue;
     }
+    const exclusion = kind === "exclusion" ? readExclusion(definition) : undefined;
+    const withoutOverlaps = kind === "primaryKey" && /without overlaps/i.test(definition);
+    const period = kind === "foreignKey" && /\bperiod\b/i.test(definition);
     const made = constraint({
       parent,
       constraintKind: kind,
       name,
-      nameKey: constraintNameKey(kind, parentName, name, columns),
-      columns,
+      nameKey:
+        kind === "exclusion"
+          ? exclusionNameKey(parentName, name)
+          : constraintNameKey(kind, parentName, name, columns),
+      columns: kind === "exclusion" ? (exclusion?.columns ?? columns) : columns,
+      ...(exclusion !== undefined ? { exclusion: exclusion.elements } : {}),
+      ...(exclusion?.where !== undefined ? { expression: exclusion.where } : {}),
+      ...(withoutOverlaps ? { withoutOverlaps: true as const } : {}),
+      ...(period ? { period: true as const } : {}),
       provenance,
       deferrable: flag(row, "deferrable"),
       initially: flag(row, "deferred") ? "deferred" : "immediate",
@@ -948,14 +980,14 @@ const SCHEMA_GRANTS = `select r.rolname as role, a.privilege_type as privilege
     and a.grantee <> n.nspowner
     and a.privilege_type in ('USAGE', 'CREATE')`;
 
-/** `USAGE` on an enum, a domain, or a composite. Range types stay out. */
+/** `USAGE` on an enum, a domain, a composite, or a range. */
 const TYPE_GRANTS = `select t.typname as name, r.rolname as role, a.privilege_type as privilege
   from pg_type t
   join pg_namespace n on n.oid = t.typnamespace
   cross join lateral aclexplode(t.typacl) as a
   join pg_roles r on r.oid = a.grantee
   where n.nspname = $1
-    and t.typtype in ('e', 'd', 'c')
+    and t.typtype in ('e', 'd', 'c', 'r')
     and t.typacl is not null
     and a.grantee <> 0
     and a.grantee <> t.typowner`;
@@ -1427,6 +1459,9 @@ export type ReprintType = {
   readonly labels?: readonly string[];
   readonly base?: string;
   readonly fields?: readonly { readonly name: string; readonly dataType: string }[];
+  readonly subtype?: string;
+  readonly subtypeDiff?: string;
+  readonly multirange?: string;
 };
 
 /**
@@ -2200,6 +2235,7 @@ async function createStandIns(
       if (type.fields !== undefined) {
         for (const field of type.fields) visit(field.dataType);
       }
+      if (type.subtype !== undefined) visit(type.subtype);
       ordered.push(type);
     }
   };
@@ -2208,20 +2244,34 @@ async function createStandIns(
   try {
     for (const type of ordered) {
       const name = quoteIdent(type.name);
+      const range =
+        type.subtype === undefined
+          ? undefined
+          : `as range (subtype = ${standInType(type.subtype, types, extensions)}${
+              type.subtypeDiff === undefined ? "" : `, subtype_diff = ${type.subtypeDiff}`
+            }${type.multirange === undefined ? "" : `, multirange_type_name = ${quoteIdent(type.multirange)}`})`;
       const body =
-        type.fields !== undefined
-          ? `as (${type.fields
-              .map(
-                (field) =>
-                  `${quoteIdent(field.name)} ${standInType(field.dataType, types, extensions)}`,
-              )
-              .join(", ")})`
-          : type.labels !== undefined
-            ? `as enum (${type.labels.map((label) => quoteLiteral(label)).join(", ")})`
-            : `as ${standInType(type.base ?? "text", types, extensions)}`;
-      const kind = type.labels !== undefined || type.fields !== undefined ? "type" : "domain";
+        range !== undefined
+          ? range
+          : type.fields !== undefined
+            ? `as (${type.fields
+                .map(
+                  (field) =>
+                    `${quoteIdent(field.name)} ${standInType(field.dataType, types, extensions)}`,
+                )
+                .join(", ")})`
+            : type.labels !== undefined
+              ? `as enum (${type.labels.map((label) => quoteLiteral(label)).join(", ")})`
+              : `as ${standInType(type.base ?? "text", types, extensions)}`;
+      const kind =
+        type.labels !== undefined || type.fields !== undefined || type.subtype !== undefined
+          ? "type"
+          : "domain";
       await runner.query(`create ${kind} pg_temp.${name} ${body}`);
       created.unshift(`drop ${kind} pg_temp.${name}`);
+      if (type.multirange !== undefined) {
+        created.unshift(`drop type pg_temp.${quoteIdent(type.multirange)}`);
+      }
     }
   } catch (error) {
     await runDrops(runner, created);
@@ -2340,7 +2390,7 @@ const CONSTRAINTS = `
   left join pg_class ref on ref.oid = con.confrelid
   left join pg_namespace refn on refn.oid = ref.relnamespace
   where n.nspname = $1
-    and con.contype in ('p', 'u', 'f', 'c')
+    and con.contype in ('p', 'u', 'f', 'c', 'x')
     and not exists (select 1 from pg_inherits i where i.inhrelid = rel.oid)
 `;
 
@@ -2582,6 +2632,24 @@ const COMPOSITES = `
     and not a.attisdropped
     and ${member("t.oid", "pg_type")}
   order by t.typname, a.attnum
+`;
+
+const RANGES = `
+  select t.typname as name, st.typname as subtype,
+    coalesce(diff.proname, '') as subtype_diff,
+    case when coll.collname = 'default' then '' else coalesce(coll.collname, '') end as collation,
+    mr.typname as multirange
+  from pg_type t
+  join pg_namespace n on n.oid = t.typnamespace
+  join pg_range r on r.rngtypid = t.oid
+  join pg_type st on st.oid = r.rngsubtype
+  left join pg_proc diff on diff.oid = r.rngsubdiff
+  left join pg_collation coll on coll.oid = r.rngcollation and r.rngcollation <> 0
+  join pg_type mr on mr.oid = r.rngmultitypid
+  where n.nspname = $1
+    and t.typtype = 'r'
+    and ${member("t.oid", "pg_type")}
+  order by t.typname
 `;
 
 const ENUMS = `
@@ -2884,6 +2952,19 @@ function partitionMethod(value: string): "range" | "list" | "hash" | undefined {
   return undefined;
 }
 
+function exclusionNameKey(parent: string, name: string): string {
+  const prefix = `${parent}_`;
+  const suffix = "_excl";
+  if (
+    name.startsWith(prefix) &&
+    name.endsWith(suffix) &&
+    name.length > prefix.length + suffix.length
+  ) {
+    return name.slice(prefix.length, -suffix.length);
+  }
+  return name;
+}
+
 function constraintNameKey(
   kind: "primaryKey" | "unique" | "foreignKey" | "check",
   parent: string,
@@ -2900,10 +2981,111 @@ function readCheckExpression(row: Record<string, unknown>): string {
   return expression;
 }
 
-function constraintKind(value: string): "primaryKey" | "unique" | "foreignKey" | "check" {
+function readExclusion(definition: string): {
+  readonly elements: readonly {
+    readonly column?: string;
+    readonly expression?: string;
+    readonly operator: "eq" | "overlaps" | "adjacent";
+  }[];
+  readonly columns: readonly string[];
+  readonly where?: string;
+} {
+  const open = definition.toLowerCase().indexOf("exclude using gist (");
+  const start = open === -1 ? -1 : definition.indexOf("(", open);
+  if (start === -1) {
+    catalogError("OKM1020", `Exclusion ${definition} is not EXCLUDE USING gist.`);
+  }
+  let depth = 0;
+  let end = start;
+  for (let index = start; index < definition.length; index += 1) {
+    const char = definition[index];
+    if (char === "(") depth += 1;
+    if (char === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        end = index;
+        break;
+      }
+    }
+  }
+  const body = definition.slice(start + 1, end);
+  const elements: {
+    column?: string;
+    expression?: string;
+    operator: "eq" | "overlaps" | "adjacent";
+  }[] = [];
+  const columns: string[] = [];
+  for (const part of splitTop(body)) {
+    const withAt = part.toLowerCase().lastIndexOf(" with ");
+    if (withAt === -1) catalogError("OKM1020", `Exclusion element ${part} has no operator.`);
+    const target = part.slice(0, withAt).trim();
+    const operatorText = part.slice(withAt + " with ".length).trim();
+    const operator =
+      operatorText === "="
+        ? "eq"
+        : operatorText === "&&"
+          ? "overlaps"
+          : operatorText === "-|-"
+            ? "adjacent"
+            : undefined;
+    if (operator === undefined) {
+      catalogError("OKM1020", `Exclusion operator ${operatorText} must be =, &&, or -|-.`);
+    }
+    if (target.startsWith('"') && target.endsWith('"') && !target.slice(1, -1).includes("(")) {
+      const column = target.slice(1, -1).replaceAll('""', '"');
+      elements.push({ column, operator });
+      columns.push(column);
+    } else {
+      elements.push({ expression: target, operator });
+    }
+  }
+  const whereAt = definition.toLowerCase().indexOf(" where (", end);
+  const where = whereAt === -1 ? undefined : unwrap(definition.slice(whereAt + " where ".length));
+  return { elements, columns, ...(where !== undefined ? { where } : {}) };
+}
+
+function splitTop(body: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  let quoted = false;
+  for (let index = 0; index < body.length; index += 1) {
+    const char = body[index];
+    if (char === '"') quoted = !quoted;
+    if (quoted) continue;
+    if (char === "(") depth += 1;
+    if (char === ")") depth -= 1;
+    if (char === "," && depth === 0) {
+      parts.push(body.slice(start, index));
+      start = index + 1;
+    }
+  }
+  parts.push(body.slice(start));
+  return parts.map((part) => part.trim()).filter((part) => part.length > 0);
+}
+
+function unwrap(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("(")) return trimmed;
+  let depth = 0;
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const char = trimmed[index];
+    if (char === "(") depth += 1;
+    if (char === ")") {
+      depth -= 1;
+      if (depth === 0) return trimmed.slice(1, index);
+    }
+  }
+  return trimmed;
+}
+
+function constraintKind(
+  value: string,
+): "primaryKey" | "unique" | "foreignKey" | "check" | "exclusion" {
   if (value === "p") return "primaryKey";
   if (value === "u") return "unique";
   if (value === "f") return "foreignKey";
+  if (value === "x") return "exclusion";
   return "check";
 }
 

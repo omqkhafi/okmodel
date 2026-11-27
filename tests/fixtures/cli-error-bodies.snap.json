@@ -2329,6 +2329,28 @@
     ]
   },
   {
+    "code": "OKM2128",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "An exclusion builds a range from a start and an end, and no check says the start comes first. A reversed pair fails with 22000 when the row is written.",
+    "fix": "Add a check that the start is before the end, or store one range column.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Check start < end, or use one range column.",
+        "docs": "docs/errors/OKM2128.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2128.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2128.md#escape"
+      }
+    ]
+  },
+  {
     "code": "OKM2121",
     "kind": "invalid",
     "category": "input",

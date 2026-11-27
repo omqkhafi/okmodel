@@ -10,6 +10,7 @@ import { relative, dirname } from "node:path";
 
 import { caseName, type Casing } from "../../dialects/pg/casing.js";
 import { isComposite } from "../../contracts/catalog/composite.js";
+import { isRange } from "../../contracts/catalog/range.js";
 import { isGeneratedCompositeCheck } from "../../dialects/pg/composite.js";
 import { isDomain } from "../../contracts/catalog/enum.js";
 import { identityKey } from "../../contracts/catalog/identity.js";
@@ -187,6 +188,7 @@ export function emitPull(
   const enums = enumLabels(source);
   const domains = domainDefs(source);
   const composites = compositeDefs(source);
+  const ranges = rangeDefs(source);
   const byParent = groupByParent(source);
   const tables = source.objects
     .filter((object): object is TableObject => object.kind === "table")
@@ -211,7 +213,7 @@ export function emitPull(
     tableExports.set(table.identity.name, exportName);
   }
 
-  const pulledColumns = pulledColumnNames(tables, byParent, enums, domains, composites);
+  const pulledColumns = pulledColumnNames(tables, byParent, enums, domains, composites, ranges);
   for (const table of tables) {
     if (table.definition.partition !== undefined) {
       skipped.push(
@@ -234,6 +236,7 @@ export function emitPull(
       enums,
       domains,
       composites,
+      ranges,
       statements,
       skipped,
       exportName,
@@ -472,6 +475,7 @@ function planTable(
   enums: ReadonlyMap<string, readonly string[]>,
   domains: ReadonlyMap<string, { readonly base: string; readonly check: string }>,
   composites: ReturnType<typeof compositeDefs>,
+  ranges: ReturnType<typeof rangeDefs>,
   statements: readonly string[],
   skipped: PullSkip[],
   exportName: string,
@@ -532,6 +536,7 @@ function planTable(
       enums,
       domains,
       composites,
+      ranges,
       casing,
       label,
       renames,
@@ -572,7 +577,11 @@ function planTable(
       const list = primaryColumns
         .map((name) => JSON.stringify(fields.get(name) ?? name))
         .join(", ");
-      options.push(`    primaryKey: [${list}],`);
+      options.push(
+        primary.definition.withoutOverlaps === true
+          ? `    primaryKey: { columns: [${list}], withoutOverlaps: true },`
+          : `    primaryKey: [${list}],`,
+      );
     } else {
       skipped.push(
         skip(
@@ -588,6 +597,7 @@ function planTable(
 
   const uniques: string[] = [];
   const checks: string[] = [];
+  const exclusions: string[] = [];
   const namedForeign: string[] = [];
   const foreign: Map<string, string> = new Map();
   for (const constraint of [...bag.constraints].sort((left, right) =>
@@ -595,6 +605,32 @@ function planTable(
   )) {
     const kind = constraint.definition.constraintKind;
     if (kind === "primaryKey") continue;
+    if (kind === "exclusion") {
+      const elements = constraint.definition.exclusion ?? [];
+      const body = elements
+        .map((element) => {
+          const target =
+            element.expression !== undefined
+              ? JSON.stringify(element.expression)
+              : `columns.${fields.get(element.column ?? "") ?? element.column ?? ""}`;
+          return `[${target}, ${JSON.stringify(element.operator)}]`;
+        })
+        .join(", ");
+      const where =
+        constraint.definition.expression === undefined
+          ? ""
+          : `, where: ${JSON.stringify(constraint.definition.expression)}`;
+      const defer =
+        constraint.definition.deferrable && constraint.definition.initially === "deferred"
+          ? `, deferrable: "deferred"`
+          : "";
+      const comment =
+        constraint.comment === undefined ? "" : `, comment: ${JSON.stringify(constraint.comment)}`;
+      exclusions.push(
+        `      ${jsKey(constraint.definition.nameKey)}: { on: [${body}]${where}${defer}${comment} },`,
+      );
+      continue;
+    }
     const label = `${table.identity.name}.${constraint.identity.name}`;
     if (!constraint.definition.columns.every((name) => emitted.has(name))) {
       skipped.push(
@@ -722,6 +758,11 @@ function planTable(
     options.push("    unique: {");
     options.push(...uniques);
     options.push("    },");
+  }
+  if (exclusions.length > 0) {
+    options.push("    exclusions: (columns) => ({");
+    options.push(...exclusions);
+    options.push("    }),");
   }
   if (checks.length > 0) {
     options.push("    checks: {");
@@ -861,6 +902,7 @@ function pulledColumnNames(
   enums: ReadonlyMap<string, readonly string[]>,
   domains: ReadonlyMap<string, { readonly base: string; readonly check: string }>,
   composites: ReturnType<typeof compositeDefs>,
+  ranges: ReturnType<typeof rangeDefs>,
 ): ReadonlyMap<string, ReadonlySet<string>> {
   const pulled = new Map<string, ReadonlySet<string>>();
   for (const table of tables) {
@@ -883,6 +925,7 @@ function pulledColumnNames(
           enums,
           domains,
           composites,
+          ranges,
           undefined,
           "",
           [],
@@ -945,6 +988,7 @@ function columnSource(
       readonly comment?: string;
     }[]
   >,
+  ranges: ReturnType<typeof rangeDefs>,
   casing: Casing | undefined,
   label: string,
   renames: string[],
@@ -970,9 +1014,26 @@ function columnSource(
     if (column.comment !== undefined) call += `.comment(${JSON.stringify(column.comment)})`;
     return call;
   }
-  const scalar = column.definition.dataType.replace(/(?:\[\])+$/, "");
-  const labels = enums.get(column.definition.dataType);
-  const domain = domains.get(column.definition.dataType);
+  const dataType = column.definition.dataType;
+  const scalar = dataType.replace(/(?:\[\])+$/, "");
+  const labels = enums.get(dataType);
+  const domain = domains.get(dataType);
+  const range = ranges.get(scalar);
+  if (
+    range !== undefined &&
+    (dataType === range.name || dataType === range.multirange || dataType === `${range.name}[]`)
+  ) {
+    const diff =
+      range.subtypeDiff === undefined ? "" : `, subtypeDiff: ${JSON.stringify(range.subtypeDiff)}`;
+    const multi =
+      range.multirange === `${range.name}_multirange`
+        ? ""
+        : `, multirangeName: ${JSON.stringify(range.multirange)}`;
+    let call = `t.range(${JSON.stringify(range.name)}, { subtype: ${builderCall(range.subtype, 0) ?? "t.text()"}${diff}${multi} })`;
+    if (dataType === range.multirange) call += ".multi()";
+    if (dataType.endsWith("[]")) call += ".array()";
+    return call;
+  }
   const composite = composites.get(scalar);
   let call: string | undefined;
   if (composite !== undefined) {
@@ -1043,6 +1104,11 @@ function builderCall(scalar: string, dims: number): string | undefined {
     int4range: "t.int4range()",
     int8range: "t.int8range()",
     numrange: "t.numrange()",
+    tstzmultirange: "t.tstzmultirange()",
+    datemultirange: "t.datemultirange()",
+    int4multirange: "t.int4multirange()",
+    int8multirange: "t.int8multirange()",
+    nummultirange: "t.nummultirange()",
     interval: "t.interval()",
   };
   let call = simple[scalar];
@@ -1159,6 +1225,7 @@ function foreignKeyLine(constraint: ConstraintObject, fields: ReadonlyMap<string
       `deferrable: ${JSON.stringify(constraint.definition.initially === "deferred" ? "deferred" : "immediate")}`,
     );
   }
+  if (constraint.definition.period === true) options.push(`period: true`);
   if (constraint.comment !== undefined)
     options.push(`comment: ${JSON.stringify(constraint.comment)}`);
   const extra = options.length === 0 ? "" : `, ${options.join(", ")}`;
@@ -1583,6 +1650,43 @@ function groupByParent(source: Catalog): Map<string, ParentBag> {
     }
   }
   return map;
+}
+
+function rangeDefs(source: Catalog): Map<
+  string,
+  {
+    readonly name: string;
+    readonly subtype: string;
+    readonly subtypeDiff?: string;
+    readonly multirange: string;
+  }
+> {
+  const types = new Map<
+    string,
+    {
+      readonly name: string;
+      readonly subtype: string;
+      readonly subtypeDiff?: string;
+      readonly multirange: string;
+    }
+  >();
+  for (const object of source.objects) {
+    if (object.kind !== "type" || !isRange(object.definition)) continue;
+    const definition = object.definition;
+    types.set(object.identity.name, {
+      name: object.identity.name,
+      subtype: definition.subtype,
+      multirange: definition.multirange,
+      ...(definition.subtypeDiff !== undefined ? { subtypeDiff: definition.subtypeDiff } : {}),
+    });
+    types.set(definition.multirange, {
+      name: object.identity.name,
+      subtype: definition.subtype,
+      multirange: definition.multirange,
+      ...(definition.subtypeDiff !== undefined ? { subtypeDiff: definition.subtypeDiff } : {}),
+    });
+  }
+  return types;
 }
 
 function compositeDefs(source: Catalog): Map<

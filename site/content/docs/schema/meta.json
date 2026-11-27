@@ -28,6 +28,7 @@
     "policies",
     "enums-arrays-picklists",
     "composite-types",
+    "range-types",
     "codecs-and-row-types",
     "required-rows",
     "---Advanced---",

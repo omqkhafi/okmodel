@@ -555,6 +555,15 @@ function invertRenames(renames: readonly DeclaredRename[]): DeclaredRename[] {
     if (rename.kind === "attribute") {
       return { kind: "attribute", type: rename.type, from: rename.to, to: rename.from };
     }
+    if (rename.kind === "range") {
+      return {
+        kind: "range",
+        from: rename.to,
+        to: rename.from,
+        multirangeFrom: rename.multirangeTo,
+        multirangeTo: rename.multirangeFrom,
+      };
+    }
     return {
       kind: "column",
       table: tableTo.get(rename.table) ?? rename.table,

@@ -15,7 +15,19 @@ import { bigint, identity, integer, integerIdentity, smallint } from "./integer.
 import { json, jsonb } from "./json.js";
 import { id, uuid } from "./keys.js";
 import { cidr, inet, macaddr, macaddr8 } from "./network.js";
-import { daterange, int4range, int8range, numrange, tstzrange } from "./range.js";
+import {
+  datemultirange,
+  daterange,
+  int4multirange,
+  int4range,
+  int8multirange,
+  int8range,
+  nummultirange,
+  numrange,
+  tstzmultirange,
+  tstzrange,
+} from "./range.js";
+import { range } from "./range-type.js";
 import { ltree, tsvector } from "./search.js";
 import { char, citext, text, varchar } from "./text.js";
 import { date, interval, time, timestamp, timestamptz, timetz } from "./time.js";
@@ -53,6 +65,12 @@ export const t = {
   int4range,
   int8range,
   numrange,
+  tstzmultirange,
+  datemultirange,
+  int4multirange,
+  int8multirange,
+  nummultirange,
+  range,
   inet,
   cidr,
   macaddr,

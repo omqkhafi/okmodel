@@ -9,6 +9,7 @@
 
 import { isComposite } from "../../contracts/catalog/composite.js";
 import { isDomain } from "../../contracts/catalog/enum.js";
+import { isRange } from "../../contracts/catalog/range.js";
 import { fitIdentifier } from "../../contracts/catalog/identifier.js";
 import { OkmError } from "../../contracts/error.js";
 import type {
@@ -323,6 +324,32 @@ function lowerChange(change: LogicalChange): readonly DdlStep[] {
       ];
     case "swap-composite":
       return swapComposite(change);
+    case "swap-range":
+      return swapRange(change);
+    case "rename-type":
+      return change.from === change.multirangeFrom
+        ? [
+            ddlStep(
+              `alter type ${qualify(change.schema, change.from)} rename to ${quoteIdent(change.to)}`,
+              "rename-enum",
+              "ddl",
+              ACCESS,
+            ),
+          ]
+        : [
+            ddlStep(
+              `alter type ${qualify(change.schema, change.from)} rename to ${quoteIdent(change.to)}`,
+              "rename-enum",
+              "ddl",
+              ACCESS,
+            ),
+            ddlStep(
+              `alter type ${qualify(change.schema, change.multirangeFrom)} rename to ${quoteIdent(change.multirangeTo)}`,
+              "rename-enum",
+              "ddl",
+              ACCESS,
+            ),
+          ];
     case "fill-attribute":
       return [
         ddlStep(
@@ -429,7 +456,8 @@ function commentTarget(object: CatalogObject, schema: string): string | undefine
     case "constraint":
       if (
         object.definition.constraintKind !== "check" &&
-        object.definition.constraintKind !== "foreignKey"
+        object.definition.constraintKind !== "foreignKey" &&
+        object.definition.constraintKind !== "exclusion"
       ) {
         return undefined;
       }
@@ -473,7 +501,10 @@ function addColumn(column: ColumnObject, schema: string, tableIsNew: boolean): r
 function addConstraint(constraint: ConstraintObject, schema: string): readonly DdlStep[] {
   const sql = createObjectSql(constraint, schema);
   if (sql === undefined) return [];
-  return [ddlStep(sql, "add-constraint", "ddl", ACCESS)];
+  const step = ddlStep(sql, "add-constraint", "ddl", ACCESS);
+  if (constraint.definition.constraintKind === "exclusion")
+    return [{ ...step, weight: "blocking" }];
+  return [step];
 }
 
 function createIndex(
@@ -530,9 +561,11 @@ function createType(object: TypeObject, schema: string): readonly DdlStep[] {
   const composite = isComposite(object.definition);
   const kind = composite
     ? "create-composite"
-    : isDomain(object.definition)
-      ? "create-domain"
-      : "create-enum";
+    : isRange(object.definition)
+      ? "create-range"
+      : isDomain(object.definition)
+        ? "create-domain"
+        : "create-enum";
   const steps: DdlStep[] = [ddlStep(sql, kind, "ddl", ACCESS)];
   if (composite) {
     for (const field of object.definition.fields) {
@@ -652,6 +685,92 @@ function swapComposite(change: {
   return steps;
 }
 
+function swapRange(change: {
+  readonly schema: string;
+  readonly name: string;
+  readonly subtype: string;
+  readonly subtypeDiff?: string;
+  readonly collation?: string;
+  readonly multirange: string;
+  readonly columns: readonly {
+    readonly table: string;
+    readonly column: string;
+    readonly defaultExpression?: string;
+  }[];
+}): readonly DdlStep[] {
+  const fresh = `${change.name}_okm_new`;
+  const retired = `${change.name}_okm_old`;
+  const freshMulti = `${fresh}_multirange`;
+  const parts = [`subtype = ${change.subtype}`];
+  if (change.subtypeDiff !== undefined) parts.push(`subtype_diff = ${change.subtypeDiff}`);
+  if (change.collation !== undefined) parts.push(`collation = ${quoteIdent(change.collation)}`);
+  parts.push(`multirange_type_name = ${quoteIdent(freshMulti)}`);
+  const steps: DdlStep[] = [
+    ddlStep(
+      `create type ${qualify(change.schema, fresh)} as range (${parts.join(", ")})`,
+      "create-range",
+      "ddl",
+      ACCESS,
+    ),
+  ];
+  for (const column of change.columns) {
+    const table = qualify(change.schema, column.table);
+    const columnName = quoteIdent(column.column);
+    if (column.defaultExpression !== undefined) {
+      steps.push(
+        ddlStep(
+          `alter table ${table} alter column ${columnName} drop default`,
+          "drop-default",
+          "ddl",
+          ACCESS,
+        ),
+      );
+    }
+    steps.push({
+      ...ddlStep(
+        `alter table ${table} alter column ${columnName} type ${qualify(change.schema, fresh)} using ${columnName}::text::${qualify(change.schema, fresh)}`,
+        "set-composite-column",
+        "ddl",
+        ACCESS,
+      ),
+      weight: "rewrite",
+    });
+    if (column.defaultExpression !== undefined) {
+      steps.push(
+        ddlStep(
+          `alter table ${table} alter column ${columnName} set default ${column.defaultExpression}`,
+          "set-default",
+          "ddl",
+          ACCESS,
+        ),
+      );
+    }
+  }
+  steps.push(
+    ddlStep(`drop type ${qualify(change.schema, change.multirange)}`, "drop-enum", "ddl", ACCESS),
+    ddlStep(
+      `alter type ${qualify(change.schema, change.name)} rename to ${quoteIdent(retired)}`,
+      "rename-enum",
+      "ddl",
+      ACCESS,
+    ),
+    ddlStep(
+      `alter type ${qualify(change.schema, fresh)} rename to ${quoteIdent(change.name)}`,
+      "rename-enum",
+      "ddl",
+      ACCESS,
+    ),
+    ddlStep(
+      `alter type ${qualify(change.schema, freshMulti)} rename to ${quoteIdent(change.multirange)}`,
+      "rename-enum",
+      "ddl",
+      ACCESS,
+    ),
+    ddlStep(`drop type ${qualify(change.schema, retired)}`, "drop-enum", "ddl", ACCESS),
+  );
+  return steps;
+}
+
 function dropType(object: TypeObject, schema: string): readonly DdlStep[] {
   const sql = dropObjectSql(object, schema);
   if (sql === undefined) return [];
@@ -660,7 +779,19 @@ function dropType(object: TypeObject, schema: string): readonly DdlStep[] {
     : isDomain(object.definition)
       ? "drop-domain"
       : "drop-enum";
-  return [ddlStep(sql, kind, "ddl", ACCESS)];
+  const steps: DdlStep[] = [];
+  if (isRange(object.definition)) {
+    steps.push(
+      ddlStep(
+        `drop type ${qualify(schema, object.definition.multirange)}`,
+        "drop-enum",
+        "ddl",
+        ACCESS,
+      ),
+    );
+  }
+  steps.push(ddlStep(sql, kind, "ddl", ACCESS));
+  return steps;
 }
 
 function addEnumValues(

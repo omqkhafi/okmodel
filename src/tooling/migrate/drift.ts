@@ -20,6 +20,7 @@ import type { Catalog } from "../../contracts/catalog/types.js";
 import { identityKey } from "../../contracts/catalog/identity.js";
 import { quoteIdent } from "../../dialects/pg/ddl.js";
 import { isComposite } from "../../contracts/catalog/composite.js";
+import { isRange } from "../../contracts/catalog/range.js";
 import { isDomain } from "../../contracts/catalog/enum.js";
 import type { CatalogObject } from "../../contracts/catalog/types.js";
 import {
@@ -687,6 +688,17 @@ function reprintTypes(source: Catalog): readonly ReprintType[] {
   const types: ReprintType[] = [];
   for (const object of source.objects) {
     if (object.kind !== "type") continue;
+    if (isRange(object.definition)) {
+      types.push({
+        name: object.identity.name,
+        subtype: object.definition.subtype,
+        multirange: object.definition.multirange,
+        ...(object.definition.subtypeDiff !== undefined
+          ? { subtypeDiff: object.definition.subtypeDiff }
+          : {}),
+      });
+      continue;
+    }
     if (isComposite(object.definition)) {
       types.push({
         name: object.identity.name,

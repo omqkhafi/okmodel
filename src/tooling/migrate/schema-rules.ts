@@ -111,6 +111,7 @@ export function schemaAdvice(
     ...policyFindings(input.catalog, roles),
     ...procedureFindings(input.catalog, input.tenancy),
     ...seriesFindings(input.catalog),
+    ...exclusionBounds(input.catalog),
   ].sort(compareFound);
   const ignore = config.ignore ?? [];
   const used = new Set<WarningIgnore>();
@@ -176,6 +177,39 @@ export function formatAdvice(advice: readonly SchemaAdvice[]): string {
     (item) => `${item.level} ${item.code} ${item.target}: ${item.reason} -- fix: ${item.fix}`,
   );
   return `${lines.join("\n")}\n`;
+}
+
+function exclusionBounds(source: Catalog): Found[] {
+  const rule = warningRule("exclusion-bounds");
+  if (rule === undefined) return [];
+  const checks = new Map<string, string>();
+  for (const object of source.objects) {
+    if (object.kind !== "constraint" || object.definition.constraintKind !== "check") continue;
+    const table = object.identity.parent.name;
+    checks.set(table, `${checks.get(table) ?? ""}\n${object.definition.expression ?? ""}`);
+  }
+  const found: Found[] = [];
+  for (const object of source.objects) {
+    if (object.kind !== "constraint" || object.definition.constraintKind !== "exclusion") continue;
+    for (const element of object.definition.exclusion ?? []) {
+      const expression = element.expression;
+      if (expression === undefined) continue;
+      const match = /(?:tstz|ts|date|int4|int8|num)range\("([^"]+)", "([^"]+)"/.exec(expression);
+      const start = match?.[1];
+      const end = match?.[2];
+      if (start === undefined || end === undefined) continue;
+      const table = object.identity.parent.name;
+      const text = checks.get(table) ?? "";
+      if (text.includes(start) && text.includes(end) && text.includes("<")) continue;
+      found.push({
+        rule,
+        table,
+        target: `${table}.${object.definition.nameKey}`,
+        reason: `Exclusion ${object.identity.name} builds a range from ${start} and ${end} without a check that the start is before the end. A reversed pair fails with 22000.`,
+      });
+    }
+  }
+  return found;
 }
 
 function seriesFindings(catalog: Catalog): Found[] {

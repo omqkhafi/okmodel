@@ -507,6 +507,20 @@ export const WARNING_RULES: readonly WarningRule[] = [
     ],
     escapeHatches: [hatch("OKM2127")],
   },
+  {
+    code: "OKM2128",
+    rule: "exclusion-bounds",
+    title: "Range bounds need an order check",
+    summary:
+      "An exclusion builds a range from a start and an end, and no check says the start comes first. A reversed pair fails with 22000 when the row is written.",
+    fix: "Add a check that the start is before the end, or store one range column.",
+    defaultLevel: "warn",
+    severity: "medium",
+    phase: "check",
+    evidence: "static",
+    safeAlternatives: [alt("OKM2128", "Check start < end, or use one range column.")],
+    escapeHatches: [hatch("OKM2128")],
+  },
 ];
 
 /**

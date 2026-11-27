@@ -121,10 +121,36 @@ export function decodeInstant(wire: string): Temporal.Instant {
   try {
     // Temporal is a runtime global. TypeScript 7 has no Temporal lib, and the shipped declaration stays empty so it can merge.
     // @ts-ignore TS2708
-    return Temporal.Instant.from(wire);
+    return Temporal.Instant.from(normalizeInstant(wire));
   } catch {
     rejected(`timestamptz ${wire} must be an ISO-8601 instant, for example 2020-01-01T00:00:00Z.`);
   }
+}
+
+/**
+ * Turns a Postgres instant into text `Temporal.Instant.from` accepts.
+ *
+ * Postgres prints a space and an hour offset (`2020-01-01 00:00:00+03`).
+ * `+03` is not an ISO offset. The minutes are added and the space becomes `T`.
+ *
+ * @param wire - Driver text
+ * @returns ISO-8601 text
+ */
+function normalizeInstant(wire: string): string {
+  let text = wire;
+  const space = text.indexOf(" ");
+  if (space > 0 && !text.includes("T")) {
+    text = `${text.slice(0, space)}T${text.slice(space + 1)}`;
+  }
+  const match = /([+-])(\d{2})(?::(\d{2}))?(?::(\d{2}))?$/.exec(text);
+  if (match === null) return text;
+  const minutes = match[3] ?? "00";
+  const seconds = match[4];
+  const zone =
+    seconds === undefined
+      ? `${match[1] ?? "+"}${match[2] ?? "00"}:${minutes}`
+      : `${match[1] ?? "+"}${match[2] ?? "00"}:${minutes}:${seconds}`;
+  return text.slice(0, match.index) + zone;
 }
 
 /**

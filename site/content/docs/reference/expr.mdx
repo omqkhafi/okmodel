@@ -17,6 +17,8 @@ const stamp = now();
 
 `col<T, N>(name)` names a column. `T` is its TypeScript type and `N` is `true` when it can be null. Anything else a helper takes is another expression, or a string, a finite number, a bigint, a boolean, or `null`.
 
+`lower` and `upper` also accept a range. `range`, `isEmpty`, and `rangeAgg` build and fold ranges. They are on [Range types](/docs/schema/range-types).
+
 ## The helpers
 
 Each row was run against a real Postgres: the SQL is what is printed, the type is what `pg_typeof` returns, and volatility is what a generated column accepts (immutable) or refuses (stable).

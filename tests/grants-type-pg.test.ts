@@ -1,7 +1,7 @@
 /**
  * `grants.type` on a real server: enum, domain, composite, and schema.
  *
- * Range types are a later change. `NEON_*` and `SUPABASE_*` are unset.
+ * `proof:grants.range` is the range type. `NEON_*` and `SUPABASE_*` are unset.
  */
 
 import { expect } from "bun:test";
@@ -83,6 +83,58 @@ postgresTest(gate, "proof:grants.type", async () => {
     const revoked = await acls(sql, app);
     expect(revoked.types).toEqual([]);
     expect(revoked.schema).toEqual([]);
+  } finally {
+    await sql.end({ timeout: 5 });
+    await database.close();
+    await dropRole(app);
+    await dropRole(mig);
+  }
+});
+
+postgresTest(gate, "proof:grants.range", async () => {
+  const mig = roleName("mig");
+  const app = roleName("app");
+  const database = await createIsolatedDatabase();
+  const sql = openPostgres(database.url);
+  try {
+    await sql.unsafe(`create role ${quoteIdent(mig)} nologin`);
+    await sql.unsafe(`create role ${quoteIdent(app)} nologin`);
+    const source = schema({
+      tables: [
+        table("marks", {
+          id: t.integer().primaryKey(),
+          during: t.range("span", { subtype: t.integer(), grants: { app: "read" } }),
+        }),
+      ],
+    }).catalog;
+    const declared = attachRoles(source, {
+      migration: { name: mig },
+      app: { name: app },
+    });
+    await applyTarget({
+      url: database.url,
+      target: "default",
+      protected: false,
+      migrations: [
+        {
+          id: "0001_range",
+          catalogHash: "range",
+          steps: planMigration({ before: catalog([]), after: declared, name: "range" }).steps,
+        },
+      ],
+    });
+    const granted = await sql<{ name: string }[]>`
+      select t.typname as name
+      from pg_type t
+      join pg_namespace n on n.oid = t.typnamespace
+      cross join lateral aclexplode(t.typacl) as a
+      join pg_roles r on r.oid = a.grantee
+      where n.nspname = 'public'
+        and r.rolname = ${app}
+        and a.privilege_type = 'USAGE'
+        and t.typname = 'span'
+    `;
+    expect(granted.map((row) => row.name)).toEqual(["span"]);
   } finally {
     await sql.end({ timeout: 5 });
     await database.close();

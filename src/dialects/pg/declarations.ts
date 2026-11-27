@@ -7,6 +7,7 @@
 
 import type { DeclaredRename } from "../../contracts/catalog/rename.js";
 import { ColumnBuilder, compositeMark } from "./column.js";
+import { rangeMark } from "./column-mark.js";
 import { type Casing, namesFor } from "./casing.js";
 import type { AnyTable } from "./table.js";
 
@@ -32,6 +33,7 @@ export function schemaDeclarations(source: {
   const names = namesFor(source.casing);
   const renames: DeclaredRename[] = [];
   const seenAttributes = new Set<string>();
+  const seenRanges = new Set<string>();
   for (const item of source.tables) {
     const tableName = names.table(item);
     const renamed = tableRenamedFrom(item);
@@ -48,6 +50,17 @@ export function schemaDeclarations(source: {
           table: tableName,
           from: state.renamedFrom,
           to: columnName,
+        });
+      }
+      const ranged = rangeMark(state.encode);
+      if (ranged?.renamedFrom !== undefined && !seenRanges.has(ranged.type)) {
+        seenRanges.add(ranged.type);
+        renames.push({
+          kind: "range",
+          from: ranged.renamedFrom,
+          to: ranged.type,
+          multirangeFrom: `${ranged.renamedFrom}_multirange`,
+          multirangeTo: ranged.multirange,
         });
       }
       const mark = compositeMark(state.encode);

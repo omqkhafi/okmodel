@@ -14,7 +14,7 @@ import {
   operatorValue,
   type OperatorName,
 } from "../dialects/pg/operators.js";
-import { compositeMark } from "../dialects/pg/column-mark.js";
+import { compositeMark, rangeMark } from "../dialects/pg/column-mark.js";
 import {
   type ColumnModel,
   type QuerySchema,
@@ -642,6 +642,32 @@ const TEXT_OPERATORS = ",startsWith,endsWith,contains,like,ilike,";
  * @param key - The field, when `value` is that field's operand
  * @returns `true` when the operator compiler has to load
  */
+const RANGE_PLAIN = new Set([
+  "contains",
+  "containedBy",
+  "overlaps",
+  "adjacent",
+  "before",
+  "after",
+  "isEmpty",
+]);
+
+function plainRangeOperator(
+  value: unknown,
+): { readonly name: OperatorName; readonly value: unknown } | undefined {
+  if (!isRecord(value) || isOperator(value) || Array.isArray(value)) return undefined;
+  const keys = Object.keys(value);
+  if (keys.length !== 1) return undefined;
+  const name = keys[0];
+  if (name === undefined || !RANGE_PLAIN.has(name)) return undefined;
+  return { name: name as OperatorName, value: value[name] };
+}
+
+function rangeColumn(column: ColumnModel | undefined): boolean {
+  if (column === undefined) return false;
+  return rangeMark(column.encode) !== undefined || column.dataType.endsWith("range");
+}
+
 export function needsOperatorSql(table: Indexed, value: unknown, key?: string): boolean {
   return (whereMarks(table, value, key) & 1) !== 0;
 }
@@ -651,7 +677,8 @@ export function needsOperatorSql(table: Indexed, value: unknown, key?: string): 
  *
  * `or`, `and`, and `not` are walked. `has`, `none`, and `every` set bit 1 and
  * are not walked, the same as the operator check before the walks were folded.
- * The walk stops once both bits are set.
+ * The walk stops once both bits are set. A one-key range operator on a range
+ * column sets bit 1.
  *
  * @param table - The table the filter reads
  * @param value - A `where` value
@@ -659,6 +686,10 @@ export function needsOperatorSql(table: Indexed, value: unknown, key?: string): 
  * @returns Bit 1, bit 4, both, or 0
  */
 function whereMarks(table: Indexed, value: unknown, key?: string): number {
+  const plain = plainRangeOperator(value);
+  if (plain !== undefined && key !== undefined && rangeColumn(table.columns.get(key))) {
+    return key.includes(".") ? 5 : 1;
+  }
   if (isOperator(value)) {
     const name = operatorName(value);
     if (name === "or" || name === "and") {
@@ -1204,6 +1235,11 @@ export function emitOperand(
     );
     return;
   }
+  const plain = plainRangeOperator(value);
+  if (plain !== undefined && rangeColumn(column)) {
+    emitOperator(schema, table, column, ref, plain.name, plain.value, sink, alias, depth);
+    return;
+  }
   const mark = compositeMark(column.encode);
   if (value === null) {
     sink.mark(":null");
@@ -1687,7 +1723,7 @@ export function projectExpr(
   encode?: (value: unknown) => string,
 ): string {
   if (encode !== undefined) {
-    const read = compositeMark(encode)?.read;
+    const read = compositeMark(encode)?.read ?? rangeMark(encode)?.read;
     if (read !== undefined) return read(sql);
   }
   if (dataType === "timestamptz" || dataType === "timestamp") return jsonExpr(sql, dataType);

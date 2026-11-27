@@ -6,7 +6,9 @@
  * They are not "used" by a schema unless the catalog shows them.
  */
 
+import { isComposite } from "../../contracts/catalog/composite.js";
 import { isDomain } from "../../contracts/catalog/enum.js";
+import { isRange } from "../../contracts/catalog/range.js";
 import { isGeneratedPolicy } from "../../contracts/catalog/policy.js";
 import type { Catalog, CatalogObject, Namespace } from "../../contracts/catalog/types.js";
 
@@ -29,6 +31,7 @@ export function featuresUsed(catalog: Catalog): readonly string[] {
   const used = new Set<string>();
   for (const object of catalog.objects) note(used, object);
   noteStandaloneSequences(used, catalog);
+  noteRanges(used, catalog);
   return [...used].sort();
 }
 
@@ -39,6 +42,8 @@ function note(used: Set<string>, object: CatalogObject): void {
   }
   if (object.kind === "type") {
     if (isDomain(object.definition)) used.add("type.domain");
+    else if (isComposite(object.definition)) used.add("type.composite");
+    else if (isRange(object.definition)) used.add("type.range");
     else used.add("type.enum");
     if (moved(object.identity.namespace)) used.add("namespace");
   }
@@ -78,6 +83,15 @@ function note(used: Set<string>, object: CatalogObject): void {
       used.add("column.generatedExpression");
       if (definition.generated.stored === false) used.add("column.generatedVirtual");
     }
+  }
+  if (object.kind === "constraint" && object.definition.constraintKind === "exclusion") {
+    used.add("constraint.exclusion");
+  }
+  if (
+    object.kind === "constraint" &&
+    (object.definition.withoutOverlaps === true || object.definition.period === true)
+  ) {
+    used.add("temporal.keys");
   }
   if (object.kind === "constraint" && object.definition.constraintKind === "foreignKey") {
     if (object.definition.columns.length > 1) used.add("foreignKey.composite");
@@ -163,6 +177,26 @@ function note(used: Set<string>, object: CatalogObject): void {
     moved(object.identity.namespace)
   ) {
     used.add("namespace");
+  }
+}
+
+function noteRanges(used: Set<string>, catalog: Catalog): void {
+  const names = new Set<string>();
+  for (const object of catalog.objects) {
+    if (object.kind === "type" && isRange(object.definition)) names.add(object.identity.name);
+  }
+  if (names.size === 0) return;
+  for (const object of catalog.objects) {
+    if (
+      object.kind === "grant" &&
+      object.identity.object.kind === "type" &&
+      names.has(object.identity.object.name)
+    ) {
+      used.add("grants.range");
+    }
+    if (object.kind === "type" && object.comment !== undefined && names.has(object.identity.name)) {
+      used.add("comment.range");
+    }
   }
 }
 

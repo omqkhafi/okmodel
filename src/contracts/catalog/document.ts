@@ -25,6 +25,7 @@ import {
 import { catalog } from "./build.js";
 import { compositeType, isComposite } from "./composite.js";
 import { domainType, enumType, isDomain } from "./enum.js";
+import { isRange, rangeType } from "./range.js";
 import { extensionObject } from "./extension.js";
 import { defaultPrivilegeObject, grantObject, roleObject } from "./privilege.js";
 import { functionObject, retargetFunction, triggerObject } from "./routine.js";
@@ -970,6 +971,24 @@ function rewriteType(
       ...(object.comment !== undefined ? { comment: object.comment } : {}),
     });
   }
+  if (isRange(object.definition)) {
+    return rangeType({
+      namespace: object.identity.namespace,
+      name: object.identity.name,
+      subtype: object.definition.subtype,
+      multirange: object.definition.multirange,
+      owner: object.owner,
+      provenance: object.provenance,
+      dependencies,
+      ...(object.definition.subtypeDiff !== undefined
+        ? { subtypeDiff: object.definition.subtypeDiff }
+        : {}),
+      ...(object.definition.collation !== undefined
+        ? { collation: object.definition.collation }
+        : {}),
+      ...(object.comment !== undefined ? { comment: object.comment } : {}),
+    });
+  }
   return enumType({
     namespace: object.identity.namespace,
     name: object.identity.name,
@@ -1159,6 +1178,9 @@ function definitionToJson(object: CatalogObject): Json {
         nullsNotDistinct: definition.nullsNotDistinct,
         ...(definition.enforced === false ? { enforced: false } : {}),
         ...(definition.expression !== undefined ? { expression: definition.expression } : {}),
+        ...(definition.exclusion !== undefined ? { exclusion: definition.exclusion } : {}),
+        ...(definition.withoutOverlaps === true ? { withoutOverlaps: true } : {}),
+        ...(definition.period === true ? { period: true } : {}),
         ...(references !== undefined
           ? {
               references: {
@@ -1202,6 +1224,18 @@ function definitionToJson(object: CatalogObject): Json {
             nullable: field.nullable,
             ...(field.comment !== undefined ? { comment: field.comment } : {}),
           })),
+        };
+      }
+      if (isRange(object.definition)) {
+        return {
+          subtype: object.definition.subtype,
+          multirange: object.definition.multirange,
+          ...(object.definition.subtypeDiff !== undefined
+            ? { subtypeDiff: object.definition.subtypeDiff }
+            : {}),
+          ...(object.definition.collation !== undefined
+            ? { collation: object.definition.collation }
+            : {}),
         };
       }
       return { labels: object.definition.labels };
@@ -1576,12 +1610,15 @@ function parseConstraint(
       "columns",
       "constraintKind",
       "deferrable",
+      "exclusion",
       "expression",
       "initially",
       "enforced",
       "nameKey",
       "nullsNotDistinct",
+      "period",
       "references",
+      "withoutOverlaps",
     ],
     "constraint definition",
   );
@@ -1590,11 +1627,12 @@ function parseConstraint(
     constraintKind !== "primaryKey" &&
     constraintKind !== "unique" &&
     constraintKind !== "foreignKey" &&
-    constraintKind !== "check"
+    constraintKind !== "check" &&
+    constraintKind !== "exclusion"
   ) {
     catalogError(
       "OKM1020",
-      `Constraint kind ${constraintKind} must be primaryKey, unique, foreignKey, or check.`,
+      `Constraint kind ${constraintKind} must be primaryKey, unique, foreignKey, check, or exclusion.`,
     );
   }
   const initially = requireString(definition.initially, "initially");
@@ -1617,9 +1655,44 @@ function parseConstraint(
     ...(definition.expression === undefined
       ? {}
       : { expression: requireString(definition.expression, "expression") }),
+    ...(definition.exclusion === undefined
+      ? {}
+      : { exclusion: parseExclusion(definition.exclusion) }),
+    ...(definition.withoutOverlaps === true ? { withoutOverlaps: true as const } : {}),
+    ...(definition.period === true ? { period: true as const } : {}),
     ...(references === undefined ? {} : { references: parseReferences(references) }),
   });
   return markEnforced(parsed, readEnforced(definition.enforced)?.enforced);
+}
+
+function parseExclusion(value: unknown): readonly {
+  readonly column?: string;
+  readonly expression?: string;
+  readonly operator: "eq" | "overlaps" | "adjacent";
+}[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    catalogError("OKM1020", "Exclusion elements must be a non-empty list.");
+  }
+  return value.map((element) => {
+    if (element === null || typeof element !== "object" || Array.isArray(element)) {
+      catalogError("OKM1020", "Exclusion element must be an object.");
+    }
+    const record = element as Record<string, unknown>;
+    rejectUnknown(record, ["column", "expression", "operator"], "exclusion element");
+    const operator = requireString(record.operator, "exclusion operator");
+    if (operator !== "eq" && operator !== "overlaps" && operator !== "adjacent") {
+      catalogError("OKM1020", `Exclusion operator ${operator} must be eq, overlaps, or adjacent.`);
+    }
+    return {
+      operator,
+      ...(record.column === undefined
+        ? {}
+        : { column: requireString(record.column, "exclusion column") }),
+      ...(record.expression === undefined
+        ? {}
+        : { expression: requireString(record.expression, "exclusion expression") }),
+    };
+  });
 }
 
 function readEnforced(value: unknown): { readonly enforced: false } | undefined {
@@ -1713,6 +1786,28 @@ function parseType(
       owner,
       provenance,
       dependencies,
+    });
+  }
+  if ("subtype" in definition || "multirange" in definition) {
+    rejectUnknown(
+      definition,
+      ["collation", "multirange", "subtype", "subtypeDiff"],
+      "type definition",
+    );
+    return rangeType({
+      namespace: identity.namespace,
+      name: identity.name,
+      subtype: requireString(definition.subtype, "range subtype"),
+      multirange: requireString(definition.multirange, "range multirange"),
+      owner,
+      provenance,
+      dependencies,
+      ...(definition.subtypeDiff === undefined
+        ? {}
+        : { subtypeDiff: requireString(definition.subtypeDiff, "range subtype diff") }),
+      ...(definition.collation === undefined
+        ? {}
+        : { collation: requireString(definition.collation, "range collation") }),
     });
   }
   rejectUnknown(definition, ["labels"], "type definition");

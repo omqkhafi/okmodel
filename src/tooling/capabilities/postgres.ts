@@ -10,7 +10,11 @@
  * `query.setOps`.
  */
 
-import { NOT_ENFORCED_POSTGRES, UUIDV7_POSTGRES } from "../../dialects/pg/floor.js";
+import {
+  NOT_ENFORCED_POSTGRES,
+  TEMPORAL_POSTGRES,
+  UUIDV7_POSTGRES,
+} from "../../dialects/pg/floor.js";
 import type { FeatureEntry, Registry } from "./types.js";
 
 const native = (proof: string, extra?: Omit<FeatureEntry, "support" | "proof">): FeatureEntry => ({
@@ -40,6 +44,11 @@ export const POSTGRES_FEATURES = {
   "type.jsonb": native("proof:type.jsonb"),
   "type.array": native("proof:type.array"),
   "type.range": native("proof:type.range"),
+  "comment.range": native("proof:comment.range"),
+  "grants.range": native("proof:grants.range"),
+  "constraint.exclusion": native("proof:constraint.exclusion"),
+  "range.operators": native("proof:range.operators"),
+  "temporal.keys": native("proof:temporal.keys", { since: String(TEMPORAL_POSTGRES) }),
   "type.enum": native("proof:type.enum"),
   "type.domain": native("proof:type.domain"),
   "type.composite": native("proof:type.composite"),

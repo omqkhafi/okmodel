@@ -358,7 +358,22 @@ export type IndexDefinition = {
 };
 
 /** Constraint family. */
-export type ConstraintKind = "primaryKey" | "unique" | "foreignKey" | "check";
+export type ConstraintKind = "primaryKey" | "unique" | "foreignKey" | "check" | "exclusion";
+
+/** Operator on one exclusion element. */
+export type ExclusionOperator = "eq" | "overlaps" | "adjacent";
+
+/**
+ * One element of an exclusion constraint.
+ *
+ * `column` is a table column. `expression` is a range constructor. One of
+ * the two is set.
+ */
+export type ExclusionElement = {
+  readonly column?: string;
+  readonly expression?: string;
+  readonly operator: ExclusionOperator;
+};
 
 /**
  * What Postgres does when a referenced row changes.
@@ -406,6 +421,12 @@ export type ConstraintDefinition = {
    */
   readonly enforced?: boolean;
   readonly expression?: string;
+  /** Exclusion elements. Absent on every other constraint kind. */
+  readonly exclusion?: readonly ExclusionElement[];
+  /** PostgreSQL 18 `WITHOUT OVERLAPS` on the last primary-key column. */
+  readonly withoutOverlaps?: true;
+  /** PostgreSQL 18 `PERIOD` on the last foreign-key column of each side. */
+  readonly period?: true;
   readonly references?: {
     readonly parent: ObjectRef;
     readonly columns: readonly string[];
@@ -466,8 +487,25 @@ export type CompositeDefinition = {
   readonly fields: readonly CompositeFieldDefinition[];
 };
 
-/** A catalog type: an enum, a domain, or a composite. */
-export type TypeDefinition = EnumDefinition | DomainDefinition | CompositeDefinition;
+/**
+ * Range definition.
+ *
+ * `subtype` is the bound type. `multirange` is the multirange created with
+ * the range. There is no canonical function.
+ */
+export type RangeDefinition = {
+  readonly subtype: string;
+  readonly subtypeDiff?: string;
+  readonly collation?: string;
+  readonly multirange: string;
+};
+
+/** A catalog type: an enum, a domain, a composite, or a range. */
+export type TypeDefinition =
+  | EnumDefinition
+  | DomainDefinition
+  | CompositeDefinition
+  | RangeDefinition;
 
 /** How a counter series starts again. A string is one calendar unit. */
 export type SeriesReset =
