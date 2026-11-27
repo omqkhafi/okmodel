@@ -635,6 +635,14 @@
       "kind": "stable"
     },
     {
+      "name": "SessionHandles",
+      "kind": "stable"
+    },
+    {
+      "name": "SessionOptions",
+      "kind": "stable"
+    },
+    {
       "name": "SessionValues",
       "kind": "stable"
     },
@@ -939,19 +947,11 @@
       "kind": "stable"
     },
     {
-      "name": "MaterializedViewIndexInput",
-      "kind": "stable"
-    },
-    {
       "name": "MaterializedViewOptions",
       "kind": "stable"
     },
     {
-      "name": "ViewBuilt",
-      "kind": "stable"
-    },
-    {
-      "name": "ViewColumnInput",
+      "name": "ViewColumnPhantom",
       "kind": "stable"
     },
     {
@@ -959,11 +959,11 @@
       "kind": "stable"
     },
     {
-      "name": "ViewFrom",
+      "name": "ViewOptions",
       "kind": "stable"
     },
     {
-      "name": "ViewOptions",
+      "name": "ViewQuery",
       "kind": "stable"
     },
     {
@@ -986,6 +986,10 @@
     },
     {
       "name": "DateText",
+      "kind": "stable"
+    },
+    {
+      "name": "EXPR_AS",
       "kind": "stable"
     },
     {
@@ -1037,6 +1041,10 @@
       "kind": "stable"
     },
     {
+      "name": "call",
+      "kind": "stable"
+    },
+    {
       "name": "caseWhen",
       "kind": "stable"
     },
@@ -1057,11 +1065,23 @@
       "kind": "stable"
     },
     {
+      "name": "currentUser",
+      "kind": "stable"
+    },
+    {
       "name": "div",
       "kind": "stable"
     },
     {
       "name": "extract",
+      "kind": "stable"
+    },
+    {
+      "name": "field",
+      "kind": "stable"
+    },
+    {
+      "name": "includes",
       "kind": "stable"
     },
     {
@@ -1109,7 +1129,15 @@
       "kind": "stable"
     },
     {
+      "name": "setweight",
+      "kind": "stable"
+    },
+    {
       "name": "sub",
+      "kind": "stable"
+    },
+    {
+      "name": "toTsvector",
       "kind": "stable"
     },
     {
@@ -1270,6 +1298,14 @@
     },
     {
       "name": "ColumnUpdateOf",
+      "kind": "stable"
+    },
+    {
+      "name": "CompositeOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "CompositeRow",
       "kind": "stable"
     },
     {
@@ -1453,6 +1489,10 @@
       "kind": "stable"
     },
     {
+      "name": "and",
+      "kind": "stable"
+    },
+    {
       "name": "arr",
       "kind": "stable"
     },
@@ -1486,6 +1526,10 @@
     },
     {
       "name": "citext",
+      "kind": "stable"
+    },
+    {
+      "name": "composite",
       "kind": "stable"
     },
     {
