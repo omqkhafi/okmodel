@@ -264,7 +264,7 @@ function writeSchema(
   const imports = [
     ...(routines === undefined
       ? []
-      : [`import { fn, trigger } from ${source("src/dialects/pg/fn/index.ts")};`]),
+      : [`import { fn, trigger, triggerType } from ${source("src/dialects/pg/fn/index.ts")};`]),
     `import { schema, t, table } from ${source("src/dialects/pg/index.ts")};`,
   ];
   writeFileSync(

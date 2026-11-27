@@ -43,6 +43,7 @@ const STATE_CHANGING = [
   "migrate baseline",
   "push",
   "seed",
+  "call",
   "driver test",
   "protect add",
   "protect remove",

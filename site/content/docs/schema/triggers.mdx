@@ -13,7 +13,7 @@ description: "Triggers. Identity is the table plus the name."
 One before-update row trigger. `calls` is a function in this schema.
 
 ```ts title="call.ts"
-import { fn, trigger } from "okmodel/fn";
+import { fn, trigger, triggerType } from "okmodel/fn";
 import { schema, sql, table, t } from "okmodel/pg";
 
 const notes = table("notes", {
@@ -57,7 +57,7 @@ The same name on the same table is `Duplicate identity for trigger notes_touch.`
 `updateOf` is SQL column names for `UPDATE OF`. Each one is a column dependency. The trigger needs an `update` event and `level: "row"`. With [casing](/docs/schema/names-and-casing#casing) `"snake"`, `updatedAt` is `updated_at`.
 
 ```ts title="update-of.ts"
-import { fn, trigger } from "okmodel/fn";
+import { fn, trigger, triggerType } from "okmodel/fn";
 import { schema, sql, table, t } from "okmodel/pg";
 
 const notes = table("notes", {
@@ -99,7 +99,7 @@ A column the table does not have is `Trigger notes_touch names column missing, w
 `when` is optional SQL, stored as written and rendered `when ( … )`.
 
 ```ts title="when.ts"
-import { fn, trigger } from "okmodel/fn";
+import { fn, trigger, triggerType } from "okmodel/fn";
 import { schema, sql, table, t } from "okmodel/pg";
 
 const notes = table("notes", {
@@ -135,7 +135,7 @@ export default schema({
 Several events, `updateOf`, and `when`. The column name is the SQL name. This trigger also fires on insert, so `when` names `new` only.
 
 ```ts title="together.ts"
-import { fn, trigger } from "okmodel/fn";
+import { fn, trigger, triggerType } from "okmodel/fn";
 import { schema, sql, table, t } from "okmodel/pg";
 
 const notes = table("notes", {
@@ -178,7 +178,7 @@ There is no built-in trigger on this list. `trigger()` from `okmodel/fn` is the 
 One before-update row trigger. `okm generate` writes the table, then the function, then `create trigger "notes_touch" before update on "public"."notes" for each row execute function "public"."touch_notes"()`.
 
 ```ts title="own.ts"
-import { fn, trigger } from "okmodel/fn";
+import { fn, trigger, triggerType } from "okmodel/fn";
 import { schema, sql, table, t } from "okmodel/pg";
 
 const notes = table("notes", {
@@ -213,7 +213,7 @@ export default schema({
 `updateOf` limits the update to those SQL columns. Insert is still an event, so the trigger also runs then, and `updateOf` applies only to the update. `when` is stored as written. This trigger fires on insert, and an insert has no old row, so `when` names `new` only. `okm generate` writes `create trigger "notes_touch" before insert or update of "title" on "public"."notes" for each row when (new.title <> '') execute function "public"."touch_notes"()`.
 
 ```ts title="own-advanced.ts"
-import { fn, trigger } from "okmodel/fn";
+import { fn, trigger, triggerType } from "okmodel/fn";
 import { schema, sql, table, t } from "okmodel/pg";
 
 const notes = table("notes", {

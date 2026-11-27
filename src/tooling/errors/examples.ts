@@ -3368,6 +3368,109 @@ reported(
     ),
 );
 
+reported(
+  "OKM2125",
+  () =>
+    adviceCodes(
+      schema({
+        tenancy: rlsTenancy({ key: "tenantId", type: "uuid" }),
+        tables: [table("notes", { id: t.integer().primaryKey() })],
+        functions: [
+          fn("close_notes", {
+            kind: "procedure",
+            security: "definer",
+            searchPath: "public",
+            language: "plpgsql",
+            dependsOn: [],
+            body: "begin update notes set id = id; end",
+          }),
+        ],
+      }),
+    ),
+  () =>
+    adviceCodes(
+      schema({
+        tenancy: rlsTenancy({ key: "tenantId", type: "uuid" }),
+        tables: [table("notes", { id: t.integer().primaryKey() })],
+        functions: [
+          fn("close_notes", {
+            kind: "procedure",
+            language: "plpgsql",
+            dependsOn: [],
+            body: "begin null; end",
+          }),
+        ],
+      }),
+    ),
+);
+
+reported(
+  "OKM2126",
+  () =>
+    adviceCodes(
+      schema({
+        tables: [],
+        functions: [
+          fn("save_batch", {
+            kind: "procedure",
+            commits: true,
+            language: "plpgsql",
+            dependsOn: [],
+            body: "begin exception when others then commit; end",
+          }),
+        ],
+      }),
+    ),
+  () =>
+    adviceCodes(
+      schema({
+        tables: [],
+        functions: [
+          fn("save_batch", {
+            kind: "procedure",
+            commits: true,
+            language: "plpgsql",
+            dependsOn: [],
+            body: "begin commit; end",
+          }),
+        ],
+      }),
+    ),
+);
+
+reported(
+  "OKM2127",
+  () =>
+    adviceCodes(
+      schema({
+        tables: [],
+        functions: [
+          fn("refuse", {
+            kind: "procedure",
+            language: "plpgsql",
+            dependsOn: [],
+            body: "begin raise exception 'closed' using errcode = 'C0001'; end",
+          }),
+        ],
+      }),
+    ),
+  () =>
+    adviceCodes(
+      schema({
+        tables: [],
+        functions: [
+          fn("refuse", {
+            kind: "procedure",
+            language: "plpgsql",
+            dependsOn: [],
+            raises: { closed: "C0001" },
+            body: "begin raise exception 'closed' using errcode = 'C0001'; end",
+          }),
+        ],
+      }),
+    ),
+);
+
 function withColumn(
   source: Catalog,
   name: string,

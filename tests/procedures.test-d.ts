@@ -13,8 +13,14 @@ fn("no_returns", { kind: "procedure", returns: t.integer(), body: "select 1" });
 // @ts-expect-error a procedure has no volatility
 fn("no_volatility", { kind: "procedure", volatility: "stable", body: "select 1" });
 
-// @ts-expect-error argument types are column builders
-fn("string_type", { arguments: [{ name: "title", type: "text" }], returns: t.text(), language: "sql", body: "select 1" });
+fn("string_type", {
+  // @ts-expect-error argument types are column builders
+  arguments: [{ name: "title", type: "text" }],
+  // @ts-expect-error a string argument makes the call not match
+  returns: t.text(),
+  language: "sql",
+  body: "select 1",
+});
 
 const closeOne = fn("close_one", {
   kind: "procedure",

@@ -56,7 +56,7 @@ A string or `sql\`...\`` is stored as written. `okm pull` writes this form. A la
 
 `bigint` and `numeric` results arrive as strings. Configured drivers hand `timestamptz` as text, and the codec returns the mode you declared (`"iso"` is a string, `"date"` is a `Date`). A driver that has already parsed `timestamptz` into a `Date` is accepted before the codec. Bun.sql does not surface notices. postgres.js, node-postgres, and PGlite do, and `onNotice` receives them.
 
-```ts
+```ts no-check="needs a connected client"
 const closed = await closeOne.run(db, { account: "a" });
 ```
 
@@ -68,7 +68,12 @@ Missing a required argument is OKM1120.
 
 A batch writes a checkpoint, commits every N rows, and can be called again from that checkpoint. Cancelling the call keeps the batches that already committed. The next call reads the checkpoint and continues.
 
-```ts
+```ts title="take-batch.ts"
+import { fn } from "okmodel/fn";
+import { schema, table, t } from "okmodel/pg";
+
+const batches = table("batches", { n: t.integer() });
+
 const takeBatch = fn("take_batch", {
   kind: "procedure",
   commits: true,
@@ -81,6 +86,10 @@ const takeBatch = fn("take_batch", {
 end`,
 });
 
+export default schema({ tables: [batches], functions: [takeBatch] });
+```
+
+```ts no-check="needs a connected client"
 await takeBatch.run(db, {});
 ```
 
@@ -96,13 +105,16 @@ Dropping a table that a `BEGIN ATOMIC` body uses is PostgreSQL 2BP01 while the p
 
 Every `security: "definer"` routine, procedure or function, is created with `REVOKE EXECUTE ... FROM PUBLIC` in the same transaction, then the grants you declared. The revoke is applied again after every recreate. `search_path` is still required (OKM1823). A definer procedure that touches a tenant table is OKM2125: the owner bypasses row security. OKM2112 still applies when a definer names a forced-RLS table.
 
-```ts
+```ts title="close-as-owner.ts"
+import { fn } from "okmodel/fn";
+
 fn("close_as_owner", {
   kind: "procedure",
   security: "definer",
   searchPath: "public",
   grants: { app: ["execute"] },
   language: "plpgsql",
+  dependsOn: [],
   body: "begin null; end",
 });
 ```
@@ -113,16 +125,22 @@ fn("close_as_owner", {
 
 `raises` names a SQLSTATE the body throws. `run` puts that name on `error.raised`. `error.code` stays the OKM code. `error.sqlstate`, `error.detail`, `error.hint`, and `error.constraint` come from PostgreSQL. An undeclared custom errcode, or a standard-class code, is warning OKM2127.
 
-```ts
-const closed = fn("refuse_closed", {
+```ts title="refuse-closed.ts"
+import { fn } from "okmodel/fn";
+import { t } from "okmodel/pg";
+
+const refuseClosed = fn("refuse_closed", {
   kind: "procedure",
   arguments: [{ name: "account", type: t.text() }],
   raises: { closed: "P0001" },
   language: "plpgsql",
+  dependsOn: [],
   body: `begin
   raise exception 'closed' using errcode = 'P0001', detail = 'account', hint = 'retry';
 end`,
 });
+
+export { refuseClosed };
 ```
 
 ### okm call

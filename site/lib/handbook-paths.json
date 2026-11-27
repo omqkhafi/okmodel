@@ -89,6 +89,7 @@
   "/docs/schema/number-columns",
   "/docs/schema/policies",
   "/docs/schema/postgres-specific-columns",
+  "/docs/schema/procedures",
   "/docs/schema/references",
   "/docs/schema/relations",
   "/docs/schema/required-rows",

@@ -141,7 +141,7 @@ postgresTest(
         join(cwd, "schema.ts"),
         [
           `import { schema, t, table } from ${source("src/dialects/pg/index.ts")};`,
-          `import { fn, trigger } from ${source("src/dialects/pg/fn/index.ts")};`,
+          `import { fn, trigger, triggerType } from ${source("src/dialects/pg/fn/index.ts")};`,
           'const tasks = table("tasks", { id: t.integer().primaryKey(), title: t.text() });',
           'const touch = fn("touch", {',
           "  returns: triggerType,",
@@ -215,7 +215,7 @@ postgresTest(
         join(cwd, "schema.ts"),
         [
           `import { schema, t, table } from ${source("src/dialects/pg/index.ts")};`,
-          `import { fn, trigger } from ${source("src/dialects/pg/fn/index.ts")};`,
+          `import { fn, trigger, triggerType } from ${source("src/dialects/pg/fn/index.ts")};`,
           'const tasks = table("tasks", { id: t.integer().primaryKey(), title: t.text() });',
           'const touch = fn("touch", {',
           "  returns: triggerType,",
@@ -264,7 +264,7 @@ postgresTest(
         join(cwd, "schema.ts"),
         [
           `import { schema, t, table } from ${source("src/dialects/pg/index.ts")};`,
-          `import { fn, trigger } from ${source("src/dialects/pg/fn/index.ts")};`,
+          `import { fn, trigger, triggerType } from ${source("src/dialects/pg/fn/index.ts")};`,
           `import { timestamps } from ${source("src/runtime/traits/index.ts")};`,
           'const tasks = table("tasks", { id: t.integer().primaryKey(), title: t.text() }, { traits: [timestamps({ enforce: "trigger" })] });',
           'const touch = fn("touch", {',

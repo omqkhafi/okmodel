@@ -466,7 +466,7 @@ export const WARNING_RULES: readonly WarningRule[] = [
   {
     code: "OKM2125",
     rule: "procedure-definer-tenant",
-    title: "Definer procedure touches a tenant table",
+    title: "Definer procedure on a tenant table",
     summary:
       "A security definer procedure touches a tenant table. The owner bypasses row security, so the procedure sees every tenant.",
     fix: "Make the procedure security invoker, or keep it off tenant tables.",

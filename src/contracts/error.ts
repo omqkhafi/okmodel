@@ -349,8 +349,10 @@ export class OkmError extends Error {
     this.columns = columns === undefined || columns.length === 0 ? NO_COLUMNS : columns;
     this.constraint = options?.constraint;
     this.sqlstate = options?.sqlstate;
-    this.detail = options?.detail;
-    this.hint = options?.hint;
+    // Detail and hint can repeat a row value from PostgreSQL. They stay
+    // readable and stay out of JSON.stringify, which is what logs print.
+    Object.defineProperty(this, "detail", { value: options?.detail, enumerable: false });
+    Object.defineProperty(this, "hint", { value: options?.hint, enumerable: false });
     this.raised = options?.raised;
     this.batchIndex = options?.batchIndex === undefined ? null : options.batchIndex;
     this.fieldReason = options?.fieldReason ?? kind;

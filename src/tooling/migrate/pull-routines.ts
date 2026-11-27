@@ -541,7 +541,10 @@ function routineTypeExpr(dataType: string): string {
   if (dataType === "text") return "t.text()";
   if (dataType === "boolean" || dataType === "bool") return "t.boolean()";
   if (dataType === "uuid") return "t.uuid()";
-  return typeExpr(dataType);
+  const known = typeExpr(dataType);
+  if (known !== "t.text()") return known;
+  // An enum or domain is not text. t.custom keeps the SQL type the catalog stored.
+  return `t.custom({ sqlType: ${JSON.stringify(dataType)}, encode: (value) => String(value), decode: (wire) => wire })`;
 }
 
 function triggerSource(item: PlannedTrigger): string {

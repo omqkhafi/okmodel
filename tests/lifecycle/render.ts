@@ -33,7 +33,9 @@ export function renderSchema(model: SchemaModel, root: string): string {
     lines.push(`import { pgTrgm } from ${source("src/dialects/pg/ext/pg-trgm.ts")};`);
   }
   if (model.triggers.length > 0) {
-    lines.push(`import { fn, trigger } from ${source("src/dialects/pg/fn/index.ts")};`);
+    lines.push(
+      `import { fn, trigger, triggerType } from ${source("src/dialects/pg/fn/index.ts")};`,
+    );
   }
   if (model.views.length > 0) {
     lines.push(`import { view } from ${source("src/dialects/pg/view/index.ts")};`);

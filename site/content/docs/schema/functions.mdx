@@ -63,7 +63,7 @@ export default schema({
 `"plpgsql"` needs `dependsOn`. Postgres does not record dependencies inside that body. A table is an object dependency. `{ table, column }` is a column dependency. `column` is the SQL name. With [casing](/docs/schema/names-and-casing#casing) `"snake"`, `updatedAt` is `updated_at`.
 
 ```ts title="plpgsql.ts"
-import { fn } from "okmodel/fn";
+import { fn, triggerType } from "okmodel/fn";
 import { schema, sql, table, t } from "okmodel/pg";
 
 const notes = table("notes", {
@@ -219,7 +219,7 @@ export default schema({
 A definer, arguments, a column dependency, and a [trigger](/docs/schema/triggers) that calls it. [Casing](/docs/schema/names-and-casing#casing) `"snake"` makes the column `updated_at`.
 
 ```ts title="together.ts"
-import { fn, trigger } from "okmodel/fn";
+import { fn, trigger, triggerType } from "okmodel/fn";
 import { schema, sql, table, t } from "okmodel/pg";
 
 const notes = table("notes", {
@@ -292,7 +292,7 @@ export default schema({
 `slugify` is immutable and takes one argument. `touch_notes` is plpgsql, so it lists the column it writes, and it is a definer, so it sets `searchPath`. The trigger is created after both functions. `okm generate` writes the table, then `slugify`, then `touch_notes`, then `create trigger "notes_touch" before update of "title" on "public"."notes" for each row when (old.title is distinct from new.title) execute function "public"."touch_notes"()`.
 
 ```ts title="own-advanced.ts"
-import { fn, trigger } from "okmodel/fn";
+import { fn, trigger, triggerType } from "okmodel/fn";
 import { schema, sql, table, t } from "okmodel/pg";
 
 const notes = table("notes", {

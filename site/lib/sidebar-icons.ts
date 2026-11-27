@@ -141,6 +141,7 @@ const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/docs/schema/codecs-and-row-types": Binary,
   "/docs/schema/extensions": Blocks,
   "/docs/schema/functions": SquareFunction,
+  "/docs/schema/procedures": Play,
   "/docs/schema/triggers": Zap,
   "/docs/schema/views": GalleryHorizontal,
   "/docs/schema/several-catalogs": Share2,
