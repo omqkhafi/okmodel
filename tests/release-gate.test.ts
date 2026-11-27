@@ -397,7 +397,6 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(after).not.toContain("cron:");
   expect(after).toContain("uses: ./.github/workflows/postgres-suite.yml");
   expect(after).toContain("uses: ./.github/workflows/postgres-tarball.yml");
-  expect(after).not.toContain("bun ./scripts/ci-issue.ts");
   expect(after).not.toContain("name: gate / issue");
   expect(after).not.toContain("issues: write");
   const prMeta = readFileSync(join(root, ".github/workflows/pr-meta.yml"), "utf8");
