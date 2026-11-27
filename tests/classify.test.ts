@@ -49,6 +49,8 @@ const EXPECTED = [
   ["drop-index", "contract"],
   ["rename-index", "contract"],
   ["create-sequence", "expand"],
+  ["alter-sequence", "expand"],
+  ["seed-counter", "expand"],
   ["drop-sequence", "contract"],
   ["create-enum", "expand"],
   ["recreate-enum", "contract"],

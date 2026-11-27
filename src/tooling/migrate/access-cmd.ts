@@ -57,13 +57,14 @@ export async function accessReport(
     const tableName = role === undefined ? which : "";
     const roleName = role?.name ?? "";
     const grants = await pool.execute(
-      `select g.rolname as role, a.privilege_type, c.relname, o.rolname as grantor
+      `select g.rolname as role, a.privilege_type, c.relname, o.rolname as grantor, c.relkind
        from pg_class c
        join pg_namespace n on n.oid = c.relnamespace
        cross join lateral aclexplode(c.relacl) a
        join pg_roles g on g.oid = a.grantee
        join pg_roles o on o.oid = a.grantor
        where n.nspname = 'public'
+         and c.relkind in ('r', 'p', 'v', 'm', 'S')
          and (($1 <> '' and c.relname = $1) or ($2 <> '' and g.rolname = $2))
        order by c.relname, g.rolname, a.privilege_type`,
       [tableName, roleName],
@@ -91,12 +92,15 @@ export async function accessReport(
       "select rolname from pg_roles where rolname !~ '^pg_' order by rolname",
     );
     return {
-      grants: grants.rows.map((row) => ({
-        role: String(row[0] ?? ""),
-        privilege: String(row[1] ?? ""),
-        object: String(row[2] ?? ""),
-        grantor: String(row[3] ?? ""),
-      })),
+      grants: grants.rows.map((row) => {
+        const name = String(row[2] ?? "");
+        return {
+          role: String(row[0] ?? ""),
+          privilege: String(row[1] ?? ""),
+          object: String(row[4] ?? "") === "S" ? `sequence ${name}` : name,
+          grantor: String(row[3] ?? ""),
+        };
+      }),
       memberships: memberships.rows.map((row) => ({
         role: String(row[0] ?? ""),
         memberOf: String(row[1] ?? ""),

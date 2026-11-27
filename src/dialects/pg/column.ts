@@ -10,6 +10,7 @@ import type {
   Namespace,
   Provenance,
   ReferentialAction,
+  SeriesDefinition,
 } from "../../contracts/catalog/types.js";
 import { readClientGenerator, type ClientFill } from "../../contracts/generator.js";
 import { readArray, writeArray } from "./array-literal.js";
@@ -17,6 +18,7 @@ import { compositeMark, tagComposite } from "./column-mark.js";
 import type { Cond, ImmutableExpr } from "./expr/index.js";
 import { definition, rejected } from "./misuse.js";
 import { quoteLiteral } from "./quote.js";
+import type { SeriesDraft } from "./series-slot.js";
 import type { ColumnHandle, SqlText } from "./table.js";
 import type { TimeCodec, TimeMode, TimeSpec } from "./time.js";
 
@@ -87,6 +89,52 @@ export type IdentityFlags = {
   readonly hidden: false;
   readonly omitWrite: true;
   readonly omitUpdate: true;
+};
+
+/** Flags for `generated: "byDefault"`. Insert may pass the value. */
+export type ByDefaultIdentityFlags = {
+  readonly nullable: false;
+  readonly hasDefault: true;
+  readonly generated: false;
+  readonly guarded: false;
+  readonly hidden: false;
+  readonly omitWrite: false;
+  readonly omitUpdate: true;
+};
+
+/** Flags for a sequence column. Insert may omit it. Update never writes it. */
+export type SequenceFlags = {
+  readonly nullable: false;
+  readonly hasDefault: true;
+  readonly generated: false;
+  readonly guarded: false;
+  readonly hidden: false;
+  readonly omitWrite: false;
+  readonly omitUpdate: true;
+};
+
+/** Flags for a sequence column that stays null until `when` is true. */
+export type SequenceWhenFlags = {
+  readonly nullable: true;
+  readonly hasDefault: true;
+  readonly generated: false;
+  readonly guarded: false;
+  readonly hidden: false;
+  readonly omitWrite: false;
+  readonly omitUpdate: true;
+};
+
+/** Identity stored on the builder. `grants` is not part of the catalog. */
+export type IdentityMark = {
+  readonly always: boolean;
+  readonly comment?: string;
+  readonly start?: string;
+  readonly increment?: string;
+  readonly min?: string;
+  readonly max?: string;
+  readonly cache?: string;
+  readonly cycle?: boolean;
+  readonly grants?: unknown;
 };
 
 /**
@@ -309,7 +357,11 @@ export type ColumnState<TValue> = {
    * it. `column` is a choice on that column and wins.
    */
   readonly idSource: "implicit" | "column" | undefined;
-  readonly identity: { readonly always: boolean; readonly comment?: string } | undefined;
+  readonly identity: IdentityMark | undefined;
+  /** Counter series. Set while the catalog is built. Absent on every other column. */
+  readonly series: SeriesDefinition | undefined;
+  /** Series options from `sequence()`. Absent on every other column. Not a catalog field. */
+  readonly seriesDraft: SeriesDraft | undefined;
   readonly generated:
     | {
         readonly stored: boolean;
@@ -391,7 +443,8 @@ export type OpenColumn<TValue> = {
   readonly clientDefault?: ClientFill;
   readonly collation?: string;
   readonly idSource?: "implicit" | "column";
-  readonly identity?: { readonly always: boolean; readonly comment?: string };
+  readonly identity?: IdentityMark;
+  readonly seriesDraft?: SeriesDraft;
   readonly extension?: string;
   readonly typeDependency?: string;
   readonly enumLabels?: readonly string[];
@@ -865,6 +918,8 @@ export function openColumn<TValue, TFlags extends ColumnFlags>(
     collation: input.collation,
     idSource: input.idSource,
     identity: input.identity,
+    series: undefined,
+    seriesDraft: input.seriesDraft,
     generated: undefined,
     unique: undefined,
     picklist: undefined,

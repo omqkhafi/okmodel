@@ -36,6 +36,7 @@ import {
   type ReferentialAction,
   type SequenceDefinition,
   type SequenceObject,
+  type SeriesDefinition,
   type TableDefinition,
   type TableObject,
 } from "./types.js";
@@ -66,7 +67,16 @@ export type ColumnInput = CommonInput & {
   readonly nullable: boolean;
   readonly defaultExpression?: string;
   readonly collation?: string;
-  readonly identity?: { readonly always: boolean };
+  readonly identity?: {
+    readonly always: boolean;
+    readonly start?: string;
+    readonly increment?: string;
+    readonly min?: string;
+    readonly max?: string;
+    readonly cache?: string;
+    readonly cycle?: boolean;
+  };
+  readonly series?: SeriesDefinition;
   readonly generated?: { readonly stored: boolean; readonly expression: string };
 };
 
@@ -115,6 +125,9 @@ export type SequenceInput = CommonInput & {
   readonly start?: string;
   readonly increment?: string;
   readonly cycle?: boolean;
+  readonly min?: string;
+  readonly max?: string;
+  readonly cache?: string;
 };
 
 /**
@@ -195,7 +208,8 @@ export function column(input: ColumnInput): ColumnObject {
       ? { defaultExpression: input.defaultExpression }
       : {}),
     ...(input.collation !== undefined ? { collation: input.collation } : {}),
-    ...(input.identity !== undefined ? { identity: { always: input.identity.always } } : {}),
+    ...(input.identity !== undefined ? { identity: identityFields(input.identity) } : {}),
+    ...(input.series !== undefined ? { series: input.series } : {}),
     ...(input.generated !== undefined
       ? {
           generated: {
@@ -403,12 +417,20 @@ export function sequence(input: SequenceInput): SequenceObject {
   assertNamespace(input.namespace);
   assertIdentifier(input.name, "sequence");
   assertProvenance(input.provenance);
+  const dataType = input.dataType ?? "bigint";
   const start = input.start ?? "1";
   const increment = input.increment ?? "1";
   assertInteger(start, "sequence start");
   assertInteger(increment, "sequence increment");
   if (increment === "0" || increment === "-0") {
     catalogError("OKM1020", `Sequence ${input.name} has a zero increment.`);
+  }
+  for (const [label, value] of [
+    ["min", input.min],
+    ["max", input.max],
+    ["cache", input.cache],
+  ] as const) {
+    if (value !== undefined) assertInteger(value, `sequence ${label}`);
   }
   const identity: NamespaceIdentity & { readonly kind: "sequence" } = {
     kind: "sequence",
@@ -420,13 +442,81 @@ export function sequence(input: SequenceInput): SequenceObject {
     identity,
     input,
     {
-      dataType: input.dataType ?? "bigint",
+      dataType,
       start,
       increment,
       cycle: input.cycle ?? false,
+      ...sequenceBounds(dataType, increment, input),
     },
     input.dependencies ?? [],
   );
+}
+
+/** Identity fields stored on a column. Absent options stay off the hash. */
+export function identityFields(identity: {
+  readonly always: boolean;
+  readonly start?: string;
+  readonly increment?: string;
+  readonly min?: string;
+  readonly max?: string;
+  readonly cache?: string;
+  readonly cycle?: boolean;
+}): {
+  readonly always: boolean;
+  readonly start?: string;
+  readonly increment?: string;
+  readonly min?: string;
+  readonly max?: string;
+  readonly cache?: string;
+  readonly cycle?: boolean;
+} {
+  return {
+    always: identity.always,
+    ...(identity.start !== undefined ? { start: identity.start } : {}),
+    ...(identity.increment !== undefined ? { increment: identity.increment } : {}),
+    ...(identity.min !== undefined ? { min: identity.min } : {}),
+    ...(identity.max !== undefined ? { max: identity.max } : {}),
+    ...(identity.cache !== undefined ? { cache: identity.cache } : {}),
+    ...(identity.cycle === true ? { cycle: true } : {}),
+  };
+}
+
+const SEQUENCE_MIN: Readonly<Record<string, string>> = {
+  smallint: "-32768",
+  integer: "-2147483648",
+  bigint: "-9223372036854775808",
+};
+
+const SEQUENCE_MAX: Readonly<Record<string, string>> = {
+  smallint: "32767",
+  integer: "2147483647",
+  bigint: "9223372036854775807",
+};
+
+/**
+ * Min, max, and cache that differ from the PostgreSQL default.
+ *
+ * A positive increment defaults to min 1, the type max, and cache 1.
+ * A negative increment defaults to the type min, max -1, and cache 1.
+ *
+ * @param dataType - Sequence type
+ * @param increment - Decimal increment
+ * @param input - Bounds the caller set
+ * @returns Only the bounds that must be stored
+ */
+export function sequenceBounds(
+  dataType: string,
+  increment: string,
+  input: { readonly min?: string; readonly max?: string; readonly cache?: string },
+): { readonly min?: string; readonly max?: string; readonly cache?: string } {
+  const negative = increment.startsWith("-") && increment !== "-0";
+  const minDefault = negative ? (SEQUENCE_MIN[dataType] ?? SEQUENCE_MIN.bigint) : "1";
+  const maxDefault = negative ? "-1" : (SEQUENCE_MAX[dataType] ?? SEQUENCE_MAX.bigint);
+  return {
+    ...(input.min !== undefined && input.min !== minDefault ? { min: input.min } : {}),
+    ...(input.max !== undefined && input.max !== maxDefault ? { max: input.max } : {}),
+    ...(input.cache !== undefined && input.cache !== "1" ? { cache: input.cache } : {}),
+  };
 }
 
 /** Shapes one catalog object. Every kind ends the same way. */

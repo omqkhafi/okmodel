@@ -5,8 +5,10 @@
  */
 
 import {
+  type ByDefaultIdentityFlags,
   type ColumnBuilder,
   type IdentityFlags,
+  type IdentityMark,
   type PlainFlags,
   openColumn,
   required,
@@ -91,24 +93,52 @@ export function bigint<const TAs extends BigintAs = "string">(options?: {
   }) as unknown as ColumnBuilder<BigintValue<TAs>, PlainFlags>;
 }
 
-/**
- * `bigint` identity column, `GENERATED ALWAYS AS IDENTITY`.
- *
- * Insert and update omit it. The codec follows the same `as` modes as {@link bigint}.
- *
- * @typeParam TAs - `string`, `number`, or `bigint`
- * @param options - Codec selection
- * @returns An identity column
- */
-export function identity<const TAs extends BigintAs = "string">(options?: {
-  readonly as?: TAs;
+/** Options for {@link identity} and {@link integerIdentity}. */
+export type IdentityOptions = {
+  /** `always` omits the insert value. `byDefault` makes it optional. */
+  readonly generated?: "always" | "byDefault";
+  readonly start?: number | string;
+  readonly increment?: number | string;
+  readonly cache?: number | string;
+  readonly min?: number | string;
+  readonly max?: number | string;
+  readonly cycle?: boolean;
   /** Comment on the identity sequence, not the column. */
   readonly comment?: string;
-}): ColumnBuilder<BigintValue<TAs>, IdentityFlags> {
+  /** Grants on the identity sequence. `usage`, `select`, and `update`. */
+  readonly grants?: unknown;
+  /** Not accepted. Use `sequence()` from `okmodel/seq`. */
+  readonly scope?: unknown;
+  /** Not accepted. Use `sequence()` from `okmodel/seq`. */
+  readonly reset?: unknown;
+  /** Not accepted. Use `sequence()` from `okmodel/seq`. */
+  readonly when?: unknown;
+};
+
+/**
+ * `bigint` identity column, `GENERATED AS IDENTITY`, and a primary key.
+ *
+ * The default is `GENERATED ALWAYS`. Insert and update omit it. `byDefault`
+ * makes the insert value optional. The codec follows the same `as` modes as {@link bigint}.
+ *
+ * @typeParam TAs - `string`, `number`, or `bigint`
+ * @param options - Codec, generation, and sequence bounds
+ * @returns An identity column
+ */
+export function identity<const TAs extends BigintAs = "string">(
+  options: IdentityOptions & { readonly as?: TAs; readonly generated: "byDefault" },
+): ColumnBuilder<BigintValue<TAs>, ByDefaultIdentityFlags>;
+export function identity<const TAs extends BigintAs = "string">(
+  options?: IdentityOptions & { readonly as?: TAs },
+): ColumnBuilder<BigintValue<TAs>, IdentityFlags>;
+export function identity<const TAs extends BigintAs = "string">(
+  options?: IdentityOptions & { readonly as?: TAs },
+): ColumnBuilder<BigintValue<TAs>, IdentityFlags | ByDefaultIdentityFlags> {
   const mode = options?.as ?? "string";
+  const flags = identityFlags(options);
   if (mode === "number") {
     return openColumn({
-      ...identityFlags(options?.comment),
+      ...flags,
       encode: encodeBigintNumber,
       decode: decodeBigintNumber,
       typeLabel: "number",
@@ -116,7 +146,7 @@ export function identity<const TAs extends BigintAs = "string">(options?: {
   }
   if (mode === "bigint") {
     return openColumn({
-      ...identityFlags(options?.comment),
+      ...flags,
       encode: encodeBigintValue,
       decode: decodeBigintValue,
       typeLabel: "bigint",
@@ -126,25 +156,29 @@ export function identity<const TAs extends BigintAs = "string">(options?: {
     definition(`identity as ${String(mode)} must be string, number, or bigint.`);
   }
   return openColumn({
-    ...identityFlags(options?.comment),
+    ...flags,
     encode: encodeBigintString,
     decode: decodeBigintString,
   }) as unknown as ColumnBuilder<BigintValue<TAs>, IdentityFlags>;
 }
 
 /**
- * `integer` identity column, `GENERATED ALWAYS AS IDENTITY`.
+ * `integer` identity column, `GENERATED AS IDENTITY`, and a primary key.
  *
- * Insert and update omit it. The sequence type is `integer`, so an existing
- * `t.identity()` bigint sequence stays a bigint.
+ * The sequence type is `integer`, so an existing `t.identity()` bigint sequence stays a bigint.
  *
+ * @param options - Generation and sequence bounds
  * @returns An identity column
  */
-export function integerIdentity(options?: {
-  readonly comment?: string;
-}): ColumnBuilder<number, IdentityFlags> {
+export function integerIdentity(
+  options: IdentityOptions & { readonly generated: "byDefault" },
+): ColumnBuilder<number, ByDefaultIdentityFlags>;
+export function integerIdentity(options?: IdentityOptions): ColumnBuilder<number, IdentityFlags>;
+export function integerIdentity(
+  options?: IdentityOptions,
+): ColumnBuilder<number, IdentityFlags | ByDefaultIdentityFlags> {
   return openColumn({
-    ...identityFlags(options?.comment),
+    ...identityFlags(options),
     baseType: "integer",
     encode: (value: number) => integerToken(value, -2_147_483_648, 2_147_483_647, "integer"),
     decode: (wire) => decodeBounded(wire, -2_147_483_648, 2_147_483_647, "integer"),
@@ -240,7 +274,7 @@ export function integerToken(value: number, min: number, max: number, role: stri
   return String(value);
 }
 
-function decodeBounded(wire: string, min: number, max: number, role: string): number {
+export function decodeBounded(wire: string, min: number, max: number, role: string): number {
   if (!integerText().test(wire)) {
     rejected(`${role} ${wire} must be an integer, for example 0 or -12.`);
   }
@@ -249,18 +283,42 @@ function decodeBounded(wire: string, min: number, max: number, role: string): nu
   return value;
 }
 
-function identityFlags(comment?: string): {
+function identityFlags(options?: IdentityOptions): {
   readonly baseType: "bigint";
   readonly nullable: false;
   readonly hasDefault: true;
   readonly generated: false;
   readonly guarded: false;
   readonly hidden: false;
-  readonly omitWrite: true;
+  readonly omitWrite: boolean;
+  readonly omitUpdate: true;
   readonly sqlForm: "raw";
-  readonly identity: { readonly always: true; readonly comment?: string };
+  readonly identity: IdentityMark;
   readonly primaryKey: true;
 } {
+  if (options?.scope !== undefined || options?.reset !== undefined || options?.when !== undefined) {
+    definition("identity does not take scope, reset, or when. Use sequence() from okmodel/seq.");
+  }
+  const generated = options?.generated ?? "always";
+  if (generated !== "always" && generated !== "byDefault") {
+    definition(`identity generated ${String(generated)} must be always or byDefault.`);
+  }
+  const start = sequenceDecimal(options?.start, "identity start");
+  const increment = sequenceDecimal(options?.increment, "identity increment");
+  const min = sequenceDecimal(options?.min, "identity min");
+  const max = sequenceDecimal(options?.max, "identity max");
+  const cache = sequenceDecimal(options?.cache, "identity cache");
+  const identity: IdentityMark = {
+    always: generated !== "byDefault",
+    ...(start !== undefined ? { start } : {}),
+    ...(increment !== undefined ? { increment } : {}),
+    ...(min !== undefined ? { min } : {}),
+    ...(max !== undefined ? { max } : {}),
+    ...(cache !== undefined ? { cache } : {}),
+    ...(options?.cycle === true ? { cycle: true } : {}),
+    ...(options?.comment !== undefined ? { comment: options.comment } : {}),
+    ...(options?.grants !== undefined ? { grants: options.grants } : {}),
+  };
   return {
     baseType: "bigint",
     nullable: false,
@@ -268,11 +326,21 @@ function identityFlags(comment?: string): {
     generated: false,
     guarded: false,
     hidden: false,
-    omitWrite: true,
+    omitWrite: generated !== "byDefault",
+    omitUpdate: true,
     sqlForm: "raw",
-    identity: comment === undefined ? { always: true } : { always: true, comment },
+    identity,
     primaryKey: true,
   };
+}
+
+function sequenceDecimal(value: number | string | undefined, label: string): string | undefined {
+  if (value === undefined) return undefined;
+  const text = String(value);
+  if (!/^-?(?:0|[1-9]\d*)$/.test(text)) {
+    definition(`${label} ${text} must be an integer.`);
+  }
+  return text;
 }
 
 function parseBigint(wire: string): bigint {

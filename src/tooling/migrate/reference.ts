@@ -17,10 +17,20 @@ import type { AnyTable, ReferenceOption } from "../../dialects/pg/table.js";
 export type ReferenceValue = string | number | boolean | null;
 
 /** One table's reference declaration, in SQL names. */
+/** A column whose explicit reference value must move the sequence. */
+export type ReferenceSequence = {
+  readonly column: string;
+  readonly sequence: string;
+  /** `true` when the column is `GENERATED ALWAYS`. */
+  readonly always: boolean;
+};
+
 export type ReferenceTable = {
   readonly table: string;
   readonly key: readonly string[];
   readonly rows: readonly (readonly (readonly [string, ReferenceValue])[])[];
+  /** Identity and `nextval` columns on this table. Absent when there are none. */
+  readonly sequences?: readonly ReferenceSequence[];
 };
 
 /**
@@ -66,7 +76,13 @@ export function readReference(
         },
       );
     }
-    declared.push({ table, key, rows: rowsOf(item, reference, key, names) });
+    const sequences = sequenceWrites(head, table);
+    declared.push({
+      table,
+      key,
+      rows: rowsOf(item, reference, key, names),
+      ...(sequences.length === 0 ? {} : { sequences }),
+    });
   }
   return declared;
 }
@@ -88,15 +104,56 @@ export function referenceInserts(
   const statements: string[] = [];
   for (const item of tables) {
     const conflict = item.key.map((name) => quoteIdent(name)).join(", ");
+    const touched = new Set<string>();
     for (const row of item.rows) {
       const columns = row.map(([name]) => quoteIdent(name)).join(", ");
       const values = row.map(([, value]) => literal(value)).join(", ");
+      const always = (item.sequences ?? []).some(
+        (entry) =>
+          entry.always && row.some(([name, value]) => name === entry.column && value !== null),
+      );
+      const override = always ? " overriding system value" : "";
       statements.push(
-        `insert into ${qualify(schema, item.table)} (${columns}) values (${values}) on conflict (${conflict}) do nothing`,
+        `insert into ${qualify(schema, item.table)} (${columns})${override} values (${values}) on conflict (${conflict}) do nothing`,
+      );
+      for (const entry of item.sequences ?? []) {
+        if (row.some(([name, value]) => name === entry.column && typeof value === "number")) {
+          touched.add(entry.column);
+        }
+      }
+    }
+    for (const entry of item.sequences ?? []) {
+      if (!touched.has(entry.column)) continue;
+      const qualified = `${schema}.${entry.sequence}`;
+      const column = quoteIdent(entry.column);
+      statements.push(
+        `select setval('${qualified}', s.v, true) from (select greatest(coalesce((select max(${column}) from ${qualify(schema, item.table)}), 0), coalesce(pg_sequence_last_value('${qualified}'::regclass), 0)) as v) s where s.v > 0`,
       );
     }
   }
   return statements;
+}
+
+function sequenceWrites(head: Catalog, table: string): readonly ReferenceSequence[] {
+  const writes: ReferenceSequence[] = [];
+  for (const object of head.objects) {
+    if (object.kind !== "column" || object.identity.parent.name !== table) continue;
+    const identity = object.definition.identity;
+    if (identity !== undefined) {
+      writes.push({
+        column: object.identity.name,
+        sequence: `${table}_${object.identity.name}_seq`,
+        always: identity.always,
+      });
+      continue;
+    }
+    const expression = object.definition.defaultExpression;
+    if (expression === undefined || !expression.startsWith("nextval('")) continue;
+    const name = /nextval\('(?:[\w]+\.)?([^']+)'/.exec(expression)?.[1];
+    if (name === undefined) continue;
+    writes.push({ column: object.identity.name, sequence: name, always: false });
+  }
+  return writes;
 }
 
 function keyNames(item: AnyTable, reference: ReferenceOption, names: Names): readonly string[] {

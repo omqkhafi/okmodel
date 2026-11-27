@@ -26,6 +26,14 @@ import { identityKey, identityLabel, staticNamespace } from "../../contracts/cat
 import { compareText } from "../../contracts/catalog/object.js";
 import { isGeneratedPolicy } from "../../contracts/catalog/policy.js";
 import { ddlStep } from "../../dialects/ddl-step.js";
+import {
+  alterSequence,
+  assertSeries,
+  counterSteps,
+  foldSeries,
+  ownSequenceStep,
+  type SeriesWarning,
+} from "../../dialects/pg/seq/engine.js";
 import { rlsToggleSteps } from "./policy-plan.js";
 import { assertForeignKeyTargets } from "./foreign-target.js";
 import { assertIndexRules } from "./index-rules.js";
@@ -185,6 +193,12 @@ export type MigrationPlan = {
    * Absent when the dialect returned none. A migration file does not record it.
    */
   readonly emulation?: readonly DdlEmulatedNote[];
+  /**
+   * Notes that do not change the database.
+   *
+   * A changed sequence start is one. A migration file prints them as comments.
+   */
+  readonly warnings?: readonly SeriesWarning[];
 };
 
 /** What the planner needs besides the two catalogs. */
@@ -321,9 +335,10 @@ export function planMigration(
   settleChecks(input.after);
   const request: PlanRequest = {
     ...input,
-    before: omitManagedObjects(input.before),
-    after: omitManagedObjects(input.after),
+    before: foldSeries(omitManagedObjects(input.before)),
+    after: foldSeries(omitManagedObjects(input.after)),
   };
+  assertSeries(request.after);
   const emulation = askDialect(dialect, [request.before, request.after]);
   const schema = request.schema ?? "public";
   const batchSize = resolveBatchSize(request.batchSize);
@@ -354,6 +369,10 @@ export function planMigration(
   const ungenerate: { readonly before: ColumnObject; readonly after: ColumnObject }[] = [];
   const enforcement: { readonly before: ConstraintObject; readonly after: ConstraintObject }[] = [];
   const storageReplaces: { readonly before: IndexObject; readonly after: IndexObject }[] = [];
+  const sequenceAlters: {
+    readonly before: Extract<CatalogObject, { kind: "sequence" }>;
+    readonly after: Extract<CatalogObject, { kind: "sequence" }>;
+  }[] = [];
   for (const item of beforeList) {
     if (!afterBy.has(item.key)) {
       if (item.object.kind === "role") continue;
@@ -419,6 +438,10 @@ export function planMigration(
       indexStorageOnly(previous, item.object)
     ) {
       storageReplaces.push({ before: previous, after: item.object });
+      continue;
+    }
+    if (previous.kind === "sequence" && item.object.kind === "sequence") {
+      sequenceAlters.push({ before: previous, after: item.object });
       continue;
     }
     if (previous.kind === "policy" && item.object.kind === "policy") {
@@ -746,6 +769,20 @@ export function planMigration(
       steps.push(...take(dialect.lower({ op: "create-sequence", object, schema })));
     }
   }
+  const warnings: SeriesWarning[] = [];
+  for (const change of sequenceAlters) {
+    const altered = alterSequence(
+      { name: change.before.identity.name, definition: change.before.definition },
+      { name: change.after.identity.name, definition: change.after.definition },
+      schema,
+    );
+    steps.push(...takeOptional(altered.steps));
+    if (altered.warning !== undefined) warnings.push(altered.warning);
+  }
+  const counters = counterSteps(renamed, request.after, schema, createdTables);
+  steps.push(...takeOptional(counters.steps));
+  warnings.push(...counters.warnings);
+  steps.push(...takeOptional(ownedSequenceSteps(request.after, createKeys, schema)));
   steps.push(...replacementDrops);
   steps.push(
     ...rlsToggleSteps(
@@ -869,6 +906,7 @@ export function planMigration(
     class: overall(steps),
     steps,
     ...(emulation.length > 0 ? { emulation } : {}),
+    ...(warnings.length > 0 ? { warnings } : {}),
   };
 }
 
@@ -997,6 +1035,9 @@ function takeOptional(lowered: readonly DdlStep[]): readonly PlanStep[] {
  */
 export function formatPlan(plan: MigrationPlan, lockText?: (step: PlanStep) => string): string {
   const lines = [`-- class: ${plan.class}`, `-- name: ${plan.name}`, ""];
+  for (const warning of plan.warnings ?? []) {
+    lines.push(`-- ${warning.code}: ${warning.summary}`);
+  }
   if (plan.steps.length === 0) {
     lines.push("-- no steps");
     lines.push("");
@@ -2706,12 +2747,15 @@ function forComparison(
   schemas: ReadonlyMap<string, readonly string[]>,
 ): unknown {
   switch (object.kind) {
-    case "column":
+    case "column": {
+      const { series: _series, identity, ...rest } = object.definition;
       return {
-        ...object.definition,
+        ...rest,
+        ...(identity !== undefined ? { identity: { always: identity.always } } : {}),
         dataType: canonicalTypeName(comparedExtensionType(object, schemas)),
         ...canonicalDefault(object.definition.defaultExpression, object.definition.dataType),
       };
+    }
     case "sequence":
       return { ...object.definition, dataType: canonicalTypeName(object.definition.dataType) };
     case "view":
@@ -2808,6 +2852,31 @@ function covered(object: CatalogObject, tables: ReadonlySet<string>): boolean {
     );
   }
   return false;
+}
+
+function ownedSequenceSteps(
+  after: Catalog,
+  createKeys: ReadonlySet<string>,
+  schema: string,
+): ReturnType<typeof ownSequenceStep>[] {
+  const created = new Set<string>();
+  for (const object of after.objects) {
+    if (object.kind !== "sequence") continue;
+    if (createKeys.has(identityKey(object.identity))) created.add(object.identity.name);
+  }
+  const steps: ReturnType<typeof ownSequenceStep>[] = [];
+  const owned = new Set<string>();
+  for (const object of after.objects) {
+    if (object.kind !== "column" || object.definition.identity !== undefined) continue;
+    const expression = object.definition.defaultExpression;
+    if (expression === undefined || !expression.startsWith("nextval('")) continue;
+    const match = /nextval\('(?:[\w]+\.)?([^']+)'/.exec(expression);
+    const name = match?.[1];
+    if (name === undefined || !created.has(name) || owned.has(name)) continue;
+    owned.add(name);
+    steps.push(ownSequenceStep(name, object.identity.parent.name, object.identity.name, schema));
+  }
+  return steps;
 }
 
 function folded(object: CatalogObject, source: Catalog): boolean {

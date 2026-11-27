@@ -6,7 +6,7 @@
  */
 
 import { assertIdentifier, assertStoredText } from "../../contracts/catalog/identifier.js";
-import { column, constraint } from "../../contracts/catalog/object.js";
+import { column, constraint, identityFields } from "../../contracts/catalog/object.js";
 import type {
   ColumnObject,
   ConstraintObject,
@@ -25,7 +25,18 @@ export type CompilableColumn = {
     readonly nullable: boolean;
     readonly defaultSql: string | undefined;
     readonly collation: string | undefined;
-    readonly identity: { readonly always: boolean } | undefined;
+    readonly identity:
+      | {
+          readonly always: boolean;
+          readonly start?: string;
+          readonly increment?: string;
+          readonly min?: string;
+          readonly max?: string;
+          readonly cache?: string;
+          readonly cycle?: boolean;
+        }
+      | undefined;
+    readonly series: import("../../contracts/catalog/types.js").SeriesDefinition | undefined;
     readonly generated: { readonly stored: boolean; readonly expression?: string } | undefined;
     readonly unique:
       | { readonly reason: string | undefined; readonly global: boolean | undefined }
@@ -117,7 +128,8 @@ export function compileColumn(
     ...owner,
     ...(state.defaultSql !== undefined ? { defaultExpression: state.defaultSql } : {}),
     ...(state.collation !== undefined ? { collation: state.collation } : {}),
-    ...(state.identity !== undefined ? { identity: { always: state.identity.always } } : {}),
+    ...(state.identity !== undefined ? { identity: identityFields(state.identity) } : {}),
+    ...(state.series !== undefined ? { series: state.series } : {}),
     ...(state.comment !== undefined ? { comment: state.comment } : {}),
     ...(state.generated?.expression !== undefined
       ? {

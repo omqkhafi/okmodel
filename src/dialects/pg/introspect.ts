@@ -8,6 +8,7 @@
  */
 
 import { catalog } from "../../contracts/catalog/build.js";
+import { foldSeries } from "./seq/engine.js";
 import { OkmError, catalogError } from "../../contracts/error.js";
 import { compositeType, isComposite } from "../../contracts/catalog/composite.js";
 import { domainType, enumType } from "../../contracts/catalog/enum.js";
@@ -263,6 +264,9 @@ export async function introspectSchema(
     if (ownedTable.length > 0) {
       dependencies.push({ kind: "table", namespace, name: ownedTable });
     }
+    const min = numberText(row, "min");
+    const max = numberText(row, "max");
+    const cache = numberText(row, "cache");
     const built = sequence({
       namespace,
       name,
@@ -272,6 +276,9 @@ export async function introspectSchema(
       cycle: flag(row, "cycle"),
       provenance,
       ...(dependencies.length > 0 ? { dependencies } : {}),
+      ...(min.length > 0 ? { min } : {}),
+      ...(max.length > 0 ? { max } : {}),
+      ...(cache.length > 0 ? { cache } : {}),
     });
     sequenceIdentity.set(name, built.identity);
     objects.push(built);
@@ -355,7 +362,9 @@ export async function introspectSchema(
       nullable: !notNull,
       provenance,
       ...(extra.length > 0 ? { dependencies: extra } : {}),
-      ...(identity === "a" || identity === "d" ? { identity: { always: identity === "a" } } : {}),
+      ...(identity === "a" || identity === "d"
+        ? { identity: identityFromSequence(identity === "a", sequenceName, objects) }
+        : {}),
       ...(generated ? { generated: { stored: generatedFlag !== "v", expression } } : {}),
       ...(!generated && identity !== "a" && identity !== "d" && expression.length > 0
         ? { defaultExpression: expression }
@@ -707,7 +716,7 @@ export async function introspectSchema(
   await includeOutsideReferences(runner, logical, provenance, objects);
   alignCompositeNulls(objects);
   applyComments(objects, comments);
-  return catalog(objects);
+  return foldSeries(catalog(objects));
 }
 
 function alignCompositeNulls(objects: CatalogObject[]): void {
@@ -2174,7 +2183,7 @@ const COLUMNS = `
       select owned.relname
       from pg_depend d
       join pg_class owned on owned.oid = d.objid and owned.relkind = 'S'
-      where d.refobjid = c.oid and d.refobjsubid = a.attnum and d.deptype = 'a'
+      where d.refobjid = c.oid and d.refobjsubid = a.attnum and d.deptype in ('a', 'i')
         and d.classid = 'pg_class'::regclass
       limit 1
     ) as sequence
@@ -2722,6 +2731,7 @@ function member(oid: string, classid: string): string {
 const SEQUENCES = `
   select c.relname as name, format_type(s.seqtypid, null) as type,
     s.seqstart::text as start, s.seqincrement::text as increment, s.seqcycle as cycle,
+    s.seqmin::text as min, s.seqmax::text as max, s.seqcache::text as cache,
     (
       select owned.relname
       from pg_depend d
@@ -2735,6 +2745,35 @@ const SEQUENCES = `
   where n.nspname = $1
     and ${member("c.oid", "pg_class")}
 `;
+
+function identityFromSequence(
+  always: boolean,
+  sequenceName: string,
+  objects: readonly CatalogObject[],
+): {
+  readonly always: boolean;
+  readonly start?: string;
+  readonly increment?: string;
+  readonly min?: string;
+  readonly max?: string;
+  readonly cache?: string;
+  readonly cycle?: boolean;
+} {
+  const found = objects.find(
+    (object) => object.kind === "sequence" && object.identity.name === sequenceName,
+  );
+  if (found === undefined || found.kind !== "sequence") return { always };
+  const definition = found.definition;
+  return {
+    always,
+    ...(definition.start !== "1" ? { start: definition.start } : {}),
+    ...(definition.increment !== "1" ? { increment: definition.increment } : {}),
+    ...(definition.min !== undefined ? { min: definition.min } : {}),
+    ...(definition.max !== undefined ? { max: definition.max } : {}),
+    ...(definition.cache !== undefined ? { cache: definition.cache } : {}),
+    ...(definition.cycle ? { cycle: true } : {}),
+  };
+}
 
 function partitionMethod(value: string): "range" | "list" | "hash" | undefined {
   if (value === "r") return "range";

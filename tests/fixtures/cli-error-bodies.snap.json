@@ -2166,6 +2166,121 @@
     ]
   },
   {
+    "code": "OKM2118",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A table with a counter series also grants DELETE. Deleting a row leaves a gap. The number is not reused.",
+    "fix": "Use archivable() so the row stays, or drop the DELETE grant.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Declare the table with archivable().",
+        "docs": "docs/errors/OKM2118.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2118.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2118.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM2119",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A number that resets has a unique index that does not include the period. The next period can collide with a previous one.",
+    "fix": "Put the period in the unique index, or drop the unique index on the reference.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Include the reset period in the unique index.",
+        "docs": "docs/errors/OKM2119.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2119.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2119.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM2120",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "start changed on a sequence that already exists. The plan does not restart it. Existing values stay.",
+    "fix": "Leave start as it is, or set the live value yourself with setval when you mean to.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Keep the previous start.",
+        "docs": "docs/errors/OKM2120.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2120.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2120.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM2123",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A generated reference takes a year from timestamptz. That expression is not immutable, so a unique index on it is refused.",
+    "fix": "Use a date or timestamp column, or write at time zone with a constant zone. Do not use to_char for the reference.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Take the year from date or timestamp, or at time zone.",
+        "docs": "docs/errors/OKM2123.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2123.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2123.md#escape"
+      }
+    ]
+  },
+  {
+    "code": "OKM2121",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A sequence or counter has min above max, a start outside that range, or a start outside the column type.",
+    "fix": "Set min below max, and keep start inside that range and inside the column type.",
+    "retryable": false,
+    "docs": "docs/errors/OKM2121.md"
+  },
+  {
+    "code": "OKM2122",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A column still defaults to a sequence that is not in the catalog, or a counter's scope, reset, or type would change in place.",
+    "fix": "Keep the sequence, or change the column before dropping it. Add a new series instead of editing a counter key.",
+    "retryable": false,
+    "docs": "docs/errors/OKM2122.md"
+  },
+  {
+    "code": "OKM2124",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "PostgreSQL cannot change a sequence type in place. A smaller type is refused, and so is any other in-place change of as.",
+    "fix": "Keep the current type. A wider type needs a new sequence.",
+    "retryable": false,
+    "docs": "docs/errors/OKM2124.md"
+  },
+  {
     "code": "OKM1891",
     "kind": "invalid",
     "category": "input",
@@ -2407,6 +2522,33 @@
     "fix": "Fix each fail finding, then check the target again with okm doctor --production.",
     "retryable": false,
     "docs": "docs/errors/OKM2204.md"
+  },
+  {
+    "code": "OKM2205",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "okm doctor found a sequence whose last value is behind the highest stored id. The finding prints the exact setval. Nothing is written.",
+    "fix": "Apply the printed setval. The next value then follows the highest stored id.",
+    "retryable": false,
+    "docs": "docs/errors/OKM2205.md"
+  },
+  {
+    "code": "OKM2206",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "okm doctor found a sequence that has used at least half of the range between its minimum and maximum.",
+    "fix": "Widen the sequence type or its maximum before the range ends.",
+    "retryable": false,
+    "docs": "docs/errors/OKM2206.md"
+  },
+  {
+    "code": "OKM2207",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "okm doctor found a counter row behind the highest number stored for that scope and period. A value written by hand can leave it there.",
+    "fix": "Let the trigger assign the next number, or stop writing the number by hand.",
+    "retryable": false,
+    "docs": "docs/errors/OKM2207.md"
   },
   {
     "code": "OKM2300",

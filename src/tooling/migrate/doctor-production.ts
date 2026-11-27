@@ -19,6 +19,7 @@ import { tagOutcome } from "../cli/outcome.js";
 import { DEFAULT_LOCK_MS, DEFAULT_STATEMENT_MS } from "./apply.js";
 import { driverUrl } from "./driver-url.js";
 import { catalogNamespace } from "./export.js";
+import { sequenceFindings } from "./series-doctor.js";
 import {
   assertExtensionsAgainstPool,
   assertMajorAgainstPool,
@@ -88,6 +89,8 @@ export type ProductionFacts = {
   readonly extensions: ExtensionFacts;
   /** Security-invoker views whose base tables the session role cannot select. */
   readonly invokerGaps: readonly string[];
+  /** Sequences and counters that are behind the stored numbers. */
+  readonly sequences: readonly ProductionFinding[];
 };
 
 /** Required extensions and what the server has. */
@@ -475,6 +478,7 @@ export function buildReport(input: ProductionInput, facts: ProductionFacts): Pro
     serverFinding(facts.serverMajor, facts.minimum),
     extensionFinding(facts.extensions),
     invokerFinding(facts.invokerGaps),
+    ...facts.sequences,
   );
   return { target: input.target.name, summary: countOf(findings), findings };
 }
@@ -668,6 +672,7 @@ async function readFacts(
     roleConfig: await roleConfigOf(runner, opened, input),
     extensions: await extensionFacts(runner, opened, input),
     invokerGaps: await invokerGaps(runner),
+    sequences: await sequenceFindings(runner, schema),
   };
 }
 

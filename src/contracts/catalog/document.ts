@@ -30,7 +30,16 @@ import { defaultPrivilegeObject, grantObject, roleObject } from "./privilege.js"
 import { functionObject, triggerObject } from "./routine.js";
 import { policyObject } from "./policy.js";
 import { materializedViewIndex, materializedViewObject, viewObject } from "./view.js";
-import { column, compareText, constraint, index, sequence, table } from "./object.js";
+import {
+  column,
+  compareText,
+  constraint,
+  identityFields,
+  index,
+  sequence,
+  sequenceBounds,
+  table,
+} from "./object.js";
 import { withUnvalidatedNotNull } from "./not-null.js";
 import { dependencyOrder } from "./order.js";
 import type {
@@ -50,6 +59,8 @@ import type {
   Provenance,
   ExtensionObject,
   SequenceObject,
+  SeriesDefinition,
+  SeriesReset,
   TableObject,
   ViewObject,
 } from "./types.js";
@@ -1012,6 +1023,9 @@ function rewriteSequence(
     start: object.definition.start,
     increment: object.definition.increment,
     cycle: object.definition.cycle,
+    ...(object.definition.min !== undefined ? { min: object.definition.min } : {}),
+    ...(object.definition.max !== undefined ? { max: object.definition.max } : {}),
+    ...(object.definition.cache !== undefined ? { cache: object.definition.cache } : {}),
     owner: object.owner,
     provenance: object.provenance,
     dependencies,
@@ -1137,8 +1151,9 @@ function definitionToJson(object: CatalogObject): Json {
           ? { unvalidatedNotNull: definition.unvalidatedNotNull }
           : {}),
         ...(definition.identity !== undefined
-          ? { identity: { always: definition.identity.always } }
+          ? { identity: identityFields(definition.identity) }
           : {}),
+        ...(definition.series !== undefined ? { series: definition.series } : {}),
         ...(definition.generated !== undefined
           ? {
               generated: {
@@ -1201,6 +1216,11 @@ function definitionToJson(object: CatalogObject): Json {
         dataType: object.definition.dataType,
         increment: object.definition.increment,
         start: object.definition.start,
+        ...sequenceBounds(
+          object.definition.dataType,
+          object.definition.increment,
+          object.definition,
+        ),
       };
     case "type":
       if (isDomain(object.definition)) {
@@ -1430,6 +1450,7 @@ function parseColumn(
       "generated",
       "identity",
       "nullable",
+      "series",
       "unvalidatedNotNull",
     ],
     "column definition",
@@ -1452,6 +1473,7 @@ function parseColumn(
       ? {}
       : { collation: requireString(definition.collation, "collation") }),
     ...(columnIdentity === undefined ? {} : { identity: parseAlways(columnIdentity) }),
+    ...(definition.series === undefined ? {} : { series: parseSeries(definition.series) }),
     ...(generated === undefined ? {} : { generated: parseGenerated(generated) }),
   });
   return mark === undefined
@@ -1639,7 +1661,11 @@ function parseSequence(
   if (identity.kind !== "sequence") {
     catalogError("OKM1020", `Sequence object identity is ${identity.kind}, not a sequence.`);
   }
-  rejectUnknown(definition, ["cycle", "dataType", "increment", "start"], "sequence definition");
+  rejectUnknown(
+    definition,
+    ["cache", "cycle", "dataType", "increment", "max", "min", "start"],
+    "sequence definition",
+  );
   const dataType = requireString(definition.dataType, "sequence type");
   if (dataType !== "smallint" && dataType !== "integer" && dataType !== "bigint") {
     catalogError("OKM1020", `Sequence type ${dataType} must be smallint, integer, or bigint.`);
@@ -1651,6 +1677,11 @@ function parseSequence(
     start: requireString(definition.start, "sequence start"),
     increment: requireString(definition.increment, "sequence increment"),
     cycle: requireBoolean(definition.cycle, "cycle"),
+    ...(definition.min === undefined ? {} : { min: requireString(definition.min, "sequence min") }),
+    ...(definition.max === undefined ? {} : { max: requireString(definition.max, "sequence max") }),
+    ...(definition.cache === undefined
+      ? {}
+      : { cache: requireString(definition.cache, "sequence cache") }),
     owner,
     provenance,
     dependencies,
@@ -2284,10 +2315,143 @@ function parseAction(value: unknown, role: string): ReferentialAction | undefine
   return action;
 }
 
-function parseAlways(value: unknown): { readonly always: boolean } {
+function parseAlways(value: unknown): {
+  readonly always: boolean;
+  readonly start?: string;
+  readonly increment?: string;
+  readonly min?: string;
+  readonly max?: string;
+  readonly cache?: string;
+  readonly cycle?: boolean;
+} {
   const record = requireRecord(value, "identity");
-  rejectUnknown(record, ["always"], "identity");
-  return { always: requireBoolean(record.always, "always") };
+  rejectUnknown(
+    record,
+    ["always", "cache", "cycle", "increment", "max", "min", "start"],
+    "identity",
+  );
+  return identityFields({
+    always: requireBoolean(record.always, "always"),
+    ...(record.start === undefined ? {} : { start: requireString(record.start, "identity start") }),
+    ...(record.increment === undefined
+      ? {}
+      : { increment: requireString(record.increment, "identity increment") }),
+    ...(record.min === undefined ? {} : { min: requireString(record.min, "identity min") }),
+    ...(record.max === undefined ? {} : { max: requireString(record.max, "identity max") }),
+    ...(record.cache === undefined ? {} : { cache: requireString(record.cache, "identity cache") }),
+    ...(record.cycle === undefined
+      ? {}
+      : { cycle: requireBoolean(record.cycle, "identity cycle") }),
+  });
+}
+
+function parseSeries(value: unknown): SeriesDefinition {
+  const record = requireRecord(value, "series");
+  rejectUnknown(
+    record,
+    [
+      "as",
+      "at",
+      "by",
+      "byType",
+      "cache",
+      "comment",
+      "counter",
+      "cycle",
+      "increment",
+      "max",
+      "min",
+      "moves",
+      "name",
+      "reset",
+      "scope",
+      "start",
+      "when",
+    ],
+    "series",
+  );
+  const as = requireString(record.as, "series type");
+  if (as !== "smallint" && as !== "integer" && as !== "bigint") {
+    catalogError("OKM1020", `Series type ${as} must be smallint, integer, or bigint.`);
+  }
+  if (record.counter !== true) {
+    catalogError("OKM1020", "Series counter must be true.");
+  }
+  const reset = record.reset;
+  return {
+    name: requireString(record.name, "series name"),
+    as,
+    start: requireString(record.start, "series start"),
+    increment: requireString(record.increment, "series increment"),
+    counter: true,
+    ...(record.min === undefined ? {} : { min: requireString(record.min, "series min") }),
+    ...(record.max === undefined ? {} : { max: requireString(record.max, "series max") }),
+    ...(record.cache === undefined ? {} : { cache: requireString(record.cache, "series cache") }),
+    ...(record.cycle === undefined ? {} : { cycle: requireBoolean(record.cycle, "series cycle") }),
+    ...(reset === undefined ? {} : { reset: parseReset(reset) }),
+    ...(record.at === undefined ? {} : { at: requireString(record.at, "series zone") }),
+    ...(record.by === undefined ? {} : { by: requireString(record.by, "series by") }),
+    ...(record.byType === undefined
+      ? {}
+      : { byType: requireString(record.byType, "series by type") }),
+    ...(record.scope === undefined ? {} : { scope: parseScope(record.scope) }),
+    ...(record.when === undefined ? {} : { when: requireString(record.when, "series when") }),
+    ...(record.moves === undefined
+      ? {}
+      : { moves: record.moves === "renumber" ? "renumber" : refusedMoves(record.moves) }),
+    ...(record.comment === undefined
+      ? {}
+      : { comment: requireString(record.comment, "series comment") }),
+  };
+}
+
+function refusedMoves(value: unknown): "renumber" {
+  catalogError("OKM1020", `Series moves ${String(value)} must be renumber.`);
+}
+
+function parseReset(value: unknown): SeriesReset {
+  if (typeof value === "string") {
+    if (
+      value === "day" ||
+      value === "week" ||
+      value === "month" ||
+      value === "quarter" ||
+      value === "year"
+    ) {
+      return value;
+    }
+    catalogError("OKM1020", `Series reset ${value} must be day, week, month, quarter, or year.`);
+  }
+  const record = requireRecord(value, "series reset");
+  const unit = requireString(record.unit, "series reset unit");
+  if (
+    unit !== "day" &&
+    unit !== "week" &&
+    unit !== "month" &&
+    unit !== "quarter" &&
+    unit !== "year"
+  ) {
+    catalogError(
+      "OKM1020",
+      `Series reset unit ${unit} must be day, week, month, quarter, or year.`,
+    );
+  }
+  const every = record.every;
+  if (typeof every !== "number" || !Number.isInteger(every) || every < 1) {
+    catalogError("OKM1020", "Series reset every must be an integer of at least 1.");
+  }
+  return { every, unit, from: requireString(record.from, "series reset from") };
+}
+
+function parseScope(value: unknown): readonly { readonly name: string; readonly type: string }[] {
+  if (!Array.isArray(value)) catalogError("OKM1020", "Series scope must be a list.");
+  return value.map((item) => {
+    const record = requireRecord(item, "series scope");
+    return {
+      name: requireString(record.name, "series scope name"),
+      type: requireString(record.type, "series scope type"),
+    };
+  });
 }
 
 function parseGenerated(value: unknown): { readonly stored: boolean; readonly expression: string } {

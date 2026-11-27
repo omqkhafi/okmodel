@@ -924,10 +924,11 @@ function columnAlterKinds(before: ColumnObject, after: ColumnObject): readonly S
 }
 
 function identityKind(before: ColumnObject, after: ColumnObject): StepKind | undefined {
-  if (canonical(before.definition.identity) === canonical(after.definition.identity))
-    return undefined;
   const next = after.definition.identity;
   const previous = before.definition.identity;
+  if ((previous === undefined) === (next === undefined) && previous?.always === next?.always) {
+    return undefined;
+  }
   if (next === undefined) return "drop-identity";
   if (previous === undefined) return "add-identity";
   return next.always ? "set-identity-always" : "set-identity-by-default";
@@ -938,16 +939,26 @@ function identityChangeSql(
   after: ColumnObject,
   schema: string,
 ): string | undefined {
-  if (canonical(before.definition.identity) === canonical(after.definition.identity))
-    return undefined;
-  const table = qualify(schema, after.identity.parent.name);
-  const name = quoteIdent(after.identity.name);
   const next = after.definition.identity;
   const previous = before.definition.identity;
+  if ((previous === undefined) === (next === undefined) && previous?.always === next?.always) {
+    return undefined;
+  }
+  const table = qualify(schema, after.identity.parent.name);
+  const name = quoteIdent(after.identity.name);
   if (next === undefined) return `alter table ${table} alter column ${name} drop identity`;
   if (previous === undefined) {
     const generated = next.always ? "always" : "by default";
-    return `alter table ${table} alter column ${name} add generated ${generated} as identity`;
+    const parts = [
+      next.start === undefined ? "" : `start with ${next.start}`,
+      next.increment === undefined ? "" : `increment by ${next.increment}`,
+      next.min === undefined ? "" : `minvalue ${next.min}`,
+      next.max === undefined ? "" : `maxvalue ${next.max}`,
+      next.cache === undefined ? "" : `cache ${next.cache}`,
+      next.cycle === true ? "cycle" : "",
+    ].filter((part) => part.length > 0);
+    const options = parts.length === 0 ? "" : ` (${parts.join(" ")})`;
+    return `alter table ${table} alter column ${name} add generated ${generated} as identity${options}`;
   }
   return `alter table ${table} alter column ${name} set generated ${next.always ? "always" : "by default"}`;
 }
@@ -987,19 +998,4 @@ function rewriteValues(
       backfill: { table: qualified, key: change.key, batch: change.batch },
     },
   ];
-}
-
-function canonical(value: unknown): string {
-  return JSON.stringify(order(value));
-}
-
-function order(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map((item) => order(item));
-  if (value !== null && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    const next: Record<string, unknown> = {};
-    for (const key of Object.keys(record).sort()) next[key] = order(record[key]);
-    return next;
-  }
-  return value;
 }

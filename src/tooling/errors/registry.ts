@@ -1123,6 +1123,30 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
   },
   ...WARNING_RULES.map(warningDoc),
   {
+    code: "OKM2121",
+    title: "Sequence bounds",
+    summary:
+      "A sequence or counter has min above max, a start outside that range, or a start outside the column type.",
+    fix: "Set min below max, and keep start inside that range and inside the column type.",
+    since: "0.10",
+  },
+  {
+    code: "OKM2122",
+    title: "Sequence still used",
+    summary:
+      "A column still defaults to a sequence that is not in the catalog, or a counter's scope, reset, or type would change in place.",
+    fix: "Keep the sequence, or change the column before dropping it. Add a new series instead of editing a counter key.",
+    since: "0.10",
+  },
+  {
+    code: "OKM2124",
+    title: "Sequence type change",
+    summary:
+      "PostgreSQL cannot change a sequence type in place. A smaller type is refused, and so is any other in-place change of as.",
+    fix: "Keep the current type. A wider type needs a new sequence.",
+    since: "0.10",
+  },
+  {
     code: "OKM1891",
     title: "Ambiguous config",
     summary: "Two okmodel.config.ts files are the same distance from the working directory.",
@@ -1324,6 +1348,30 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     summary:
       "okm doctor --production found at least one fail finding. The report lists each finding with its id and a one-line fix.",
     fix: "Fix each fail finding, then check the target again with okm doctor --production.",
+    since: "0.10",
+  },
+  {
+    code: "OKM2205",
+    title: "Sequence behind its rows",
+    summary:
+      "okm doctor found a sequence whose last value is behind the highest stored id. The finding prints the exact setval. Nothing is written.",
+    fix: "Apply the printed setval. The next value then follows the highest stored id.",
+    since: "0.10",
+  },
+  {
+    code: "OKM2206",
+    title: "Sequence range half used",
+    summary:
+      "okm doctor found a sequence that has used at least half of the range between its minimum and maximum.",
+    fix: "Widen the sequence type or its maximum before the range ends.",
+    since: "0.10",
+  },
+  {
+    code: "OKM2207",
+    title: "Counter behind its rows",
+    summary:
+      "okm doctor found a counter row behind the highest number stored for that scope and period. A value written by hand can leave it there.",
+    fix: "Let the trigger assign the next number, or stop writing the number by hand.",
     since: "0.10",
   },
   {

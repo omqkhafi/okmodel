@@ -108,6 +108,7 @@ export function schemaAdvice(
     ...genericPlanTrap(groups, input, uses),
     ...nullableMatchSimple(input.catalog),
     ...policyFindings(input.catalog, roles),
+    ...seriesFindings(input.catalog),
   ].sort(compareFound);
   const ignore = config.ignore ?? [];
   const used = new Set<WarningIgnore>();
@@ -173,6 +174,105 @@ export function formatAdvice(advice: readonly SchemaAdvice[]): string {
     (item) => `${item.level} ${item.code} ${item.target}: ${item.reason} -- fix: ${item.fix}`,
   );
   return `${lines.join("\n")}\n`;
+}
+
+function seriesFindings(catalog: Catalog): Found[] {
+  const found: Found[] = [];
+  const deleteRule = warningRule("counter-delete");
+  const periodRule = warningRule("reference-period");
+  const yearRule = warningRule("reference-year");
+  const resetting = new Set<string>();
+  const counters = new Set<string>();
+  const archived = new Set<string>();
+  const types = new Map<string, string>();
+  for (const object of catalog.objects) {
+    if (object.kind !== "column") continue;
+    const table = object.identity.parent.name;
+    types.set(`${table}.${object.identity.name}`, object.definition.dataType);
+    if (object.identity.name === "archivedAt") archived.add(table);
+    const series = object.definition.series;
+    if (series === undefined) continue;
+    counters.add(table);
+    if (series.reset !== undefined) resetting.add(table);
+  }
+  if (deleteRule !== undefined) {
+    for (const table of counters) {
+      if (archived.has(table)) continue;
+      const deletes = catalog.objects.some(
+        (object) =>
+          object.kind === "grant" &&
+          object.identity.object.kind === "table" &&
+          object.identity.object.name === table &&
+          object.identity.privilege === "DELETE",
+      );
+      if (!deletes) continue;
+      found.push({
+        rule: deleteRule,
+        table,
+        target: table,
+        reason: `${table} has a counter and a DELETE grant. A deleted row leaves a gap and the number is not reused.`,
+      });
+    }
+  }
+  if (periodRule !== undefined) {
+    for (const object of catalog.objects) {
+      if (object.kind !== "column" || object.definition.series?.reset === undefined) continue;
+      const table = object.identity.parent.name;
+      const number = object.identity.name;
+      const watched = new Set<string>([number]);
+      for (const column of catalog.objects) {
+        if (column.kind !== "column" || column.identity.parent.name !== table) continue;
+        const expression = column.definition.generated?.expression;
+        if (expression !== undefined && expression.includes(number))
+          watched.add(column.identity.name);
+      }
+      for (const index of catalog.objects) {
+        if (
+          index.kind !== "index" ||
+          index.identity.parent.name !== table ||
+          !index.definition.unique
+        ) {
+          continue;
+        }
+        if (!index.definition.columns.some((name) => watched.has(name))) continue;
+        const expression = index.definition.expression ?? "";
+        if (expression.includes("extract(") || expression.includes("date_trunc(")) continue;
+        found.push({
+          rule: periodRule,
+          table,
+          target: `${table}.${index.identity.name}`,
+          reason: `${table}.${number} resets, and unique index ${index.identity.name} does not include the period.`,
+        });
+      }
+    }
+  }
+  if (yearRule !== undefined) {
+    for (const object of catalog.objects) {
+      if (object.kind !== "column" || !resetting.has(object.identity.parent.name)) continue;
+      const expression = object.definition.generated?.expression;
+      if (expression === undefined) continue;
+      const folded = expression.toLowerCase();
+      const year =
+        folded.includes("extract(year") ||
+        folded.includes("date_trunc('year'") ||
+        folded.includes('date_trunc("year"');
+      if (!year || folded.includes("at time zone")) continue;
+      const table = object.identity.parent.name;
+      const unstable = [...types.entries()].some(([key, type]) => {
+        if (!key.startsWith(`${table}.`) || type !== "timestamptz") return false;
+        const name = key.slice(table.length + 1);
+        return expression.includes(`"${name}"`) || expression.includes(name);
+      });
+      if (!unstable) continue;
+      found.push({
+        rule: yearRule,
+        table,
+        target: `${table}.${object.identity.name}`,
+        reason: `${table}.${object.identity.name} takes a year from timestamptz. Use a date or timestamp column, or at time zone with a constant zone.`,
+      });
+    }
+  }
+  return found;
 }
 
 function compareFound(left: Found, right: Found): number {

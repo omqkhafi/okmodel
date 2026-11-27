@@ -106,6 +106,29 @@ export const counts = table("counts", {
 });
 ```
 
+`t.identity({ generated, start, increment, cache, min, max, cycle })` keeps that same column. `generated` defaults to `"always"`. `"byDefault"` accepts an explicit insert value. `scope`, `reset`, and `when` are refused here: a number people see is `sequence()` from `okmodel/seq`.
+
+A sequence with no `scope`, `reset`, or `when`, on a table that is not a tenant table, is a PostgreSQL sequence. Rollback leaves a gap. `cache` can hand the next values to one session before another, so two sessions do not receive them in commit order. A changed `start` on a sequence that already exists is a warning and is not restarted. `increment`, `cache`, `min`, `max`, and `cycle` are `ALTER SEQUENCE`. PostgreSQL 19 logical replication needs `REFRESH SEQUENCES` and the same sequence definition on every node.
+
+```ts title="sequence.ts"
+import { table, t } from "okmodel/pg";
+import { numbered, sequence } from "okmodel/seq";
+
+const docNo = sequence("doc_no", { start: 1 });
+
+export const docs = table("docs", {
+  tenantId: t.uuid(),
+  number: docNo.column({ scope: ["tenantId"] }),
+  reference: t.text().generated(() => numbered("number", { prefix: "INV-", pad: 6 })),
+});
+```
+
+`scope`, `reset`, or `when`, or a tenant table, uses one counter table for the series. The key is the scope columns and the period. The first row of a scope starts at 1. A `via()` table has no tenant column, so `scope` is required. `reset` is `day`, `week`, `month`, `quarter`, `year`, or `{ every, unit, from }`. `by` names the date column. `at` is required when that column is `timestamptz`.
+
+The counter row stays locked until the issuing transaction commits. Do not call an external service inside that transaction. The lock is what keeps two writers in one scope from taking the same number. A counter survives rollback, so the same number is not issued twice. A delete or a move leaves a gap, and that number is not reused. There is no `gapless` option.
+
+`numbered()` is a stored generated column. Plain `lpad` would truncate and then two different numbers can print the same reference, so the pad is `greatest(pad, length(n))`. With `reset`, put the period in a unique reference or `okm check` warns. A year taken from `timestamptz` needs `at time zone` with a constant zone, or a `date` or `timestamp` column.
+
 ## Numbers
 
 `t.numeric()` is exact. Money, rates, and quantities use it. Postgres `decimal` is this same type. The size is two bytes for each group of four decimal digits, plus 3 to 8 bytes. Leading and trailing zeros are not stored. A bare call stays a string. A schema [numeric codec](/docs/schema/codecs-and-row-types#codecs) of `"number"` needs `{ as: "number" }` on this column.

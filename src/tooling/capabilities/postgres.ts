@@ -27,6 +27,13 @@ const native = (proof: string, extra?: Omit<FeatureEntry, "support" | "proof">):
 export const POSTGRES_FEATURES = {
   "schema.core": native("proof:schema.core"),
   "schema.identity": native("proof:schema.identity"),
+  "identity.options": native("proof:identity.options"),
+  "sequence.native": native("proof:sequence.native"),
+  "sequence.counter": native("proof:sequence.counter"),
+  "sequence.reset": native("proof:sequence.reset"),
+  "sequence.when": native("proof:sequence.when"),
+  "sequence.numbered": native("proof:sequence.numbered"),
+  "grants.sequence": native("proof:grants.sequence"),
   "type.uuid": native("proof:type.uuid"),
   "type.uuidv7": native("proof:type.uuidv7", { since: String(UUIDV7_POSTGRES) }),
   "check.notEnforced": native("proof:check.notEnforced", { since: String(NOT_ENFORCED_POSTGRES) }),

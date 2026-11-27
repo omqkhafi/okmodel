@@ -221,6 +221,7 @@ const quiet: ProductionFacts = {
   roleConfig: "not-set",
   extensions: { required: [], versions: new Map(), refusal: undefined },
   invokerGaps: [],
+  sequences: [],
 };
 
 test("the report has a fixed order, ids, and counts", () => {
