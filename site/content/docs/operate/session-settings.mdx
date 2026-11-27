@@ -6,6 +6,8 @@ description: "okmodel/session hands a value such as the user id to a policy or t
 
 `sessionSettings()` declares the settings. `connect({ session })` installs them. `db.with({ ...values })` returns a client that sets those values before its work. The module is its own subpath, so a project that does not import it pays nothing at startup.
 
+`sessionSettings(settings, { role })` names the SQL role for `SET LOCAL ROLE`. Passing `roles` as well resolves that key through the roles config. Call `bindSessionRoles()` from `okmodel/session/role` first. Without that import, the call is OKM1929, and a session that never passes `roles` does not load the config.
+
 | You write | It does |
 | --- | --- |
 | `sessionSettings({ key: { name, type, required? } })` | Declares each setting. `type` is `text`, `uuid`, `int`, or `bool`. |

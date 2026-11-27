@@ -188,10 +188,9 @@ export function alterSequence(
   }
   if (parts.length === 0) return { steps: [], ...(warning === undefined ? {} : { warning }) };
   const sql = `alter sequence ${qualify(schema, after.name)} ${parts.join(" ")}`;
-  const step = {
-    ...ddlStep(sql, "alter-sequence", "ddl", "ACCESS EXCLUSIVE"),
-    weight: "blocking" as const,
-  };
+  // PostgreSQL 17 takes ShareRowExclusiveLock for `ALTER SEQUENCE`, which does
+  // not block readers. Measured in sequences-pg.
+  const step = ddlStep(sql, "alter-sequence", "ddl", "SHARE ROW EXCLUSIVE");
   return { steps: [step], ...(warning === undefined ? {} : { warning }) };
 }
 
@@ -297,7 +296,7 @@ function createCounter(
   source: Catalog,
   seed: boolean,
 ): LoweredStep[] {
-  const names = namesOf(item.series);
+  const names = namesOf(item.series, item.column.identity.name);
   const marker = markerOf(item, names);
   const steps: LoweredStep[] = [
     ddlStep(
@@ -342,9 +341,9 @@ function createCounter(
       "ddl",
       "SHARE ROW EXCLUSIVE",
     );
-    steps.push(seed ? { ...trigger, weight: "blocking" } : trigger);
+    steps.push(trigger);
     const index = ddlStep(indexSql(user, own, schema), "create-index", "ddl", "SHARE");
-    steps.push(seed ? { ...index, weight: "blocking" } : index);
+    steps.push(index);
   }
   if (seed)
     steps.push(ddlStep(seedSql(item, users, names, schema), "seed-counter", "ddl", "ROW SHARE"));
@@ -367,7 +366,7 @@ function replaceCounter(
   schema: string,
   source: Catalog,
 ): LoweredStep[] {
-  const names = namesOf(item.series);
+  const names = namesOf(item.series, item.column.identity.name);
   const steps: LoweredStep[] = [
     ddlStep(
       nextFunctionSql(item.series, names, schema, markerOf(item, names)),
@@ -542,10 +541,7 @@ function nextFunctionSql(
   const table = qualify(schema, names.counter);
   const nextValue = cycleExpression(series, names.counter);
   const bounds = rangeCheck(series);
-  return `create or replace function ${qualify(schema, names.next)}(${args.join(", ")}) returns ${series.as}
-language plpgsql security definer set search_path = pg_catalog, public
-as $okm$
-declare
+  const body = `declare
   issued ${series.as};
 begin
   ${MARK}${JSON.stringify(marker)}
@@ -555,8 +551,25 @@ begin
   returning ${quoteIdent("n")} into issued;
   ${bounds}
   return issued;
-end
-$okm$`;
+end`;
+  return `create or replace function ${qualify(schema, names.next)}(${args.join(", ")}) returns ${series.as}
+language plpgsql security definer set search_path = pg_catalog, public
+as ${dollarQuote(body)}`;
+}
+
+/**
+ * Dollar-quotes `body` with a tag that does not occur in it.
+ *
+ * `$okm$` is the first try. A user expression that contains that tag, such as
+ * a `when` check, would close the function early, so the tag grows.
+ *
+ * @param body - The function body, without the quotes
+ * @returns The quoted body, including its newlines
+ */
+function dollarQuote(body: string): string {
+  let tag = "okm";
+  for (let n = 1; body.includes(`$${tag}$`); n += 1) tag = `okm${String(n)}`;
+  return `$${tag}$\n${body}\n$${tag}$`;
 }
 
 function assignFunctionSql(
@@ -573,10 +586,7 @@ function assignFunctionSql(
   const args = scopeArgs.length === 0 ? period : `${scopeArgs}, ${period}`;
   const guard = moveGuard(series, item.column.identity.name);
   const ready = whenSql(series, columns);
-  return `create or replace function ${qualify(schema, names.assign)}() returns trigger
-language plpgsql security invoker set search_path = pg_catalog, public
-as $okm$
-begin
+  const body = `begin
   ${MARK}${JSON.stringify(marker)}
   ${guard}
   if NEW.${column} is null then
@@ -585,8 +595,10 @@ begin
     ${readyEnd(series)}
   end if;
   return NEW;
-end
-$okm$`;
+end`;
+  return `create or replace function ${qualify(schema, names.assign)}() returns trigger
+language plpgsql security invoker set search_path = pg_catalog, public
+as ${dollarQuote(body)}`;
 }
 
 function triggerSql(item: SeriesColumn, names: Names, schema: string): string {

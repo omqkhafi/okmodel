@@ -1,9 +1,9 @@
 /**
  * Dotted composite fields and to-one paths in `db.*` on real Postgres.
  *
- * Path keys are resolved when the statement is planned. The static call types
- * do not list them: wiring that list moves the type ceilings (D350). The
- * helper below keeps the runtime value and satisfies the checker.
+ * Path keys are resolved when the statement is planned, and the call types
+ * list them. A path the resolver refuses stays a type error; those calls
+ * pass the object through `as never`.
  */
 
 import { expect } from "bun:test";
@@ -123,19 +123,6 @@ const app = schema({
 
 type Db = ReturnType<typeof connect<typeof app>>;
 
-/**
- * Keeps a call object the path resolver accepts.
- *
- * The public overloads do not list dotted keys. `never` still carries the
- * object at runtime, and the first overload accepts it.
- *
- * @param value - The call
- * @returns That call, typed so the checker does not seal the dotted keys
- */
-function raw<T>(value: T): never {
-  return value as never;
-}
-
 async function sqlText(handle: { sql(): unknown }): Promise<string> {
   const value = await handle.sql();
   if (typeof value === "string") return value;
@@ -204,18 +191,18 @@ postgresTest(
 
       await db.people.insert({ id: 2, home: other, work: home }, { returning: ["id"] });
 
-      const whereCity = await db.people.find(
-        raw({ where: { "home.city": "Riyadh" }, select: ["id"], limit: 10 }),
-      );
+      const whereCity = await db.people.find({
+        where: { "home.city": "Riyadh" },
+        select: ["id"],
+        limit: 10,
+      });
       expect(whereCity.map((row: { id: number }) => row.id).sort((a, b) => a - b)).toEqual([1]);
 
-      const selected = await db.people.find(
-        raw({
-          select: ["id", "home.city", "home.n", "home.pop", "home.price", "home.geo.city"],
-          orderBy: { "home.city": "asc" },
-          limit: 10,
-        }),
-      );
+      const selected = await db.people.find({
+        select: ["id", "home.city", "home.n", "home.pop", "home.price", "home.geo.city"],
+        orderBy: { "home.city": "asc" },
+        limit: 10,
+      });
       expect(selected as unknown).toEqual([
         {
           id: 2,
@@ -235,94 +222,104 @@ postgresTest(
         },
       ]);
 
-      const byNumber = await db.people.find(
-        raw({ where: { "home.n": 7 }, select: ["id"], limit: 5 }),
-      );
+      const byNumber = await db.people.find({ where: { "home.n": 7 }, select: ["id"], limit: 5 });
       expect(byNumber as unknown).toEqual([{ id: 1 }]);
 
-      const byPop = await db.people.find(
-        raw({
-          where: { "home.pop": "100" },
-          select: ["id"],
-          orderBy: { "home.pop": "desc" },
-          limit: 5,
-        }),
-      );
+      const byPop = await db.people.find({
+        where: { "home.pop": "100" },
+        select: ["id"],
+        orderBy: { "home.pop": "desc" },
+        limit: 5,
+      });
       expect(byPop as unknown).toEqual([{ id: 1 }]);
 
-      const byPrice = await db.people.find(
-        raw({ where: { "home.price": "1.50" }, select: ["id"], limit: 5 }),
-      );
+      const byPrice = await db.people.find({
+        where: { "home.price": "1.50" },
+        select: ["id"],
+        limit: 5,
+      });
       expect(byPrice as unknown).toEqual([{ id: 1 }]);
 
-      const byKind = await db.people.find(
-        raw({ where: { "home.kind": "work" }, select: ["id"], limit: 5 }),
-      );
+      const byKind = await db.people.find({
+        where: { "home.kind": "work" },
+        select: ["id"],
+        limit: 5,
+      });
       expect(byKind as unknown).toEqual([{ id: 2 }]);
 
-      const byCode = await db.people.find(
-        raw({ where: { "home.code": "ab" }, select: ["id"], limit: 5 }),
-      );
+      const byCode = await db.people.find({
+        where: { "home.code": "ab" },
+        select: ["id"],
+        limit: 5,
+      });
       expect(byCode as unknown).toEqual([{ id: 1 }]);
 
-      const byTag = await db.people.find(
-        raw({ where: { "home.tags": eq(["a", "b"]) }, select: ["id"], limit: 5 }),
-      );
+      const byTag = await db.people.find({
+        where: { "home.tags": eq(["a", "b"]) },
+        select: ["id"],
+        limit: 5,
+      });
       expect(byTag as unknown).toEqual([{ id: 1 }]);
 
-      const byContains = await db.people.find(
-        raw({ where: { "home.tags": contains(["a"]) }, select: ["id"], limit: 5 }),
-      );
+      const byContains = await db.people.find({
+        where: { "home.tags": contains(["a"]) },
+        select: ["id"],
+        limit: 5,
+      });
       expect(byContains as unknown).toEqual([{ id: 1 }]);
 
-      const nested = await db.people.find(
-        raw({ where: { "home.geo.zone": 3 }, select: ["id", "home.geo.city"], limit: 5 }),
-      );
+      const nested = await db.people.find({
+        where: { "home.geo.zone": 3 },
+        select: ["id", "home.geo.city"],
+        limit: 5,
+      });
       expect(nested as unknown).toEqual([{ id: 1, "home.geo.city": "Olaya" }]);
 
-      const missingWork = await db.people.find(
-        raw({ where: { id: 1 }, select: ["id", "work.city"], limit: 5 }),
-      );
+      const missingWork = await db.people.find({
+        where: { id: 1 },
+        select: ["id", "work.city"],
+        limit: 5,
+      });
       expect(missingWork as unknown).toEqual([{ id: 1, "work.city": null }]);
 
-      const noNullMatch = await db.people.find(
-        raw({ where: { "work.city": "Riyadh" }, select: ["id"], limit: 5 }),
-      );
+      const noNullMatch = await db.people.find({
+        where: { "work.city": "Riyadh" },
+        select: ["id"],
+        limit: 5,
+      });
       expect(noNullMatch as unknown).toEqual([{ id: 2 }]);
 
-      const grouped = await db.people.aggregate(
-        raw({
-          groupBy: ["home.city"],
-          count: true,
-          orderBy: { "home.city": "asc" },
-          limit: 10,
-        }),
-      );
+      const grouped = await db.people.aggregate({
+        groupBy: ["home.city"],
+        count: true,
+        orderBy: { "home.city": "asc" },
+        limit: 10,
+      });
       expect(grouped as unknown).toEqual([
         { "home.city": "Jeddah", count: 1 },
         { "home.city": "Riyadh", count: 1 },
       ]);
 
       const planned = await sqlText(
-        db.people.find(raw({ where: { "home.city": "Riyadh" }, select: ["id"], limit: 5 })),
+        db.people.find({ where: { "home.city": "Riyadh" }, select: ["id"], limit: 5 }),
       );
       expect(planned).toContain('(t."home")."city"');
       expect(planned).not.toContain("(home).city");
 
-      const updated = await db.people.update(
-        raw({ where: { id: 1 }, set: { "home.city": "Dammam" } }),
-      );
+      const updated = await db.people.update({ where: { id: 1 }, set: { "home.city": "Dammam" } });
       expect(updated.count).toBe(1);
       const setSql = await sqlText(
-        db.people.update(raw({ where: { id: 2 }, set: { "home.city": "Mecca" } })),
+        db.people.update({ where: { id: 2 }, set: { "home.city": "Mecca" } }),
       );
       expect(setSql).toContain('"home"."city"');
-      const after = await db.people.find(
-        raw({ where: { "home.city": "Dammam" }, select: ["id"], limit: 5 }),
-      );
+      const after = await db.people.find({
+        where: { "home.city": "Dammam" },
+        select: ["id"],
+        limit: 5,
+      });
       expect(after as unknown).toEqual([{ id: 1 }]);
 
-      const unknown = db.people.find(raw({ where: { "home.nope": "x" }, limit: 1 }));
+      const unknown = db.people.find({ where: { "home.nope": "x" } as never, limit: 1 });
       let error: unknown;
       try {
         await unknown.sql();
@@ -339,6 +336,18 @@ postgresTest(
   60_000,
 );
 
+postgresTest(gate, "composite INSERT and UPDATE RETURNING decode as objects", async () => {
+  await withApp(async (db) => {
+    const inserted = await db.people.insert({ id: 1, home }, { returning: ["id", "home"] });
+    expect(inserted.home).toEqual(home);
+    const updated = await db.people.update(
+      { where: { id: 1 }, set: { "home.city": "Khobar" } },
+      { returning: true },
+    );
+    expect(updated[0]?.home).toEqual({ ...home, city: "Khobar" });
+  });
+});
+
 postgresTest(
   gate,
   "a to-one path keeps the joined table's tenant predicate",
@@ -353,27 +362,27 @@ postgresTest(
       await a.books.insert({ id: 1, title: "Visible", authorId: authorA });
       await b.books.insert({ id: 2, title: "Other", authorId: authorB });
 
-      const rows = await a.books.find(
-        raw({
-          where: { "author.name": "Ada" },
-          select: ["id", "author.name"],
-          orderBy: { id: "asc" },
-          limit: 10,
-        }),
-      );
+      const rows = await a.books.find({
+        where: { "author.name": "Ada" },
+        select: ["id", "author.name"],
+        orderBy: { id: "asc" },
+        limit: 10,
+      });
       expect(rows as unknown).toEqual([{ id: 1, "author.name": "Ada" }]);
 
       const sql = await sqlText(
-        a.books.find(raw({ where: { "author.home.city": "Riyadh" }, select: ["id"], limit: 5 })),
+        a.books.find({ where: { "author.home.city": "Riyadh" }, select: ["id"], limit: 5 }),
       );
       expect(sql).toContain('j1."tenant_id"');
       expect(sql).toContain('(j1."home")."city"');
-      const city = await a.books.find(
-        raw({ where: { "author.home.city": "Riyadh" }, select: ["id"], limit: 5 }),
-      );
+      const city = await a.books.find({
+        where: { "author.home.city": "Riyadh" },
+        select: ["id"],
+        limit: 5,
+      });
       expect(city as unknown).toEqual([{ id: 1 }]);
 
-      const deeper = a.books.find(raw({ where: { "author.org.name": "x" }, limit: 1 }));
+      const deeper = a.books.find({ where: { "author.org.name": "x" } as never, limit: 1 });
       let deeperError: unknown;
       try {
         await deeper.sql();
@@ -405,16 +414,20 @@ postgresTest(
       await a.tickets.insert({ id: 2, title: "Foreign", projectId: projectB });
 
       const sql = await sqlText(
-        a.tickets.find(raw({ where: { "project.name": "Hidden" }, select: ["id"], limit: 5 })),
+        a.tickets.find({ where: { "project.name": "Hidden" }, select: ["id"], limit: 5 }),
       );
       expect(sql.toLowerCase()).toContain("exists (");
-      const hidden = await a.tickets.find(
-        raw({ where: { "project.name": "Hidden" }, select: ["id"], limit: 5 }),
-      );
+      const hidden = await a.tickets.find({
+        where: { "project.name": "Hidden" },
+        select: ["id"],
+        limit: 5,
+      });
       expect(hidden as unknown).toEqual([]);
-      const own = await a.tickets.find(
-        raw({ where: { "project.name": "Road" }, select: ["id", "project.name"], limit: 5 }),
-      );
+      const own = await a.tickets.find({
+        where: { "project.name": "Road" },
+        select: ["id", "project.name"],
+        limit: 5,
+      });
       expect(own as unknown).toEqual([{ id: 1, "project.name": "Road" }]);
     });
   },
@@ -432,7 +445,7 @@ postgresTest(
       const db = connect(primaryUrl(), { schema: manyApp, searchPath: schemaName, max: 1 });
       try {
         await db.connected;
-        const handle = db.people.find(raw({ where: { "tasks.title": "x" }, limit: 1 }));
+        const handle = db.people.find({ where: { "tasks.title": "x" } as never, limit: 1 });
         let manyError: unknown;
         try {
           await handle.sql();

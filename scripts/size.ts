@@ -786,6 +786,44 @@ export async function startupGraphSources(
  * @param root - Repository root
  * @returns Problem lines. Empty when only `eq` is present
  */
+/**
+ * `okmodel/session` must not load the roles config until `okmodel/session/role`.
+ *
+ * @param root - Repository root
+ * @returns Problems, empty when the session bundle omits `role/config.ts`
+ */
+export function sessionRoleProblems(root: string): readonly string[] {
+  const dir = mkdtempSync(join(tmpdir(), "okm-session-"));
+  try {
+    const proc = Bun.spawnSync(
+      [
+        "bun",
+        "build",
+        join(root, "src/runtime/session/index.ts"),
+        "--target",
+        "node",
+        "--outdir",
+        dir,
+      ],
+      { cwd: root, stdout: "pipe", stderr: "pipe" },
+    );
+    if (proc.exitCode !== 0) {
+      return [`size: session build exited ${String(proc.exitCode)}`];
+    }
+    let text = "";
+    for (const name of readdirSync(dir)) {
+      if (!name.endsWith(".js")) continue;
+      text += readFileSync(join(dir, name), "utf8");
+    }
+    if (text.includes("src/dialects/pg/role/config.ts")) {
+      return ["size: okmodel/session kept the roles config"];
+    }
+    return [];
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 export function shakenOperatorProblems(root: string): readonly string[] {
   const dir = mkdtempSync(join(tmpdir(), "okm-shake-"));
   try {
@@ -1155,6 +1193,7 @@ async function reportSize(): Promise<void> {
     console.log(`${formatEntry(testingEntry)} (okmodel/testing)`);
     printStubbed(app);
     problems.push(...shakenOperatorProblems(root));
+    problems.push(...sessionRoleProblems(root));
     problems.push(...exportShakeProblems(root));
     problems.push(...printQueryLatency(root));
     for (const entry of CONNECT_ENTRIES) {

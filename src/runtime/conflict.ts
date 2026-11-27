@@ -148,7 +148,7 @@ export function lookupExisting(
       ? `t.${quote(keys[0]?.sql ?? "")}`
       : `(${keys.map((column) => `t.${quote(column.sql)}`).join(", ")})`;
   const projected = returningColumns
-    .map((column) => projectExpr(`t.${quote(column.sql)}`, column.dataType))
+    .map((column) => projectExpr(`t.${quote(column.sql)}`, column.dataType, column.encode))
     .join(", ");
   const text = `select ${projected} from ${quote(table.model.sql)} t where ${left} in (${tuples.join(", ")})${activeAnd(table, keys)}`;
   return { text, params };

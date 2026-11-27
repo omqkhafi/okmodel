@@ -774,6 +774,13 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     fix: "Drop that index or constraint in the same change, or keep the column's storage.",
   },
   {
+    code: "OKM1929",
+    title: "Session roles",
+    summary:
+      "sessionSettings() was given a roles map before bindSessionRoles(). The roles config stays out of okmodel/session until that import. Nothing reached the database.",
+    fix: "Import okmodel/session/role and call bindSessionRoles() before sessionSettings(..., { roles }).",
+  },
+  {
     code: "OKM1928",
     title: "Virtual column fill",
     summary:

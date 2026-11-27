@@ -44,7 +44,7 @@ A to-one path uses the same dotted form a view uses: `"project.name"`, or a fiel
 
 Updating with the whole value replaces the composite. A partial object is a type error. One field is `set: { "home.city": "Riyadh" }`, which prints `SET "home"."city"`, including when the column is NULL. `(home).city` is a syntax error in `SET`.
 
-```ts title="composite-path.ts" no-check="dotted keys run; the static call types do not list them"
+```ts title="composite-path.ts"
 import { connect } from "okmodel/pg/postgresjs";
 import { schema, table, t } from "okmodel/pg";
 

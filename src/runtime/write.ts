@@ -2172,7 +2172,7 @@ function appendReturning(
  */
 function keyExpr(column: ColumnModel, alias: string | undefined): string {
   const sql = alias === undefined ? quote(column.sql) : `${alias}.${quote(column.sql)}`;
-  return projectExpr(sql, column.dataType);
+  return projectExpr(sql, column.dataType, column.encode);
 }
 
 /**
@@ -2616,7 +2616,7 @@ function returningClause(
   if (columns === undefined || columns.length === 0) return "";
   const parts = columns.map((column) => {
     const sql = alias === undefined ? quote(column.sql) : `${alias}.${quote(column.sql)}`;
-    return projectExpr(sql, column.dataType);
+    return projectExpr(sql, column.dataType, column.encode);
   });
   return ` returning ${parts.join(", ")}`;
 }

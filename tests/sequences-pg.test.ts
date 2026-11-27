@@ -321,7 +321,107 @@ type Proof = {
   readonly close: () => Promise<void>;
 };
 
+postgresTest(gate, "a counter whose when text contains $okm$ still assigns a number", async () => {
+  const database = await createIsolatedDatabase();
+  const sql = openPostgres(database.url);
+  try {
+    const built = schema({
+      tables: [
+        table("issued", {
+          ready: t.boolean(),
+          number: sequence("docs").column({ when: () => sqlText`'$okm$' = '$okm$'` }),
+        }),
+      ],
+    });
+    await apply(sql, catalog([]), built.catalog);
+    const rows = await sql<{ number: string }[]>`
+      insert into issued (ready) values (true) returning number
+    `;
+    expect(rows[0]?.number).toBe("1");
+  } finally {
+    await sql.end({ timeout: 5 });
+    await database.close();
+  }
+});
+
+postgresTest(
+  gate,
+  "ALTER SEQUENCE takes ShareRowExclusiveLock; CREATE TRIGGER and CREATE UNIQUE INDEX do not take AccessExclusiveLock",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const sql = openPostgres(database.url);
+    try {
+      const before = schema({
+        tables: [table("issued", { id: t.integer().primaryKey(), tenantId: t.uuid() })],
+      }).catalog;
+      const after = schema({
+        tables: [
+          table("issued", {
+            id: t.integer().primaryKey(),
+            tenantId: t.uuid(),
+            number: sequence("docs").column({ scope: ["tenantId"] }),
+          }),
+        ],
+      }).catalog;
+      const plan = planMigration({ before, after, name: "locks" });
+      await apply(sql, catalog([]), before);
+      const trigger = plan.steps.find((step) => step.kind === "create-trigger");
+      const index = plan.steps.find((step) => step.kind === "create-index");
+      expect(trigger?.weight).not.toBe("blocking");
+      expect(index?.weight).not.toBe("blocking");
+      for (const step of plan.steps) {
+        if (step === trigger || step === index || step.kind === "seed-counter") continue;
+        await sql.unsafe(step.sql);
+      }
+      const triggerModes = await lockModes(sql, trigger?.sql ?? "", "issued");
+      const indexModes = await lockModes(sql, index?.sql ?? "", "issued");
+      expect(triggerModes).toContain("ShareRowExclusiveLock");
+      expect(triggerModes).not.toContain("AccessExclusiveLock");
+      expect(indexModes).toContain("ShareLock");
+      expect(indexModes).not.toContain("AccessExclusiveLock");
+
+      await sql.unsafe(`create sequence docs_number as bigint`);
+      const altered = await lockModes(
+        sql,
+        `alter sequence docs_number increment by 5`,
+        "docs_number",
+      );
+      expect(altered).toContain("ShareRowExclusiveLock");
+      expect(altered).not.toContain("AccessExclusiveLock");
+      const native = planMigration({
+        before: schema({
+          tables: [table("docs", { number: sequence({ increment: 1 }).column() })],
+        }).catalog,
+        after: schema({
+          tables: [table("docs", { number: sequence({ increment: 5 }).column() })],
+        }).catalog,
+        name: "alter",
+      });
+      expect(native.steps.find((step) => step.kind === "alter-sequence")?.weight).toBeUndefined();
+    } finally {
+      await sql.end({ timeout: 5 });
+      await database.close();
+    }
+  },
+);
+
 let pending: Promise<Proof> | undefined;
+
+async function lockModes(
+  sql: Sql,
+  statement: string,
+  relation: string,
+): Promise<readonly string[]> {
+  return sql.begin(async (tx) => {
+    await tx.unsafe(statement);
+    const rows = await tx<{ mode: string }[]>`
+      select mode from pg_locks
+      where pid = pg_backend_pid()
+        and relation = ${relation}::regclass
+    `;
+    return rows.map((row) => row.mode);
+  });
+}
 
 afterAll(async () => {
   if (pending === undefined) return;

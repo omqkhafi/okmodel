@@ -188,6 +188,50 @@ postgresTest(gate, "violating virtual rows stop apply and clean rows pass", asyn
   }
 });
 
+postgresTest(
+  gate,
+  "proof: SET EXPRESSION takes AccessExclusiveLock on PostgreSQL 17 and later",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const db = openPostgres(database.url);
+    try {
+      if ((await serverMajor(db)) < 17) return;
+      const before = schema({
+        tables: [
+          table("stats", {
+            n: t.integer(),
+            total: t.integer().generated(() => sql`n + 1`),
+          }),
+        ],
+      });
+      const after = schema({
+        tables: [
+          table("stats", {
+            n: t.integer(),
+            total: t.integer().generated(() => sql`n + 2`),
+          }),
+        ],
+      });
+      const plan = planMigration({
+        before: before.catalog,
+        after: after.catalog,
+        name: "set-expression",
+        postgres: 17,
+      });
+      const step = plan.steps.find((item) => item.kind === "set-generated");
+      expect(step?.sql.toLowerCase()).toContain("set expression");
+      expect(step?.weight).toBe("rewrite");
+      await db.unsafe(
+        `create table stats (n integer, total integer generated always as (n + 1) stored)`,
+      );
+      expect(await rewrites(db, step?.sql ?? "")).toBe(true);
+    } finally {
+      await db.end({ timeout: 5 });
+      await database.close();
+    }
+  },
+);
+
 postgresTest(gate, "rewrite weights match relfilenode and AccessExclusiveLock", async () => {
   const database = await createIsolatedDatabase();
   const db = openPostgres(database.url);
