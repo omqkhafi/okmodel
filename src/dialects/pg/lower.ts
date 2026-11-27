@@ -7,6 +7,7 @@
  * recorded plan.
  */
 
+import { isComposite } from "../../contracts/catalog/composite.js";
 import { isDomain } from "../../contracts/catalog/enum.js";
 import { fitIdentifier } from "../../contracts/catalog/identifier.js";
 import { OkmError } from "../../contracts/error.js";
@@ -275,6 +276,55 @@ function lowerChange(change: LogicalChange): readonly DdlStep[] {
       return rewriteValues(change);
     case "alter-column":
       return alterColumn(change.before, change.after, change.schema, change.catalogs);
+    case "add-attribute":
+      return addAttribute(change);
+    case "drop-attribute":
+      return [
+        ddlStep(
+          `alter type ${qualify(change.schema, change.type)} drop attribute ${quoteIdent(change.name)}`,
+          "drop-attribute",
+          "ddl",
+          ACCESS,
+        ),
+      ];
+    case "rename-attribute":
+      return [
+        ddlStep(
+          `alter type ${qualify(change.schema, change.type)} rename attribute ${quoteIdent(change.from)} to ${quoteIdent(change.to)}`,
+          "rename-attribute",
+          "ddl",
+          ACCESS,
+        ),
+      ];
+    case "alter-attribute":
+      return [
+        ddlStep(
+          `alter type ${qualify(change.schema, change.type)} alter attribute ${quoteIdent(change.name)} type ${change.dataType}`,
+          "alter-attribute",
+          "ddl",
+          ACCESS,
+        ),
+      ];
+    case "swap-composite":
+      return swapComposite(change);
+    case "fill-attribute":
+      return [
+        ddlStep(
+          `update ${qualify(change.schema, change.table)} set ${quoteIdent(change.column)}.${quoteIdent(change.field)} = ${change.expression}`,
+          "backfill-expand",
+          "backfill",
+          ROW,
+        ),
+      ];
+    case "comment-attribute":
+      return [
+        ddlStep(
+          `comment on column ${qualify(change.schema, change.type)}.${quoteIdent(change.field)} is ${change.text === null ? "null" : quoteLiteral(change.text)}`,
+          "comment",
+          "ddl",
+          SHARE_UPDATE,
+        ),
+      ];
     default:
       return unmet(change);
   }
@@ -447,14 +497,139 @@ function concurrentDropIndexSql(sql: string): string {
 function createType(object: TypeObject, schema: string): readonly DdlStep[] {
   const sql = createObjectSql(object, schema);
   if (sql === undefined) return [];
-  const kind = isDomain(object.definition) ? "create-domain" : "create-enum";
-  return [ddlStep(sql, kind, "ddl", ACCESS)];
+  const composite = isComposite(object.definition);
+  const kind = composite
+    ? "create-composite"
+    : isDomain(object.definition)
+      ? "create-domain"
+      : "create-enum";
+  const steps: DdlStep[] = [ddlStep(sql, kind, "ddl", ACCESS)];
+  if (composite) {
+    for (const field of object.definition.fields) {
+      if (field.comment === undefined) continue;
+      steps.push(
+        ddlStep(
+          `comment on column ${qualify(schema, object.identity.name)}.${quoteIdent(field.name)} is ${quoteLiteral(field.comment)}`,
+          "comment",
+          "ddl",
+          SHARE_UPDATE,
+        ),
+      );
+    }
+  }
+  return steps;
+}
+
+function addAttribute(change: {
+  readonly schema: string;
+  readonly type: string;
+  readonly name: string;
+  readonly dataType: string;
+  readonly comment?: string;
+}): readonly DdlStep[] {
+  const steps: DdlStep[] = [
+    ddlStep(
+      `alter type ${qualify(change.schema, change.type)} add attribute ${quoteIdent(change.name)} ${change.dataType}`,
+      "add-attribute",
+      "ddl",
+      ACCESS,
+    ),
+  ];
+  if (change.comment !== undefined) {
+    steps.push(
+      ddlStep(
+        `comment on column ${qualify(change.schema, change.type)}.${quoteIdent(change.name)} is ${quoteLiteral(change.comment)}`,
+        "comment",
+        "ddl",
+        SHARE_UPDATE,
+      ),
+    );
+  }
+  return steps;
+}
+
+function swapComposite(change: {
+  readonly schema: string;
+  readonly name: string;
+  readonly fields: readonly { readonly name: string; readonly dataType: string }[];
+  readonly columns: readonly {
+    readonly table: string;
+    readonly column: string;
+    readonly defaultExpression?: string;
+  }[];
+}): readonly DdlStep[] {
+  const fresh = `${change.name}_okm_new`;
+  const retired = `${change.name}_okm_old`;
+  const body = change.fields
+    .map((field) => `${quoteIdent(field.name)} ${field.dataType}`)
+    .join(", ");
+  const steps: DdlStep[] = [
+    ddlStep(
+      `create type ${qualify(change.schema, fresh)} as (${body})`,
+      "create-composite",
+      "ddl",
+      ACCESS,
+    ),
+  ];
+  for (const column of change.columns) {
+    const table = qualify(change.schema, column.table);
+    const columnName = quoteIdent(column.column);
+    if (column.defaultExpression !== undefined) {
+      steps.push(
+        ddlStep(
+          `alter table ${table} alter column ${columnName} drop default`,
+          "drop-default",
+          "ddl",
+          ACCESS,
+        ),
+      );
+    }
+    steps.push({
+      ...ddlStep(
+        `alter table ${table} alter column ${columnName} type ${qualify(change.schema, fresh)} using ${columnName}::text::${qualify(change.schema, fresh)}`,
+        "set-composite-column",
+        "ddl",
+        ACCESS,
+      ),
+      weight: "rewrite",
+    });
+    if (column.defaultExpression !== undefined) {
+      steps.push(
+        ddlStep(
+          `alter table ${table} alter column ${columnName} set default ${column.defaultExpression}`,
+          "set-default",
+          "ddl",
+          ACCESS,
+        ),
+      );
+    }
+  }
+  steps.push(
+    ddlStep(
+      `alter type ${qualify(change.schema, change.name)} rename to ${quoteIdent(retired)}`,
+      "rename-enum",
+      "ddl",
+      ACCESS,
+    ),
+    ddlStep(
+      `alter type ${qualify(change.schema, fresh)} rename to ${quoteIdent(change.name)}`,
+      "rename-enum",
+      "ddl",
+      ACCESS,
+    ),
+    ddlStep(`drop type ${qualify(change.schema, retired)}`, "drop-composite", "ddl", ACCESS),
+  );
+  return steps;
 }
 
 function dropType(object: TypeObject, schema: string): readonly DdlStep[] {
   const sql = dropObjectSql(object, schema);
   if (sql === undefined) return [];
-  const kind = isDomain(object.definition) ? "drop-domain" : "drop-enum";
+  const kind = isComposite(object.definition)
+    ? "drop-composite"
+    : isDomain(object.definition)
+      ? "drop-domain"
+      : "drop-enum";
   return [ddlStep(sql, kind, "ddl", ACCESS)];
 }
 

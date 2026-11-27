@@ -247,6 +247,13 @@ const KIND_SQL: Readonly<Record<StepKind, RegExp>> = {
   "validate-domain-check": /^alter domain\b.*\bvalidate constraint\b/,
   "drop-domain-check": /^alter domain\b.*\bdrop constraint\b/,
   "rename-domain-check": /^alter domain\b.*\brename constraint\b/,
+  "create-composite": /^create type\b.*\bas\s*\(/,
+  "drop-composite": /^drop type\b/,
+  "add-attribute": /^alter type\b.*\badd attribute\b/,
+  "drop-attribute": /^alter type\b.*\bdrop attribute\b/,
+  "rename-attribute": /^alter type\b.*\brename attribute\b/,
+  "alter-attribute": /^alter type\b.*\balter attribute\b/,
+  "set-composite-column": /^alter table\b.*\balter column\b.*\btype\b/,
   "create-extension": /^create extension\b/,
   "drop-extension": /^drop extension\b/,
   "update-extension": /^alter extension\b.*\bupdate\b/,
@@ -511,6 +518,60 @@ export type LogicalChange =
       readonly schema: string;
       readonly name: string;
       readonly expression: string;
+    }
+  | {
+      readonly op: "add-attribute";
+      readonly schema: string;
+      readonly type: string;
+      readonly name: string;
+      readonly dataType: string;
+      readonly comment?: string;
+    }
+  | {
+      readonly op: "drop-attribute";
+      readonly schema: string;
+      readonly type: string;
+      readonly name: string;
+    }
+  | {
+      readonly op: "rename-attribute";
+      readonly schema: string;
+      readonly type: string;
+      readonly from: string;
+      readonly to: string;
+    }
+  | {
+      readonly op: "alter-attribute";
+      readonly schema: string;
+      readonly type: string;
+      readonly name: string;
+      readonly dataType: string;
+    }
+  | {
+      readonly op: "swap-composite";
+      readonly schema: string;
+      readonly name: string;
+      readonly fields: readonly { readonly name: string; readonly dataType: string }[];
+      readonly columns: readonly {
+        readonly table: string;
+        readonly column: string;
+        readonly defaultExpression?: string;
+      }[];
+    }
+  | {
+      readonly op: "fill-attribute";
+      readonly schema: string;
+      readonly table: string;
+      readonly column: string;
+      readonly field: string;
+      readonly expression: string;
+    }
+  | {
+      readonly op: "comment-attribute";
+      readonly schema: string;
+      readonly type: string;
+      readonly field: string;
+      readonly text: string | null;
     }
   | {
       readonly op: "create-extension";

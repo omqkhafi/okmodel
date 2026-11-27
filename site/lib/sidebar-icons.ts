@@ -154,6 +154,7 @@ const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/docs/schema/postgres-specific-columns": DatabaseZap,
   "/docs/schema/defaults": CirclePlus,
   "/docs/schema/enums-arrays-picklists": Shapes,
+  "/docs/schema/composite-types": Boxes,
   "/docs/schema/names-and-casing": CaseSensitive,
   "/docs/schema/visibility": Eye,
   "/docs/schema/validation": ShieldCheck,

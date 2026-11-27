@@ -11,6 +11,7 @@ import { join } from "node:path";
 
 import { catalog } from "../../contracts/catalog/build.js";
 import { parseCatalog } from "../../contracts/catalog/document.js";
+import { isComposite } from "../../contracts/catalog/composite.js";
 import { isDomain } from "../../contracts/catalog/enum.js";
 import { identityKey } from "../../contracts/catalog/identity.js";
 import type {
@@ -495,6 +496,9 @@ function sameType(before: TypeDefinition, after: TypeDefinition): boolean {
     );
   }
   if (!beforeDomain && !afterDomain) {
+    if (isComposite(before) || isComposite(after)) {
+      return isComposite(before) && isComposite(after) && sameComposite(before, after);
+    }
     // Added labels are expand: readers of the previous catalog still see
     // every label they knew, in the same order.
     const kept = after.labels.filter((label) => before.labels.includes(label));
@@ -503,6 +507,25 @@ function sameType(before: TypeDefinition, after: TypeDefinition): boolean {
     );
   }
   return false;
+}
+
+function sameComposite(
+  before: Extract<TypeDefinition, { readonly fields: readonly unknown[] }>,
+  after: Extract<TypeDefinition, { readonly fields: readonly unknown[] }>,
+): boolean {
+  if (before.fields.length !== after.fields.length) return false;
+  const right = new Map(after.fields.map((field) => [field.name, field]));
+  for (const field of before.fields) {
+    const match = right.get(field.name);
+    if (
+      match === undefined ||
+      match.dataType !== field.dataType ||
+      match.nullable !== field.nullable
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function objectLabel(object: CatalogObject): string {

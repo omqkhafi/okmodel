@@ -546,6 +546,9 @@ function invertRenames(renames: readonly DeclaredRename[]): DeclaredRename[] {
   }
   return renames.map((rename) => {
     if (rename.kind === "table") return { kind: "table", from: rename.to, to: rename.from };
+    if (rename.kind === "attribute") {
+      return { kind: "attribute", type: rename.type, from: rename.to, to: rename.from };
+    }
     return {
       kind: "column",
       table: tableTo.get(rename.table) ?? rename.table,

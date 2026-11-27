@@ -85,6 +85,8 @@ export type MigrateConfig = {
    * `columns` grants select or update on named columns.
    */
   readonly roles?: RolesInput;
+  /** Usage and create grants on the schema named by `namespace`. */
+  readonly grants?: unknown;
   /**
    * Typed `raw()` discovery.
    *

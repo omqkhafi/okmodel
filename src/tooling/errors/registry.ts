@@ -1167,6 +1167,14 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     since: "0.10",
   },
   {
+    code: "OKM1915",
+    title: "Composite change refused",
+    summary:
+      "A composite field type change is used by an array, a nested composite, or a function, or a new non-null field has no fill, or a column swap was not confirmed.",
+    fix: "Add a fill for the new field, confirm the column swap, or write the copy by hand. Nothing was changed.",
+    since: "0.10",
+  },
+  {
     code: "OKM1914",
     title: "Role attribute",
     summary:

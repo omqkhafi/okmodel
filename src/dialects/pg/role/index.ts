@@ -21,6 +21,7 @@ import { OkmError } from "../../../contracts/error.js";
 import { quoteIdent } from "../ddl.js";
 import { type RolesInput, normalizeRoles } from "./config.js";
 import { readGrants } from "./grant-slot.js";
+import { readTypeGrant } from "../composite-mark.js";
 import { expandGrants, type GrantWarning } from "./grants.js";
 import { columnPrivilege } from "./sql.js";
 
@@ -370,6 +371,9 @@ function grantRef(object: CatalogObject): GrantObjectRef | undefined {
       name: `${object.identity.name}(${object.identity.argTypes.join(",")})`,
     };
   }
+  if (object.kind === "type") {
+    return { kind: "type", namespace: object.identity.namespace, name: object.identity.name };
+  }
   return undefined;
 }
 
@@ -378,6 +382,7 @@ function privilegesFor(kind: GrantObjectRef["kind"]): readonly string[] {
   if (kind === "sequence") return SEQUENCE;
   if (kind === "materializedView") return READ;
   if (kind === "namespace") return [];
+  if (kind === "type") return ["USAGE"];
   return RELATION;
 }
 
@@ -450,6 +455,7 @@ function objectGrants(
   if (object.kind === "function") {
     return readGrants("function", namespace, object.identity.name);
   }
+  if (object.kind === "type") return readTypeGrant(namespace, object.identity.name);
   return undefined;
 }
 
@@ -467,7 +473,8 @@ function named(object: CatalogObject): string {
     object.kind === "view" ||
     object.kind === "materializedView" ||
     object.kind === "function" ||
-    object.kind === "sequence"
+    object.kind === "sequence" ||
+    object.kind === "type"
   ) {
     return object.identity.name;
   }

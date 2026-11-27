@@ -38,11 +38,13 @@ import {
 import { compileColumn, type CompilableColumn } from "./compile.js";
 import {
   ColumnBuilder,
+  compositeMark,
   formatType,
   retimed,
   type ColumnState,
   type ReferenceModifier,
 } from "./column.js";
+import { clearTypeGrants, rememberTypeGrant } from "./composite-mark.js";
 import {
   formatPostgresFloor,
   isPostgresMajor,
@@ -663,6 +665,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
   return {
     get catalog(): Catalog {
       if (document === undefined) {
+        clearTypeGrants();
         const objects: CatalogObject[] = [];
         for (const job of jobs) job(objects);
         for (const [name, note] of [...enums.entries()].sort((left, right) =>
@@ -677,6 +680,8 @@ export function schema<const TTables extends readonly AnyTable[]>(
               ...(note.comment !== undefined ? { comment: note.comment } : {}),
             }),
           );
+          const schemaName = namespace.form === "static" ? namespace.name : "public";
+          rememberTypeGrant(schemaName, name, note.grants);
         }
         contributeListed(config.extensions, objects, names);
         contributeListed(config.functions, objects, names);
@@ -753,6 +758,7 @@ type EnumNote = {
   readonly table: string;
   readonly provenance: Provenance;
   readonly comment?: string;
+  readonly grants?: unknown;
 };
 
 function noteEnum(
@@ -762,6 +768,7 @@ function noteEnum(
   table: string,
   provenance: Provenance,
   comment?: string,
+  grants?: unknown,
 ): void {
   const previous = notes.get(name);
   if (previous !== undefined && !sameEnumLabels(previous.labels, labels)) {
@@ -772,11 +779,13 @@ function noteEnum(
   }
   if (previous === undefined || compareText(table, previous.table) < 0) {
     const kept = comment ?? previous?.comment;
+    const keptGrants = grants ?? previous?.grants;
     notes.set(name, {
       labels,
       table,
       provenance,
       ...(kept !== undefined ? { comment: kept } : {}),
+      ...(keptGrants !== undefined ? { grants: keptGrants } : {}),
     });
   }
 }
@@ -1188,7 +1197,14 @@ function compileTable(
         sqlName,
         provenance,
         column.state.enumComment,
+        column.state.enumGrants,
       );
+    }
+    const composite = compositeMark(column.state.encode);
+    if (composite !== undefined) {
+      for (const item of composite.enums) {
+        noteEnum(enums, item.labels, item.name, sqlName, provenance, item.comment, item.grants);
+      }
     }
   }
 
@@ -1323,6 +1339,15 @@ function pushCompiled(
   if (compiled.check !== undefined) objects.push(compiled.check);
   if (compiled.unique !== undefined) objects.push(compiled.unique);
   column.state.domain?.emit?.(input.parent.namespace, input.provenance, objects);
+  const mark = compositeMark(column.state.encode);
+  if (mark !== undefined) {
+    if (column.state.generated?.stored === false) {
+      definition(
+        `A virtual generated column cannot use composite type ${mark.type}. PostgreSQL refuses it (0A000). Store the column.`,
+      );
+    }
+    mark.emit(input.parent, input.provenance, objects, input.name, column.state.nullable);
+  }
 }
 
 function compileUniques(

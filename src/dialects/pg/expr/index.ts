@@ -67,6 +67,7 @@ export type StableExpr<T = unknown, N extends boolean = boolean> = Expr<
 /** What the node is. Printed to SQL by `okmodel/migrate`. */
 export type Node =
   | { readonly k: "col"; readonly name: string }
+  | { readonly k: "field"; readonly e: Node; readonly name: string }
   | { readonly k: "lit"; readonly v: string | number | bigint | boolean | null }
   | {
       readonly k: "op";
@@ -270,6 +271,23 @@ function lift(value: unknown): Node {
  */
 export function col<T = unknown, N extends boolean = false>(name: string): Expr<T, N, "immutable"> {
   return make({ k: "col", name });
+}
+
+/**
+ * One field of a composite expression.
+ *
+ * Prints `(expr)."name"`. Indexes and generated columns use this. A query
+ * path `"home.city"` is not this function.
+ *
+ * @param expr - Composite expression, usually a column
+ * @param name - Field name
+ * @returns An immutable expression of the field
+ */
+export function field<T = unknown, N extends boolean = boolean>(
+  expr: Expr<unknown, N, "immutable">,
+  name: string,
+): Expr<T, N, "immutable"> {
+  return make({ k: "field", e: expr[EXPR], name });
 }
 
 function binary(op: "+" | "-" | "*" | "/" | "%", a: unknown, b: unknown): Expr {

@@ -22,6 +22,7 @@ import {
   templateNamespace,
 } from "./identity.js";
 import { catalog } from "./build.js";
+import { compositeType, isComposite } from "./composite.js";
 import { domainType, enumType, isDomain } from "./enum.js";
 import { extensionObject } from "./extension.js";
 import { defaultPrivilegeObject, grantObject, roleObject } from "./privilege.js";
@@ -948,6 +949,17 @@ function rewriteType(
       dependencies,
     });
   }
+  if (isComposite(object.definition)) {
+    return compositeType({
+      namespace: object.identity.namespace,
+      name: object.identity.name,
+      fields: object.definition.fields,
+      owner: object.owner,
+      provenance: object.provenance,
+      dependencies,
+      ...(object.comment !== undefined ? { comment: object.comment } : {}),
+    });
+  }
   return enumType({
     namespace: object.identity.namespace,
     name: object.identity.name,
@@ -1150,9 +1162,20 @@ function definitionToJson(object: CatalogObject): Json {
         start: object.definition.start,
       };
     case "type":
-      return isDomain(object.definition)
-        ? { base: object.definition.base, check: object.definition.check }
-        : { labels: object.definition.labels };
+      if (isDomain(object.definition)) {
+        return { base: object.definition.base, check: object.definition.check };
+      }
+      if (isComposite(object.definition)) {
+        return {
+          fields: object.definition.fields.map((field) => ({
+            dataType: field.dataType,
+            name: field.name,
+            nullable: field.nullable,
+            ...(field.comment !== undefined ? { comment: field.comment } : {}),
+          })),
+        };
+      }
+      return { labels: object.definition.labels };
     case "extension": {
       const definition = object.definition;
       return {
@@ -1602,6 +1625,34 @@ function parseType(
       name: identity.name,
       base: requireString(definition.base, "domain base"),
       check: requireString(definition.check, "domain check"),
+      owner,
+      provenance,
+      dependencies,
+    });
+  }
+  if ("fields" in definition) {
+    rejectUnknown(definition, ["fields"], "type definition");
+    if (!Array.isArray(definition.fields)) {
+      catalogError("OKM1020", `Composite ${identity.name} fields must be a list.`);
+    }
+    const fields = definition.fields.map((field) => {
+      if (field === null || typeof field !== "object" || Array.isArray(field)) {
+        catalogError("OKM1020", `Composite ${identity.name} field must be an object.`);
+      }
+      const record = field as Record<string, unknown>;
+      rejectUnknown(record, ["comment", "dataType", "name", "nullable"], "composite field");
+      const comment = record.comment;
+      return {
+        name: requireString(record.name, "composite field"),
+        dataType: requireString(record.dataType, "composite field type"),
+        nullable: requireBoolean(record.nullable, "composite field nullable"),
+        ...(typeof comment === "string" ? { comment } : {}),
+      };
+    });
+    return compositeType({
+      namespace: identity.namespace,
+      name: identity.name,
+      fields,
       owner,
       provenance,
       dependencies,

@@ -11,6 +11,7 @@ import type { ClientFill, IdGenerators } from "../contracts/generator.js";
 import type { ColumnModel, PresetUse } from "../dialects/pg/model.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
 import type { AnyTable } from "../dialects/pg/table.js";
+import { compositeMark } from "../dialects/pg/column.js";
 import { encodeJson } from "../dialects/pg/json.js";
 import { arrayElementType, assertOperatorFits, textArray } from "../dialects/pg/operator-fit.js";
 import { isOperator, operatorName, operatorValue } from "../dialects/pg/operators.js";
@@ -120,7 +121,13 @@ export type PreparedWrite = {
 type Cell =
   | { readonly kind: "default" }
   | { readonly kind: "null"; readonly dataType: string }
-  | { readonly kind: "value"; readonly wire: string; readonly dataType: string };
+  | { readonly kind: "value"; readonly wire: string; readonly dataType: string }
+  | {
+      readonly kind: "composite";
+      readonly wire: string;
+      readonly prefix: string;
+      readonly suffix: string;
+    };
 
 type Planned = {
   readonly statements: readonly Statement[];
@@ -1408,6 +1415,11 @@ function insertHead(
         slots.push("default");
         continue;
       }
+      if (cell.kind === "composite") {
+        params.push(cell.wire);
+        slots.push(`${cell.prefix}$${String(params.length)}${cell.suffix}`);
+        continue;
+      }
       params.push(cell.kind === "null" ? null : cell.wire);
       slots.push(`$${String(params.length)}::${cell.dataType}`);
     }
@@ -1495,6 +1507,27 @@ export function emitSet(
   const keys = Object.keys(set);
   let wrote = false;
   for (const key of keys) {
+    const dot = key.indexOf(".");
+    if (dot > 0) {
+      const parent = table.columns.get(key.slice(0, dot));
+      const field = key.slice(dot + 1);
+      const mark = parent === undefined ? undefined : compositeMark(parent.encode);
+      if (mark !== undefined && parent !== undefined && !field.includes(".")) {
+        if (wrote) sql.text(", ");
+        wrote = true;
+        sql.text(`${quote(parent.sql)}.${quote(field)}`);
+        sql.text(" = ");
+        const value = set[key];
+        if (value === null) {
+          const found = mark.fieldValue(field, null);
+          sql.text(`null::${found.dataType}`);
+          continue;
+        }
+        const found = mark.fieldValue(field, value);
+        sql.param(found.wire, found.dataType);
+        continue;
+      }
+    }
     const column = table.columns.get(key);
     if (column === undefined) continue;
     if (wrote) sql.text(", ");
@@ -1540,8 +1573,16 @@ function emitValue(sql: Sql, column: ColumnModel, value: unknown, alias: string)
       `Field ${column.field} received an operator. set accepts a value, inc, json.set, arr.append, or arr.remove.`,
     );
   }
+  const mark = compositeMark(column.encode);
   if (value === null) {
     sql.text(`null::${column.dataType}`);
+    return;
+  }
+  if (mark !== undefined) {
+    if (typeof value === "object") takeObject(column, value);
+    sql.text(mark.prefix);
+    sql.param(encodeColumn(column, value), "");
+    sql.text(mark.suffix);
     return;
   }
   if (typeof value === "object") takeObject(column, value);
@@ -1797,6 +1838,16 @@ function cellsFor(columns: readonly ColumnModel[], row: Record<string, unknown>)
     if (!Object.hasOwn(row, column.field)) return { kind: "default" };
     const value = row[column.field];
     if (value === null) return { kind: "null", dataType: column.dataType };
+    const mark = compositeMark(column.encode);
+    if (mark !== undefined) {
+      if (typeof value === "object") takeObject(column, value);
+      return {
+        kind: "composite",
+        wire: encodeColumn(column, value),
+        prefix: mark.prefix,
+        suffix: mark.suffix,
+      };
+    }
     if (typeof value === "object") takeObject(column, value);
     return { kind: "value", wire: encodeColumn(column, value), dataType: column.dataType };
   });
@@ -2165,6 +2216,12 @@ function pathInsert(
         sql.text("default");
         continue;
       }
+      if (cell.kind === "composite") {
+        sql.text(cell.prefix);
+        sql.param(cell.wire, "");
+        sql.text(cell.suffix);
+        continue;
+      }
       sql.param(cell.kind === "null" ? null : cell.wire, cell.dataType);
     }
     sql.text(")");
@@ -2180,6 +2237,17 @@ function pathInsert(
     sink: sql.sink(),
   });
   return sql.statement();
+}
+
+function compositeFieldKey(table: Indexed, key: string): boolean {
+  const dot = key.indexOf(".");
+  if (dot < 1 || key.includes(".", dot + 1)) return false;
+  const parent = table.columns.get(key.slice(0, dot));
+  if (parent === undefined) return false;
+  const mark = compositeMark(parent.encode);
+  if (mark === undefined) return false;
+  const field = key.slice(dot + 1);
+  return mark.fields.some((item) => item.name === field);
 }
 
 export function writeSet(
@@ -2200,7 +2268,13 @@ export function writeSet(
   const set: Record<string, unknown> = {};
   for (const key of Object.keys(value)) {
     const column = table.columns.get(key);
-    if (column === undefined) refuseUnknownField(table, key, tenancy, allow, "update");
+    if (column === undefined) {
+      if (compositeFieldKey(table, key)) {
+        set[key] = value[key];
+        continue;
+      }
+      refuseUnknownField(table, key, tenancy, allow, "update");
+    }
     if (value[key] === undefined) continue;
     tenancy?.guard(table.model.name, key, "update");
     if (column.guardUpdate || !writable(table, column, allow, "update")) refuse(table, column);

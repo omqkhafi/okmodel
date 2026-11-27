@@ -26,6 +26,7 @@
     "traits",
     "tenancy",
     "enums-arrays-picklists",
+    "composite-types",
     "codecs-and-row-types",
     "required-rows",
     "---Advanced---",

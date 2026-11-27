@@ -85,6 +85,7 @@ export { cidr, inet, macaddr, macaddr8 } from "./network.js";
 export { line, point, type Line, type Point } from "./geometry.js";
 export { ltree, tsvector } from "./search.js";
 export { domain, enumColumn as enum } from "./enum.js";
+export { composite, type CompositeOptions, type CompositeRow } from "./composite.js";
 export { t } from "./namespace.js";
 export * as arr from "./ops/arr-ns.js";
 export * as json from "./ops/json-ns.js";
