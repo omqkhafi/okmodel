@@ -74,6 +74,7 @@ export async function refuseGeneratedRowsOnTarget(
   schema: string,
   steps: readonly { readonly sql: string }[],
 ): Promise<void> {
+  if (!steps.some((step) => parseGeneratedStep(step.sql, schema) !== undefined)) return;
   const postgres = (await import("postgres")).default;
   const sql = postgres(driverUrl(url), {
     max: 1,

@@ -20,7 +20,7 @@ import { checkScratch } from "./scratch-check.js";
  */
 export async function assertGeneratedImmutable(source: Catalog, url?: string): Promise<void> {
   sealGenerated(source);
-  let index = 0;
+  const statements: string[] = [];
   for (const object of source.objects) {
     if (object.kind !== "column" || object.definition.generated === undefined) continue;
     const parent = object.identity.parent.name;
@@ -32,11 +32,11 @@ export async function assertGeneratedImmutable(source: Catalog, url?: string): P
     siblings.push(
       `${quoteIdent(object.identity.name)} ${object.definition.dataType} generated always as (${object.definition.generated.expression}) stored`,
     );
-    const verdict = await checkScratch(
-      `create table ${quoteIdent(`okm_g_${String(index)}`)} (${siblings.join(", ")})`,
-      url === undefined ? undefined : { url },
+    statements.push(
+      `create table ${quoteIdent(`okm_g_${String(statements.length)}`)} (${siblings.join(", ")})`,
     );
-    index += 1;
-    if (!verdict.ok) throw verdict.error;
   }
+  if (statements.length === 0) return;
+  const verdict = await checkScratch(statements, url === undefined ? undefined : { url });
+  if (!verdict.ok) throw verdict.error;
 }
