@@ -37,6 +37,30 @@ export async function assertGeneratedImmutable(source: Catalog, url?: string): P
     );
   }
   if (statements.length === 0) return;
-  const verdict = await checkScratch(statements, url === undefined ? undefined : { url });
+  const verdict = await scratchGenerated(statements, url);
   if (!verdict.ok) throw verdict.error;
+}
+
+/**
+ * Runs the scratch statements on `url` when that database accepts them.
+ *
+ * A missing database or a read-only target falls back to the in-memory
+ * scratch database. One process pays for that fallback once.
+ *
+ * @param statements - One `CREATE TABLE` per generated column
+ * @param url - Target database, when the project has one
+ * @returns The verdict
+ */
+async function scratchGenerated(
+  statements: readonly string[],
+  url: string | undefined,
+): Promise<Awaited<ReturnType<typeof checkScratch>>> {
+  if (url === undefined) return checkScratch(statements);
+  try {
+    const verdict = await checkScratch(statements, { url });
+    if (!verdict.ok && verdict.sqlstate === "25006") return checkScratch(statements);
+    return verdict;
+  } catch {
+    return checkScratch(statements);
+  }
 }

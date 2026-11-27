@@ -252,7 +252,7 @@ async function shapePlan(
     choice.accept.push(...decidedSwaps.accept);
   }
   const { assertGeneratedImmutable } = await import("./generated-check.js");
-  await assertGeneratedImmutable(opened.built.catalog);
+  await assertGeneratedImmutable(opened.built.catalog, url);
   const { parseFillFlag } = await import("./data-questions.js");
   const columnFills = (data?.fills ?? []).map((flag) => parseFillFlag(flag));
   const compared = await comparedPlan(
@@ -579,7 +579,7 @@ export async function checkProject(
   const { assertIndexImmutable } = await import("./index-rules.js");
   const { assertGeneratedImmutable } = await import("./generated-check.js");
   await assertIndexImmutable(opened.built.catalog);
-  await assertGeneratedImmutable(opened.built.catalog);
+  await assertGeneratedImmutable(opened.built.catalog, targetUrl(opened.config, flags));
   const refusal = adviceRefusal(advice);
   if (refusal !== undefined) throw refusal;
   const named = flags?.target;
