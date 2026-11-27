@@ -216,8 +216,10 @@ export async function book(url: string): Promise<void> {
 
   const rows = await db.views.busy.find({ limit: 5 });
   const span = rows[0]?.taken[0];
-  const lower = span !== undefined && span.empty === false ? span.lower.toString() : "";
-  const upper = span !== undefined && span.empty === false ? span.upper.toString() : "";
+  const lower =
+    span !== undefined && span.empty === false && span.lower !== null ? span.lower.toString() : "";
+  const upper =
+    span !== undefined && span.empty === false && span.upper !== null ? span.upper.toString() : "";
   console.log(`busy: ${String(rows[0]?.resourceId)} ${lower}/${upper}`);
 }
 ```

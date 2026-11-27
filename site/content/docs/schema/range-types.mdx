@@ -36,14 +36,25 @@ table("marks", {
 `contains` takes one element or a whole range. The element is cast to the subtype. `adjacent`, `before`, `after`, and `isEmpty` are the other range operators. They load with the operator compiler, when a query uses them.
 
 ```ts
-import { adjacent, after, before, contains, isEmpty } from "okmodel/pg";
+import { connect } from "okmodel/pg/postgresjs";
+import { adjacent, after, before, contains, isEmpty, schema, table, t } from "okmodel/pg";
 
-await db.slots.find({ where: { during: contains(3) }, limit: 5 });
-await db.slots.find({ where: { during: contains([1, 4] as const) }, limit: 5 });
-await db.slots.find({ where: { during: adjacent([5, 9] as const) }, limit: 5 });
-await db.slots.find({ where: { during: before([5, 9] as const) }, limit: 5 });
-await db.slots.find({ where: { during: after([1, 4] as const) }, limit: 5 });
-await db.slots.find({ where: { during: isEmpty() }, limit: 5 });
+const slots = table("slots", {
+  id: t.integer().primaryKey(),
+  during: t.int4range(),
+});
+
+const app = schema({ tables: [slots] });
+
+export async function nearby(url: string): Promise<void> {
+  await using db = connect(url, { schema: app });
+  await db.slots.find({ where: { during: contains(3) }, limit: 5 });
+  await db.slots.find({ where: { during: contains([1, 4] as const) }, limit: 5 });
+  await db.slots.find({ where: { during: adjacent([5, 9] as const) }, limit: 5 });
+  await db.slots.find({ where: { during: before([5, 9] as const) }, limit: 5 });
+  await db.slots.find({ where: { during: after([1, 4] as const) }, limit: 5 });
+  await db.slots.find({ where: { during: isEmpty() }, limit: 5 });
+}
 ```
 
 ## Expressions

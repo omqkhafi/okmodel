@@ -201,6 +201,7 @@ const SPEC_CODES = [
   "OKM2125",
   "OKM2126",
   "OKM2127",
+  "OKM2128",
   "OKM2121",
   "OKM2122",
   "OKM2124",
@@ -381,6 +382,22 @@ test("mapPostgresError reads SQLSTATE, constraint names, and batchIndex", () => 
   expect(unique.batchIndex).toBe(1);
   expect(unique.values()).toBeUndefined();
   expect(JSON.stringify(unique)).not.toContain("ada@example.com");
+
+  const exclusion = mapPostgresError(
+    new DriverError('conflicting key value violates exclusion constraint "spans_one_excl"', {
+      sqlstate: "23P01",
+      constraint: "spans_one_excl",
+      table: "spans",
+      detail: "Key (r)=([4,6)) conflicts with existing key (r)=([1,5)).",
+    }),
+  );
+  expect(exclusion.kind).toBe("exclusion");
+  expect(exclusion.constraint).toBe("spans_one_excl");
+  expect(exclusion.columns).toEqual(["r"]);
+  expect(exclusion.message.includes("[4,6)")).toBe(false);
+  expect(exclusion.message.includes("[1,5)")).toBe(false);
+  expect(JSON.stringify(exclusion.log()).includes("[4,6)")).toBe(false);
+  expect(exclusion.values()).toBeUndefined();
 
   const kept = mapPostgresError(
     new DriverError("duplicate", {

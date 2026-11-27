@@ -631,8 +631,7 @@ function summaryOf(
   const where = place(error.table, columns);
   if (kind === "exclusion") {
     const name = error.constraint === undefined ? "" : ` ${error.constraint}`;
-    const detail = error.detail === undefined ? "" : `: ${error.detail}`;
-    return `${label}${name} on ${where ?? "the row"} (${fieldReason})${detail}`;
+    return `${label}${name} on ${where ?? "the row"} (${fieldReason})`;
   }
   if (where === undefined) return label;
   if (fieldReason === kind) return `${label} on ${where}`;

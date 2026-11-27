@@ -483,14 +483,13 @@ export function isEmpty(
 /**
  * `range_agg`. An aggregate, so it is not immutable and cannot sit in an exclusion.
  *
+ * `col("during")` is accepted. The column still has to be a range in SQL.
+ *
  * @param value - Range column or expression
  * @returns The aggregate expression
  */
-export function rangeAgg<T, N extends boolean, V extends Volatility>(
-  value: T extends { readonly empty: boolean } ? Expr<T, N, V> : never,
-): Expr<unknown, boolean, "volatile">;
-export function rangeAgg<T, N extends boolean, V extends Volatility>(
-  value: T extends { readonly empty: boolean } ? Expr<T, N, V> : never,
+export function rangeAgg(
+  value: Expr<unknown, boolean, Volatility>,
 ): Expr<unknown, boolean, "volatile"> {
   return make({ k: "fn", name: "range_agg", args: [lift(value)] }) as Expr<
     unknown,
