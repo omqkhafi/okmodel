@@ -9,6 +9,8 @@
 import { relative, dirname } from "node:path";
 
 import { caseName, type Casing } from "../../dialects/pg/casing.js";
+import { isComposite } from "../../contracts/catalog/composite.js";
+import { isGeneratedCompositeCheck } from "../../dialects/pg/composite.js";
 import { isDomain } from "../../contracts/catalog/enum.js";
 import { identityKey } from "../../contracts/catalog/identity.js";
 import { deterministicName } from "../../contracts/catalog/identifier.js";
@@ -183,6 +185,7 @@ export function emitPull(
   const skipped: PullSkip[] = [];
   const enums = enumLabels(source);
   const domains = domainDefs(source);
+  const composites = compositeDefs(source);
   const byParent = groupByParent(source);
   const tables = source.objects
     .filter((object): object is TableObject => object.kind === "table")
@@ -203,7 +206,7 @@ export function emitPull(
     tableExports.set(table.identity.name, exportName);
   }
 
-  const pulledColumns = pulledColumnNames(tables, byParent, enums, domains);
+  const pulledColumns = pulledColumnNames(tables, byParent, enums, domains, composites);
   for (const table of tables) {
     if (table.definition.partition !== undefined) {
       skipped.push(
@@ -225,6 +228,7 @@ export function emitPull(
       byParent,
       enums,
       domains,
+      composites,
       statements,
       skipped,
       exportName,
@@ -450,6 +454,7 @@ function planTable(
   byParent: ReadonlyMap<string, ParentBag>,
   enums: ReadonlyMap<string, readonly string[]>,
   domains: ReadonlyMap<string, { readonly base: string; readonly check: string }>,
+  composites: ReturnType<typeof compositeDefs>,
   statements: readonly string[],
   skipped: PullSkip[],
   exportName: string,
@@ -503,7 +508,7 @@ function planTable(
       emitted.add(column.identity.name);
       continue;
     }
-    const built = columnSource(column, field, enums, domains, casing, label, renames);
+    const built = columnSource(column, field, enums, domains, composites, casing, label, renames);
     if (built === undefined) {
       skipped.push(
         skip(
@@ -592,6 +597,14 @@ function planTable(
         .map((name) => JSON.stringify(fields.get(name) ?? name))
         .join(", ");
       uniques.push(`      ${jsKey(constraint.definition.nameKey)}: [${cols}],`);
+      continue;
+    }
+    if (
+      kind === "check" &&
+      constraint.definition.nameKey.startsWith("cf_") &&
+      constraint.definition.expression !== undefined &&
+      isGeneratedCompositeCheck(constraint.definition.expression)
+    ) {
       continue;
     }
     if (kind === "check" && constraint.definition.expression !== undefined) {
@@ -811,6 +824,7 @@ function pulledColumnNames(
   byParent: ReadonlyMap<string, ParentBag>,
   enums: ReadonlyMap<string, readonly string[]>,
   domains: ReadonlyMap<string, { readonly base: string; readonly check: string }>,
+  composites: ReturnType<typeof compositeDefs>,
 ): ReadonlyMap<string, ReadonlySet<string>> {
   const pulled = new Map<string, ReadonlySet<string>>();
   for (const table of tables) {
@@ -827,7 +841,16 @@ function pulledColumnNames(
         continue;
       }
       if (
-        columnSource(column, column.identity.name, enums, domains, undefined, "", []) !== undefined
+        columnSource(
+          column,
+          column.identity.name,
+          enums,
+          domains,
+          composites,
+          undefined,
+          "",
+          [],
+        ) !== undefined
       ) {
         names.add(column.identity.name);
       }
@@ -877,15 +900,31 @@ function columnSource(
   field: string,
   enums: ReadonlyMap<string, readonly string[]>,
   domains: ReadonlyMap<string, { readonly base: string; readonly check: string }>,
+  composites: ReadonlyMap<
+    string,
+    readonly {
+      readonly name: string;
+      readonly dataType: string;
+      readonly nullable: boolean;
+      readonly comment?: string;
+    }[]
+  >,
   casing: Casing | undefined,
   label: string,
   renames: string[],
 ): string | undefined {
   if (column.definition.identity !== undefined) return undefined;
+  const scalar = column.definition.dataType.replace(/(?:\[\])+$/, "");
   const labels = enums.get(column.definition.dataType);
   const domain = domains.get(column.definition.dataType);
+  const composite = composites.get(scalar);
   let call: string | undefined;
-  if (labels !== undefined) {
+  if (composite !== undefined) {
+    call = compositeCall(scalar, composite, composites, enums, domains);
+    const dims = column.definition.dataType.length - scalar.length;
+    if (call !== undefined && dims === 2) call += ".array()";
+    else if (dims > 2) call = undefined;
+  } else if (labels !== undefined) {
     const list = labels.map((label) => JSON.stringify(label)).join(", ");
     call = `t.enum(${JSON.stringify(column.definition.dataType)}, [${list}])`;
   } else if (domain !== undefined) {
@@ -1359,10 +1398,83 @@ function groupByParent(source: Catalog): Map<string, ParentBag> {
   return map;
 }
 
+function compositeDefs(source: Catalog): Map<
+  string,
+  readonly {
+    readonly name: string;
+    readonly dataType: string;
+    readonly nullable: boolean;
+    readonly comment?: string;
+  }[]
+> {
+  const types = new Map<
+    string,
+    readonly {
+      readonly name: string;
+      readonly dataType: string;
+      readonly nullable: boolean;
+      readonly comment?: string;
+    }[]
+  >();
+  for (const object of source.objects) {
+    if (object.kind !== "type" || !isComposite(object.definition)) continue;
+    types.set(object.identity.name, object.definition.fields);
+  }
+  return types;
+}
+
+function compositeCall(
+  name: string,
+  fields: readonly {
+    readonly name: string;
+    readonly dataType: string;
+    readonly nullable: boolean;
+    readonly comment?: string;
+  }[],
+  composites: ReadonlyMap<
+    string,
+    readonly {
+      readonly name: string;
+      readonly dataType: string;
+      readonly nullable: boolean;
+      readonly comment?: string;
+    }[]
+  >,
+  enums: ReadonlyMap<string, readonly string[]>,
+  domains: ReadonlyMap<string, { readonly base: string; readonly check: string }>,
+): string | undefined {
+  const parts: string[] = [];
+  for (const field of fields) {
+    const scalar = field.dataType.replace(/(?:\[\])+$/, "");
+    const nested = composites.get(scalar);
+    const labels = enums.get(scalar);
+    const domain = domains.get(scalar);
+    let call: string | undefined;
+    if (nested !== undefined) call = compositeCall(scalar, nested, composites, enums, domains);
+    else if (labels !== undefined) {
+      call = `t.enum(${JSON.stringify(scalar)}, [${labels.map((label) => JSON.stringify(label)).join(", ")}])`;
+    } else if (domain !== undefined) {
+      const base = builderCall(domain.base, 0);
+      if (base === undefined) return undefined;
+      call = `t.domain(${JSON.stringify(scalar)}, ${base}, ${JSON.stringify(domain.check)})`;
+    } else call = builderCall(field.dataType, 0);
+    if (call === undefined) return undefined;
+    const dims = field.dataType.length - scalar.length;
+    if (dims === 2) call += ".array()";
+    else if (dims > 2) return undefined;
+    if (field.nullable) call += ".nullable()";
+    if (field.comment !== undefined) call += `.comment(${JSON.stringify(field.comment)})`;
+    parts.push(`${jsKey(field.name)}: ${call}`);
+  }
+  return `t.composite(${JSON.stringify(name)}, { ${parts.join(", ")} })`;
+}
+
 function enumLabels(source: Catalog): Map<string, readonly string[]> {
   const labels = new Map<string, readonly string[]>();
   for (const object of source.objects) {
-    if (object.kind !== "type" || isDomain(object.definition)) continue;
+    if (object.kind !== "type" || isDomain(object.definition) || !("labels" in object.definition)) {
+      continue;
+    }
     labels.set(object.identity.name, object.definition.labels);
   }
   return labels;

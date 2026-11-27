@@ -18,6 +18,8 @@ import {
   renameTable,
   settleChecks,
 } from "../../contracts/catalog/document.js";
+import { catalog } from "../../contracts/catalog/build.js";
+import { isComposite } from "../../contracts/catalog/composite.js";
 import { isDomain, sameEnumLabels } from "../../contracts/catalog/enum.js";
 import { fitIdentifier, identitySequenceName } from "../../contracts/catalog/identifier.js";
 import { identityKey, identityLabel, staticNamespace } from "../../contracts/catalog/identity.js";
@@ -63,6 +65,7 @@ import { extensionAlterSteps } from "./extensions.js";
 import { omitManagedObjects } from "./managed.js";
 import { bareCheck, enforcementSteps, stepsForExistingTable, type SafeStep } from "./safe.js";
 import { sqlQuoteOpen } from "./sql-lex.js";
+import { compositeChanges } from "./composite-plan.js";
 import { canonicalTypeName } from "./type-name.js";
 import {
   requireLowered,
@@ -207,6 +210,23 @@ export type PlanRequest = {
    * pairs. A declared rename is not one of these: it is applied first.
    */
   readonly acceptSwaps?: readonly ColumnSwap[];
+  /**
+   * SQL that fills a new non-null composite field before its check.
+   *
+   * The statement is `UPDATE ... SET column.field = expression`.
+   */
+  readonly attributeFills?: readonly {
+    readonly type: string;
+    readonly field: string;
+    readonly expression: string;
+  }[];
+  /**
+   * Accept a composite field type change that rewrites plain columns.
+   *
+   * The rewrite takes an AccessExclusive lock, about 1.3 s per million rows
+   * (an estimate). Arrays, nested composites, and functions are still refused.
+   */
+  readonly confirmTypeChanges?: boolean;
 };
 
 /** One column removed and one column added on the same table. */
@@ -579,6 +599,14 @@ export function planMigration(
         recreated: recreatedIds,
       }),
     ),
+  );
+  steps.push(
+    ...compositeChanges(beforeBy, afterBy, schema, {
+      ...(request.attributeFills !== undefined ? { attributeFills: request.attributeFills } : {}),
+      ...(request.confirmTypeChanges !== undefined
+        ? { confirmTypeChanges: request.confirmTypeChanges }
+        : {}),
+    }).flatMap((change) => take(dialect.lower(change))),
   );
   for (const object of creationOrder(request.after)) {
     if (object.kind !== "extension") continue;
@@ -1042,6 +1070,19 @@ export function staleRenames(
       }
       continue;
     }
+    if (rename.kind === "attribute") {
+      const type = previous.objects.find(
+        (object) => object.kind === "type" && object.identity.name === rename.type,
+      );
+      const fields =
+        type !== undefined && "fields" in type.definition ? type.definition.fields : undefined;
+      if (fields?.some((field) => field.name === rename.from) !== true) {
+        messages.push(
+          `Attribute ${rename.type}.${rename.from} renamedFrom is not in the previous snapshot.`,
+        );
+      }
+      continue;
+    }
     const tableRename = renames.find((item) => item.kind === "table" && item.to === rename.table);
     const previousTable = tableRename?.kind === "table" ? tableRename.from : rename.table;
     if (!hasColumn(previous, previousTable, rename.from)) {
@@ -1062,12 +1103,66 @@ function applyRenames(source: Catalog, renames: readonly DeclaredRename[]): Cata
     current = renameTable(current, { namespace, from: rename.from, to: rename.to });
   }
   for (const rename of renames) {
+    if (rename.kind === "attribute") {
+      current = renameAttribute(current, rename);
+      continue;
+    }
     if (rename.kind !== "column") continue;
     const parent = { namespace, name: rename.table };
     if (!hasColumn(current, rename.table, rename.from)) continue;
     current = renameColumn(current, { parent, from: rename.from, to: rename.to });
   }
   return current;
+}
+
+function renameAttribute(
+  source: Catalog,
+  rename: { readonly type: string; readonly from: string; readonly to: string },
+): Catalog {
+  const pattern = new RegExp(`\\)\\.${rename.from}(?![A-Za-z0-9_])`, "g");
+  const objects = source.objects.map((object) => {
+    if (
+      object.kind === "type" &&
+      object.identity.name === rename.type &&
+      isComposite(object.definition)
+    ) {
+      return {
+        ...object,
+        definition: {
+          ...object.definition,
+          fields: object.definition.fields.map((field) =>
+            field.name === rename.from ? { ...field, name: rename.to } : field,
+          ),
+        },
+      };
+    }
+    if (object.kind === "constraint" && object.definition.expression !== undefined) {
+      const expression = object.definition.expression.replace(pattern, `).${rename.to}`);
+      return expression === object.definition.expression
+        ? object
+        : { ...object, definition: { ...object.definition, expression } };
+    }
+    if (object.kind === "index") {
+      const expression = object.definition.expression?.replace(pattern, `).${rename.to}`);
+      const predicate = object.definition.predicate?.replace(pattern, `).${rename.to}`);
+      if (
+        expression === object.definition.expression &&
+        predicate === object.definition.predicate
+      ) {
+        return object;
+      }
+      return {
+        ...object,
+        definition: {
+          ...object.definition,
+          ...(expression !== undefined ? { expression } : {}),
+          ...(predicate !== undefined ? { predicate } : {}),
+        },
+      };
+    }
+    return object;
+  });
+  return catalog(objects);
 }
 
 function renameSteps(
@@ -1102,6 +1197,25 @@ function renameSteps(
       ),
     );
     steps.push(...columnSequenceRenames(source, previousTable, rename, schema, dialect));
+  }
+  for (const rename of renames) {
+    if (rename.kind !== "attribute") continue;
+    const type = source.objects.find(
+      (object) => object.kind === "type" && object.identity.name === rename.type,
+    );
+    const fields = type !== undefined && "fields" in type.definition ? type.definition.fields : [];
+    if (!fields.some((field) => field.name === rename.from)) continue;
+    steps.push(
+      ...take(
+        dialect.lower({
+          op: "rename-attribute",
+          schema,
+          type: rename.type,
+          from: rename.from,
+          to: rename.to,
+        }),
+      ),
+    );
   }
   return steps;
 }
@@ -2015,9 +2129,9 @@ function enumEdits(
 ): EnumEdit[] {
   const edits: EnumEdit[] = [];
   for (const [key, next] of afterBy) {
-    if (next.kind !== "type" || isDomain(next.definition)) continue;
+    if (next.kind !== "type" || !("labels" in next.definition)) continue;
     const previous = beforeBy.get(key);
-    if (previous === undefined || previous.kind !== "type" || isDomain(previous.definition)) {
+    if (previous === undefined || previous.kind !== "type" || !("labels" in previous.definition)) {
       continue;
     }
     const beforeLabels = previous.definition.labels;
@@ -2470,8 +2584,21 @@ function forComparison(
         },
       };
     case "type":
-      if (!isDomain(object.definition)) return object.definition;
-      return { ...object.definition, base: canonicalTypeName(object.definition.base) };
+      if (isDomain(object.definition)) {
+        return { ...object.definition, base: canonicalTypeName(object.definition.base) };
+      }
+      if (isComposite(object.definition)) {
+        const fields = object.definition.fields
+          .map((field) => ({
+            dataType: canonicalTypeName(field.dataType),
+            name: field.name,
+            nullable: field.nullable,
+            ...(field.comment !== undefined ? { comment: field.comment } : {}),
+          }))
+          .sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
+        return { fields };
+      }
+      return object.definition;
     case "constraint": {
       const definition = withoutNameKey(object.definition);
       if (object.definition.constraintKind === "check") delete definition.columns;

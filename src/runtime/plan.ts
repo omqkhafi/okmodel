@@ -14,6 +14,7 @@ import {
   operatorValue,
   type OperatorName,
 } from "../dialects/pg/operators.js";
+import { compositeMark } from "../dialects/pg/column.js";
 import {
   type ColumnModel,
   type QuerySchema,
@@ -865,7 +866,7 @@ function emitRead(
     const item = selected[index];
     if (item === undefined) continue;
     if (index > 0) sink.text(", ");
-    sink.text(projectExpr(`t.${quote(item.sql)}`, item.dataType));
+    sink.text(projectExpr(`t.${quote(item.sql)}`, item.dataType, item.encode));
     sink.mark(`s:${item.field}`);
     outputs?.fields.push({ key: item.field, at: column, decode: item.decode });
     column += 1;
@@ -1076,10 +1077,21 @@ export function emitOperand(
     );
     return;
   }
+  const mark = compositeMark(column.encode);
   if (value === null) {
     sink.mark(":null");
     sink.text(ref);
-    sink.text(" is null");
+    sink.text(mark !== undefined ? " is not distinct from null" : " is null");
+    return;
+  }
+  if (mark !== undefined) {
+    if (typeof value === "object") takeObject(column, value, !wrapped);
+    sink.mark(":eq");
+    sink.text(ref);
+    sink.text(" = ");
+    sink.text(mark.prefix);
+    sink.param(column.encode(value));
+    sink.text(mark.suffix);
     return;
   }
   if (typeof value === "object") takeObject(column, value, !wrapped);
@@ -1171,7 +1183,9 @@ function emitNot(
   if (value === null) {
     sink.mark(":null");
     sink.text(ref);
-    sink.text(" is not null");
+    sink.text(
+      compositeMark(column.encode) !== undefined ? " is distinct from null" : " is not null",
+    );
     return;
   }
   if (isOperator(value) && operatorName(value) === "inList") {
@@ -1531,7 +1545,15 @@ export function takeObject(column: ColumnModel, value: object, bare = false): vo
   }
 }
 
-export function projectExpr(sql: string, dataType: string): string {
+export function projectExpr(
+  sql: string,
+  dataType: string,
+  encode?: (value: unknown) => string,
+): string {
+  if (encode !== undefined) {
+    const read = compositeMark(encode)?.read;
+    if (read !== undefined) return read(sql);
+  }
   if (dataType === "timestamptz" || dataType === "timestamp") return jsonExpr(sql, dataType);
   return sql;
 }

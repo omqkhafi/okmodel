@@ -1,0 +1,57 @@
+---
+title: Composite types
+description: A Postgres composite is one value with named fields. Writes use jsonb so a later field does not break them.
+---
+
+A composite is a named row type. Declare it next to `t.enum` and `t.domain`, and use it as a column. An unused composite is not in the catalog. A column, or a field of a composite that a column uses, is what records it.
+
+```ts
+import { table, t } from "okmodel/pg";
+
+export const address = t.composite("address", {
+  street: t.text(),
+  city: t.text(),
+  zip: t.text().nullable(),
+  geo: t.composite("geo", { lat: t.double(), lng: t.double() }),
+})
+
+table("people", {
+  home: address,
+  work: address.nullable(),
+  previous: address.array(),
+})
+```
+
+The TypeScript value is the field object. `zip` is `string | null`. A column is not null unless you call `.nullable()`. PostgreSQL has no NOT NULL inside a composite, so each column gets a CHECK. A nullable column allows a SQL NULL row: the check is `column IS NOT DISTINCT FROM NULL OR (fields)`. A composite whose fields are all null is an object, not null.
+
+`where: { work: null }` is `IS NOT DISTINCT FROM NULL`. `not(null)` is `IS DISTINCT FROM NULL`.
+
+## Writes
+
+Each field is encoded with its own codec. An unknown key is refused, and a number is refused for a text field. The bound value is `jsonb_populate_record(null::address, $1::jsonb)`. A null column is SQL NULL, never a JSON null.
+
+A column default is a TypeScript object printed as positional `row(...)::address` in catalog order. A runtime write does not use that form. `row(a, b, c)::address` breaks after `ADD ATTRIBUTE` (42846). `jsonb_populate_record` does not: a new field is null until you set it.
+
+A domain over a composite is refused. That domain breaks the jsonb write path.
+
+## Fields
+
+`field(col("home"), "city")` in `okmodel/expr` prints `(home).city`. An index on that expression, and a unique index on the whole column, both work. A check, a view, and a generated expression use the same print.
+
+Updating with the whole value replaces the composite. A partial object is a type error. One field is `SET home.city = ...`, including when the column is NULL. `(home).city` is a syntax error in `SET`.
+
+## Changes
+
+Adding a field is `ALTER TYPE ... ADD ATTRIBUTE`, including when columns use the type. Existing rows read the new field as null. A non-null field needs a fill, `UPDATE ... SET column.field = <expr>`, before its check.
+
+Renaming a field is `RENAME ATTRIBUTE`, from `.renamedFrom("city")` on the field. Dependent checks and indexes follow.
+
+Dropping a field is a contract step. Dependents drop first. A protected target needs `--allow-protected`.
+
+Changing a field's type is `ALTER ATTRIBUTE ... TYPE` when nothing uses the type. When plain columns use it, confirm the swap: a new type, `DROP DEFAULT`, `ALTER COLUMN TYPE ... USING (column::text::new)`, `SET DEFAULT`, then rename. That rewrite takes an AccessExclusive lock, about 1.3 s per million rows (an estimate). An array, a nested composite, or a function is refused. Copy those by hand.
+
+Declared field order is not a migration. `okm pull` prints catalog order. `DROP TYPE` runs only after the columns that use the type. Nested types are created before the composite that contains them.
+
+`comment` on the type, and `.comment()` on a field, are `COMMENT ON TYPE` and `COMMENT ON COLUMN type.field`. `grants: { app: "read" }` is `USAGE`, the same role keys as a table. `read` on a type is usage. Renaming a field updates the name inside existing checks. The check text is rewritten when the sorted field names change order.
+
+A typed table (`CREATE TABLE ... OF`), inheritance, and a virtual generated column of a composite type are out. PostgreSQL refuses the virtual column (0A000).

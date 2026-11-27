@@ -19,6 +19,7 @@ import { OkmError } from "../../contracts/error.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
 import { identityKey } from "../../contracts/catalog/identity.js";
 import { quoteIdent } from "../../dialects/pg/ddl.js";
+import { isComposite } from "../../contracts/catalog/composite.js";
 import { isDomain } from "../../contracts/catalog/enum.js";
 import type { CatalogObject } from "../../contracts/catalog/types.js";
 import {
@@ -680,6 +681,16 @@ function reprintTypes(source: Catalog): readonly ReprintType[] {
   const types: ReprintType[] = [];
   for (const object of source.objects) {
     if (object.kind !== "type") continue;
+    if (isComposite(object.definition)) {
+      types.push({
+        name: object.identity.name,
+        fields: object.definition.fields.map((field) => ({
+          name: field.name,
+          dataType: field.dataType,
+        })),
+      });
+      continue;
+    }
     types.push(
       isDomain(object.definition)
         ? { name: object.identity.name, base: object.definition.base }

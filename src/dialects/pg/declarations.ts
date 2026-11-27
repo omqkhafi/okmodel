@@ -6,7 +6,7 @@
  */
 
 import type { DeclaredRename } from "../../contracts/catalog/rename.js";
-import { ColumnBuilder } from "./column.js";
+import { ColumnBuilder, compositeMark } from "./column.js";
 import { type Casing, namesFor } from "./casing.js";
 import type { AnyTable } from "./table.js";
 
@@ -31,6 +31,7 @@ export function schemaDeclarations(source: {
 }): SchemaDeclarations {
   const names = namesFor(source.casing);
   const renames: DeclaredRename[] = [];
+  const seenAttributes = new Set<string>();
   for (const item of source.tables) {
     const tableName = names.table(item);
     const renamed = tableRenamedFrom(item);
@@ -47,6 +48,20 @@ export function schemaDeclarations(source: {
           table: tableName,
           from: state.renamedFrom,
           to: columnName,
+        });
+      }
+      const mark = compositeMark(state.encode);
+      if (mark === undefined) continue;
+      for (const field of mark.fields) {
+        if (field.renamedFrom === undefined) continue;
+        const key = `${mark.type}\0${field.renamedFrom}\0${field.name}`;
+        if (seenAttributes.has(key)) continue;
+        seenAttributes.add(key);
+        renames.push({
+          kind: "attribute",
+          type: mark.type,
+          from: field.renamedFrom,
+          to: field.name,
         });
       }
     }

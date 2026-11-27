@@ -61,7 +61,7 @@ expectTypeOf<GrantIdentity>().toMatchTypeOf<{
 }>();
 
 expectTypeOf<GrantIdentity["object"]["kind"]>().toEqualTypeOf<
-  "table" | "view" | "materializedView" | "sequence" | "function" | "namespace"
+  "table" | "view" | "materializedView" | "sequence" | "function" | "namespace" | "type"
 >();
 
 expectTypeOf<DefaultPrivilegeIdentity>().toMatchTypeOf<{

@@ -21,6 +21,7 @@ import { OkmError } from "../../../contracts/error.js";
 import { quoteIdent } from "../ddl.js";
 import { type RolesInput, normalizeRoles } from "./config.js";
 import { readGrants } from "./grant-slot.js";
+import { readTypeGrant } from "../composite-mark.js";
 import { expandGrants, type GrantWarning } from "./grants.js";
 import { columnPrivilege } from "./sql.js";
 
@@ -91,9 +92,11 @@ const SEQUENCE = ["USAGE", "SELECT"] as const;
  * Adds role, grant, and default-privilege objects to a catalog.
  *
  * Objects without `grants` keep the baseline: `app` receives DML, execute, and
- * sequence usage; `reporting` receives select. An object with `grants` uses
- * that option as the truth for managed roles. Role rows are external, so the
- * plan does not create them.
+ * sequence usage; `reporting` receives select. A type without `grants` is left
+ * alone. PostgreSQL already grants USAGE on a type to PUBLIC, so a baseline
+ * grant would rewrite every schema that has an enum. An object with `grants`
+ * uses that option as the truth for managed roles. Role rows are external, so
+ * the plan does not create them.
  *
  * @param source - Catalog from `schema()`
  * @param input - Migration role, application role, and any custom roles
@@ -215,6 +218,7 @@ export function contributeRoles(
       }
       continue;
     }
+    if (ref.kind === "type") continue;
     for (const privilege of privilegesFor(ref.kind)) {
       objects.push(
         grantObject({
@@ -370,6 +374,9 @@ function grantRef(object: CatalogObject): GrantObjectRef | undefined {
       name: `${object.identity.name}(${object.identity.argTypes.join(",")})`,
     };
   }
+  if (object.kind === "type") {
+    return { kind: "type", namespace: object.identity.namespace, name: object.identity.name };
+  }
   return undefined;
 }
 
@@ -378,6 +385,7 @@ function privilegesFor(kind: GrantObjectRef["kind"]): readonly string[] {
   if (kind === "sequence") return SEQUENCE;
   if (kind === "materializedView") return READ;
   if (kind === "namespace") return [];
+  if (kind === "type") return ["USAGE"];
   return RELATION;
 }
 
@@ -450,6 +458,7 @@ function objectGrants(
   if (object.kind === "function") {
     return readGrants("function", namespace, object.identity.name);
   }
+  if (object.kind === "type") return readTypeGrant(namespace, object.identity.name);
   return undefined;
 }
 
@@ -467,7 +476,8 @@ function named(object: CatalogObject): string {
     object.kind === "view" ||
     object.kind === "materializedView" ||
     object.kind === "function" ||
-    object.kind === "sequence"
+    object.kind === "sequence" ||
+    object.kind === "type"
   ) {
     return object.identity.name;
   }

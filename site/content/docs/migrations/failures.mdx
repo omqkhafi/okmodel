@@ -110,6 +110,13 @@ The table is generated from `STEP_KINDS`, `postgresHasProbe`, and `unitMode`. Do
 | `validate-domain-check` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `drop-domain-check` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `rename-domain-check` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `create-composite` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-composite` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `add-attribute` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `drop-attribute` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `rename-attribute` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `alter-attribute` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `set-composite-column` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `create-extension` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `drop-extension` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `update-extension` | yes | no | rolls back with the history row; the next apply runs the step again | — |

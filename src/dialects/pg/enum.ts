@@ -15,9 +15,11 @@ import {
   type ColumnFlags,
   type PlainFlags,
   ColumnBuilder as Column,
+  compositeMark,
   formatType,
   required,
 } from "./column.js";
+import { rememberTypeGrant } from "./composite-mark.js";
 import { definition, rejected } from "./misuse.js";
 
 /**
@@ -28,13 +30,13 @@ import { definition, rejected } from "./misuse.js";
  *
  * @param name - Postgres type name
  * @param values - Labels, in stored order
- * @param comment - Comment on the enum type. Absent means unmanaged
+ * @param comment - Comment on the enum type, or `{ comment, grants }`. Absent means unmanaged
  * @returns An enum column
  */
 export function enumColumn<const TValues extends readonly string[]>(
   name: string,
   values: TValues,
-  comment?: string,
+  comment?: string | { readonly comment?: string; readonly grants?: unknown },
 ): ColumnBuilder<TValues[number], PlainFlags> {
   if (name.length === 0) {
     definition("enum name must be a non-empty type name.");
@@ -56,7 +58,12 @@ export function enumColumn<const TValues extends readonly string[]>(
     baseType: name,
     typeDependency: name,
     enumLabels: [...values],
-    ...(comment !== undefined ? { enumComment: comment } : {}),
+    ...(readTypeNote(comment).comment !== undefined
+      ? { enumComment: readTypeNote(comment).comment }
+      : {}),
+    ...(readTypeNote(comment).grants !== undefined
+      ? { enumGrants: readTypeNote(comment).grants }
+      : {}),
     typeLabel: values.map((value) => JSON.stringify(value)).join(" | "),
     encode: (value) => {
       if (!allowed.has(value)) {
@@ -85,14 +92,14 @@ export function enumColumn<const TValues extends readonly string[]>(
  * @param name - Domain name
  * @param base - Column the domain is based on
  * @param check - Domain check expression, stored as written
- * @param comment - Comment on the domain. Absent means unmanaged
+ * @param comment - Comment on the domain, or `{ comment, grants }`. Absent means unmanaged
  * @returns A domain column
  */
 export function domain<TValue, TFlags extends ColumnFlags>(
   name: string,
   base: ColumnBuilder<TValue, TFlags>,
   check: string,
-  comment?: string,
+  comment?: string | { readonly comment?: string; readonly grants?: unknown },
 ): ColumnBuilder<TValue, TFlags> {
   if (name.length === 0) definition("domain name must be a non-empty type name.");
   if (check.length === 0) definition("domain check must be a non-empty expression.");
@@ -101,6 +108,12 @@ export function domain<TValue, TFlags extends ColumnFlags>(
       "A domain cannot use an enum as its base in this version. Use a scalar column type.",
     );
   }
+  if (compositeMark(base.state.encode) !== undefined) {
+    definition(
+      "A domain cannot use a composite as its base. jsonb_populate_record does not accept that domain (the write path stays on the composite).",
+    );
+  }
+  const note = readTypeNote(comment);
   const baseSql = canonicalBase(formatType(base.state.baseType, base.state.dims));
   const extension = base.state.extension;
   const inner = base.state.baseType;
@@ -126,8 +139,10 @@ export function domain<TValue, TFlags extends ColumnFlags>(
           check,
           provenance,
           ...(dependencies.length > 0 ? { dependencies } : {}),
-          ...(comment !== undefined ? { comment } : {}),
+          ...(note.comment !== undefined ? { comment: note.comment } : {}),
         });
+        const schemaName = namespace.form === "static" ? namespace.name : "public";
+        rememberTypeGrant(schemaName, name, note.grants);
         const index = objects.findIndex(
           (object) =>
             object.kind === "type" &&
@@ -170,6 +185,14 @@ function canonicalBase(typeName: string): string {
   const scalar = bracket === -1 ? typeName : typeName.slice(0, bracket);
   const suffix = bracket === -1 ? "" : typeName.slice(bracket);
   return canonicalScalar(scalar) + suffix;
+}
+
+function readTypeNote(
+  note: string | { readonly comment?: string; readonly grants?: unknown } | undefined,
+): { readonly comment?: string; readonly grants?: unknown } {
+  if (note === undefined) return {};
+  if (typeof note === "string") return { comment: note };
+  return note;
 }
 
 function canonicalScalar(typeName: string): string {

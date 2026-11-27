@@ -2044,6 +2044,15 @@
     "docs": "docs/errors/OKM1913.md"
   },
   {
+    "code": "OKM1915",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A composite field type change is used by an array, a nested composite, or a function, or a new non-null field has no fill, or a column swap was not confirmed.",
+    "fix": "Add a fill for the new field, confirm the column swap, or write the copy by hand. Nothing was changed.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1915.md"
+  },
+  {
     "code": "OKM1914",
     "kind": "invalid",
     "category": "input",

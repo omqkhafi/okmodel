@@ -319,6 +319,9 @@ function grantTargetKey(object: GrantObjectRef): string | undefined {
   ) {
     return identityKey({ kind: object.kind, namespace: object.namespace, name: object.name });
   }
+  if (object.kind === "type") {
+    return identityKey({ kind: "type", namespace: object.namespace, name: object.name });
+  }
   if (object.kind !== "function") return undefined;
   const open = object.name.lastIndexOf("(");
   if (open < 0 || !object.name.endsWith(")")) return undefined;
@@ -336,6 +339,7 @@ function grantTarget(object: GrantObjectRef, schema: string): string {
   if (object.kind === "sequence") return `sequence ${qualify(schema, object.name)}`;
   if (object.kind === "function") return functionTarget(object.name, schema);
   if (object.kind === "namespace") return `schema ${quoteIdent(schema)}`;
+  if (object.kind === "type") return `type ${qualify(schema, object.name)}`;
   return `table ${qualify(schema, object.name)}`;
 }
 

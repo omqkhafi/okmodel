@@ -8,6 +8,7 @@
 import { boolean, bytea } from "./bool.js";
 import { custom } from "./custom.js";
 import { double, numeric, real } from "./decimal.js";
+import { composite } from "./composite.js";
 import { domain, enumColumn } from "./enum.js";
 import { line, point } from "./geometry.js";
 import { bigint, identity, integer, integerIdentity, smallint } from "./integer.js";
@@ -62,5 +63,6 @@ export const t = {
   ltree,
   enum: enumColumn,
   domain,
+  composite,
   custom,
 };

@@ -11,4 +11,11 @@ export type DeclaredRename =
       readonly table: string;
       readonly from: string;
       readonly to: string;
+    }
+  | {
+      readonly kind: "attribute";
+      /** Composite type name. */
+      readonly type: string;
+      readonly from: string;
+      readonly to: string;
     };

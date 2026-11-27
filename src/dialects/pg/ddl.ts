@@ -5,6 +5,7 @@
  * has one spelling.
  */
 
+import { isComposite } from "../../contracts/catalog/composite.js";
 import { isDomain } from "../../contracts/catalog/enum.js";
 import { fitIdentifier, printedIdentifier } from "../../contracts/catalog/identifier.js";
 import { identityKey } from "../../contracts/catalog/identity.js";
@@ -558,6 +559,12 @@ function collateSql(collation: string | undefined): string {
 }
 
 function createTypeSql(object: TypeObject, schema: string): string {
+  if (isComposite(object.definition)) {
+    const body = object.definition.fields
+      .map((field) => `${quoteIdent(field.name)} ${field.dataType}`)
+      .join(", ");
+    return `create type ${qualify(schema, object.identity.name)} as (${body})`;
+  }
   if (isDomain(object.definition)) {
     const name = object.identity.name;
     const constraint = quoteIdent(fitIdentifier(`${name}_check`));

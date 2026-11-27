@@ -156,7 +156,14 @@ export type GrantIdentity = {
  * identifier (D119).
  */
 export type GrantObjectRef = {
-  readonly kind: "table" | "view" | "materializedView" | "sequence" | "function" | "namespace";
+  readonly kind:
+    | "table"
+    | "view"
+    | "materializedView"
+    | "sequence"
+    | "function"
+    | "namespace"
+    | "type";
   readonly namespace: Namespace;
   readonly name: string;
 };
@@ -407,8 +414,31 @@ export type DomainDefinition = {
   readonly check: string;
 };
 
-/** A catalog type: an enum or a domain. */
-export type TypeDefinition = EnumDefinition | DomainDefinition;
+/**
+ * One field of a composite type.
+ *
+ * `nullable` is the author's rule. PostgreSQL stores no NOT NULL on an
+ * attribute; the column check is what enforces it.
+ */
+export type CompositeFieldDefinition = {
+  readonly name: string;
+  readonly dataType: string;
+  readonly nullable: boolean;
+  readonly comment?: string;
+};
+
+/**
+ * Composite definition.
+ *
+ * `fields` is catalog order. The planner compares fields by name, so a
+ * reorder alone is not a migration.
+ */
+export type CompositeDefinition = {
+  readonly fields: readonly CompositeFieldDefinition[];
+};
+
+/** A catalog type: an enum, a domain, or a composite. */
+export type TypeDefinition = EnumDefinition | DomainDefinition | CompositeDefinition;
 
 /** Sequence definition. Start and increment are decimal integers. */
 export type SequenceDefinition = {

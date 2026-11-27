@@ -106,6 +106,8 @@ function printNode(node: Node, sqlName: (field: string) => string): string {
   switch (node.k) {
     case "col":
       return quoteIdent(sqlName(node.name));
+    case "field":
+      return `(${printNode(node.e, sqlName)}).${quoteIdent(node.name)}`;
     case "lit":
       return node.v === null ? "null" : printLiteral(node.v);
     case "op":

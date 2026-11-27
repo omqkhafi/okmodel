@@ -9,6 +9,7 @@
 
 import { catalog } from "../../contracts/catalog/build.js";
 import { OkmError, catalogError } from "../../contracts/error.js";
+import { compositeType, isComposite } from "../../contracts/catalog/composite.js";
 import { domainType, enumType } from "../../contracts/catalog/enum.js";
 import { identityKey, staticNamespace } from "../../contracts/catalog/identity.js";
 import { isReservedIdentifier, recoveredNameKey } from "../../contracts/catalog/identifier.js";
@@ -206,6 +207,7 @@ export async function introspectSchema(
     sequences,
     enums,
     domains,
+    composites,
     extensions,
     functions,
     triggers,
@@ -222,6 +224,7 @@ export async function introspectSchema(
     runner.query(SEQUENCES, params),
     runner.query(ENUMS, params),
     runner.query(DOMAINS, params),
+    runner.query(COMPOSITES, params),
     runner.query(EXTENSIONS, [concrete, JSON.stringify(options?.hostedExtensions ?? [])]),
     runner.query(FUNCTIONS, params),
     runner.query(TRIGGERS, params),
@@ -297,6 +300,21 @@ export async function introspectSchema(
     domainNames.add(name);
     objects.push(domainType({ namespace, name, base: domain.base, check, provenance }));
   }
+  const compositeFields = new Map<
+    string,
+    { name: string; dataType: string; nullable: boolean }[]
+  >();
+  for (const row of composites) {
+    const name = text(row, "type_name");
+    const fields = compositeFields.get(name) ?? [];
+    fields.push({ name: text(row, "name"), dataType: text(row, "type"), nullable: true });
+    compositeFields.set(name, fields);
+  }
+  const compositeNames = new Set<string>();
+  for (const [name, fields] of compositeFields) {
+    compositeNames.add(name);
+    objects.push(compositeType({ namespace, name, fields, provenance }));
+  }
   const extensionHomes = new Map<string, string>();
   for (const row of extensions) extensionHomes.set(text(row, "name"), text(row, "schema"));
   for (const row of columns) {
@@ -316,8 +334,13 @@ export async function introspectSchema(
     if (extensionName.length > 0) extra.push({ kind: "extension", name: extensionName });
     const owned = sequenceIdentity.get(sequenceName);
     if (owned !== undefined) extra.push(owned);
-    if (enumLabels.has(dataType) || domainNames.has(dataType)) {
-      extra.push({ kind: "type", namespace, name: dataType });
+    const scalarType = dataType.replace(/(?:\[\])+$/, "");
+    if (
+      enumLabels.has(scalarType) ||
+      domainNames.has(scalarType) ||
+      compositeNames.has(scalarType)
+    ) {
+      extra.push({ kind: "type", namespace, name: scalarType });
     }
     const columnName = text(row, "name");
     if (listed(options, "column", parent, columnName, [columnName])) continue;
@@ -662,8 +685,76 @@ export async function introspectSchema(
     );
   }
   await includeOutsideReferences(runner, logical, provenance, objects);
+  alignCompositeNulls(objects);
   applyComments(objects, comments);
   return catalog(objects);
+}
+
+function alignCompositeNulls(objects: CatalogObject[]): void {
+  const types = new Map<
+    string,
+    { name: string; dataType: string; nullable: boolean; comment?: string }[]
+  >();
+  for (const object of objects) {
+    if (object.kind !== "type" || !("fields" in object.definition)) continue;
+    types.set(
+      object.identity.name,
+      object.definition.fields.map((field) => ({ ...field })),
+    );
+  }
+  if (types.size === 0) return;
+  const columns = new Map<string, string>();
+  for (const object of objects) {
+    if (object.kind !== "column") continue;
+    columns.set(
+      `${object.identity.parent.name}.${object.identity.name}`,
+      object.definition.dataType,
+    );
+  }
+  for (const object of objects) {
+    if (object.kind !== "constraint" || object.definition.constraintKind !== "check") continue;
+    const expression = object.definition.expression;
+    if (expression === undefined) continue;
+    const column = object.definition.columns[0];
+    if (column === undefined) continue;
+    const dataType = columns.get(`${object.identity.parent.name}.${column}`);
+    if (dataType === undefined) continue;
+    const scalar = dataType.replace(/(?:\[\])+$/, "");
+    const prefix = dataType.endsWith("[]") ? "e" : column.replaceAll('"', "");
+    markRequired(types, scalar, prefix, expression.toLowerCase());
+  }
+  for (let index = 0; index < objects.length; index += 1) {
+    const object = objects[index];
+    if (object === undefined || object.kind !== "type" || !("fields" in object.definition))
+      continue;
+    const fields = types.get(object.identity.name);
+    if (fields === undefined) continue;
+    objects[index] = compositeType({
+      namespace: object.identity.namespace,
+      name: object.identity.name,
+      fields,
+      owner: object.owner,
+      provenance: object.provenance,
+      dependencies: object.dependencies.map((edge) => edge.target),
+      ...(object.comment !== undefined ? { comment: object.comment } : {}),
+    });
+  }
+}
+
+function markRequired(
+  types: ReadonlyMap<string, { name: string; dataType: string; nullable: boolean }[]>,
+  typeName: string,
+  prefix: string,
+  expression: string,
+): void {
+  const fields = types.get(typeName);
+  if (fields === undefined) return;
+  for (const field of fields) {
+    const access = `(${prefix}).${field.name}`.toLowerCase();
+    if (expression.includes(`${access} is not null`)) field.nullable = false;
+    const nested = field.dataType.replace(/(?:\[\])+$/, "");
+    if (types.has(nested)) markRequired(types, nested, access, expression);
+  }
 }
 
 /**
@@ -1144,6 +1235,7 @@ export type ReprintType = {
   readonly name: string;
   readonly labels?: readonly string[];
   readonly base?: string;
+  readonly fields?: readonly { readonly name: string; readonly dataType: string }[];
 };
 
 /**
@@ -1914,6 +2006,9 @@ async function createStandIns(
       if (seen.has(type) || !namesType(dataType, type.name)) continue;
       seen.add(type);
       if (type.base !== undefined) visit(type.base);
+      if (type.fields !== undefined) {
+        for (const field of type.fields) visit(field.dataType);
+      }
       ordered.push(type);
     }
   };
@@ -1923,10 +2018,17 @@ async function createStandIns(
     for (const type of ordered) {
       const name = quoteIdent(type.name);
       const body =
-        type.labels !== undefined
-          ? `as enum (${type.labels.map((label) => quoteLiteral(label)).join(", ")})`
-          : `as ${standInType(type.base ?? "text", types, extensions)}`;
-      const kind = type.labels !== undefined ? "type" : "domain";
+        type.fields !== undefined
+          ? `as (${type.fields
+              .map(
+                (field) =>
+                  `${quoteIdent(field.name)} ${standInType(field.dataType, types, extensions)}`,
+              )
+              .join(", ")})`
+          : type.labels !== undefined
+            ? `as enum (${type.labels.map((label) => quoteLiteral(label)).join(", ")})`
+            : `as ${standInType(type.base ?? "text", types, extensions)}`;
+      const kind = type.labels !== undefined || type.fields !== undefined ? "type" : "domain";
       await runner.query(`create ${kind} pg_temp.${name} ${body}`);
       created.unshift(`drop ${kind} pg_temp.${name}`);
     }
@@ -2126,7 +2228,7 @@ const COMMENTS = `
   union all
   select 'column', c.relname, a.attname, d.description
   from pg_description d
-  join pg_class c on c.oid = d.objoid and c.relkind in ('r', 'v', 'm')
+  join pg_class c on c.oid = d.objoid and c.relkind in ('r', 'v', 'm', 'c')
   join pg_namespace n on n.oid = c.relnamespace
   join pg_attribute a on a.attrelid = c.oid and a.attnum = d.objsubid
   where n.nspname = $1 and d.classoid = 'pg_class'::regclass and d.objsubid > 0
@@ -2181,6 +2283,15 @@ function applyComments(
 function withComment(object: CatalogObject, textOf: ReadonlyMap<string, string>): CatalogObject {
   const found = commentLookup(object, textOf);
   const commented = found === undefined ? object : { ...object, comment: found };
+  if (commented.kind === "type" && isComposite(commented.definition)) {
+    const definition = commented.definition;
+    const fields = definition.fields.map((field) => {
+      const description = textOf.get(`column\t${commented.identity.name}\t${field.name}`);
+      return description === undefined ? field : { ...field, comment: description };
+    });
+    const changed = fields.some((field, index) => field !== definition.fields[index]);
+    return changed ? { ...commented, definition: { ...definition, fields } } : commented;
+  }
   if (commented.kind !== "view" && commented.kind !== "materializedView") return commented;
   const columns = commented.definition.columns.map((column) => {
     const description = textOf.get(`column\t${commented.identity.name}\t${column.name}`);
@@ -2264,6 +2375,22 @@ const DOMAINS = `
     and t.typtype = 'd'
     and ${member("t.oid", "pg_type")}
   order by t.typname, c.conname
+`;
+
+const COMPOSITES = `
+  select t.typname as type_name, a.attname as name,
+    format_type(a.atttypid, a.atttypmod) as type
+  from pg_type t
+  join pg_namespace n on n.oid = t.typnamespace
+  join pg_class c on c.oid = t.typrelid
+  join pg_attribute a on a.attrelid = c.oid
+  where n.nspname = $1
+    and t.typtype = 'c'
+    and c.relkind = 'c'
+    and a.attnum > 0
+    and not a.attisdropped
+    and ${member("t.oid", "pg_type")}
+  order by t.typname, a.attnum
 `;
 
 const ENUMS = `

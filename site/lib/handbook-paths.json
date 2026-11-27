@@ -78,6 +78,7 @@
   "/docs/schema/codecs-and-row-types",
   "/docs/schema/columns",
   "/docs/schema/comments",
+  "/docs/schema/composite-types",
   "/docs/schema/defaults",
   "/docs/schema/enums-arrays-picklists",
   "/docs/schema/extensions",

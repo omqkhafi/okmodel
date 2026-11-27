@@ -41,7 +41,7 @@ import { schemaDeclarations, type DeclaredRename } from "../../dialects/pg/decla
 import { emitRowTypes, jsonColumnTypes } from "../../dialects/pg/emit.js";
 import { stampOwnership, tableOwner } from "../../dialects/pg/owner.js";
 import { grantsNeedRoles } from "../../dialects/pg/role/grants.js";
-import { readGrants } from "../../dialects/pg/role/grant-slot.js";
+import { readGrants, rememberGrants } from "../../dialects/pg/role/grant-slot.js";
 import { attachRoles, type RolesInput, type TableExposure } from "../../dialects/pg/role/index.js";
 import type { BuiltSchema } from "../../dialects/pg/schema.js";
 import type { AnyTable } from "../../dialects/pg/table.js";
@@ -924,6 +924,10 @@ function withRoles(built: Built, config: MigrateConfig, cwd: string): Built {
   );
   const roles = config.roles;
   const grants = tableGrantMap(built);
+  if (config.grants !== undefined) {
+    const namespace = catalogNamespace(config);
+    rememberGrants("namespace", namespace, namespace, config.grants);
+  }
   if ((grants.size > 0 || catalogRememberedGrants(placed)) && roles === undefined) {
     throw grantsNeedRoles("the schema");
   }

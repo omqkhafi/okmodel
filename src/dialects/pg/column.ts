@@ -13,6 +13,7 @@ import type {
 } from "../../contracts/catalog/types.js";
 import { readClientGenerator, type ClientFill } from "../../contracts/generator.js";
 import { readArray, writeArray } from "./array-literal.js";
+import type { CompositeMark } from "./composite-mark.js";
 import type { Cond, ImmutableExpr } from "./expr/index.js";
 import { definition, rejected } from "./misuse.js";
 import { quoteLiteral } from "./quote.js";
@@ -341,6 +342,8 @@ export type ColumnState<TValue> = {
   readonly enumLabels: readonly string[] | undefined;
   /** Comment on the enum type. Absent when the enum comment is unmanaged. */
   readonly enumComment: string | undefined;
+  /** Usage grants on the enum type. Absent when the enum has no grants option. */
+  readonly enumGrants?: unknown;
   readonly domain:
     | {
         readonly base: string;
@@ -789,6 +792,16 @@ export class ColumnBuilder<TValue, TFlags extends ColumnFlags> {
     if (!Number.isInteger(dims) || dims < 1 || dims > 6) {
       definition(`Array dims ${String(dims)} must be an integer from 1 to 6.`);
     }
+    const mark = compositeMark(this.state.encode);
+    if (mark !== undefined && !mark.array) {
+      const next = mark.asArray(dims);
+      return rebuild<ArrayOf<TValue, D>, TFlags>(this.state as ColumnState<ArrayOf<TValue, D>>, {
+        dims,
+        accepts: ["Array"],
+        encode: next.encode,
+        decode: next.decode as (wire: string) => ArrayOf<TValue, D>,
+      });
+    }
     const elementEncode = this.state.elementEncode;
     const elementDecode = this.state.elementDecode;
     const raw = this.state.sqlForm === "raw";
@@ -902,6 +915,8 @@ export function formatType(baseType: string, dims: number): string {
  * @returns A default expression
  */
 export function sqlOf<TValue>(state: ColumnState<TValue>, value: TValue): string {
+  const mark = compositeMark(state.encode);
+  if (mark !== undefined) return mark.rowSql(value);
   const encoded = state.encode(value);
   const typed = formatType(state.baseType, state.dims);
   if (state.sqlForm === "cast") {
@@ -978,4 +993,31 @@ function rebuild<TValue, TFlags extends ColumnFlags>(
   patch: Partial<ColumnState<TValue>>,
 ): ColumnBuilder<TValue, TFlags> {
   return new ColumnBuilder({ ...state, ...patch });
+}
+
+const COMPOSITE = Symbol.for("okmodel.composite");
+
+/**
+ * Reads the composite mark stored on an encode function.
+ *
+ * @param encode - Column encode
+ * @returns The mark, or `undefined` when the column is not a composite
+ */
+export function compositeMark(encode: (...args: never[]) => string): CompositeMark | undefined {
+  return (encode as { readonly [COMPOSITE]?: CompositeMark })[COMPOSITE];
+}
+
+/**
+ * Stores a composite mark on an encode function.
+ *
+ * @param encode - Encode to tag
+ * @param mark - Mark the read and write paths read back
+ * @returns The same function
+ */
+export function tagComposite<T extends (value: unknown) => string>(
+  encode: T,
+  mark: CompositeMark,
+): T {
+  (encode as { [COMPOSITE]?: CompositeMark })[COMPOSITE] = mark;
+  return encode;
 }
