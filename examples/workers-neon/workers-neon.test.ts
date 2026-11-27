@@ -6,8 +6,8 @@
  * unknown `NEON_MODE` answers 500. With the Postgres topology: the bundled
  * Worker runs in Miniflare against the repository's local Neon endpoint in
  * `http` and `websocket` mode, and `date` and `timestamptz` read as ISO
- * strings in both. Nightly (`OKM_EXAMPLES_NIGHTLY=1` and `NEON_URL`) runs the
- * same routes against Neon.
+ * strings in both. Set `OKM_EXAMPLES_NIGHTLY=1` and `NEON_URL` to run the
+ * same routes against Neon. CI does not set that flag.
  */
 
 import { expect, test } from "bun:test";

@@ -2,9 +2,9 @@
  * Creates the GitHub Release for this version from the changelog section.
  *
  * The notes are the body of `## v` plus `package.json` version. The tag is
- * the same string. The publish job runs this after `npm stage publish`,
- * then closes the milestone for that version when one exists. It does not
- * wait for the npm smoke. That smoke runs after a maintainer approves the staged version.
+ * the same string. The publish job runs this after `npm stage publish`.
+ * It does not close a milestone. It does not wait for the npm smoke.
+ * That smoke runs after a maintainer approves the staged version.
  */
 
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -43,102 +43,6 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/**
- * The milestone a release closes.
- *
- * A `.0` patch is the train (`0.2.0` closes `0.2`). Any other version keeps
- * its full number (`0.1.1` closes `0.1.1`).
- *
- * @param version - `package.json` version
- * @returns Milestone title
- */
-export function milestoneTitle(version: string): string {
-  return version.endsWith(".0") ? version.slice(0, -2) : version;
-}
-
-/**
- * A prerelease tag has no train milestone to close.
- *
- * `0.10.0` closes milestone `0.10`. `0.10.0-next.1` does not.
- *
- * @param version - `package.json` version
- * @returns True when the release should close {@link milestoneTitle}
- */
-export function closesMilestone(version: string): boolean {
-  return !version.includes("-");
-}
-
-export interface Milestone {
-  readonly number: number;
-  readonly title: string;
-  readonly state: string;
-}
-
-/**
- * The milestone with this title in a `GET /milestones` response.
- *
- * @param listed - Parsed response body
- * @param title - Milestone title, from {@link milestoneTitle}
- * @returns The milestone, or `undefined` when none has that title
- */
-export function findMilestone(listed: unknown, title: string): Milestone | undefined {
-  if (!Array.isArray(listed)) throw new Error("milestone list is not an array");
-  return listed.find((item): item is Milestone => {
-    if (typeof item !== "object" || item === null) return false;
-    if (!("number" in item) || !("title" in item) || !("state" in item)) return false;
-    return (
-      typeof item.number === "number" &&
-      typeof item.title === "string" &&
-      typeof item.state === "string" &&
-      item.title === title
-    );
-  });
-}
-
-/**
- * Closes the milestone for this version. A milestone that is already closed
- * stays closed, and a version without a milestone logs that and returns.
- *
- * @param version - `package.json` version
- */
-function closeMilestone(version: string): void {
-  const title = milestoneTitle(version);
-  const repo = process.env.GITHUB_REPOSITORY ?? "omqkhafi/okmodel";
-  const listed = Bun.spawnSync(["gh", "api", `repos/${repo}/milestones?state=all&per_page=100`], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  if (listed.exitCode !== 0) {
-    throw new Error(
-      `gh api milestones exited ${String(listed.exitCode)}\n${listed.stderr.toString()}`,
-    );
-  }
-  const found = findMilestone(JSON.parse(listed.stdout.toString()), title);
-  if (found === undefined) {
-    // The release and the npm stage are already done, so a missing milestone is not a failure.
-    console.warn(`No milestone titled ${title}. Nothing to close.`);
-    return;
-  }
-  if (found.state === "closed") return;
-  const closed = Bun.spawnSync(
-    [
-      "gh",
-      "api",
-      "--method",
-      "PATCH",
-      `repos/${repo}/milestones/${String(found.number)}`,
-      "-f",
-      "state=closed",
-    ],
-    { stdout: "pipe", stderr: "pipe" },
-  );
-  if (closed.exitCode !== 0) {
-    throw new Error(
-      `gh api close milestone exited ${String(closed.exitCode)}\n${closed.stderr.toString()}`,
-    );
-  }
-}
-
 function readVersion(root: string): string {
   const parsed: unknown = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   if (typeof parsed !== "object" || parsed === null || !("version" in parsed)) {
@@ -167,7 +71,6 @@ if (import.meta.main) {
     if (code === null || code !== 0) {
       throw new Error(`gh release create ${tag} exited ${String(code)}`);
     }
-    if (closesMilestone(version)) closeMilestone(version);
   } finally {
     rmSync(notesPath, { force: true });
   }

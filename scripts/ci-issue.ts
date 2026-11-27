@@ -1,8 +1,8 @@
 /**
  * Opens or updates the one issue for a failure after merge.
  *
- * A push to `main` and the nightly run share one open issue. A later failure
- * comments on it. A green run does not close it.
+ * No workflow calls this. After merge is manual and does not open an issue
+ * (D331). A later failure comments on the open issue. A green run does not close it.
  *
  *   bun ./scripts/ci-issue.ts lint=failure suite=success
  */

@@ -1,6 +1,6 @@
 # GitHub
 
-How this repository uses issues, pull requests, milestones, and the project board (D206).
+How this repository uses issues, pull requests, and the project board (D206).
 
 ## Labels
 
@@ -24,19 +24,15 @@ Every issue has exactly one `type:` label and at least one `area:` label. A pull
 
 A pull request update starts one Actions run, `CI`. `label / paths` adds `area:` from the changed files and `type:` from the title (`scripts/pr-labels.ts`). `lint / pull request` checks the title and nothing else (`scripts/pr-lint.ts`). A title edit starts `CI` again and `pr-meta.yml`. `pr-meta.yml` runs those two scripts from the base branch. A body edit does not replace `gate / check`; that job repeats the last conclusion for the commit. A label added with `GITHUB_TOKEN` does not start another workflow.
 
-`gate / check` is the required status. It runs after success or failure (`if: always() && !cancelled()`). A cancelled workflow does not record a failed gate. It needs format, lint, typecheck, the build, tests for files changed since the merge base, the runtime-entry size ceiling, the title lint, and the path labels. Postgres 18 (four shards and the pooler proof) runs when the diff touches `src/dialects`, `src/runtime`, or `src/tooling/migrate`. A shard runs only the test files whose imports reach the Postgres gate (`REQUIRE_DOCKER`); every file, those included, runs in the `test / <group>` jobs after merge. A file's shard is its pin or the hash of its path, so adding or deleting a file moves no other file. A skipped suite is a pass only when those paths are absent. A failure still fails. Site tests run inside the gate when the diff touches `src/tooling` or `src/dialects`, because that is where CLI output is produced. The Site workflow is not a required check. The pack contract runs inside the gate when the diff touches a path in `package.json` `files` (`docs`, `schemas`, `skills`, `README.md`, `LICENSE`, or `dist`), a root README, LICENSE, LICENCE, CHANGELOG, CHANGES, or HISTORY name, or `src/`, `scripts/`, or `package.json`, and a drift names `bun ./scripts/pack-contract.ts --update`. One job builds `dist` and uploads it. The suite and the pack contract download it.
+`gate / check` is the required status. It runs after success or failure (`if: always() && !cancelled()`). A cancelled workflow does not record a failed gate. It needs format, lint, typecheck, the build, tests for files changed since the merge base, the size report, the title lint, and the path labels. Postgres 18 (four shards and the pooler proof) runs when the diff touches `src/dialects`, `src/runtime`, or `src/tooling/migrate`. A shard runs only the test files whose imports reach the Postgres gate (`REQUIRE_DOCKER`); every file, those included, runs in the `test / <group>` jobs after merge. A file's shard is its pin or the hash of its path, so adding or deleting a file moves no other file. A skipped suite is a pass only when those paths are absent. A failure still fails. Site tests run inside the gate when the diff touches `src/tooling` or `src/dialects`, because that is where CLI output is produced. The Site workflow is not a required check. The pack contract runs inside the gate when the diff touches a path in `package.json` `files` (`docs`, `schemas`, `skills`, `README.md`, `LICENSE`, or `dist`), a root README, LICENSE, LICENCE, CHANGELOG, CHANGES, or HISTORY name, or `src/`, `scripts/`, or `package.json`, and a drift names `bun ./scripts/pack-contract.ts --update`. One job builds `dist` and uploads it. The suite and the pack contract download it.
 
 The after-merge checks run by hand with `gh workflow run "After merge"` or the Actions tab, and always on the release candidate (D331). The ref defaults to `main`. A failure is a red run. No workflow opens an issue. That workflow still holds the full test matrix, type cost, attest, portable runtimes, the temporal matrix, package checks, Windows, the size report, Postgres 15 through 19, the tarball on those majors, and the lifecycle property on those majors. Release does not call it. Release runs the tag checks, pack-tracked, the pack contract, Postgres 15 through 19, and the tarball on its own. Type cost, attest, runtimes, the temporal matrix, Windows, publint, attw, size, lifecycle, composition, and the examples run only when someone starts `After merge`.
 
 A Dependabot pull request is linted like any other. Its title starts with `chore(deps)`, and Dependabot still applies `type: chore` and `area: ci`.
 
-## Milestones
-
-One milestone per release train (`0.5`). A patch keeps its number (`0.2.1`). The `github release` job in `.github/workflows/release.yml` closes that milestone when the release ships: `scripts/github-release.ts` creates the GitHub Release, then closes the milestone named by the version (`0.5.0` closes `0.5`, `0.2.1` closes `0.2.1`). A release with no milestone of that name logs it and still succeeds. A train whose `.0` was never published (0.2) keeps its milestone open until it is closed by hand.
-
 ## Project
 
-The OKModel project has a Step field. The value is the plan id (`P64A`). Saved views are by status, by milestone, and a roadmap. Every item links the pull request that delivers it.
+The OKModel project has a Step field. The value is the plan id (`P64A`). Saved views are by status and a roadmap. Every item links the pull request that delivers it. The release job creates the GitHub Release from `changelog.md`.
 
 ## Merges
 

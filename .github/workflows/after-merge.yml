@@ -337,8 +337,8 @@ jobs:
           REQUIRE_DOCKER: "1"
           POSTGRES_VERSION: ${{ matrix.version }}
           OKM_LIFECYCLE: "1"
-          OKM_LIFECYCLE_TIER: ${{ github.event_name == 'schedule' && 'nightly' || 'pr' }}
-          OKM_LIFECYCLE_CASES: ${{ github.event_name == 'schedule' && '300' || '20' }}
+          OKM_LIFECYCLE_TIER: "pr"
+          OKM_LIFECYCLE_CASES: "20"
           OKM_LIFECYCLE_RANDOM: "1"
 
       - name: Stop Postgres
@@ -421,13 +421,6 @@ jobs:
         env:
           REQUIRE_DOCKER: "1"
           POSTGRES_VERSION: "17"
-          OKM_EXAMPLES_NIGHTLY: ${{ github.event_name == 'schedule' && '1' || '0' }}
-          NEON_URL: ${{ secrets.NEON_URL }}
-          NEON_POOL_URL: ${{ secrets.NEON_POOL_URL }}
-          NEON_R1_URL: ${{ secrets.NEON_R1_URL }}
-          NEON_R1_POOL_URL: ${{ secrets.NEON_R1_POOL_URL }}
-          NEON_R2_URL: ${{ secrets.NEON_R2_URL }}
-          NEON_R2_POOL_URL: ${{ secrets.NEON_R2_POOL_URL }}
 
       - name: Stop Postgres
         if: always()
