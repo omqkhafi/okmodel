@@ -535,40 +535,11 @@ export function installOperatorSql(emit: OperatorEmit): void {
 export function readMarks(schema: QuerySchema, call: ReadCall): number {
   const table = indexes(schema).get(call.table);
   if (table === undefined) return 0;
-  let bits = orderScan(call.orderBy);
-  if (sawDot(call.where) || sawList(call.select) || sawDot(call.orderBy) || sawList(call.groupBy)) {
-    bits |= 4;
-  }
+  const where = whereMarks(table, call.where);
+  let bits = orderScan(call.orderBy) | (where & 4);
+  if (sawList(call.select) || sawList(call.groupBy)) bits |= 4;
   if (operatorEmit !== undefined) return bits & 6;
-  return (needsOperatorSql(table, call.where) ? 1 : 0) | bits;
-}
-
-/**
- * True when an object key contains `.`.
- *
- * String values are not keys, so an email does not load the path module.
- * `or`, `and`, and `not` are walked. Other operators are values.
- *
- * @param value - A `where` or `orderBy` value
- * @returns `true` when a key contains `.`
- */
-function sawDot(value: unknown): boolean {
-  if (isOperator(value)) {
-    const name = operatorName(value);
-    if (name === "or" || name === "and" || name === "not") return sawDot(operatorValue(value));
-    return false;
-  }
-  if (Array.isArray(value)) {
-    for (let index = 0; index < value.length; index += 1) {
-      if (sawDot(value[index])) return true;
-    }
-    return false;
-  }
-  if (!isRecord(value)) return false;
-  for (const key of Object.keys(value)) {
-    if (key.includes(".") || sawDot(value[key])) return true;
-  }
-  return false;
+  return bits | (where & 1);
 }
 
 /**
@@ -599,7 +570,9 @@ function sawList(value: unknown): boolean {
 export function orderScan(orderBy: unknown): number {
   if (!isRecord(orderBy)) return 0;
   let bits = 0;
-  for (const value of Object.values(orderBy)) {
+  for (const key of Object.keys(orderBy)) {
+    if (key.includes(".")) bits |= 4;
+    const value = orderBy[key];
     if (isOperator(value) && operatorName(value) === "relevance") bits |= 1;
     else if (isRecord(value) && value.dir == null && value.direction == null) bits |= 2;
   }
@@ -670,26 +643,58 @@ const TEXT_OPERATORS = ",startsWith,endsWith,contains,like,ilike,";
  * @returns `true` when the operator compiler has to load
  */
 export function needsOperatorSql(table: Indexed, value: unknown, key?: string): boolean {
+  return (whereMarks(table, value, key) & 1) !== 0;
+}
+
+/**
+ * One walk of a filter: bit 1 needs the operator compiler, bit 4 is a dotted key.
+ *
+ * `or`, `and`, and `not` are walked. `has`, `none`, and `every` set bit 1 and
+ * are not walked, the same as the operator check before the walks were folded.
+ * The walk stops once both bits are set.
+ *
+ * @param table - The table the filter reads
+ * @param value - A `where` value
+ * @param key - The field, when `value` is that field's operand
+ * @returns Bit 1, bit 4, both, or 0
+ */
+function whereMarks(table: Indexed, value: unknown, key?: string): number {
   if (isOperator(value)) {
     const name = operatorName(value);
     if (name === "or" || name === "and") {
       const branches = operatorValue(value);
-      return Array.isArray(branches) && branches.some((branch) => needsOperatorSql(table, branch));
+      if (!Array.isArray(branches)) return 0;
+      let bits = 0;
+      for (let index = 0; index < branches.length; index += 1) {
+        bits |= whereMarks(table, branches[index]);
+        if (bits === 5) return bits;
+      }
+      return bits;
     }
-    if (name === "not" || name === "eq") return needsOperatorSql(table, operatorValue(value), key);
+    if (name === "not" || name === "eq") return whereMarks(table, operatorValue(value), key);
     if (TEXT_OPERATORS.includes(`,${name},`)) {
-      if (key !== undefined && key.includes(".")) return true;
+      if (key !== undefined && key.includes(".")) return 1;
       const column = key === undefined ? undefined : table.columns.get(key);
-      return column !== undefined && !isTextColumn(column.dataType);
+      return column !== undefined && !isTextColumn(column.dataType) ? 1 : 0;
     }
-    return !SYNC_OPERATORS.includes(`,${name},`);
+    return SYNC_OPERATORS.includes(`,${name},`) ? 0 : 1;
   }
-  if (Array.isArray(value)) return value.some((item) => needsOperatorSql(table, item, key));
-  if (!isRecord(value)) return false;
+  if (Array.isArray(value)) {
+    let bits = 0;
+    for (let index = 0; index < value.length; index += 1) {
+      bits |= whereMarks(table, value[index], key);
+      if (bits === 5) return bits;
+    }
+    return bits;
+  }
+  if (!isRecord(value)) return 0;
+  let bits = 0;
   for (const field of Object.keys(value)) {
-    if (needsOperatorSql(table, value[field], field)) return true;
+    if (field.includes(".")) bits |= 4;
+    bits |= whereMarks(table, value[field], field);
+    if (bits === 5) return bits;
   }
-  return false;
+  return bits;
 }
 
 export function isTextColumn(dataType: string): boolean {

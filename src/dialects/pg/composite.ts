@@ -45,9 +45,27 @@ export type CompositeOptions = {
   readonly grants?: unknown;
 };
 
-/** Row of a composite: each field's column row type. */
-export type CompositeRow<TFields extends CompositeFieldMap> = {
+/**
+ * Brands a composite row so a jsonb object is not one.
+ *
+ * The property is optional, so a field object still assigns. Only the type
+ * carries the symbol. Nothing reads it at runtime, and the catalog hash
+ * does not see it.
+ */
+export declare const compositeFields: unique symbol;
+
+/** Each field's column row type, before the brand. */
+type RowShape<TFields extends CompositeFieldMap> = {
   readonly [K in keyof TFields]: ColumnRowOf<TFields[K]>;
+};
+
+/**
+ * Row of a composite: each field's column row type.
+ *
+ * @typeParam TFields - Field builders, in catalog order
+ */
+export type CompositeRow<TFields extends CompositeFieldMap> = RowShape<TFields> & {
+  readonly [compositeFields]?: RowShape<TFields>;
 };
 
 /**
@@ -427,20 +445,25 @@ function specsFrom(mark: CompositeMark): readonly FieldSpec[] {
   }));
 }
 
+/** A field `to_jsonb` would hand back in the shape that field's codec reads. */
+function jsonDirect(spec: FieldSpec): boolean {
+  return !spec.unsafe && spec.mark === undefined && !spec.dataType.includes("[]");
+}
+
 function project(sql: string, specs: readonly FieldSpec[], array: boolean): string {
   if (array) {
-    if (specs.every((spec) => !spec.unsafe && spec.mark === undefined)) return `to_jsonb(${sql})`;
+    if (specs.every(jsonDirect)) return `to_jsonb(${sql})`;
     const body = project(`e`, specs, false);
     return `(select coalesce(jsonb_agg(${body}), '[]'::jsonb) from unnest(${sql}) e)`;
   }
-  if (specs.every((spec) => !spec.unsafe && spec.mark === undefined)) return `to_jsonb(${sql})`;
+  if (specs.every(jsonDirect)) return `to_jsonb(${sql})`;
   const args = specs
     .map((spec) => {
       const access = `(${sql}).${quoteIdent(spec.name)}`;
       const value =
         spec.mark !== undefined
           ? project(access, specsFrom(spec.mark), spec.mark.array)
-          : spec.unsafe
+          : spec.unsafe || spec.dataType.includes("[]")
             ? `${access}::text`
             : access;
       return `${quoteLiteral(spec.name)}, ${value}`;

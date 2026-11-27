@@ -33,7 +33,8 @@ import type {
   SearchMatch,
   Untagged,
 } from "../dialects/pg/operators.js";
-import type { FieldWhere, IsJsonObject } from "../dialects/pg/where.js";
+import type { PathAssign, PathSelect } from "../dialects/pg/path-types.js";
+import type { FieldWhere, IsJsonObject, WhereValue } from "../dialects/pg/where.js";
 import type { AppliedRule, Limits, ReadCall, ReadDone, ReadOp } from "./plan.js";
 import type { SessionContext, SessionValues, SettingMap } from "./session/index.js";
 
@@ -163,34 +164,83 @@ type FilterWhereOf<S extends QuerySchema, K extends keyof S["~byName"], W> = [
 /** The `orderBy` value on a fresh call object. */
 type OrderOfTarget<T> = T extends { readonly orderBy: infer O } ? O : undefined;
 
+/** A sort a dotted `orderBy` key may hold. The same set {@link OrderBy} lists. */
+type PathOrder =
+  | "asc"
+  | "desc"
+  | { readonly dir: "asc" | "desc"; readonly nulls?: "first" | "last" }
+  | Relevance
+  | undefined;
+
+/** The operand a resolved path accepts in `where` or `orderBy`. */
+type PathAccept<Mode extends "where" | "order", V> = Mode extends "where"
+  ? WhereValue<NonNullable<V>> | undefined
+  : PathOrder;
+
 /**
- * `true` when `W` has no key outside `Keys`. Otherwise those keys are `never`.
+ * Extra keys that are not a resolved path, or whose value does not fit that path.
+ *
+ * Built only after `Extra` is known to be non-`never`, so a call with no extra
+ * key does not resolve paths.
+ */
+type PathBad<
+  S extends QuerySchema,
+  K extends keyof S["~byName"],
+  W,
+  Extra,
+  Mode extends "where" | "order",
+> = Extra extends string
+  ? PathSelect<S, K, Extra> extends infer Got
+    ? [Got] extends [never]
+      ? Extra
+      : (Extra extends keyof W ? W[Extra] : never) extends PathAccept<Mode, Got>
+        ? never
+        : Extra
+    : Extra
+  : Extra;
+
+/**
+ * `true` when `W` has no key outside `Keys`, or every extra key is a dotted path.
  *
  * A success is `true`, not the field map. Intersecting the call with that map
  * would rebuild `where` on every read. An `or()` value seals each branch.
+ * The path check runs only for a key the row does not have.
  */
-type WhereSeal<W, Keys extends PropertyKey> = [W] extends [undefined]
+type WhereSeal<S extends QuerySchema, K extends keyof S["~byName"], W, Keys extends PropertyKey> = [
+  W,
+] extends [undefined]
   ? true
   : string extends keyof NonNullable<W>
     ? true
     : [NonNullable<W>] extends [Or<infer B>]
       ? [ExtraKeys<NonNullable<B>, Keys>] extends [never]
         ? true
-        : {
-            readonly value: readonly Record<ExtraKeys<NonNullable<B>, Keys>, never>[];
-          }
+        : [PathBad<S, K, NonNullable<B>, ExtraKeys<NonNullable<B>, Keys>, "where">] extends [never]
+          ? true
+          : {
+              readonly value: readonly Record<
+                PathBad<S, K, NonNullable<B>, ExtraKeys<NonNullable<B>, Keys>, "where">,
+                never
+              >[];
+            }
       : [ExtraKeys<NonNullable<W>, Keys>] extends [never]
         ? true
-        : Record<ExtraKeys<NonNullable<W>, Keys>, never>;
+        : [PathBad<S, K, NonNullable<W>, ExtraKeys<NonNullable<W>, Keys>, "where">] extends [never]
+          ? true
+          : Record<PathBad<S, K, NonNullable<W>, ExtraKeys<NonNullable<W>, Keys>, "where">, never>;
 
-/** `true` when `O` has no key outside `Keys`. Otherwise those keys are `never`. */
-type OrderSeal<O, Keys extends PropertyKey> = [O] extends [undefined]
+/** `true` when `O` has no key outside `Keys`, or every extra key is a dotted path. */
+type OrderSeal<S extends QuerySchema, K extends keyof S["~byName"], O, Keys extends PropertyKey> = [
+  O,
+] extends [undefined]
   ? true
   : string extends keyof NonNullable<O>
     ? true
     : [ExtraKeys<NonNullable<O>, Keys>] extends [never]
       ? true
-      : Record<ExtraKeys<NonNullable<O>, Keys>, never>;
+      : [PathBad<S, K, NonNullable<O>, ExtraKeys<NonNullable<O>, Keys>, "order">] extends [never]
+        ? true
+        : Record<PathBad<S, K, NonNullable<O>, ExtraKeys<NonNullable<O>, Keys>, "order">, never>;
 
 /** `unknown` when `Seal` passed. Otherwise `Field` carries the `never` keys. */
 type SealField<Seal, Field extends PropertyKey> = [Seal] extends [true]
@@ -228,7 +278,7 @@ type WhereField<S extends QuerySchema, K extends keyof S["~byName"], O, F extend
   WhereOfTarget<O> extends infer W
     ? [W] extends [undefined]
       ? unknown
-      : SealField<WhereSeal<W, WhereKeys<S, K, F>>, "where">
+      : SealField<WhereSeal<S, K, W, WhereKeys<S, K, F>>, "where">
     : unknown;
 
 /** `orderBy` on this call, sealed, and skipped when the call has no `orderBy`. */
@@ -236,7 +286,7 @@ type OrderField<S extends QuerySchema, K extends keyof S["~byName"], O, F extend
   OrderOfTarget<O> extends infer B
     ? [B] extends [undefined]
       ? unknown
-      : SealField<OrderSeal<B, OrderKeys<S, K, F>>, "orderBy">
+      : SealField<OrderSeal<S, K, B, OrderKeys<S, K, F>>, "orderBy">
     : unknown;
 
 /** Option names an include object may carry. Nested `include` and `all` stay. */
@@ -284,7 +334,7 @@ type IncludeWhere<
 > = V extends { readonly where: infer W }
   ? [W] extends [undefined]
     ? true
-    : WhereSeal<W, WhereKeys<S, T, F>> extends infer Seal
+    : WhereSeal<S, T, W, WhereKeys<S, T, F>> extends infer Seal
       ? [Seal] extends [true]
         ? true
         : { readonly where: Seal }
@@ -299,7 +349,7 @@ type IncludeOrder<
 > = V extends { readonly orderBy: infer B }
   ? [B] extends [undefined]
     ? true
-    : OrderSeal<B, ColumnOrderKeys<S, T, F>> extends infer Seal
+    : OrderSeal<S, T, B, ColumnOrderKeys<S, T, F>> extends infer Seal
       ? [Seal] extends [true]
         ? true
         : { readonly orderBy: Seal }
@@ -378,7 +428,7 @@ type RelationSeal<
   F extends boolean,
 > = WhereField<S, K, O, F> &
   IncludeField<S, K, O, F> &
-  SealField<OrderSeal<OrderOfTarget<O>, RelationOrderKeys<S, K, F>>, "orderBy">;
+  SealField<OrderSeal<S, K, OrderOfTarget<O>, RelationOrderKeys<S, K, F>>, "orderBy">;
 
 /** `page` option names. `search` and `lock` are not among them. */
 type PageKey =
@@ -455,7 +505,7 @@ type AggWhere<S extends QuerySchema, K extends keyof S["~byName"], O> = [WhereOf
   undefined,
 ]
   ? unknown
-  : SealField<WhereSeal<WhereOfTarget<O>, WhereKeys<S, K, true>>, "where"> & {
+  : SealField<WhereSeal<S, K, WhereOfTarget<O>, WhereKeys<S, K, true>>, "where"> & {
       readonly where?: FilterFiltersOf<S, K> | Or<FilterFiltersOf<S, K>>;
     };
 
@@ -503,13 +553,108 @@ type ExistsFilterTarget<S extends QuerySchema, K extends keyof S["~byName"], W> 
 /** The `set` value on a fresh update. */
 type SetOfTarget<T> = T extends { readonly set: infer S } ? S : undefined;
 
+/** Extra `set` keys that are not a composite field, or whose value does not fit that field. */
+type SetBad<S extends QuerySchema, K extends keyof S["~byName"], Set, Extra> = Extra extends string
+  ? PathAssign<S, K, Extra> extends infer V
+    ? [V] extends [never]
+      ? Extra
+      : (Extra extends keyof Set ? Set[Extra] : never) extends V | undefined
+        ? never
+        : Extra
+    : Extra
+  : Extra;
+
+/**
+ * `set` for a later `update` overload.
+ *
+ * No extra key keeps {@link UpdateSet} and does not resolve paths. A composite
+ * field key is accepted. A to-one path is not.
+ */
+type SetCheck<S extends QuerySchema, K extends keyof S["~byName"], Set> = [Set] extends [undefined]
+  ? UpdateSet<S, K>
+  : [ExtraKeys<NonNullable<Set>, keyof UpdateSet<S, K>>] extends [never]
+    ? UpdateSet<S, K>
+    : [SetBad<S, K, NonNullable<Set>, ExtraKeys<NonNullable<Set>, keyof UpdateSet<S, K>>>] extends [
+          never,
+        ]
+      ? UpdateSet<S, K> & {
+          readonly [E in ExtraKeys<NonNullable<Set>, keyof UpdateSet<S, K>> & string]?: PathAssign<
+            S,
+            K,
+            E
+          >;
+        }
+      : UpdateSet<S, K> &
+          Record<
+            SetBad<S, K, NonNullable<Set>, ExtraKeys<NonNullable<Set>, keyof UpdateSet<S, K>>>,
+            never
+          >;
+
+/** `where` for a later `update` overload. A dotted path is checked only when a key is extra. */
+type PathUpdateWhere<S extends QuerySchema, K extends keyof S["~byName"], W> = [W] extends [
+  undefined,
+]
+  ? FilterFiltersOf<S, K> | Or<FilterFiltersOf<S, K>>
+  : [NonNullable<W>] extends [Or<infer B>]
+    ? [ExtraKeys<NonNullable<B>, keyof FilterFiltersOf<S, K>>] extends [never]
+      ? Or<FilterFiltersOf<S, K>>
+      : [
+            PathBad<
+              S,
+              K,
+              NonNullable<B>,
+              ExtraKeys<NonNullable<B>, keyof FilterFiltersOf<S, K>>,
+              "where"
+            >,
+          ] extends [never]
+        ? Or<FilterFiltersOf<S, K>>
+        : {
+            readonly value: readonly Record<
+              PathBad<
+                S,
+                K,
+                NonNullable<B>,
+                ExtraKeys<NonNullable<B>, keyof FilterFiltersOf<S, K>>,
+                "where"
+              >,
+              never
+            >[];
+          }
+    : [ExtraKeys<NonNullable<W>, keyof FilterFiltersOf<S, K>>] extends [never]
+      ? FilterFiltersOf<S, K>
+      : [
+            PathBad<
+              S,
+              K,
+              NonNullable<W>,
+              ExtraKeys<NonNullable<W>, keyof FilterFiltersOf<S, K>>,
+              "where"
+            >,
+          ] extends [never]
+        ? FilterFiltersOf<S, K> & {
+            readonly [
+              E in ExtraKeys<NonNullable<W>, keyof FilterFiltersOf<S, K>> & string
+            ]?: WhereValue<NonNullable<PathSelect<S, K, E>>>;
+          }
+        : FilterFiltersOf<S, K> &
+            Record<
+              PathBad<
+                S,
+                K,
+                NonNullable<W>,
+                ExtraKeys<NonNullable<W>, keyof FilterFiltersOf<S, K>>,
+                "where"
+              >,
+              never
+            >;
+
 /** One `update` object whose `where` and `set` have no key outside the accepted set. */
 type UpdateFilterTarget<S extends QuerySchema, K extends keyof S["~byName"], W, Set> = Omit<
   Extract<UpdateArg<S, K>, { readonly set: unknown }>,
   "where" | "set"
 > & {
-  readonly where?: FilterWhereOf<S, K, W>;
-  readonly set: ClosedWhere<Set, UpdateSet<S, K>>;
+  readonly where?: PathUpdateWhere<S, K, W>;
+  readonly set: SetCheck<S, K, Set>;
 };
 
 /** One `delete` object whose `where` includes `hidden({ filterable: true })`. */
@@ -712,6 +857,168 @@ export type ResultRow<S extends QuerySchema, K extends keyof S["~byName"], O> = 
     IncludeRows<S, K, O extends { readonly include: infer Inc } ? Inc : undefined>
 >;
 
+/** One `select` entry: a column, a window, or a dotted path. */
+type SelectPiece<S extends QuerySchema, K extends keyof S["~byName"], P> =
+  P extends Window<string, string | number>
+    ? WindowFields<RowOf<S, K>, P>
+    : P extends keyof RowOf<S, K>
+      ? { readonly [X in P & keyof RowOf<S, K> & string]: RowOf<S, K>[X] }
+      : P extends string
+        ? PathSelect<S, K, P> extends infer V
+          ? [V] extends [never]
+            ? {}
+            : { readonly [X in P]: V }
+          : {}
+        : {};
+
+/** `select` entries that are not a column, a window, or a resolved path. */
+type SelectBad<S extends QuerySchema, K extends keyof S["~byName"], P> =
+  P extends Window<string, string | number>
+    ? never
+    : P extends keyof RowOf<S, K>
+      ? never
+      : P extends string
+        ? [PathSelect<S, K, P>] extends [never]
+          ? P
+          : never
+        : P;
+
+/** Fails the call when `select` names a path that does not resolve. Absent `select` is fine. */
+type SelectField<S extends QuerySchema, K extends keyof S["~byName"], O> = O extends {
+  readonly select: infer Sel;
+}
+  ? Sel extends readonly (infer P)[]
+    ? [SelectBad<S, K, P>] extends [never]
+      ? unknown
+      : { readonly select: never }
+    : { readonly select: never }
+  : unknown;
+
+/**
+ * A read whose `select` may name a dotted path.
+ *
+ * A later overload. A call an earlier overload accepts does not build it.
+ */
+type PathFind<S extends QuerySchema, K extends keyof S["~byName"], L> = Omit<
+  FindOptions<S, K>,
+  "select" | "where" | "orderBy"
+> &
+  L & {
+    readonly select?: readonly (string | Window<string, string | number>)[];
+    readonly where?: object;
+    readonly orderBy?: object;
+  };
+
+/** `one` options with the same widened path keys. */
+type PathOne<S extends QuerySchema, K extends keyof S["~byName"]> = Omit<
+  ReadOptions<S, K>,
+  "select" | "where" | "orderBy"
+> & {
+  readonly select?: readonly (string | Window<string, string | number>)[];
+  readonly where?: object;
+  readonly orderBy?: object;
+};
+
+/** `true` when `T` carries a dotted key or a dotted list entry. Otherwise `never`. */
+type DotIn<T> = [T] extends [undefined]
+  ? never
+  : T extends readonly (infer P)[]
+    ? [Extract<P, `${string}.${string}`>] extends [never]
+      ? never
+      : unknown
+    : [Extract<keyof T, `${string}.${string}`>] extends [never]
+      ? never
+      : unknown;
+
+/** A call that names a dotted path in `where`, `orderBy`, or `select`. */
+type SomeDot<O> = [DotIn<O extends { readonly where: infer W } ? W : undefined>] extends [never]
+  ? [DotIn<O extends { readonly orderBy: infer B } ? B : undefined>] extends [never]
+    ? DotIn<O extends { readonly select: infer Sel } ? Sel : undefined>
+    : unknown
+  : unknown;
+
+/** Known `where` keys keep their operand types. Dotted keys are checked by {@link WhereSeal}. */
+type KnownWhere<S extends QuerySchema, K extends keyof S["~byName"], O> = O extends {
+  readonly where: infer W;
+}
+  ? [W] extends [undefined]
+    ? unknown
+    : {
+        readonly where: {
+          readonly [P in keyof W & keyof FiltersOf<S, K>]?: FiltersOf<S, K>[P];
+        };
+      }
+  : unknown;
+
+/** A row when `select` names a dotted path. Omitted `select` stays the full row. */
+type PathRow<S extends QuerySchema, K extends keyof S["~byName"], O> = Show<
+  (O extends { readonly select: infer Sel }
+    ? Sel extends readonly (infer P)[]
+      ? Intersect<SelectPiece<S, K, P>>
+      : RowOf<S, K>
+    : RowOf<S, K>) &
+    IncludeRows<S, K, O extends { readonly include: infer Inc } ? Inc : undefined>
+>;
+
+/** `groupBy` entries that are not a column, a bucket, or a resolved path. */
+type GroupBad<S extends QuerySchema, K extends keyof S["~byName"], P> =
+  P extends Bucket<string, string, string>
+    ? never
+    : P extends keyof RowOf<S, K>
+      ? never
+      : P extends string
+        ? [PathSelect<S, K, P>] extends [never]
+          ? P
+          : never
+        : P;
+
+/** One group key a dotted path adds. A column or a bucket adds nothing here. */
+type GroupPiece<S extends QuerySchema, K extends keyof S["~byName"], P> = P extends string
+  ? P extends keyof RowOf<S, K>
+    ? {}
+    : PathSelect<S, K, P> extends infer V
+      ? [V] extends [never]
+        ? {}
+        : { readonly [X in P]: V }
+      : {}
+  : {};
+
+/** Fails the call when `groupBy` names a path that does not resolve. */
+type GroupField<S extends QuerySchema, K extends keyof S["~byName"], O> = O extends {
+  readonly groupBy: infer G;
+}
+  ? G extends readonly (infer P)[]
+    ? [GroupBad<S, K, P>] extends [never]
+      ? unknown
+      : { readonly groupBy: never }
+    : { readonly groupBy: never }
+  : unknown;
+
+/** `aggregate` options whose `groupBy` may name a dotted path. */
+type PathAggregate<S extends QuerySchema, K extends keyof S["~byName"]> = Omit<
+  AggregateOptions<S, K>,
+  "groupBy" | "orderBy"
+> & {
+  readonly groupBy?: readonly (string | Bucket<string, string, string>)[];
+  readonly orderBy?: {
+    readonly [key: string]:
+      | "asc"
+      | "desc"
+      | { readonly dir: "asc" | "desc"; readonly nulls?: "first" | "last" }
+      | Relevance
+      | undefined;
+  };
+};
+
+/** Group keys a dotted `groupBy` adds beside {@link AggregateRow}. */
+type PathGroups<S extends QuerySchema, K extends keyof S["~byName"], O> = O extends {
+  readonly groupBy: infer G;
+}
+  ? G extends readonly (infer P)[]
+    ? Intersect<GroupPiece<S, K, P>>
+    : unknown
+  : unknown;
+
 /** `computed`: result name to a callback of the row, or `true` for a name `schema({ computed })` declared. */
 type ComputedOption<S extends QuerySchema, K extends keyof S["~byName"]> = {
   readonly computed: {
@@ -796,7 +1103,10 @@ type ComputedWhereField<S extends QuerySchema, K extends keyof S["~byName"], O> 
   WhereOfTarget<O> extends infer W
     ? [W] extends [undefined]
       ? unknown
-      : SealField<WhereSeal<W, WhereKeys<S, K, false> | keyof ComputedCols<S, K, O>>, "where"> & {
+      : SealField<
+          WhereSeal<S, K, W, WhereKeys<S, K, false> | keyof ComputedCols<S, K, O>>,
+          "where"
+        > & {
           readonly where?: WhereOf<S, K> & FieldWhere<ComputedCols<S, K, O>>;
         }
     : unknown;
@@ -805,7 +1115,10 @@ type ComputedOrderField<S extends QuerySchema, K extends keyof S["~byName"], O> 
   OrderOfTarget<O> extends infer B
     ? [B] extends [undefined]
       ? unknown
-      : SealField<OrderSeal<B, OrderKeys<S, K, false> | keyof ComputedCols<S, K, O>>, "orderBy"> & {
+      : SealField<
+          OrderSeal<S, K, B, OrderKeys<S, K, false> | keyof ComputedCols<S, K, O>>,
+          "orderBy"
+        > & {
           readonly orderBy?: OrderBy<RowOf<S, K> & ComputedCols<S, K, O>>;
         }
     : unknown;
@@ -1850,6 +2163,25 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   find<const O extends ComputedFind<S, K, L>>(
     options: O & ComputedSeal<S, K, O> & Top<O, FindKey | "computed">,
   ): Unbounded<S, "find", Read<readonly ComputedResult<S, K, O>[]>>;
+  /**
+   * `select` may name a dotted path (`"home.city"`, `"project.name"`).
+   *
+   * Later than the column overloads, so a call they accept does not build the path row.
+   */
+  find<const O extends PathFind<S, K, L> & { readonly limit: number } & SomeDot<O>>(
+    options: O &
+      ReadSeal<S, K, O, false> &
+      SelectField<S, K, O> &
+      KnownWhere<S, K, O> &
+      Top<O, FindKey>,
+  ): Read<readonly PathRow<S, K, O>[]>;
+  find<const O extends PathFind<S, K, L> & SomeDot<O>>(
+    options: O &
+      ReadSeal<S, K, O, false> &
+      SelectField<S, K, O> &
+      KnownWhere<S, K, O> &
+      Top<O, FindKey>,
+  ): Unbounded<S, "find", Read<readonly PathRow<S, K, O>[]>>;
   find<const O extends RelationFind<S, K, true, L>>(
     options: O & RelationSeal<S, K, O, true> & Top<O, FindKey>,
   ): Unbounded<S, "find", Read<readonly ResultRow<S, K, O>[]>>;
@@ -1865,6 +2197,13 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   one<const O extends ComputedOne<S, K>>(
     options: O & ComputedSeal<S, K, O> & Top<O, OneKey | "computed">,
   ): Read<ComputedResult<S, K, O> | null>;
+  one<const O extends PathOne<S, K> & SomeDot<O>>(
+    options?: O &
+      ReadSeal<S, K, O, false> &
+      SelectField<S, K, O> &
+      KnownWhere<S, K, O> &
+      Top<O, OneKey>,
+  ): Read<PathRow<S, K, O> | null>;
   one<const O extends RelationOne<S, K, true>>(
     options?: O & RelationSeal<S, K, O, true> & Top<O, OneKey>,
   ): Read<ResultRow<S, K, O> | null>;
@@ -1910,6 +2249,15 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   page<const O extends ComputedPage<S, K>>(
     options: O & ComputedSeal<S, K, O, false> & Top<O, PageKey | "computed">,
   ): Query<Page<ComputedResult<S, K, O>>>;
+  page<
+    const O extends Omit<PageOptions<S, K>, "select" | "where" | "orderBy"> & {
+      readonly select?: readonly (string | Window<string, string | number>)[];
+      readonly where?: object;
+      readonly orderBy?: object;
+    } & SomeDot<O>,
+  >(
+    options: O & NoRank<O> & PageSeal<S, K, O, false> & SelectField<S, K, O> & KnownWhere<S, K, O>,
+  ): Query<Page<PathRow<S, K, O>>>;
   page<const O extends RelationDefaultPage<S, K, true>>(
     options: O & NoRank<O> & PageTop<O> & RelationSeal<S, K, O, true>,
   ): Query<Page<ResultRow<S, K, O>>>;
@@ -1949,6 +2297,35 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   aggregate<const O extends AggregateOptions<S, K> & NamedAggregateOptions<S, K>>(
     options: O & AggWhere<S, K, O> & HavingGuard<RowOf<S, K>, O>,
   ): Unbounded<S, "groupBy", Query<readonly AggregateRow<RowOf<S, K>, O>[]>>;
+  /**
+   * `groupBy` may name a dotted path. A column `groupBy` matches an earlier overload.
+   *
+   * The parameter is `never` without a dotted entry, so this overload is skipped
+   * and the error stays on the earlier or later signature.
+   */
+  aggregate<
+    const O extends PathAggregate<S, K> & {
+      readonly limit: number;
+      readonly groupBy: readonly (string | Bucket<string, string, string>)[];
+    },
+  >(
+    options: [Extract<O["groupBy"][number], `${string}.${string}`>] extends [never]
+      ? never
+      : O & WhereField<S, K, O, false> & GroupField<S, K, O> & HavingGuard<RowOf<S, K>, O>,
+  ): Query<readonly (AggregateRow<RowOf<S, K>, O> & PathGroups<S, K, O>)[]>;
+  aggregate<
+    const O extends PathAggregate<S, K> & {
+      readonly groupBy: readonly (string | Bucket<string, string, string>)[];
+    },
+  >(
+    options: [Extract<O["groupBy"][number], `${string}.${string}`>] extends [never]
+      ? never
+      : O & WhereField<S, K, O, false> & GroupField<S, K, O> & HavingGuard<RowOf<S, K>, O>,
+  ): Unbounded<
+    S,
+    "groupBy",
+    Query<readonly (AggregateRow<RowOf<S, K>, O> & PathGroups<S, K, O>)[]>
+  >;
   aggregate<
     const O extends ExactConstraint<
       O,
@@ -2003,12 +2380,27 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
   count<const O extends ComputedCount<S, K>>(
     options: O & ComputedSeal<S, K, O, false> & Top<O, CountKey | "computed">,
   ): Read<number>;
+  count<
+    const Path extends `${string}.${string}`,
+    const O extends CallOptions & {
+      readonly where: { readonly [P in Path]: unknown };
+      readonly search?: TextSearch<RowOf<S, K>>;
+    },
+  >(
+    options?: O & WhereField<S, K, O, false> & KnownWhere<S, K, O> & Top<O, CountKey | "search">,
+  ): Read<number>;
   count<const O extends ExactConstraint<O, CountFilterTarget<S, K, WhereOfTarget<O>>>>(
     options?: O,
   ): Read<number>;
   exists(options?: CallOptions & { readonly where?: Untagged<FiltersOf<S, K>> }): Read<boolean>;
   exists<const O extends ComputedCount<S, K>>(
     options: O & ComputedSeal<S, K, O, false> & Top<O, CountKey | "computed">,
+  ): Read<boolean>;
+  exists<
+    const Path extends `${string}.${string}`,
+    const O extends CallOptions & { readonly where: { readonly [P in Path]: unknown } },
+  >(
+    options?: O & WhereField<S, K, O, false> & KnownWhere<S, K, O> & Top<O, CountKey>,
   ): Read<boolean>;
   exists<const O extends ExactConstraint<O, ExistsFilterTarget<S, K, WhereOfTarget<O>>>>(
     options?: O,
@@ -2094,7 +2486,9 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
     options?: Opt,
   ): [T] extends [{ readonly version: "any" }]
     ? UpdateWrite<S, K, readonly ClaimedRow<S, K, Opt>[]>
-    : UpdateWrite<S, K, WriteCount>;
+    : [Opt] extends [{ readonly returning: true }]
+      ? UpdateWrite<S, K, readonly Show<RowOf<S, K>>[]>
+      : UpdateWrite<S, K, WriteCount>;
   /**
    * `version: "any"` with `{ allow }` naming a guarded column.
    *

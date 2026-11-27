@@ -217,7 +217,7 @@ A page cursor carries the related sort value with the others. A hidden or sensit
 
 `where`, `select`, `orderBy`, and `groupBy` take a dotted key. `"home.city"` is a composite field. `"project.name"` is a to-one relation, the same form a view uses, and `"author.home.city"` is a field of that row. The joined table keeps its tenant and archive predicates. A second relation is refused before any SQL. Composite fields are on [Composite types](/docs/schema/composite-types).
 
-```ts title="relation-path.ts" no-check="dotted keys run; the static call types do not list them"
+```ts title="relation-path.ts"
 import { connect } from "okmodel/pg/postgresjs";
 import { one, schema, table, t } from "okmodel/pg";
 

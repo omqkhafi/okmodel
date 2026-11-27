@@ -487,7 +487,9 @@ function primaryColumns(table: Indexed): readonly ColumnModel[] {
  */
 function returningClause(columns: readonly ColumnModel[]): string {
   if (columns.length === 0) return "";
-  const parts = columns.map((column) => projectExpr(`t.${quote(column.sql)}`, column.dataType));
+  const parts = columns.map((column) =>
+    projectExpr(`t.${quote(column.sql)}`, column.dataType, column.encode),
+  );
   return ` returning ${parts.join(", ")}`;
 }
 
@@ -529,7 +531,7 @@ function closeUpdated(
     const column = returning[index];
     if (column === undefined) continue;
     sql.text(", ");
-    sql.text(projectExpr(`t.${quote(column.sql)}`, column.dataType));
+    sql.text(projectExpr(`t.${quote(column.sql)}`, column.dataType, column.encode));
     sql.text(" as okm_");
     sql.text(String(index));
   }
