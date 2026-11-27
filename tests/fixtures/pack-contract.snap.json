@@ -964,7 +964,6 @@
     "dist/tooling/shared/*.js",
     "dist/tooling/shared/*.js",
     "dist/tooling/shared/*.js",
-    "dist/tooling/shared/*.js",
     "dist/tooling/testing/cleanup.d.ts",
     "dist/tooling/testing/conflict.d.ts",
     "dist/tooling/testing/factories.d.ts",
