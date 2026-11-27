@@ -39,13 +39,8 @@ import {
   releaseExemption,
 } from "../scripts/release-check.js";
 import { repoRoot } from "../scripts/root.js";
-import {
-  appBudgetProblems,
-  checkDistSize,
-  coldImportFinding,
-  incrementalBudgetProblems,
-  runtimeBudgetProblems,
-} from "../scripts/size.js";
+import { distByteSize } from "../scripts/size.js";
+import { signedDelta, sizeReportMarkdown, type SizeReportNumbers } from "../scripts/size-report.js";
 
 const root = repoRoot();
 ensurePackedDocs(root);
@@ -143,81 +138,33 @@ test("compiler-api check accepts the repository", () => {
   ).toEqual([]);
 });
 
-test("size check fails above the ceiling and passes under it", () => {
-  const dir = join(fixtures, "size");
-  expect(checkDistSize(dir, 8).length).toBeGreaterThan(0);
-  expect(checkDistSize(dir, 1000)).toEqual([]);
-});
-
-test("app bundle budget fails above the startup ceilings", () => {
-  const over = appBudgetProblems({
-    entry: "scripts/app-startup.ts",
-    minBytes: 100_000,
-    gzipBytes: 40_000,
-    coldImportMs: 30,
-  });
-  expect(over.some((problem) => problem.includes("minified"))).toBe(true);
-  expect(over.some((problem) => problem.includes("gzip"))).toBe(true);
-  expect(over.some((problem) => problem.includes("cold import"))).toBe(false);
-  expect(
-    appBudgetProblems({
-      entry: "scripts/app-startup.ts",
-      minBytes: 38_000,
-      gzipBytes: 12_000,
-      coldImportMs: 20,
-    }).some((problem) => problem.includes("cold import")),
-  ).toBe(false);
-  expect(
-    appBudgetProblems({
-      entry: "scripts/app-startup.ts",
-      minBytes: 38_000,
-      gzipBytes: 12_000,
-      coldImportMs: 5,
-    }),
-  ).toEqual([]);
-});
-
-test("adapter incremental budget fails above its ceiling", () => {
-  expect(
-    incrementalBudgetProblems("src/adapters/pg/postgresjs.ts", 16_000, 15_093).length,
-  ).toBeGreaterThan(0);
-  expect(incrementalBudgetProblems("src/adapters/pg/postgresjs.ts", 12_000, 15_093)).toEqual([]);
-});
-
-test("runtime size budget fails above the ceilings", () => {
-  const over = runtimeBudgetProblems(
-    {
-      entry: "src/contracts/index.ts",
-      minBytes: 70_000,
-      gzipBytes: 25_000,
-      coldImportMs: 40,
+test("size report prints deltas and does not invent a baseline", () => {
+  expect(distByteSize(join(fixtures, "size"))).toBeGreaterThan(0);
+  expect(signedDelta(12, 10)).toBe("+2");
+  expect(signedDelta(8, 10)).toBe("-2");
+  expect(signedDelta(1.5, 1, 3)).toBe("+0.500");
+  expect(signedDelta(1, undefined)).toBe("no baseline");
+  const measured: SizeReportNumbers = {
+    startup: { minBytes: 11, gzipBytes: 9 },
+    runtimeEntry: { minBytes: 100, gzipBytes: 40, coldImportMs: 4.2 },
+    connect: { "src/runtime/pg/pg.ts": { minBytes: 20, gzipBytes: 8 } },
+    adapters: {
+      "src/adapters/pg/postgresjs.ts": { minBytes: 30, gzipBytes: 12, incrementalMinBytes: 5 },
     },
-    { ci: true },
-  );
-  expect(over.some((problem) => problem.includes("minified"))).toBe(true);
-  expect(over.some((problem) => problem.includes("gzip"))).toBe(true);
-  expect(over.some((problem) => problem.includes("cold import"))).toBe(true);
-  expect(
-    runtimeBudgetProblems(
-      {
-        entry: "src/contracts/index.ts",
-        minBytes: 70_000,
-        gzipBytes: 25_000,
-        coldImportMs: 40,
-      },
-      { ci: false },
-    ).some((problem) => problem.includes("cold import")),
-  ).toBe(false);
-  expect(coldImportFinding(20)).toContain("15");
-  expect(coldImportFinding(5)).toBeUndefined();
-  expect(
-    runtimeBudgetProblems({
-      entry: "src/contracts/index.ts",
-      minBytes: 1000,
-      gzipBytes: 400,
-      coldImportMs: 2,
-    }),
-  ).toEqual([]);
+    cliChunkBytes: 50,
+    tarballBytes: 1000,
+    typeCost: { "inferred-200": { instantiations: 10, types: 4 } },
+    notes: ["tarball: missing"],
+  };
+  const markdown = sizeReportMarkdown(measured, {
+    startup: { minBytes: 10, gzipBytes: 9 },
+    typeCost: { "inferred-200": { instantiations: 8, types: 4 } },
+  });
+  expect(markdown).toContain("| startup min | 11 | +1 |");
+  expect(markdown).toContain("| startup gzip | 9 | 0 |");
+  expect(markdown).toContain("no baseline");
+  expect(markdown).toContain("| inferred-200 | 10 | +2 | 4 | 0 |");
+  expect(markdown).toContain("- tarball: missing");
 });
 
 test("bundle purity rejects the harness barrel and an npm package in the metafile", () => {

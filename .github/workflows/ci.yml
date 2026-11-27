@@ -6,7 +6,8 @@ name: CI
 # to main and the nightly run live in after-merge.yml.
 #
 # The gate is format, lint, typecheck, the build, tests for files changed
-# since the merge base, the runtime-entry size ceiling, and the title lint.
+# since the merge base, the size report, and the title lint. The size report
+# does not fail.
 # Postgres 18 runs when the diff touches src/dialects, src/runtime, or
 # src/tooling/migrate. A label does not start it. A title edit starts this
 # workflow again, because the title lint is part of the gate. A body edit
@@ -170,10 +171,14 @@ jobs:
           retention-days: 1
 
   test:
-    name: test / changed
+    name: test / changed (${{ matrix.shard }})
     needs: build
     if: github.event.action != 'edited' || github.event.changes.title
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ["1/2", "2/2"]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -195,10 +200,11 @@ jobs:
         run: |
           git fetch --no-tags origin "${{ github.event.pull_request.base.sha }}"
           merge="$(git merge-base HEAD "${{ github.event.pull_request.base.sha }}")"
-          bun test --changed="$merge" --pass-with-no-tests
+          bun test --changed="$merge" --shard="${{ matrix.shard }}" --pass-with-no-tests
 
   size:
     name: package / size
+    needs: build
     if: github.event.action != 'edited' || github.event.changes.title
     runs-on: ubuntu-24.04
     steps:
@@ -208,8 +214,14 @@ jobs:
       - name: Setup
         uses: ./.github/actions/setup-bun
 
-      - name: Runtime entry
-        run: bun run size -- --runtime-entry
+      - name: Download dist
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+
+      - name: Size report
+        run: bun ./scripts/size-report.ts
 
   paths:
     name: label / paths

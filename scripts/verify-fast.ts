@@ -46,12 +46,17 @@ export function changedTestCommand(base: string): readonly string[] {
  *
  * @param local - `Bun.version`, without a leading `v`
  * @param pinned - The trimmed contents of `.bun-version`
+ * @param tool - Prefix. `verify:fast` is the local check. `bun test` is the test entry
  * @returns The warning line, or undefined when they match
  */
-export function bunPinWarning(local: string, pinned: string): string | undefined {
+export function bunPinWarning(
+  local: string,
+  pinned: string,
+  tool = "verify:fast",
+): string | undefined {
   const pin = pinned.replace(/^v/, "");
   if (local === pin) return undefined;
-  return `verify:fast: local Bun ${local} differs from the pinned ${pinned} in .bun-version`;
+  return `${tool}: local Bun ${local} differs from the pinned ${pinned} in .bun-version`;
 }
 
 /**

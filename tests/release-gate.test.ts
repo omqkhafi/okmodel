@@ -3,7 +3,15 @@
  */
 
 import { expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -202,7 +210,7 @@ test("npm smoke waits out registry processing and skips bun's manifest cache", (
   const releaseDoc = readFileSync(join(root, "docs/release.md"), "utf8");
   expect(releaseDoc).toContain("at most 31 times, 30 seconds apart");
   expect(releaseDoc).toContain("issues: write");
-  expect(releaseDoc).toContain("The snapshot does not pin the contents of those files.");
+  expect(releaseDoc).toContain("The snapshot does not pin the contents of bin or main.");
   expect(releaseDoc).toContain("It does not wait for the npm smoke.");
 });
 
@@ -401,7 +409,9 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
   expect(ci).toContain("name: package / contract");
   expect(ci).toContain("bun run pack-contract");
   expect(ci).toContain("bun test --changed=");
-  expect(ci).toContain("bun run size -- --runtime-entry");
+  expect(ci).toContain("--shard=");
+  expect(ci).toContain("bun ./scripts/size-report.ts");
+  expect(after).toContain("bun run size");
   expect(after).toContain("workflow_dispatch:");
   expect(after).not.toMatch(/^ {2}push:\n/m);
   expect(after).not.toContain("cron:");
@@ -456,13 +466,7 @@ test("workflows pin third-party actions and release waits for the matrix", () =>
     [...POSTGRES_VERSIONS],
     [...POSTGRES_VERSIONS],
   ]);
-  const weekly = readFileSync(join(root, ".github/workflows/weekly.yml"), "utf8");
-  expect(weekly).not.toContain("cron:");
-  expect(weekly).toContain("workflow_dispatch");
-  expect(jsonVersionLists(weekly, "versions")).toEqual([
-    [...POSTGRES_VERSIONS],
-    [...POSTGRES_VERSIONS],
-  ]);
+  expect(existsSync(join(root, ".github/workflows/weekly.yml"))).toBe(false);
 });
 
 /**

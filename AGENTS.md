@@ -7,7 +7,7 @@ This file is the single source of rules for this repository. `CLAUDE.md` imports
 - Use Bun only (`bun`, `bunx`). Do not use npm, pnpm, yarn, or another package manager.
 - TypeScript 7 is the compiler for typecheck and declaration emit (`tsc`). TypeScript 7.0 has no stable programmatic API and ships no language server, so nothing in `src/`, the typecheck, or the repository checks imports it. `bun run editor-check` spawns TypeScript 6 (`typescript-editor`, dev-only) over stdio for hover, completions, and diagnostics. That package is never imported and never bundled.
 - Type correctness uses `expect-type` (`expectTypeOf`) in `*.test-d.ts` files compiled by that typecheck (D114).
-- `bun run type-cost` reads `tsc --extendedDiagnostics` and enforces the D133 ceilings on built declarations: inferred 200 tables ≤ 17,831 instantiations and ≤ 6,500 types; inferred 500 tables ≤ 42,400 instantiations; ≤ 84 instantiations per added table; emitted consumer ≤ 700 types; column sample ≤ 720 instantiations and ≤ 1,100 types. The tagged-operator surcharge stays ≤ 800 on the source measurement. Check time is reported and is not a ceiling.
+- `bun run type-cost` reads `tsc --extendedDiagnostics` and prints the table. It does not fail on a number. Check time is reported.
 - Core hashing is pure-TypeScript SHA-256 in `contracts`. No `Bun` or Node crypto globals, and no `node:*` imports, in that layer.
 - `@ark/attest` may run only in its own CI job, on `@typescript/typescript6` (`tsc6`). It is not part of `bun run check`.
 
@@ -15,7 +15,7 @@ This file is the single source of rules for this repository. `CLAUDE.md` imports
 
 - The published package is `okmodel` at the repository root: ESM only, Apache-2.0, `sideEffects: false`.
 - Other packages live under `packages/*` as Bun workspaces. Their dependencies never go into the root `package.json`.
-- Normative docs are draft 26 (`docs/okmodel-api-design.md`) and decisions D1–D325. The repository implements that spec through the 0.10.2 release. The M0 spike implementations are on the `m0-spikes` tag. `packages/spikes` keeps the row-type and operator fixtures the type ceilings measure. Findings stay in `docs/m0-findings.md`.
+- Normative docs are draft 26 (`docs/okmodel-api-design.md`) and decisions D1–D354. The repository implements that spec through the 0.10.2 release. The M0 spike implementations are on the `m0-spikes` tag. `packages/spikes` keeps the row-type and operator fixtures the type report measures. Findings stay in `docs/m0-findings.md`.
 
 ## Errors
 
@@ -35,8 +35,8 @@ A layer may import layers below it. It must not import a layer above it. Adapter
 
 ## Scripts
 
-- `bun run check` runs format, lint, typecheck, `editor-check`, `type-cost`, `layers-check`, `core-purity`, `docs:check`, `readme:check`, the compiler-API scan, `bundle-purity`, build, tests, publint, arethetypeswrong, and the size budget. It does not run `@ark/attest`. A pull request runs the fast gate. A push to `main` and the nightly run run the rest. The required status is `gate / check`.
-- `bun run verify:fast` once, then push once, then `gh pr merge --auto --squash`, then stop. It checks format, lint, typecheck, layers, purity, docs, and the readme, then runs `bun test --changed` against the merge-base with `origin/main`. Do not poll CI. Do not merge `main` into the branch unless the push is rejected for a real conflict. Do not push an empty commit.
+- `bun run check` runs format, lint, typecheck, `editor-check`, `type-cost`, `layers-check`, `core-purity`, `docs:check`, `readme:check`, the compiler-API scan, `bundle-purity`, build, tests, publint, arethetypeswrong, and the size report. It does not run `@ark/attest`. A pull request runs `gate / check`. After merge is manual (`workflow_dispatch` on `after-merge.yml`, D331). There is no push-to-main suite and no nightly run. The required status is `gate / check`.
+- `bun run verify:fast` once, then push once, then stop. It checks format, lint, typecheck, layers, purity, docs, and the readme, then runs `bun test --changed` against the merge-base with `origin/main`. Agents never merge and never tag. Do not poll CI unless the prompt says to wait for the run. Do not merge `main` into the branch unless the push is rejected for a real conflict. Do not push an empty commit.
 - `bun run build` writes JavaScript with `bun build --target node` and declarations with `tsc` (`emitDeclarationOnly`).
 - `bun run typecheck` runs `scripts/ts-range.ts`, then `tsc --noEmit` on the raw fixtures.
 - `bun run lint` uses oxlint with type-aware rules. `bun run format:check` uses oxfmt. `bun run format` rewrites formatting.
@@ -49,17 +49,17 @@ A layer may import layers below it. It must not import a layer above it. Adapter
 - `bun run release-check -- --base <git-rev>` fails when a pull request changes `package.json`'s version (unless that change is `next --publish` or a release) or edits `changelog.md` outside a release. An unchanged version and changelog pass. A release that promotes Unreleased is allowed, including a cut from one bare version to the next when the new `## vX.Y.Z` section has the notes. Before `vX.Y.Z` is tagged, notes added under that heading are allowed and the version stays. CI runs it on pull requests. A pull request whose changed files are all under `.github/` is exempt and prints why; one file outside `.github/` is checked.
 - `bun run db:up` and `bun run db:down` start and stop the Postgres topology. `POSTGRES_VERSION` selects a major (default 17). 15, 16, 17, 18, and 19 are tested. Another integer major runs with a one-line note.
 - `bun run test:postgres` runs every test file against that topology. On CI the four suite shards (`--shard`) run only the files that need Postgres: those whose import closure reaches a module reading `REQUIRE_DOCKER` (the harness gate). Heavy files are pinned, `dist/` files go to `tx`, and every other file goes to the shard its path hash names, so adding or deleting a file moves only that file. Every file still runs in a `test / <group>` job. `POSTGRES_EXCLUSIONS` in `scripts/postgres-suite.ts` is the only list of files left out, and each entry has a reason. `bun run test:tarball` packs the tarball and runs the README and the quickstart on the topology.
-- `bun run verify` runs that suite in Docker on this machine. One version by default (`POSTGRES_VERSION`, or 17). `--all` runs every supported major. CI stays the authority for a release. A pull request runs Postgres 18 when the diff touches `src/dialects`, `src/runtime`, or `src/tooling/migrate`. A push to `main`, the nightly run, and a release cover the tested majors 15 through 19 for the suite and the tarball. PostgreSQL 15 and later is accepted; a newer major is untested until it is in that list.
-- `bun run type-cost` writes TypeScript 7 extended diagnostics as JSON and fails when a D133 ceiling is exceeded.
+- `bun run verify` runs that suite in Docker on this machine. One version by default (`POSTGRES_VERSION`, or 17). `--all` runs every supported major. CI stays the authority for a release. A pull request runs Postgres 18 when the diff touches `src/dialects`, `src/runtime`, or `src/tooling/migrate`. The `needs: postgres` label does not start that suite. After merge is manual and covers tested majors 15 through 19 for the suite and the tarball. Support is PostgreSQL 15 and later. A newer major is untested until it is added to the tested list.
+- `bun run type-cost` writes TypeScript 7 extended diagnostics as JSON and prints the table. A number does not fail the run.
 - `bun run bundle-purity` fails when a runtime bundle contains an npm package, or when `src/` imports the `@okmodel/harness` barrel.
-- The size check reports `dist/` and does not gate it. The runtime entry (`src/contracts/index.ts`) gate is measured +10% (D144): 6,100 bytes minified and 2,250 gzip. CI fails a runtime-entry cold import above 25 ms. A local sample above 15 ms is a finding. The app and connect gates in `scripts/size.ts` measure the static startup graph with every relative dynamic import stubbed (D248). The full build is printed as a reference and is not gated. Connect-entry cold imports are that reference, printed, not gated; the 15 ms local reference is our own code with the driver stubbed. `okmodel/pg` is printed, not gated. Adapter entries are gated on minified bytes over the runtime entry, and lazy adapter chunks still count (D245).
+- Size and type cost are reports. `scripts/size-report.ts` writes the pull-request job summary: startup, each connect graph, the runtime entry, adapters, the CLI chunk sum, tarball size, the type-cost table, and a cold-import median of 10. Deltas are against `tests/fixtures/size-report.json`, updated by hand at release prep. There is no byte ceiling, no cold-import gate, and no type-cost ceiling. `layers-check`, `core-purity`, and `bundle-purity` stay structural guards. `bun run size` still fails when an export keeps an unrelated module.
 - `bun run attest` measures a trivial type with `@ark/attest` on TypeScript 6, outside `bun run check`.
 - `bun run bench` writes a JSON timing for the 200-table fixture. Baselines live in `packages/bench/baselines` and are not enforced.
 - `bun run catalog-bench` times hash, canonical form, and topological order on the 200-table fixture. It prints the sample and does not enforce a ceiling.
 
 ## Docs
 
-Edit the handbook under `site/content/docs`. Public package pages under `docs/*.md` (and `docs/errors/OKM####.md`) are generated by `bun run docs:pack` from those site pages and from the error registry; a short hand-kept stop-line list (`guide.md`, `quickstart.md`) stays in git because no single site page expresses those executable fixtures. README fence fixtures live in `tests/fixtures/readme-examples.md`. Normative internal notes (`docs/okmodel-api-design.md`, `docs/okmodel-decisions.md`, and the other `INTERNAL_DOCS`) stay hand-written in `docs/`. The spec is draft 26. Decisions run D1–D325. GitHub organization is [docs/github.md](docs/github.md) (D206). A pull request runs the Frameworks examples job when the diff touches `examples/`, `src/runtime/`, `src/dialects/`, or Frameworks pages.
+Edit the handbook under `site/content/docs`. Public package pages under `docs/*.md` (and `docs/errors/OKM####.md`) are generated by `bun run docs:pack` from those site pages and from the error registry; a short hand-kept stop-line list (`guide.md`, `quickstart.md`) stays in git because no single site page expresses those executable fixtures. README fence fixtures live in `tests/fixtures/readme-examples.md`. Normative internal notes (`docs/okmodel-api-design.md`, `docs/okmodel-decisions.md`, and the other `INTERNAL_DOCS`) stay hand-written in `docs/`. The spec is draft 26. Decisions run D1–D354. GitHub organization is [docs/github.md](docs/github.md) (D206). A pull request has no `Closes #N` line and no milestone. Agents do not open issues. A pull request runs the Frameworks examples job when the diff touches `examples/`, `src/runtime/`, `src/dialects/`, or Frameworks pages.
 
 Do not read `docs/okmodel-decisions.md`, `docs/okmodel-api-design.md`, or `docs/guide.md` in full. Grep by decision number or heading.
 
@@ -71,7 +71,12 @@ D129. Built for performance, speed, lightness, and cold start, not only to pass 
 - No duplicated logic: one helper, one place.
 - Small, obvious public API. Clear names. Precise types. Actionable errors.
 - No avoidable allocation or repeated work on hot paths.
-- Every report states runtime entry size (minified and gzip), cold import, and any type-cost change.
+- Every report states runtime entry size (minified and gzip), cold import, and any type-cost change. Those numbers are a report. They are not a merge gate.
+- No compatibility between OKModel versions. Extend a type. Do not add a second shape that means the same thing.
+- TypeScript first. Raw `sql` is the fallback when the typed API cannot say it.
+- Every step ends with a quality pass: one place for each rule, and the dead path from that step removed.
+- Agents never merge and never tag. Workflow files are edited only when the prompt allows it, or when a workflow bug blocks CI. That fix is the smallest change, its own commit, and named in the first line of the report.
+- A pull request has no issue, no milestone, and no `Closes #N` line.
 - Every prompt ends with a self-review against these rules before the report.
 
 ## Cursor Cloud
@@ -84,14 +89,14 @@ Boot starts Docker, then `bun run db:up` with `OKM_PRIMARY_PORT=55432`, `OKM_REP
 
 - Each session runs in its own isolated VM with its own clone, checked out on a `claude/<random>` session branch. Parallel sessions do not share a checkout, so no worktree is needed. The remote is shared, so each session pushes its own branch name.
 - `gh` reaches GitHub through a proxy that serves the REST API for this repository only. GraphQL is refused, so `gh pr list`, `gh issue list`, and `gh project` fail, and the Projects board is out of reach. Use `gh api repos/omqkhafi/okmodel/...` or the GitHub MCP tools.
-- Auto-merge: `gh api -X PUT repos/omqkhafi/okmodel/pulls/<n>/ccr/auto_merge -f merge_method=squash`.
+- Agents never merge and never tag. Do not call the auto-merge API.
 - Docker: `sudo service docker start` does not start the daemon here. Run `sudo dockerd` as a background command, wait for `docker info`, then run `bun run db:up` with the ports in the Cursor Cloud section.
 - A foreground command moves to the background after 2 minutes. Run long commands in the background and read their output once.
-- Do not wait for or poll CI.
+- Do not wait for or poll CI unless the prompt says to wait for the run.
 
 ## Hygiene
 
-D115: after the M0 gate, P09A removes spike leftovers, dedupes helpers, stabilises flaky tests, and syncs docs. Every later gate (P17, P30, P44, P55, P66, P86, P99, P110, P119) ends with a lighter hygiene step — dead code, duplicated helpers, flaky tests, doc sync, a dependency audit, and the budgets re-checked — before `bun run bump release`. Post-0.10 patch trains do the same before their release.
+D115: after the M0 gate, P09A removes spike leftovers, dedupes helpers, stabilises flaky tests, and syncs docs. Every later gate (P17, P30, P44, P55, P66, P86, P99, P110, P119) ends with a lighter hygiene step — dead code, duplicated helpers, flaky tests, doc sync, a dependency audit, and the size report read — before `bun run bump release`. Post-0.10 patch trains do the same before their release.
 
 ## Changelog
 

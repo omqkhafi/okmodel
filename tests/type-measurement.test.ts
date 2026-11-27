@@ -3,11 +3,10 @@ import { join } from "node:path";
 
 import {
   budgetReport,
-  ceilingProblems,
-  columnTypeProblems,
   measureTypeCost,
-  type ColumnTypeCost,
+  typeCostMarkdown,
   type TypeBudgetRow,
+  type TypeCostLine,
 } from "../scripts/type-cost.js";
 import { repoRoot } from "../scripts/root.js";
 
@@ -47,7 +46,7 @@ test("type-cost parses TypeScript 7 diagnostics for a trivial type", () => {
   expect(report.traceOptions).toContain("generateTrace");
 });
 
-test("type ceilings fail when a fixture is over the D133 limits", () => {
+test("type-cost table reports the per-table rate and the tagged surcharge", () => {
   const rows: TypeBudgetRow[] = [
     row("inferred-50", 50, 15_000, 3_000),
     row("inferred-200", 200, 80_000, 12_000),
@@ -57,63 +56,20 @@ test("type ceilings fail when a fixture is over the D133 limits", () => {
     row("equality-200", 200, 20, 800),
     row("tagged-200", 200, 2_000, 1_400),
   ];
-  const problems = ceilingProblems(budgetReport(rows));
-  expect(problems.some((problem) => problem.includes("inferred 200"))).toBe(true);
-  expect(problems.some((problem) => problem.includes("inferred 250"))).toBe(true);
-  expect(problems.some((problem) => problem.includes("inferred 500"))).toBe(true);
-  expect(problems.some((problem) => problem.includes("emitted"))).toBe(true);
-  expect(problems.some((problem) => problem.includes("per table"))).toBe(true);
-  expect(problems.some((problem) => problem.includes("tagged operators"))).toBe(true);
-});
-
-test("the feature-using query probes have their own ceilings (D176)", () => {
-  const rows: TypeBudgetRow[] = [
-    row("inferred-50", 50, 1, 1),
-    row("inferred-200", 200, 1, 1),
-    row("inferred-250", 250, 21_180, 1),
-    row("inferred-500", 500, 1, 1),
-    row("emitted-200", 200, 0, 1),
-    row("equality-200", 200, 1, 1),
-    row("tagged-200", 200, 1, 1),
+  const report = budgetReport(rows);
+  expect(report.taggedOperatorSurcharge).toBe(1_980);
+  expect(report.perAddedTable[0]?.instantiations).toBe((80_000 - 15_000) / 150);
+  const lines: TypeCostLine[] = [
+    { probe: "inferred-200", instantiations: 80_000, types: 12_000 },
+    {
+      probe: "50 to 200 per table",
+      instantiations: report.perAddedTable[0]?.instantiations ?? 0,
+      types: 0,
+    },
   ];
-  const base = budgetReport(rows);
-  const within = {
-    ...base,
-    queryValidate: row("query-200-validate", 200, 34_826, 7_131),
-    queryFeatures: [row("query-200+page+aggregate+through", 200, 44_354, 7_817)],
-    queryPresets: row("query-200+presets", 200, 30_118, 7_830),
-    queryTx: row("query-200+tx", 200, 35_841, 7_629),
-    queries: [
-      row("query-200", 200, 26_587, 7_100),
-      row("query-200+extensions", 200, 26_587, 7_100),
-    ],
-  };
-  expect(ceilingProblems(within)).toEqual([]);
-  const over = {
-    ...base,
-    queryValidate: row("query-200-validate", 200, 34_827, 7_132),
-    queryFeatures: [row("query-200+page+aggregate+through", 200, 44_355, 7_818)],
-    queryPresets: row("query-200+presets", 200, 30_119, 7_831),
-    queryTx: row("query-200+tx", 200, 35_842, 7_630),
-    queries: [
-      row("query-200", 200, 26_588, 7_101),
-      row("query-200+extensions", 200, 26_588, 7_101),
-    ],
-  };
-  expect(ceilingProblems(over)).toHaveLength(12);
-});
-
-test("column type ceilings fail when the sample is over the limit", () => {
-  const over: ColumnTypeCost = {
-    project: "tests/fixtures/type-cost-columns",
-    instantiations: 7_000,
-    types: 9_000,
-    checkTimeSeconds: 0,
-  };
-  const problems = columnTypeProblems(over);
-  expect(problems.some((problem) => problem.includes("instantiations"))).toBe(true);
-  expect(problems.some((problem) => problem.includes("types"))).toBe(true);
-  expect(columnTypeProblems({ ...over, instantiations: 500, types: 800 })).toEqual([]);
+  const markdown = typeCostMarkdown(lines);
+  expect(markdown).toContain("| inferred-200 | 80000 | 12000 |");
+  expect(markdown).toContain("| 50 to 200 per table | 433.3 | 0 |");
 });
 
 function row(label: string, tables: number, instantiations: number, types: number): TypeBudgetRow {

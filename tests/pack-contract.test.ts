@@ -21,13 +21,13 @@ test("a stray packed file, then a postinstall script, fails the pack contract", 
     const clean = await run(repo, root, []);
     expect(clean.code, clean.stderr).toBe(0);
 
-    writeFileSync(join(root, "src", "leak.ts"), "export const leak = 1;\n");
+    writeFileSync(join(root, "src", "leak.test.ts"), "export const leak = 1;\n");
     const stray = await run(repo, root, []);
     expect(stray.code).not.toBe(0);
-    expect(stray.stderr).toContain("src/leak.ts");
-    expect(stray.stderr).toContain("bun ./scripts/pack-contract.ts --update");
+    expect(stray.stderr).toContain("src/leak.test.ts");
+    expect(stray.stderr).not.toContain("--update");
 
-    rmSync(join(root, "src", "leak.ts"));
+    rmSync(join(root, "src", "leak.test.ts"));
     writeManifest(root, { postinstall: "echo pwned" });
     const hooked = await run(repo, root, []);
     expect(hooked.code).not.toBe(0);
@@ -60,7 +60,7 @@ test("optional and bundled dependencies fail, and both npm pack JSON shapes pars
   expect(packedTarballFromJson({ okmodel: entry })).toEqual(packed);
   expect(packedTarballFromJson(entry)).toEqual(packed);
   expect(readFileSync(join(import.meta.dir, "..", "docs/release.md"), "utf8")).toContain(
-    "The snapshot does not pin the contents of those files.",
+    "The snapshot does not pin the contents of bin or main.",
   );
 });
 
@@ -94,41 +94,48 @@ test("bin and main are snapshotted and their file contents are not", async () =>
   }
 }, 60_000);
 
-test("a changed chunk hash passes, and a new or removed chunk fails", async () => {
+test("a new or removed chunk passes, and a public declaration change fails", async () => {
   const root = mkdtempSync(join(tmpdir(), "okm-pack-chunk-"));
   const repo = join(import.meta.dir, "..");
   const shared = join(root, "dist", "shared");
   try {
     mkdirSync(join(root, "src"), { recursive: true });
     writeFileSync(join(root, "src", "ok.js"), "export const ok = 1;\n");
+    writeFileSync(join(root, "src", "ok.d.ts"), "export declare const ok: number;\n");
     mkdirSync(shared, { recursive: true });
     writeFileSync(join(shared, "aaaaaaaa.js"), "export const a = 1;\n");
     writeFileSync(join(shared, "bbbbbbbb.js"), "export const b = 1;\n");
     writeFileSync(join(root, "dist", "index.js"), "export const ok = 1;\n");
-    writeManifest(root, {});
+    writeManifest(
+      root,
+      {},
+      {
+        exports: { ".": { types: "./src/ok.d.ts", import: "./src/ok.js" } },
+      },
+    );
     const updated = await run(repo, root, ["--update"]);
     expect(updated.code, updated.stderr).toBe(0);
     const snapshot = await Bun.file(join(root, "pack-contract.snap.json")).text();
-    expect(snapshot).toContain("dist/shared/*.js");
+    expect(snapshot).not.toContain("dist/shared");
     expect(snapshot).not.toContain("aaaaaaaa.js");
-    expect(snapshot).not.toContain("bbbbbbbb.js");
+    expect(snapshot).toContain("declarations");
 
     rmSync(join(shared, "aaaaaaaa.js"));
     writeFileSync(join(shared, "cccccccc.js"), "export const a = 1;\n");
-    const renamed = await run(repo, root, []);
-    expect(renamed.code, renamed.stderr).toBe(0);
-
     writeFileSync(join(shared, "dddddddd.js"), "export const d = 1;\n");
     const added = await run(repo, root, []);
-    expect(added.code).not.toBe(0);
-    expect(added.stderr).toContain("dist/shared/*.js");
-    expect(added.stderr).toContain("bun ./scripts/pack-contract.ts --update");
+    expect(added.code, added.stderr).toBe(0);
 
     rmSync(join(shared, "dddddddd.js"));
     rmSync(join(shared, "bbbbbbbb.js"));
     const removed = await run(repo, root, []);
-    expect(removed.code).not.toBe(0);
-    expect(removed.stderr).toContain("dist/shared/*.js");
+    expect(removed.code, removed.stderr).toBe(0);
+
+    writeFileSync(join(root, "src", "ok.d.ts"), "export declare const ok: string;\n");
+    const edited = await run(repo, root, []);
+    expect(edited.code).not.toBe(0);
+    expect(edited.stderr).toContain("declaration . differs");
+    expect(edited.stderr).toContain("bun ./scripts/pack-contract.ts --update");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.event_name == 'schedule' && 'after-merge-nightly' || format('after-merge-{0}', github.sha) }}
+  group: after-merge-${{ github.sha }}
   cancel-in-progress: false
 
 permissions:

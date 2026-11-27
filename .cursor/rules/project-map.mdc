@@ -50,15 +50,15 @@ contracts → dialects → adapters → runtime → tooling. Adapters import con
 
 ## Working order
 1. Core work with a focused test per item, then commit locally.
-2. Focused tests for touched files; when they pass, run `bun run verify:fast` once and push once. Then `gh pr merge --auto --squash` and stop. Do not poll CI. Do not merge `main` unless the push is rejected for a real conflict. Do not push an empty commit. Do not edit `changelog.md` or bump the version on the pull request. The pack-contract snapshot may change when the packed file list deliberately changes.
+2. Focused tests for touched files; when they pass, run `bun run verify:fast` once and push once. Agents never merge and never tag. Do not poll CI unless the prompt says to wait. Do not merge `main` unless the push is rejected for a real conflict. Do not push an empty commit. Do not edit `changelog.md` or bump the version on the pull request. The pack-contract snapshot changes when the public surface changes.
 3. Secondary work: audits, docs, site, cleanup, in the same pull request when it belongs there.
 4. Self-review against D129. Do not run `bun run check` to finish a pull request. That suite runs after merge.
 - A fix needs a reproduction (with a timeout when it can hang) and proof its test fails without the fix.
 - Any object a driver can make emit `error` (pool, client, listener, reserved connection, stream, cancel socket) needs an error path that cannot become `uncaughtException` or `unhandledRejection`.
 
 ## Gates that must not regress
-- Runtime entry size (D144): ≤ 6,100 bytes min / 2,250 gzip; cold import ≤ 25 ms in CI (local > 15 ms is a finding). App startup budget and adapter gates live in `scripts/size.ts`; see `docs/size.md`. Do not copy gate numbers into prompts or reports from memory; read them from the script output.
-- Type cost (D133): ceilings enforced by `bun run type-cost` (listed in `AGENTS.md`).
+- Size and type cost are reports (`scripts/size-report.ts`, `tests/fixtures/size-report.json`). No byte ceiling and no type-cost ceiling. `layers-check`, `core-purity`, and `bundle-purity` stay structural. Read the job summary. Do not copy numbers into prompts from memory.
+- Type cost (D133): `bun run type-cost` prints the table and does not fail on a number.
 - `layers-check`, `core-purity`, `bundle-purity`, `okid-drift`, `docs:check`, `readme:check`, `compiler-api`, `publint`, `attw`.
 - D129: nothing new in the runtime entry without need, lazy work, no module-level computation, no duplicated logic, no hot-path allocation. Every report states runtime entry size (min + gzip), cold import and type-cost change, and ends with a self-review against D129.
 - Hitting a gate: stop and report the exact numbers. First try to save bytes in the code you added; never raise a gate without a cap given in the prompt.
@@ -66,13 +66,13 @@ contracts → dialects → adapters → runtime → tooling. Adapters import con
 ## Pull requests
 - Title `type(scope): summary` is the only requirement. The workflow sets `type:` from the title and `area:` from the scope when the scope is an area, and from paths otherwise.
 - No milestone and no `Closes #N` line.
-- Postgres 18 runs when the diff touches dialects, migrate, or runtime. Required status: `gate / check`.
+- Postgres 18 runs when the diff touches dialects, migrate, or runtime. The `needs: postgres` label does not start it. After merge is manual. Required status: `gate / check`.
 - Never create an issue unless Ali approved one by name; if the issue is missing, stop and say so.
 - Open the PR, enable auto-merge, stop. Do not wait on CI.
 - Report: max 40 lines. A table (item | file | test | status done / N/A / deferred + reason), commands with pass/fail, measured budgets from the scripts' output, PR link.
 
 ## Hard rules
 - No public API, `ErrorKind`, or catalog hash changes without Ali's explicit approval. Prefer adding a field over a new `ErrorKind`.
-- You may push branches and open PRs. After `verify:fast`, run `gh pr merge --auto --squash` and stop. Never tag, publish, or run `bun run bump release` unless the prompt says so.
+- You may push branches and open PRs. Agents never merge and never tag. Never publish, or run `bun run bump release` unless the prompt says so.
 - Changelog and version: do not edit them on a pull request. A release runs `bun run bump release`. A prerelease publish runs `bun run bump next --publish`. See `.agents/skills/okm-ship/SKILL.md`.
 - Commit trailers: see `AGENTS.md` § Commits.

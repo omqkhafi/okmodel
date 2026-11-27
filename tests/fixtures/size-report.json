@@ -1,0 +1,145 @@
+{
+  "startup": {
+    "minBytes": 100671,
+    "gzipBytes": 33015
+  },
+  "runtimeEntry": {
+    "minBytes": 5442,
+    "gzipBytes": 2105,
+    "coldImportMs": 3.677
+  },
+  "connect": {
+    "src/runtime/pg/postgresjs.ts": {
+      "minBytes": 42895,
+      "gzipBytes": 15200
+    },
+    "src/runtime/pg/pglite.ts": {
+      "minBytes": 41375,
+      "gzipBytes": 14462
+    },
+    "src/runtime/pg/pg.ts": {
+      "minBytes": 43112,
+      "gzipBytes": 15150
+    },
+    "src/runtime/pg/bun.ts": {
+      "minBytes": 42202,
+      "gzipBytes": 14838
+    },
+    "src/runtime/pg/neon.ts": {
+      "minBytes": 43116,
+      "gzipBytes": 15032
+    }
+  },
+  "adapters": {
+    "src/adapters/pg/postgresjs.ts": {
+      "minBytes": 22153,
+      "gzipBytes": 8141,
+      "incrementalMinBytes": 16889
+    },
+    "src/adapters/pg/pglite.ts": {
+      "minBytes": 17756,
+      "gzipBytes": 6507,
+      "incrementalMinBytes": 12515
+    }
+  },
+  "cliChunkBytes": 1317161,
+  "tarballBytes": 1406602,
+  "typeCost": {
+    "inferred-50": {
+      "instantiations": 4325,
+      "types": 1985
+    },
+    "inferred-200": {
+      "instantiations": 14375,
+      "types": 4685
+    },
+    "inferred-500": {
+      "instantiations": 34475,
+      "types": 10085
+    },
+    "inferred-250": {
+      "instantiations": 17725,
+      "types": 5585
+    },
+    "emitted-200": {
+      "instantiations": 0,
+      "types": 559
+    },
+    "equality-200": {
+      "instantiations": 18,
+      "types": 855
+    },
+    "tagged-200": {
+      "instantiations": 18,
+      "types": 855
+    },
+    "50 to 200 per table": {
+      "instantiations": 67,
+      "types": 0
+    },
+    "200 to 500 per table": {
+      "instantiations": 67,
+      "types": 0
+    },
+    "tagged operator surcharge": {
+      "instantiations": 0,
+      "types": 0
+    },
+    "columns-declarations": {
+      "instantiations": 690,
+      "types": 993
+    },
+    "query-10": {
+      "instantiations": 7281,
+      "types": 3511
+    },
+    "query-50": {
+      "instantiations": 11241,
+      "types": 4231
+    },
+    "query-200": {
+      "instantiations": 26091,
+      "types": 6931
+    },
+    "query-200+extensions": {
+      "instantiations": 26125,
+      "types": 7051
+    },
+    "validate-input": {
+      "instantiations": 2411,
+      "types": 1569
+    },
+    "query-200-validate": {
+      "instantiations": 34161,
+      "types": 7151
+    },
+    "query-200+page": {
+      "instantiations": 30100,
+      "types": 7130
+    },
+    "query-200+page+aggregate": {
+      "instantiations": 33303,
+      "types": 7630
+    },
+    "query-200+page+aggregate+through": {
+      "instantiations": 43525,
+      "types": 7835
+    },
+    "query-200+presets": {
+      "instantiations": 29575,
+      "types": 7826
+    },
+    "query-200+tx": {
+      "instantiations": 35211,
+      "types": 7644
+    },
+    "query-200+batch": {
+      "instantiations": 27253,
+      "types": 7340
+    },
+    "query-200+routines": {
+      "instantiations": 27174,
+      "types": 7516
+    }
+  }
+}

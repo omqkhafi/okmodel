@@ -42,4 +42,7 @@ test("a different local Bun warns and the pinned version does not", () => {
   expect(bunPinWarning("1.4.2", "v1.4.3")).toBe(
     "verify:fast: local Bun 1.4.2 differs from the pinned v1.4.3 in .bun-version",
   );
+  expect(bunPinWarning("1.4.2", "1.4.4", "bun test")).toBe(
+    "bun test: local Bun 1.4.2 differs from the pinned 1.4.4 in .bun-version",
+  );
 });

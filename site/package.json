@@ -4,11 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev --port 3333",
-    "build": "fumadocs-mdx && next build",
+    "build": "bun ./scripts/error-code-index.ts && fumadocs-mdx && next build",
     "start": "next start",
     "types": "fumadocs-mdx && next typegen && tsc --noEmit",
-    "test": "fumadocs-mdx && bun test --preload ./lib/mdx-preload.ts ./lib/*.site-test.ts ./scripts/content.site-test.ts",
-    "check": "fumadocs-mdx && next typegen && tsc --noEmit && bun test --preload ./lib/mdx-preload.ts ./lib/*.site-test.ts ./scripts/*.site-test.ts",
+    "test": "bun ./scripts/error-code-index.ts && fumadocs-mdx && bun test --preload ./lib/mdx-preload.ts ./lib/*.site-test.ts ./scripts/content.site-test.ts",
+    "check": "bun ./scripts/error-code-index.ts && fumadocs-mdx && next typegen && tsc --noEmit && bun test --preload ./lib/mdx-preload.ts ./lib/*.site-test.ts ./scripts/*.site-test.ts",
     "weight": "bun ./scripts/weight.ts",
     "postinstall": "fumadocs-mdx"
   },
