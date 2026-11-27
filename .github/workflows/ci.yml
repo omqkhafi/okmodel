@@ -2,8 +2,8 @@ name: CI
 
 # Pull requests only. `gate / check` is the required status. It runs after
 # success or failure (`if: always() && !cancelled()`). A cancelled run,
-# including one concurrency replaced, does not record a failed gate. A push
-# to main and the nightly run live in after-merge.yml.
+# including one concurrency replaced, does not record a failed gate. After
+# merge is manual (`workflow_dispatch` on after-merge.yml, D331).
 #
 # The gate is format, lint, typecheck, the build, tests for files changed
 # since the merge base, the size report, and the title lint. The size report

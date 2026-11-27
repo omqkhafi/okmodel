@@ -38,12 +38,13 @@ export type PostgresExclusion = {
 export const POSTGRES_EXCLUSIONS: readonly PostgresExclusion[] = [
   {
     file: "tests/lifecycle/lifecycle-pg.test.ts",
-    reason: "Heavy generate/apply/push property; dedicated OKM_LIFECYCLE job on PR and nightly",
+    reason:
+      "Heavy generate/apply/push property; dedicated OKM_LIFECYCLE job on a pull request and on manual after-merge",
   },
   {
     file: "tests/composition/composition-pg.test.ts",
     reason:
-      "Pairwise composition; dedicated OKM_COMPOSITION job on PR (Postgres 18) and nightly (15–19)",
+      "Pairwise composition; dedicated OKM_COMPOSITION job on a pull request (Postgres 18) and on manual after-merge (15–19)",
   },
 ];
 

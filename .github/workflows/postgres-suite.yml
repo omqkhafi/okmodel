@@ -2,8 +2,8 @@ name: Postgres
 
 # Reusable suite. The caller job is named `suite`, so a run reads
 # `Postgres / suite / 18 / isolation`. A pull request runs Postgres 18 when
-# the diff touches dialects, migrate, or runtime. A push to main, the nightly
-# run, and a release pass every supported major. Each shard has its own
+# the diff touches dialects, migrate, or runtime. After merge is manual and
+# passes every supported major. A release does the same. Each shard has its own
 # topology. The pooler proof is its own job, so apt-get is not on the suite
 # path. That job also starts a PgBouncer service container (transaction mode,
 # pool size 1) and runs the opt-in smoke test. `versions` is unchanged (D230).

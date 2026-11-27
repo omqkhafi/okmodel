@@ -19,12 +19,7 @@ import { POSTGRES_VERSIONS } from "../packages/harness/src/version.js";
 import { renderCompatibility, supportSentence } from "../scripts/compatibility.js";
 import { ensurePackedDocs } from "../scripts/docs-pack.js";
 import { verifyVersions } from "../scripts/verify.js";
-import {
-  changelogReleaseNotes,
-  closesMilestone,
-  findMilestone,
-  milestoneTitle,
-} from "../scripts/github-release.js";
+import { changelogReleaseNotes } from "../scripts/github-release.js";
 import {
   ATTEMPTS,
   WAIT_MS,
@@ -116,21 +111,6 @@ test("changelog release notes are the version section", () => {
   expect(shipped.startsWith("## v")).toBe(false);
 });
 
-test("a release without a milestone finds none instead of failing", () => {
-  const listed = [{ number: 16, title: "0.10.3", state: "closed" }];
-  expect(findMilestone(listed, "0.10.4")).toBeUndefined();
-  expect(findMilestone(listed, "0.10.3")?.number).toBe(16);
-  expect(() => findMilestone({}, "0.10.4")).toThrow("milestone list is not an array");
-});
-
-test("a release milestone drops a trailing .0", () => {
-  expect(milestoneTitle("0.2.0")).toBe("0.2");
-  expect(milestoneTitle("0.1.1")).toBe("0.1.1");
-  expect(milestoneTitle("0.10.0")).toBe("0.10");
-  expect(closesMilestone("0.10.0")).toBe(true);
-  expect(closesMilestone("0.10.0-next.1")).toBe(false);
-});
-
 test("stage publish uses an explicit path and the next tag for a prerelease", () => {
   expect(stagePublishCommand("./packed/okmodel.tgz", "0.10.0")).toEqual([
     "npm",
@@ -209,7 +189,7 @@ test("npm smoke waits out registry processing and skips bun's manifest cache", (
   ]);
   const releaseDoc = readFileSync(join(root, "docs/release.md"), "utf8");
   expect(releaseDoc).toContain("at most 31 times, 30 seconds apart");
-  expect(releaseDoc).toContain("issues: write");
+  expect(releaseDoc).toContain("It does not close a milestone.");
   expect(releaseDoc).toContain("The snapshot does not pin the contents of bin or main.");
   expect(releaseDoc).toContain("It does not wait for the npm smoke.");
 });

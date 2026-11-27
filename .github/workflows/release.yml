@@ -14,8 +14,8 @@ name: Release
 # Publish stages the tested tarball with npm stage publish (npm >= 11.15.0,
 # Node >= 22.14). Bun builds and tests. bun publish has no OIDC, provenance,
 # or staging. No npm token is stored. The publish job is the release
-# Environment and is the only job with id-token: write, contents: write,
-# and issues: write. issues: write closes the milestone.
+# Environment and is the only job with id-token: write and contents: write.
+# It creates the GitHub Release and does not close a milestone.
 # The build job packs once. It records that tarball's sha256 and file list
 # in the job summary and the release-record artifact. Publish stages that
 # same tarball. The verify job compares the registry copy to the record.
@@ -184,7 +184,6 @@ jobs:
     permissions:
       contents: write
       id-token: write
-      issues: write
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
