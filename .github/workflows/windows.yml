@@ -1,6 +1,6 @@
 name: Windows
 
-# Called from after-merge.yml on a push to main and on the nightly run.
+# Called from after-merge.yml. That workflow is manual (`workflow_dispatch`).
 # A pull request does not run it. `windows-latest` is
 # intentional: the job exists to run on current Windows. The Ubuntu hash
 # job only publishes `catalog.hash` so the Windows job can compare it.

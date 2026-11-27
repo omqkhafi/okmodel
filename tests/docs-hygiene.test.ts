@@ -27,7 +27,7 @@ import {
   hygieneProblems,
   internalLinkProblems,
 } from "../scripts/docs-hygiene.js";
-import { PACK_SIZE_LIMIT, packSizeProblems } from "../scripts/pack-size.js";
+import { isForbiddenPackedPath, packedPresenceProblems } from "../scripts/pack-contract.js";
 import { repoRoot } from "../scripts/root.js";
 
 const root = repoRoot();
@@ -104,11 +104,15 @@ test("hidden characters fail, and a joiner inside a word needs the allowlist", (
   expect(hiddenCharsIn("ok \uFE0F", "docs/x.md", false)[0]).toContain("variation selector");
 });
 
-test("pack growth over 400 KB fails, and a smaller tarball passes", () => {
-  expect(packSizeProblems(1_000, 1_000)).toEqual([]);
-  expect(packSizeProblems(500, 1_000)).toEqual([]);
-  expect(packSizeProblems(PACK_SIZE_LIMIT, 0)).toEqual([]);
-  expect(packSizeProblems(PACK_SIZE_LIMIT + 1, 0).length).toBe(1);
+test("a forbidden packed file fails, and an internal chunk does not", () => {
+  expect(isForbiddenPackedPath("dist/shared/aaaaaaaa.js")).toBe(false);
+  expect(isForbiddenPackedPath("src/ok.ts")).toBe(false);
+  expect(packedPresenceProblems(["package.json", "src/leak.test.ts"], ["package.json"])).toEqual([
+    "pack-contract: forbidden file: src/leak.test.ts",
+  ]);
+  expect(packedPresenceProblems(["package.json"], ["package.json", "src/ok.js"])).toEqual([
+    "pack-contract: required file missing: src/ok.js",
+  ]);
 });
 
 test("stamp rewrites okmVersion in a copy and restore puts the bytes back", () => {

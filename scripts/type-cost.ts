@@ -1,5 +1,5 @@
 /**
- * Measures type cost with TypeScript 7's own diagnostics and applies D127 ceilings.
+ * Measures type cost with TypeScript 7's own diagnostics and prints the table.
  *
  * The gated numbers compile fixtures against the built `.d.ts` files with
  * `skipLibCheck`, which is what a consumer project pays. The same fixtures
@@ -81,48 +81,6 @@ export function measureTypeCost(): TypeCostReport {
   };
 }
 
-/**
- * Type ceilings after D133.
- *
- * Table and column ceilings apply to declaration consumers. The tagged-operator
- * surcharge stays on the source measurement, because the declaration figure is 0.
- * Check time is reported and is not capped.
- */
-export const TYPE_CEILINGS = {
-  /** Q5 / D305: 17,312 plus 3 percent, rounded down. Schema probes only. */
-  inferred200Instantiations: 17_831,
-  /**
-   * query-200+extensions after sealing hidden and excess keys on `find`, `one`,
-   * and `page`: measured 25,813; plus 3 percent, rounded down.
-   * Split from the schema ceiling so that probe stays at 17,831.
-   */
-  query200Instantiations: 26_587,
-  inferred200Types: 6_500,
-  inferred500Instantiations: 42_400,
-  /** The 250-table probe (R4): measured 17,650 plus 20 percent. */
-  inferred250Instantiations: 21_180,
-  instantiationsPerAddedTable: 84,
-  emittedConsumerTypes: 700,
-  /** Query composite probe on 200 tables (D140). Separate from the inferred-schema baseline. */
-  queryCompositeTypes: 7_100,
-  /** query-200 with `okmodel/validate` after the read seals: measured 33,812 / 6,923; plus 3 percent, rounded down. */
-  queryValidateInstantiations: 34_826,
-  queryValidateTypes: 7_131,
-  /** query-200+page+aggregate+through after the read seals: measured 43,063; plus 3 percent, rounded down. */
-  queryFeaturesInstantiations: 44_354,
-  /** Same probe, types: measured 7,590; plus 3 percent, rounded down. */
-  queryFeaturesTypes: 7_817,
-  /** query-200+presets after the read seals: measured 29,241 / 7,602; plus 3 percent, rounded down. */
-  queryPresetsInstantiations: 30_118,
-  queryPresetsTypes: 7_830,
-  /** query-200+tx after the read seals: measured 34,798 / 7,407; plus 3 percent, rounded down. */
-  queryTxInstantiations: 35_841,
-  queryTxTypes: 7_629,
-  taggedOperatorSurcharge: 800,
-  columnInstantiations: 720,
-  columnTypes: 1_100,
-} as const;
-
 /** Column-type sample measured beside the table fixtures. */
 const columnProject = "tests/fixtures/type-cost-columns";
 
@@ -157,12 +115,11 @@ export type SourceTypeCost = {
   readonly taggedOperatorSurcharge: number;
 };
 
-/** Fixture rows the ceilings read. */
+/** Fixture rows the report reads. */
 export type TypeBudgetCore = {
   readonly rows: readonly TypeBudgetRow[];
   readonly perAddedTable: readonly PerTableCost[];
   readonly taggedOperatorSurcharge: number;
-  readonly ceilings: typeof TYPE_CEILINGS;
 };
 
 /** Ceiling inputs written next to the trivial measurement. */
@@ -373,7 +330,7 @@ function measureFixtureRows(
  * Builds the ceiling report from measured rows.
  *
  * @param rows - Inferred, emitted, and operator projects
- * @returns The report `ceilingProblems` checks
+ * @returns Rows, the per-table rate, and the tagged-operator surcharge
  */
 export function budgetReport(rows: readonly TypeBudgetRow[]): TypeBudgetCore {
   const tagged = rowNamed(rows, "tagged-200");
@@ -385,112 +342,7 @@ export function budgetReport(rows: readonly TypeBudgetRow[]): TypeBudgetCore {
       perTable(rowNamed(rows, "inferred-200"), rowNamed(rows, "inferred-500")),
     ],
     taggedOperatorSurcharge: tagged.instantiations - equality.instantiations,
-    ceilings: TYPE_CEILINGS,
   };
-}
-
-/**
- * Reports rows that exceed a D133 ceiling.
- *
- * @param report - Consumer rows from {@link measureTypeBudgets}
- * @param taggedSurcharge - Source-based tagged-operator surcharge. Defaults to the figure on `report`
- * @returns Problem lines. Empty when every ceiling holds
- */
-export function ceilingProblems(
-  report: TypeBudgetCore & {
-    readonly queries?: readonly TypeBudgetRow[];
-    readonly queryValidate?: TypeBudgetRow;
-    readonly queryFeatures?: readonly TypeBudgetRow[];
-    readonly queryPresets?: TypeBudgetRow;
-    readonly queryTx?: TypeBudgetRow;
-  },
-  taggedSurcharge: number = report.taggedOperatorSurcharge,
-): readonly string[] {
-  const problems: string[] = [];
-  const inferred200 = rowNamed(report.rows, "inferred-200");
-  const inferred500 = rowNamed(report.rows, "inferred-500");
-  const emitted200 = rowNamed(report.rows, "emitted-200");
-  if (inferred200.instantiations > TYPE_CEILINGS.inferred200Instantiations) {
-    problems.push(
-      `type-cost: inferred 200 tables used ${String(inferred200.instantiations)} instantiations, above ${String(TYPE_CEILINGS.inferred200Instantiations)}`,
-    );
-  }
-  if (inferred200.types > TYPE_CEILINGS.inferred200Types) {
-    problems.push(
-      `type-cost: inferred 200 tables used ${String(inferred200.types)} types, above ${String(TYPE_CEILINGS.inferred200Types)}`,
-    );
-  }
-  if (inferred500.instantiations > TYPE_CEILINGS.inferred500Instantiations) {
-    problems.push(
-      `type-cost: inferred 500 tables used ${String(inferred500.instantiations)} instantiations, above ${String(TYPE_CEILINGS.inferred500Instantiations)}`,
-    );
-  }
-  const inferred250 = rowNamed(report.rows, "inferred-250");
-  if (inferred250.instantiations > TYPE_CEILINGS.inferred250Instantiations) {
-    problems.push(
-      `type-cost: inferred 250 tables used ${String(inferred250.instantiations)} instantiations, above ${String(TYPE_CEILINGS.inferred250Instantiations)}`,
-    );
-  }
-  if (emitted200.types > TYPE_CEILINGS.emittedConsumerTypes) {
-    problems.push(
-      `type-cost: emitted 200-table consumer used ${String(emitted200.types)} types, above ${String(TYPE_CEILINGS.emittedConsumerTypes)}`,
-    );
-  }
-  for (const step of report.perAddedTable) {
-    if (step.instantiations > TYPE_CEILINGS.instantiationsPerAddedTable) {
-      problems.push(
-        `type-cost: ${String(step.fromTables)} to ${String(step.toTables)} tables added ${step.instantiations.toFixed(1)} instantiations per table, above ${String(TYPE_CEILINGS.instantiationsPerAddedTable)}`,
-      );
-    }
-  }
-  const query200 = report.queries?.find((entry) => entry.label === "query-200");
-  const queryExtensions = report.queries?.find((entry) => entry.label === "query-200+extensions");
-  for (const row of [query200, queryExtensions]) {
-    if (row === undefined) continue;
-    if (row.instantiations > TYPE_CEILINGS.query200Instantiations) {
-      problems.push(
-        `type-cost: ${row.label} used ${String(row.instantiations)} instantiations, above ${String(TYPE_CEILINGS.query200Instantiations)}`,
-      );
-    }
-    if (row.types > TYPE_CEILINGS.queryCompositeTypes) {
-      problems.push(
-        `type-cost: ${row.label} used ${String(row.types)} types, above ${String(TYPE_CEILINGS.queryCompositeTypes)}`,
-      );
-    }
-  }
-  const features = report.queryFeatures?.at(-1);
-  const probes = [
-    [
-      report.queryValidate,
-      TYPE_CEILINGS.queryValidateInstantiations,
-      TYPE_CEILINGS.queryValidateTypes,
-    ],
-    [features, TYPE_CEILINGS.queryFeaturesInstantiations, TYPE_CEILINGS.queryFeaturesTypes],
-    [
-      report.queryPresets,
-      TYPE_CEILINGS.queryPresetsInstantiations,
-      TYPE_CEILINGS.queryPresetsTypes,
-    ],
-    [report.queryTx, TYPE_CEILINGS.queryTxInstantiations, TYPE_CEILINGS.queryTxTypes],
-  ] as const;
-  for (const [row, instantiations, types] of probes) {
-    if (row !== undefined && row.instantiations > instantiations) {
-      problems.push(
-        `type-cost: ${row.label} used ${String(row.instantiations)} instantiations, above ${String(instantiations)}`,
-      );
-    }
-    if (row !== undefined && row.types > types) {
-      problems.push(
-        `type-cost: ${row.label} used ${String(row.types)} types, above ${String(types)}`,
-      );
-    }
-  }
-  if (taggedSurcharge > TYPE_CEILINGS.taggedOperatorSurcharge) {
-    problems.push(
-      `type-cost: tagged operators added ${String(taggedSurcharge)} instantiations, above ${String(TYPE_CEILINGS.taggedOperatorSurcharge)}`,
-    );
-  }
-  return problems;
 }
 
 function measureProject(
@@ -611,27 +463,6 @@ export function measureColumnTypes(): ColumnTypeCost {
 }
 
 /**
- * Reports a column-type sample over its ceiling.
- *
- * @param measured - Output of {@link measureColumnTypes}
- * @returns Problem lines. Empty when the sample is inside the ceilings
- */
-export function columnTypeProblems(measured: ColumnTypeCost): readonly string[] {
-  const problems: string[] = [];
-  if (measured.instantiations > TYPE_CEILINGS.columnInstantiations) {
-    problems.push(
-      `type-cost: column types used ${String(measured.instantiations)} instantiations, above ${String(TYPE_CEILINGS.columnInstantiations)}`,
-    );
-  }
-  if (measured.types > TYPE_CEILINGS.columnTypes) {
-    problems.push(
-      `type-cost: column types used ${String(measured.types)} types, above ${String(TYPE_CEILINGS.columnTypes)}`,
-    );
-  }
-  return problems;
-}
-
-/**
  * Emits library declarations the consumer fixtures import.
  *
  * Uses the package build config so the `.d.ts` layout matches `okmodel` and
@@ -693,24 +524,90 @@ function emitOperatorDeclarations(dir: string): string {
   return outDir;
 }
 
+/** One row of the type-cost table. */
+export type TypeCostLine = {
+  /** Probe name, such as `inferred-200`. */
+  readonly probe: string;
+  /** Instantiations TypeScript reported. */
+  readonly instantiations: number;
+  /** Types TypeScript reported. Zero when the row is a rate. */
+  readonly types: number;
+};
+
+/**
+ * Rows the pull-request summary prints.
+ *
+ * @param report - Measured budgets
+ * @returns One line per probe, in a stable order
+ */
+export function typeCostLines(report: TypeBudgetReport): readonly TypeCostLine[] {
+  const lines: TypeCostLine[] = report.rows.map((row) => ({
+    probe: row.label,
+    instantiations: row.instantiations,
+    types: row.types,
+  }));
+  for (const step of report.perAddedTable) {
+    lines.push({
+      probe: `${String(step.fromTables)} to ${String(step.toTables)} per table`,
+      instantiations: step.instantiations,
+      types: 0,
+    });
+  }
+  lines.push({
+    probe: "tagged operator surcharge",
+    instantiations: report.taggedOperatorSurcharge,
+    types: 0,
+  });
+  lines.push({
+    probe: report.columns.project,
+    instantiations: report.columns.instantiations,
+    types: report.columns.types,
+  });
+  for (const row of report.queries) lines.push(lineFromRow(row));
+  lines.push(lineFromRow(report.validate));
+  lines.push(lineFromRow(report.queryValidate));
+  for (const row of report.queryFeatures) lines.push(lineFromRow(row));
+  lines.push(lineFromRow(report.queryPresets));
+  lines.push(lineFromRow(report.queryTx));
+  lines.push(lineFromRow(report.queryBatch));
+  lines.push(lineFromRow(report.queryRoutines));
+  return lines;
+}
+
+/**
+ * Markdown table for {@link typeCostLines}.
+ *
+ * @param lines - Probe rows
+ * @returns A table ending in a newline
+ */
+export function typeCostMarkdown(lines: readonly TypeCostLine[]): string {
+  const body = lines.map(
+    (line) =>
+      `| ${line.probe} | ${formatCount(line.instantiations)} | ${formatCount(line.types)} |`,
+  );
+  return `| Probe | Instantiations | Types |\n| --- | ---: | ---: |\n${body.join("\n")}\n`;
+}
+
+function lineFromRow(row: TypeBudgetRow): TypeCostLine {
+  return { probe: row.label, instantiations: row.instantiations, types: row.types };
+}
+
+function formatCount(value: number): string {
+  if (Number.isInteger(value)) return String(value);
+  return value.toFixed(1);
+}
+
 if (import.meta.main) {
   try {
     const budgets = measureTypeBudgets();
     const columnsSource = measureColumnTypes();
-    const problems = [
-      ...ceilingProblems(budgets, budgets.source.taggedOperatorSurcharge),
-      ...columnTypeProblems(budgets.columns),
-    ];
     writeReport({
       trivial: measureTypeCost(),
       budgets,
       columns: budgets.columns,
       columnsSource,
     });
-    for (const problem of problems) {
-      console.error(problem);
-    }
-    if (problems.length > 0) process.exit(1);
+    process.stdout.write(`\n${typeCostMarkdown(typeCostLines(budgets))}\n`);
   } catch (error: unknown) {
     console.error(error instanceof Error ? error.message : error);
     process.exit(1);

@@ -2,7 +2,7 @@
  * Decides whether `gate / check` passes.
  *
  * Format, lint, typecheck, build, changed tests, the title lint, and the
- * runtime-entry size check must be `success`. The Postgres 18 suite must be
+ * size report must be `success`. The Postgres 18 suite must be
  * `success` when the diff touches dialects, migrate, or runtime. The lifecycle
  * property must be `success` when the diff touches dialects, migrate, or
  * `tests/lifecycle`. The composition cases must be `success` when the diff

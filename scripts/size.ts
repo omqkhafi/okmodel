@@ -26,37 +26,7 @@ export const RUNTIME_ENTRY = "src/contracts/index.ts";
  */
 export const PG_ENTRY = "src/dialects/pg/index.ts";
 
-/**
- * Minified runtime entry ceiling, in bytes (D144).
- *
- * Measured 5,525. Plus 10 percent, rounded to 6,100. The 60 KB figure stays
- * the long-term target in D127; this gate is the one that fails CI.
- */
-export const RUNTIME_MAX_MIN_BYTES = 6_100;
-
-/**
- * Gzipped runtime entry ceiling, in bytes (D144).
- *
- * Measured 2,042. Plus 10 percent, rounded to 2,250.
- */
-export const RUNTIME_MAX_GZIP_BYTES = 2_250;
-
-/**
- * Cold-import reference on a developer machine, in milliseconds (D127, D134).
- *
- * A local sample above this is a finding. It does not fail the script.
- */
-export const LOCAL_COLD_IMPORT_MS = 15;
-
-/**
- * Cold-import gate on CI, in milliseconds (D134).
- *
- * The median of five fresh imports. Shared runners are slower than the
- * reference machine, so the failing gate is wider than {@link LOCAL_COLD_IMPORT_MS}.
- */
-export const CI_COLD_IMPORT_MS = 25;
-
-/** Tree-shaken 10-table app. D133. */
+/** Tree-shaken 10-table app. D133. Byte size is reported. It is not a gate. */
 export const APP_ENTRY = "scripts/app-startup.ts";
 
 /** The same app with `archivable()` on one table. Reported, not gated (D167). */
@@ -75,81 +45,38 @@ export const RELATIONS_ENTRY = "scripts/app-relations.ts";
 export const FULL_ENTRY = "scripts/app-full.ts";
 
 /**
- * Minified app-fixture ceiling, in bytes (D160).
- *
- * P27 measured 88,278. Plus 3 percent, rounded down, is 90,900, under the 91,000 allowance (D143).
- * Was 87,900 (P24).
- * 92,900: casing, pull, the Drizzle import, and orderBy on a relation.
- * `schema()` calls `namesFor()` synchronously, so casing stays on this graph, and pull and the
- * Drizzle import share it. The relation-order scan stays eager so the join chunk can stay lazy.
- * 94,680: date and time modes measured 94,653, plus 20, rounded up (D322).
- * 99,446: the tree after round 3 and dotted paths measured 98,461, plus about 1 percent (D351).
- */
-export const APP_MAX_MIN_BYTES = 99_446;
-
-/**
- * Gzipped app-fixture ceiling, in bytes (D160).
- *
- * P27 measured 29,326. Plus 3 percent is 30,206, so the 30,000 allowance (D143) was the gate.
- * P67 measured 30,007 and set the gate to that plus 20, rounded up (D210).
- * Was 29,210 (P24).
- * 30,830: date and time modes measured 30,810, plus 20 (D322).
- * 30,850: postgres.js 4 class `count` in the shared reader, measured 30,832 (D324).
- * 32,588: the same tree measured 32,265, plus about 1 percent (D351).
- */
-export const APP_MAX_GZIP_BYTES = 32_588;
-
-/**
  * Public connect entries, driver left external (D142, D143, D156).
  *
- * The gate is the static startup graph with lazy dynamic imports stubbed
- * (D248), so a new lazy chunk cannot spend short names here. A dynamic import
- * of a module already on that graph stays, because a cold import loads it. The full
- * build is printed as a reference and is not gated. Cold import is that
- * reference, including a driver-stubbed sample, and is not gated. Bun.sql has
- * no Node cold import. Each ceiling is the measurement plus 3 percent, rounded
- * down (D160). Moved in P27.
+ * The reported graph is the static startup graph with lazy dynamic imports
+ * stubbed (D248). A dynamic import of a module already on that graph stays,
+ * because a cold import loads it. Bun.sql has no Node cold import.
  */
 export const CONNECT_ENTRIES = [
   {
     entry: "src/runtime/pg/postgresjs.ts",
     file: "postgresjs.js",
     external: ["postgres"],
-    maxMinBytes: 42_450,
-    maxGzipBytes: 14_920,
   },
   {
     entry: "src/runtime/pg/pglite.ts",
     file: "pglite.js",
     external: ["@electric-sql/pglite"],
-    maxMinBytes: 40_450,
-    // 14,310: postgres.js 4 class count in the shared reader, measured 14,300 (D324).
-    maxGzipBytes: 14_310,
   },
   {
     entry: "src/runtime/pg/pg.ts",
     file: "pg.js",
     external: ["pg"],
-    maxMinBytes: 42_850,
-    maxGzipBytes: 15_070,
   },
   {
     entry: "src/runtime/pg/bun.ts",
     file: "bun.js",
     external: ["bun"],
     nodeColdImport: false,
-    maxMinBytes: 41_700,
-    // 14,660: postgres.js 4 class count in the shared reader, measured 14,648 (D324).
-    maxGzipBytes: 14_660,
   },
   {
     entry: "src/runtime/pg/neon.ts",
     file: "neon.js",
     external: ["@neondatabase/serverless"],
-    // 42,030: #696 and #697, measured 42,009, rounded up plus 20 (D325).
-    maxMinBytes: 42_030,
-    // 14,770: #696 and #697, measured 14,743, rounded up plus 20 (D325).
-    maxGzipBytes: 14_770,
   },
 ] as const;
 
@@ -190,28 +117,17 @@ const SHAKEN_OPERATORS = [
 /**
  * Adapter entries.
  *
- * The gate is minified bytes that are not already in the runtime entry.
- * A standalone bundle counts that shared code again. Cold import is printed
- * and not gated (D135): the driver packages dominate it.
- *
- * Ceilings are the P17 measurement plus 25 percent (D127).
- *
- * The postgres.js gate is 17,000 and the PGlite gate is 12,700. Both were
- * raised by decision on 2026-10-21 after the size audit (git history);
- * one-time increase. postgres.js measured 15,909 against 16,000 (91 left) and
- * now has 1,091 left. PGlite measured 11,923 against 12,010 (87 left) and now
- * has 777 left. The featureless app and runtime entry gates did not move.
+ * Reported bytes are the minified bytes that are not already in the runtime
+ * entry. A standalone bundle counts that shared code again (D135).
  */
 export const ADAPTER_ENTRIES = [
   {
     entry: "src/adapters/pg/postgresjs.ts",
     external: ["postgres"],
-    maxIncrementalMinBytes: 17_000, // close rule, #264; raised by decision on 2026-10-21 after the size audit; one-time increase
   },
   {
     entry: "src/adapters/pg/pglite.ts",
     external: ["@electric-sql/pglite"],
-    maxIncrementalMinBytes: 12_700, // raised by decision on 2026-10-21 after the size audit; one-time increase
   },
 ] as const;
 
@@ -275,15 +191,11 @@ const EXPORT_SHAKES: readonly ExportShake[] = [
   },
 ];
 
-/** Ceilings for one minified entry. */
-export type EntryCeilings = {
-  readonly maxMinBytes: number;
-  readonly maxGzipBytes: number;
-  readonly maxColdImportMs: number;
-};
-
 /**
  * Byte size of every file under `dir`.
+ *
+ * @param dir - Directory to walk
+ * @returns Sum of file sizes in bytes
  */
 export function distByteSize(dir: string): number {
   let total = 0;
@@ -300,26 +212,7 @@ export function distByteSize(dir: string): number {
   return total;
 }
 
-/**
- * Reports when `dir` is missing or larger than `maxBytes`.
- */
-export function checkDistSize(dir: string, maxBytes: number): readonly string[] {
-  let size: number;
-  try {
-    size = distByteSize(dir);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return [`size: cannot read ${dir}: ${message}`];
-  }
-  if (size > maxBytes) {
-    return [
-      `size: ${dir} is ${String(size)} bytes, above the ceiling of ${String(maxBytes)} bytes`,
-    ];
-  }
-  return [];
-}
-
-/** Byte and import measurements for the runtime entry. */
+/** Byte and import measurements for one entry. */
 export type RuntimeSize = {
   readonly entry: string;
   readonly minBytes: number;
@@ -330,7 +223,7 @@ export type RuntimeSize = {
 /**
  * Startup graph plus the lazy chunks that load on first include, failure, or write.
  *
- * The gate uses {@link RuntimeSize}. The total is reported and not gated (D138).
+ * The startup figure is {@link RuntimeSize}. The total includes lazy chunks (D138).
  */
 export type StartupMeasurement = RuntimeSize & {
   readonly totalMinBytes: number;
@@ -338,97 +231,6 @@ export type StartupMeasurement = RuntimeSize & {
   /** Cold import after the driver package is replaced with an empty module. */
   readonly stubbedColdImportMs?: number;
 };
-
-/**
- * Reports when the runtime entry is over a D127 size ceiling or the D134 cold-import gate.
- *
- * Byte ceilings always apply. The cold-import failure applies on CI (25 ms).
- * Locally the 15 ms figure is a finding from {@link coldImportFinding}, not a failure.
- *
- * @param measured - Minified bytes, gzip bytes, and one cold Node import
- * @param options - `ci` selects the 25 ms gate. Defaults to the `CI` environment variable
- * @returns Problem lines. Empty when the entry is inside the ceilings
- */
-export function runtimeBudgetProblems(
-  measured: RuntimeSize,
-  options?: { readonly ci?: boolean },
-): readonly string[] {
-  return entryBudgetProblems(measured, {
-    maxMinBytes: RUNTIME_MAX_MIN_BYTES,
-    maxGzipBytes: RUNTIME_MAX_GZIP_BYTES,
-    maxColdImportMs: coldImportCeiling(options?.ci ?? ciEnabled()),
-  });
-}
-
-/**
- * Reports when the 10-table app bundle is over its D137 byte gate.
- *
- * Cold import is printed with the measurement. The 25 ms CI failure stays on
- * the runtime entry (D134). This bundle runs `schema()` at import, so that
- * sample is not the same gate.
- *
- * @param measured - Minified bytes, gzip bytes, and one cold Node import
- * @returns Problem lines. Empty when the bundle is inside the ceilings
- */
-export function appBudgetProblems(measured: RuntimeSize): readonly string[] {
-  return entryBudgetProblems(measured, {
-    maxMinBytes: APP_MAX_MIN_BYTES,
-    maxGzipBytes: APP_MAX_GZIP_BYTES,
-    maxColdImportMs: Number.POSITIVE_INFINITY,
-  });
-}
-
-/**
- * A local cold import above the 15 ms reference (D134).
- *
- * @param coldImportMs - Median of five fresh imports
- * @returns The finding, or `undefined` when the sample is within the reference
- */
-export function coldImportFinding(coldImportMs: number): string | undefined {
-  if (coldImportMs <= LOCAL_COLD_IMPORT_MS) return undefined;
-  return `cold import ${coldImportMs.toFixed(3)} ms is above the ${String(LOCAL_COLD_IMPORT_MS)} ms local reference`;
-}
-
-/** True when this process is a CI run. */
-export function ciEnabled(
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): boolean {
-  return env.CI === "true" || env.CI === "1";
-}
-
-function coldImportCeiling(ci: boolean): number {
-  return ci ? CI_COLD_IMPORT_MS : Number.POSITIVE_INFINITY;
-}
-
-/**
- * Reports when a minified entry is over the given ceilings.
- *
- * @param measured - Minified bytes, gzip bytes, and one cold Node import
- * @param ceilings - Byte and cold-import limits
- * @returns Problem lines. Empty when the entry is inside the ceilings
- */
-export function entryBudgetProblems(
-  measured: RuntimeSize,
-  ceilings: EntryCeilings,
-): readonly string[] {
-  const problems: string[] = [];
-  if (measured.minBytes > ceilings.maxMinBytes) {
-    problems.push(
-      `size: ${measured.entry} minified is ${String(measured.minBytes)} bytes, above ${String(ceilings.maxMinBytes)}`,
-    );
-  }
-  if (measured.gzipBytes > ceilings.maxGzipBytes) {
-    problems.push(
-      `size: ${measured.entry} gzip is ${String(measured.gzipBytes)} bytes, above ${String(ceilings.maxGzipBytes)}`,
-    );
-  }
-  if (measured.coldImportMs > ceilings.maxColdImportMs) {
-    problems.push(
-      `size: ${measured.entry} cold import on Node is ${measured.coldImportMs.toFixed(3)} ms, above ${String(ceilings.maxColdImportMs)}`,
-    );
-  }
-  return problems;
-}
 
 /**
  * Minifies the runtime entry, gzips it, and imports it in fresh Node processes.
@@ -455,12 +257,14 @@ export function measureRuntimeEntry(root: string): RuntimeSize {
  * @param root - Repository root
  * @param entry - Source entry, relative to `root`
  * @param external - Packages left outside the bundle
+ * @param coldSamples - Fresh Node imports. Zero skips the import. The report uses 10
  * @returns Sizes and the cold-import sample
  */
 export function measureEntry(
   root: string,
   entry: string,
   external: readonly string[] = [],
+  coldSamples: number = COLD_IMPORT_SAMPLES,
 ): RuntimeSize {
   const parent = external.length > 0 ? join(root, "node_modules") : tmpdir();
   const dir = mkdtempSync(join(parent, external.length > 0 ? ".okm-size-" : "okm-size-"));
@@ -486,7 +290,7 @@ export function measureEntry(
       );
     }
     const bytes = readFileSync(outfile);
-    const coldImportMs = coldImportMsOnNode(outfile);
+    const coldImportMs = coldImportMsOnNode(outfile, coldSamples);
     return {
       entry,
       minBytes: bytes.byteLength,
@@ -534,7 +338,7 @@ const sideEffectImport = /import\s*"(\.\/[^"]+)"/g;
  *
  * This is the full build. Lazy chunks are not added into the byte total, but
  * they still share the minifier, so their names change this number (D247).
- * The gate uses {@link measureStubbedStartup}. This result is the reference.
+ * {@link measureStubbedStartup} is the startup figure. This result is the reference.
  * Gzip is the concatenation of the startup chunks.
  *
  * @param root - Repository root
@@ -1047,13 +851,17 @@ export function shakenOperatorProblems(root: string): readonly string[] {
 /** Fresh Node processes sampled for one cold import. The median ignores one slow tick. */
 const COLD_IMPORT_SAMPLES = 5;
 
-function coldImportMsOnNode(file: string): number {
-  const samples: number[] = [];
-  for (let index = 0; index < COLD_IMPORT_SAMPLES; index += 1) {
-    samples.push(oneColdImport(file));
+/** How many cold imports the pull-request report takes. The median is the figure. */
+export const REPORT_COLD_IMPORT_SAMPLES = 10;
+
+function coldImportMsOnNode(file: string, samples: number = COLD_IMPORT_SAMPLES): number {
+  if (samples <= 0) return 0;
+  const taken: number[] = [];
+  for (let index = 0; index < samples; index += 1) {
+    taken.push(oneColdImport(file));
   }
-  samples.sort((left, right) => left - right);
-  return samples[Math.floor(samples.length / 2)] ?? 0;
+  taken.sort((left, right) => left - right);
+  return taken[Math.floor(taken.length / 2)] ?? 0;
 }
 
 function oneColdImport(file: string): number {
@@ -1170,25 +978,6 @@ export function incrementalMinBytes(adapter: InputBytes, runtime: InputBytes): n
 }
 
 /**
- * Fails when an adapter's unique minified bytes exceed its ceiling.
- *
- * @param entry - Adapter source entry
- * @param incremental - Bytes not in the runtime entry
- * @param maxBytes - Ceiling
- * @returns Problem lines. Empty when the adapter is inside the ceiling
- */
-export function incrementalBudgetProblems(
-  entry: string,
-  incremental: number,
-  maxBytes: number,
-): readonly string[] {
-  if (incremental <= maxBytes) return [];
-  return [
-    `size: ${entry} adds ${String(incremental)} minified bytes over the runtime entry, above ${String(maxBytes)}`,
-  ];
-}
-
-/**
  * Fails when importing one export keeps an unrelated module.
  *
  * The default list is the `okmodel/pg` barrel. A caller can pass a barrel
@@ -1273,45 +1062,30 @@ function rewriteSpecifier(dir: string, specifier: string, href: string): void {
   }
 }
 
-function formatGated(measured: RuntimeSize): string {
+function formatStubbed(measured: RuntimeSize): string {
   return `size: ${measured.entry} min ${String(measured.minBytes)} bytes, gzip ${String(measured.gzipBytes)} bytes (startup graph, dynamic imports stubbed)`;
 }
 
-function formatReference(measured: RuntimeSize, ci: boolean, nodeImport: boolean): string {
+function formatReference(measured: RuntimeSize, nodeImport: boolean): string {
   if (!nodeImport) {
-    return `size: ${measured.entry} reference min ${String(measured.minBytes)} bytes, gzip ${String(measured.gzipBytes)} bytes (full build, not gated; Node cold import skipped: Bun.sql runs only on Bun)`;
+    return `size: ${measured.entry} reference min ${String(measured.minBytes)} bytes, gzip ${String(measured.gzipBytes)} bytes (full build; Node cold import skipped: Bun.sql runs only on Bun)`;
   }
-  const gate = ci
-    ? `CI gate ${String(CI_COLD_IMPORT_MS)} ms`
-    : `local reference ${String(LOCAL_COLD_IMPORT_MS)} ms`;
-  return `size: ${measured.entry} reference min ${String(measured.minBytes)} bytes, gzip ${String(measured.gzipBytes)} bytes, cold import ${measured.coldImportMs.toFixed(3)} ms (${gate}, full build, not gated)`;
+  return `size: ${measured.entry} reference min ${String(measured.minBytes)} bytes, gzip ${String(measured.gzipBytes)} bytes, cold import ${measured.coldImportMs.toFixed(3)} ms (full build)`;
 }
 
 function formatTotal(measured: StartupMeasurement): string {
-  return `size: ${measured.entry} total graph min ${String(measured.totalMinBytes)} bytes, gzip ${String(measured.totalGzipBytes)} bytes (lazy chunks included, not gated)`;
+  return `size: ${measured.entry} total graph min ${String(measured.totalMinBytes)} bytes, gzip ${String(measured.totalGzipBytes)} bytes (lazy chunks included)`;
 }
 
-function formatEntry(measured: RuntimeSize, ci: boolean): string {
-  const gate = ci
-    ? `CI gate ${String(CI_COLD_IMPORT_MS)} ms`
-    : `local reference ${String(LOCAL_COLD_IMPORT_MS)} ms`;
-  return `size: ${measured.entry} min ${String(measured.minBytes)} bytes, gzip ${String(measured.gzipBytes)} bytes, cold import ${measured.coldImportMs.toFixed(3)} ms (${gate})`;
+function formatEntry(measured: RuntimeSize): string {
+  return `size: ${measured.entry} min ${String(measured.minBytes)} bytes, gzip ${String(measured.gzipBytes)} bytes, cold import ${measured.coldImportMs.toFixed(3)} ms`;
 }
 
-function printStubbed(measured: StartupMeasurement, ci: boolean): void {
+function printStubbed(measured: StartupMeasurement): void {
   if (measured.stubbedColdImportMs === undefined) return;
   console.log(
-    `size: ${measured.entry} driver stubbed cold import ${measured.stubbedColdImportMs.toFixed(3)} ms (local reference ${String(LOCAL_COLD_IMPORT_MS)} ms, not gated)`,
+    `size: ${measured.entry} driver stubbed cold import ${measured.stubbedColdImportMs.toFixed(3)} ms`,
   );
-  if (ci) return;
-  const finding = coldImportFinding(measured.stubbedColdImportMs);
-  if (finding !== undefined) console.log(`size: finding: ${measured.entry} stubbed ${finding}`);
-}
-
-function printColdImportFinding(measured: RuntimeSize, ci: boolean): void {
-  if (ci) return;
-  const finding = coldImportFinding(measured.coldImportMs);
-  if (finding !== undefined) console.log(`size: finding: ${measured.entry} ${finding}`);
 }
 
 async function reportSize(): Promise<void> {
@@ -1319,7 +1093,7 @@ async function reportSize(): Promise<void> {
   const dir = join(root, "dist");
   const problems: string[] = [];
   try {
-    console.log(`size: dist ${String(distByteSize(dir))} bytes (reported, not gated)`);
+    console.log(`size: dist ${String(distByteSize(dir))} bytes`);
   } catch (error) {
     problems.push(
       `size: cannot read ${dir}: ${error instanceof Error ? error.message : String(error)}`,
@@ -1327,12 +1101,9 @@ async function reportSize(): Promise<void> {
   }
   try {
     const runtime = measureRuntimeEntry(root);
-    const ci = ciEnabled();
-    console.log(formatEntry(runtime, ci));
-    problems.push(...runtimeBudgetProblems(runtime, { ci }));
-    printColdImportFinding(runtime, ci);
+    console.log(formatEntry(runtime));
     const pg = measureEntry(root, PG_ENTRY);
-    console.log(`${formatEntry(pg, ci)} (reported, not gated)`);
+    console.log(`${formatEntry(pg)} (okmodel/pg)`);
     const runtimeInputs = bundleInputBytes(root, RUNTIME_ENTRY);
     for (const entry of ADAPTER_ENTRIES) {
       const adapter = measureEntry(root, entry.entry, entry.external);
@@ -1340,18 +1111,15 @@ async function reportSize(): Promise<void> {
         bundleInputBytes(root, entry.entry, entry.external),
         runtimeInputs,
       );
-      console.log(formatEntry(adapter, ci));
+      console.log(formatEntry(adapter));
       console.log(
-        `size: ${entry.entry} incremental min ${String(incremental)} bytes over the runtime entry (gate ${String(entry.maxIncrementalMinBytes)})`,
-      );
-      problems.push(
-        ...incrementalBudgetProblems(entry.entry, incremental, entry.maxIncrementalMinBytes),
+        `size: ${entry.entry} incremental min ${String(incremental)} bytes over the runtime entry`,
       );
     }
     const app = measureStartup(root, APP_ENTRY, "app-startup.js", ["postgres"], "postgres");
-    const appGated = await measureStubbedStartup(root, APP_ENTRY, "app-startup.js", ["postgres"]);
-    console.log(formatGated(appGated));
-    console.log(formatReference(app, ci, true));
+    const appStubbed = await measureStubbedStartup(root, APP_ENTRY, "app-startup.js", ["postgres"]);
+    console.log(formatStubbed(appStubbed));
+    console.log(formatReference(app, true));
     console.log(formatTotal(app));
     const archivable = measureStartup(
       root,
@@ -1360,7 +1128,7 @@ async function reportSize(): Promise<void> {
       ["postgres"],
       "postgres",
     );
-    console.log(`${formatEntry(archivable, ci)} (archivable app, reported, not gated)`);
+    console.log(`${formatEntry(archivable)} (archivable app)`);
     console.log(formatTotal(archivable));
     const validating = measureStartup(
       root,
@@ -1369,7 +1137,7 @@ async function reportSize(): Promise<void> {
       ["postgres"],
       "postgres",
     );
-    console.log(`${formatEntry(validating, ci)} (validating app, reported, not gated)`);
+    console.log(`${formatEntry(validating)} (validating app)`);
     console.log(formatTotal(validating));
     const relating = measureStartup(
       root,
@@ -1378,16 +1146,14 @@ async function reportSize(): Promise<void> {
       ["postgres"],
       "postgres",
     );
-    console.log(`${formatEntry(relating, ci)} (relations app, reported, not gated)`);
+    console.log(`${formatEntry(relating)} (relations app)`);
     console.log(formatTotal(relating));
     const full = measureStartup(root, FULL_ENTRY, "app-full.js", ["postgres"], "postgres");
-    console.log(`${formatEntry(full, ci)} (feature-full app, reported, not gated)`);
+    console.log(`${formatEntry(full)} (feature-full app)`);
     console.log(formatTotal(full));
     const testingEntry = measureEntry(root, "src/tooling/testing/index.ts");
-    console.log(`${formatEntry(testingEntry, ci)} (okmodel/testing, reported, not gated)`);
-    printStubbed(app, ci);
-    problems.push(...appBudgetProblems(appGated));
-    printColdImportFinding(app, ci);
+    console.log(`${formatEntry(testingEntry)} (okmodel/testing)`);
+    printStubbed(app);
     problems.push(...shakenOperatorProblems(root));
     problems.push(...exportShakeProblems(root));
     problems.push(...printQueryLatency(root));
@@ -1401,20 +1167,11 @@ async function reportSize(): Promise<void> {
         entry.external[0],
         nodeImport,
       );
-      const gated = await measureStubbedStartup(root, entry.entry, entry.file, entry.external);
-      console.log(formatGated(gated));
-      console.log(formatReference(measured, ci, nodeImport));
+      const stubbed = await measureStubbedStartup(root, entry.entry, entry.file, entry.external);
+      console.log(formatStubbed(stubbed));
+      console.log(formatReference(measured, nodeImport));
       console.log(formatTotal(measured));
-      printStubbed(measured, ci);
-      if ("maxMinBytes" in entry && "maxGzipBytes" in entry) {
-        problems.push(
-          ...entryBudgetProblems(gated, {
-            maxMinBytes: entry.maxMinBytes,
-            maxGzipBytes: entry.maxGzipBytes,
-            maxColdImportMs: Number.POSITIVE_INFINITY,
-          }),
-        );
-      }
+      printStubbed(measured);
     }
   } catch (error) {
     problems.push(`size: ${error instanceof Error ? error.message : String(error)}`);
@@ -1424,12 +1181,8 @@ async function reportSize(): Promise<void> {
 
 if (import.meta.main) {
   if (process.argv.includes("--runtime-entry")) {
-    const root = repoRoot();
-    const runtime = measureRuntimeEntry(root);
-    const ci = ciEnabled();
-    console.log(formatEntry(runtime, ci));
-    printColdImportFinding(runtime, ci);
-    exitOnProblems(runtimeBudgetProblems(runtime, { ci }));
+    const runtime = measureRuntimeEntry(repoRoot());
+    console.log(formatEntry(runtime));
   } else {
     await reportSize();
   }

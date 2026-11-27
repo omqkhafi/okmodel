@@ -27,7 +27,16 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { DEFAULT_SNAPSHOT, packedFileDiff } from "./pack-contract.js";
+import {
+  DEFAULT_SNAPSHOT,
+  declarationTargets,
+  fileSha256,
+  isForbiddenPackedPath,
+  packedFileDiff,
+  packedPresenceProblems,
+  requiredPackedPaths,
+  type PackSnapshot,
+} from "./pack-contract.js";
 import { exitOnProblems } from "./report.js";
 import { repoRoot } from "./root.js";
 
@@ -223,27 +232,6 @@ export function versionProblem(version: string, manifest: unknown): string | und
 }
 
 /**
- * Why a tarball file list is not the pack-contract snapshot.
- *
- * @param tag - Tag whose snapshot was read
- * @param actual - Paths in the tarball, without the `package/` prefix
- * @param expected - Paths in the snapshot
- * @returns The problem, or undefined when the lists match
- */
-export function fileListProblem(
-  tag: string,
-  actual: readonly string[],
-  expected: readonly string[],
-): string | undefined {
-  const diff = packedFileDiff(actual, expected);
-  if (diff.extra.length === 0 && diff.missing.length === 0) return undefined;
-  const lines = [`file list differs from the pack-contract snapshot on ${tag}`];
-  for (const path of diff.extra) lines.push(`  + ${path}`);
-  for (const path of diff.missing) lines.push(`  - ${path}`);
-  return lines.join("\n");
-}
-
-/**
  * Why a tag that is not on main fails the check.
  *
  * {@link KNOWN_OFF_MAIN_VERSIONS} are warnings from {@link ancestryWarning}.
@@ -302,22 +290,6 @@ export function packedEntryPaths(listing: string): readonly string[] {
     paths.push(relative);
   }
   return [...paths].sort();
-}
-
-/**
- * Sorted `files` from a pack-contract snapshot, or undefined when it is not one.
- *
- * @param parsed - Parsed snapshot JSON
- * @returns The file list, or undefined when the document has no string array
- */
-export function snapshotFileList(parsed: unknown): readonly string[] | undefined {
-  if (!isRecord(parsed) || !Array.isArray(parsed.files)) return undefined;
-  const files: string[] = [];
-  for (const file of parsed.files) {
-    if (typeof file !== "string" || file.length === 0) return undefined;
-    files.push(file);
-  }
-  return [...files].sort();
 }
 
 /**
@@ -674,14 +646,60 @@ async function fileListReport(
   } catch {
     return { problem: `pack-contract snapshot on ${tag} is not JSON` };
   }
-  const expected = snapshotFileList(parsed);
-  if (expected === undefined) {
-    return { problem: `pack-contract snapshot on ${tag} has no file list` };
+  const listing = packedEntryPaths(await tarballListing(published));
+  if (!isRecord(parsed) || !isRecord(parsed.declarations)) {
+    const forbidden = listing.filter((path) => isForbiddenPackedPath(path));
+    if (forbidden.length > 0) {
+      return {
+        problem: forbidden.map((path) => `pack-contract: forbidden file: ${path}`).join("\n"),
+      };
+    }
+    return {
+      line: `warning: pack-contract snapshot on ${tag} predates the public-surface record`,
+    };
   }
-  const listing = await tarballListing(published);
-  const problem = fileListProblem(tag, packedEntryPaths(listing), expected);
-  if (problem !== undefined) return { problem };
-  return { line: `file list matches the pack-contract snapshot on ${tag}` };
+  const snapshot: PackSnapshot = {
+    exports: "exports" in parsed ? parsed.exports : null,
+    bin: "bin" in parsed ? parsed.bin : null,
+    main: "main" in parsed ? parsed.main : null,
+    declarations: declarationsOf(parsed.declarations),
+  };
+  const problems = [
+    ...packedPresenceProblems(listing, requiredPackedPaths(snapshot)),
+    ...(await declarationDrift(published, snapshot)),
+  ];
+  if (problems.length > 0) return { problem: problems.join("\n") };
+  return { line: `public surface matches the pack-contract snapshot on ${tag}` };
+}
+
+function declarationsOf(value: Record<string, unknown>): Record<string, string> {
+  const declarations: Record<string, string> = {};
+  for (const [name, hash] of Object.entries(value)) {
+    if (typeof hash === "string") declarations[name] = hash;
+  }
+  return declarations;
+}
+
+async function declarationDrift(
+  published: Uint8Array,
+  snapshot: PackSnapshot,
+): Promise<readonly string[]> {
+  const problems: string[] = [];
+  for (const [name, path] of declarationTargets(snapshot.exports)) {
+    const want = snapshot.declarations[name];
+    if (want === undefined) continue;
+    let text: string;
+    try {
+      text = await tarballText(published, `package/${path}`);
+    } catch {
+      continue;
+    }
+    const got = fileSha256(text);
+    if (got !== want) {
+      problems.push(`pack-contract: declaration ${name} differs from the snapshot on this tag`);
+    }
+  }
+  return problems;
 }
 
 /** Attestation outcome. */

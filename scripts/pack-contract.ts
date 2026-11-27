@@ -1,18 +1,19 @@
 /**
- * Fails unless the packed file list and the manifest fields match a snapshot.
+ * Fails unless the public surface matches a snapshot and the tarball's
+ * required files are present.
  *
- * `bunx npm@11.15.0 pack --dry-run --json` is the file list. The npm
+ * `bunx npm@11.15.0 pack --dry-run --json` lists the tarball. The npm
  * version is pinned so `bunx` does not download whatever npm is current.
  * npm 11 prints a JSON array. npm 12 prints an object keyed by package
- * name. Both shapes are accepted. The snapshot is committed, so a change
- * is a diff in the pull request. It records `exports`, `bin`, and `main`.
- * `bin` and `main` are the paths in `package.json`. The snapshot does not
- * pin the contents of those files.
- * Bun names split chunks `dist/shared/<hash>.js` and
- * `dist/tooling/shared/<hash>.js` (`--chunk-naming=shared/[hash].js`).
- * Those paths are stored as `dist/shared/*.js` and
- * `dist/tooling/shared/*.js`. The count of each name stays exact.
- * A different hash with the same count passes. A new or removed chunk fails.
+ * name. Both shapes are accepted.
+ *
+ * The snapshot records `exports`, `bin`, `main`, and the sha256 of each
+ * public declaration (`exports` `types`). It does not record internal
+ * chunk names, chunk counts, or generated error pages. `bin` and `main`
+ * are the paths in `package.json`. The snapshot does not pin the contents
+ * of those files. A missing required file or a forbidden file fails on
+ * its own and does not ask for `--update`.
+ *
  * `package.json` must have no `preinstall`, `install`, `postinstall`, or
  * `prepare` script, empty `dependencies`, `optionalDependencies`,
  * `bundleDependencies`, and `bundledDependencies`, a `files` allowlist,
@@ -23,11 +24,11 @@
  *   bun ./scripts/pack-contract.ts --root <dir>
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 
-import { packSizeProblems, readPackSizeBaseline } from "./pack-size.js";
 import { exitOnProblems } from "./report.js";
 import { repoRoot } from "./root.js";
 import { restorePackedDocs } from "./docs-pack.js";
@@ -68,17 +69,29 @@ export function packNpmArgs(): readonly string[] {
   return ["bunx", `npm@${PACK_NPM_VERSION}`, "pack", "--dry-run", "--json"];
 }
 
-/** Packed paths plus the manifest fields the snapshot records. */
+/** Public surface the snapshot records. */
 export type PackSnapshot = {
-  /** Paths `npm pack --dry-run --json` lists, sorted. */
-  readonly files: readonly string[];
   /** `package.json` `exports`, or null when the field is absent. */
   readonly exports: unknown;
   /** `package.json` `bin`, or null when the field is absent. Paths, not file bytes. */
   readonly bin: unknown;
   /** `package.json` `main`, or null when the field is absent. A path, not file bytes. */
   readonly main: unknown;
+  /**
+   * sha256 of each `exports` `types` file, keyed by the export path.
+   * Absent keys are exports with no `types` condition.
+   */
+  readonly declarations: Readonly<Record<string, string>>;
 };
+
+/** Path prefixes that must not appear in a published tarball. */
+const FORBIDDEN_PREFIXES = ["node_modules/", ".github/", "tests/", "coverage/"] as const;
+
+/** File names that must not appear in a published tarball. */
+const FORBIDDEN_SUFFIXES = [".test.ts", ".test.js", ".test-d.ts"] as const;
+
+/** Names packed when they exist beside `package.json`. */
+const OPTIONAL_ROOT_FILES = ["README.md", "LICENSE", "LICENCE"] as const;
 
 /**
  * Problems in a manifest that must not be published.
@@ -190,30 +203,14 @@ if (import.meta.main) {
     exitOnProblems([`pack-contract: ${message}`]);
     throw error;
   });
-  const exportsField = isRecord(manifest) && "exports" in manifest ? manifest.exports : null;
-  const binField = isRecord(manifest) && "bin" in manifest ? manifest.bin : null;
-  const mainField = isRecord(manifest) && "main" in manifest ? manifest.main : null;
-  const next: PackSnapshot = {
-    files: packed.files.map((path) => normalizePackedPath(path)).sort(),
-    exports: exportsField ?? null,
-    bin: binField ?? null,
-    main: mainField ?? null,
-  };
+  const next = publicSurface(root, manifest);
+  const presence = packedPresenceProblems(packed.files, requiredPackedPaths(manifest, root));
   const drift: string[] = values.update ? [] : [...compareSnapshot(snapshotPath, next)];
-  // The size budget is the repository's. A fixture passed with --root has no baseline.
-  if (!values.update && resolve(root) === resolve(repoRoot())) {
-    try {
-      drift.push(...packSizeProblems(packed.bytes, readPackSizeBaseline(root)));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      drift.push(message);
-    }
-  }
   if (values.update) {
     writeFileSync(snapshotPath, `${canonical(next)}\n`);
     console.log(`pack-contract: wrote ${snapshotPath}`);
   }
-  exitOnProblems(drift);
+  exitOnProblems([...presence, ...drift]);
 }
 
 /**
@@ -241,13 +238,164 @@ function compareSnapshot(snapshotPath: string, next: PackSnapshot): readonly str
   if (canonical(next.main) !== canonical(snapshot.main)) {
     problems.push(snapshotDrift(`pack-contract: main differs from ${snapshotPath}.`));
   }
-  const diff = packedFileDiff(next.files, snapshot.files);
-  if (diff.extra.length > 0 || diff.missing.length > 0) {
-    problems.push(snapshotDrift(`pack-contract: packed files differ from ${snapshotPath}.`));
-    for (const path of diff.extra) problems.push(`  + ${path}`);
-    for (const path of diff.missing) problems.push(`  - ${path}`);
+  const names = [
+    ...new Set([...Object.keys(next.declarations), ...Object.keys(snapshot.declarations)]),
+  ].sort();
+  for (const name of names) {
+    const got = next.declarations[name];
+    const want = snapshot.declarations[name];
+    if (got === want) continue;
+    if (got === undefined) {
+      problems.push(
+        snapshotDrift(`pack-contract: declaration ${name} is missing from the public surface.`),
+      );
+      continue;
+    }
+    problems.push(
+      snapshotDrift(
+        `pack-contract: declaration ${name} differs from ${snapshotPath} (${want === undefined ? "not recorded" : want} -> ${got}).`,
+      ),
+    );
   }
   return problems;
+}
+
+/**
+ * Builds the public surface from the manifest and the declaration files on disk.
+ *
+ * A missing declaration file is omitted. {@link packedPresenceProblems} reports it.
+ *
+ * @param root - Package directory
+ * @param manifest - Parsed `package.json`
+ * @returns The snapshot body
+ */
+export function publicSurface(root: string, manifest: unknown): PackSnapshot {
+  const exportsField = isRecord(manifest) && "exports" in manifest ? manifest.exports : null;
+  const binField = isRecord(manifest) && "bin" in manifest ? manifest.bin : null;
+  const mainField = isRecord(manifest) && "main" in manifest ? manifest.main : null;
+  const declarations: Record<string, string> = {};
+  for (const [name, path] of declarationTargets(exportsField)) {
+    const file = resolve(root, path);
+    if (!existsSync(file)) continue;
+    declarations[name] = fileSha256(readFileSync(file));
+  }
+  return {
+    exports: exportsField ?? null,
+    bin: binField ?? null,
+    main: mainField ?? null,
+    declarations,
+  };
+}
+
+/**
+ * Export paths whose `types` condition is a relative file.
+ *
+ * @param exportsField - `package.json` `exports`
+ * @returns Export path to the declaration path, with `./` removed
+ */
+export function declarationTargets(exportsField: unknown): ReadonlyMap<string, string> {
+  const targets = new Map<string, string>();
+  if (!isRecord(exportsField)) return targets;
+  for (const [name, value] of Object.entries(exportsField)) {
+    if (!isRecord(value) || typeof value.types !== "string") continue;
+    const relative = relativePackedPath(value.types);
+    if (relative !== undefined) targets.set(name, relative);
+  }
+  return targets;
+}
+
+/**
+ * Files the tarball must contain.
+ *
+ * `package.json` is always required. `README.md`, `LICENSE`, and `LICENCE`
+ * are required when they exist beside it. Every relative path in `exports`,
+ * `bin`, and `main` is required.
+ *
+ * @param manifest - Parsed `package.json`, or a snapshot's exports, bin, and main
+ * @param root - Package directory. When set, README and license files that exist are required
+ * @returns Packed paths, without a leading `./`
+ */
+export function requiredPackedPaths(manifest: unknown, root?: string): readonly string[] {
+  const paths = new Set<string>(["package.json"]);
+  if (root !== undefined) {
+    for (const name of OPTIONAL_ROOT_FILES) {
+      if (existsSync(resolve(root, name))) paths.add(name);
+    }
+  }
+  if (!isRecord(manifest)) return [...paths].sort();
+  collectRelativePaths(manifest.exports, paths);
+  collectRelativePaths(manifest.bin, paths);
+  collectRelativePaths(manifest.main, paths);
+  return [...paths].sort();
+}
+
+/**
+ * Missing required files and forbidden packed files.
+ *
+ * These are not snapshot drift. The message does not name `--update`.
+ *
+ * @param packed - Paths `npm pack` listed
+ * @param required - Paths from {@link requiredPackedPaths}
+ * @returns Problem lines
+ */
+export function packedPresenceProblems(
+  packed: readonly string[],
+  required: readonly string[],
+): readonly string[] {
+  const present = new Set(packed);
+  const problems: string[] = [];
+  for (const path of required) {
+    if (!present.has(path)) problems.push(`pack-contract: required file missing: ${path}`);
+  }
+  for (const path of packed) {
+    if (isForbiddenPackedPath(path)) problems.push(`pack-contract: forbidden file: ${path}`);
+  }
+  return problems;
+}
+
+/**
+ * @param path - One packed path
+ * @returns Whether the path is a test, a workflow, or a dependency tree
+ */
+export function isForbiddenPackedPath(path: string): boolean {
+  const normalized = path.replaceAll("\\", "/");
+  const forbiddenPrefix = FORBIDDEN_PREFIXES.some(
+    (prefix) => normalized === prefix.slice(0, -1) || normalized.startsWith(prefix),
+  );
+  if (forbiddenPrefix) return true;
+  const base = normalized.slice(normalized.lastIndexOf("/") + 1);
+  return FORBIDDEN_SUFFIXES.some((suffix) => base.endsWith(suffix));
+}
+
+/**
+ * sha256 of file bytes, hex encoded.
+ *
+ * @param bytes - File contents
+ * @returns The digest
+ */
+export function fileSha256(bytes: Uint8Array | string): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+function collectRelativePaths(value: unknown, into: Set<string>): void {
+  if (typeof value === "string") {
+    const relative = relativePackedPath(value);
+    if (relative !== undefined) into.add(relative);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectRelativePaths(item, into);
+    return;
+  }
+  if (isRecord(value)) {
+    for (const item of Object.values(value)) collectRelativePaths(item, into);
+  }
+}
+
+function relativePackedPath(value: string): string | undefined {
+  if (value.startsWith("./")) return value.slice(2);
+  if (value.startsWith("../")) return value;
+  return undefined;
 }
 
 /** Files and tarball size from one `npm pack --dry-run --json`. */
@@ -399,19 +547,22 @@ function readSnapshot(path: string): PackSnapshot {
     }
     throw error;
   }
-  if (!isRecord(parsed) || !Array.isArray(parsed.files)) {
+  if (!isRecord(parsed)) {
     throw new Error(`snapshot is not a pack contract: ${path}`);
   }
-  const files: string[] = [];
-  for (const file of parsed.files) {
-    if (typeof file !== "string") throw new Error(`snapshot is not a pack contract: ${path}`);
-    files.push(file);
+  if (!isRecord(parsed.declarations)) {
+    throw new Error(snapshotDrift(`snapshot predates the public-surface record: ${path}.`));
+  }
+  const declarations: Record<string, string> = {};
+  for (const [name, hash] of Object.entries(parsed.declarations)) {
+    if (typeof hash !== "string") throw new Error(`snapshot is not a pack contract: ${path}`);
+    declarations[name] = hash;
   }
   return {
-    files,
     exports: "exports" in parsed ? parsed.exports : null,
     bin: "bin" in parsed ? parsed.bin : null,
     main: "main" in parsed ? parsed.main : null,
+    declarations,
   };
 }
 
