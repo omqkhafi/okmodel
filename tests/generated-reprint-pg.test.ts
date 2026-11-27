@@ -50,7 +50,7 @@ postgresTest(
       writeFileSync(
         join(cwd, "schema.ts"),
         [
-          `import { schema, table, t } from ${source("src/dialects/pg/index.ts")};`,
+          `import { schema, sql, table, t } from ${source("src/dialects/pg/index.ts")};`,
           'export const app = schema({ tables: [table("tasks", {',
           "  id: t.integer().primaryKey(),",
           "  a: t.integer(),",

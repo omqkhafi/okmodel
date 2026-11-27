@@ -45,7 +45,9 @@ function refuseDeferrableRestrict(object: Extract<CatalogObject, { kind: "constr
 function targetKeys(catalog: Catalog): Map<string, "key" | "partial"> {
   const keys = new Map<string, "key" | "partial">();
   const mark = (parent: string, columns: readonly string[], kind: "key" | "partial"): void => {
-    keys.set(`${parent}\0${[...columns].sort().join("\0")}`, kind);
+    const id = `${parent}\0${[...columns].sort().join("\0")}`;
+    if (keys.get(id) === "key") return;
+    keys.set(id, kind);
   };
   for (const object of catalog.objects) {
     if (object.kind === "constraint") {

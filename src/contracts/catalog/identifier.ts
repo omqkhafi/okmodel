@@ -112,6 +112,41 @@ export function fitIdentifier(name: string, limit = POSTGRES_IDENTIFIER_MAX_BYTE
 }
 
 /**
+ * Recovers the stable name key from a stored constraint name.
+ *
+ * Introspection and `foreignKeys` both use this, so a pulled key plans as
+ * zero steps. A name that is `{parent}_{key}_{tag}` yields `key`. Anything
+ * else yields the columns, and a check keeps its stored name.
+ *
+ * @param kind - Constraint kind
+ * @param parent - SQL name of the table
+ * @param name - Stored constraint name
+ * @param columns - SQL column names
+ * @returns The name key stored on the catalog object
+ */
+export function recoveredNameKey(
+  kind: "primaryKey" | "unique" | "foreignKey" | "check",
+  parent: string,
+  name: string,
+  columns: readonly string[],
+): string {
+  if (kind === "primaryKey") return "pkey";
+  const tag = NAME_TAG[kind];
+  const prefix = `${parent}_`;
+  const suffix = `_${tag}`;
+  if (
+    name.startsWith(prefix) &&
+    name.endsWith(suffix) &&
+    name.length > prefix.length + suffix.length
+  ) {
+    return name.slice(prefix.length, -suffix.length);
+  }
+  if (kind === "check") return name;
+  if (columns.length > 0) return columns.join("_");
+  return tag;
+}
+
+/**
  * Generates a constraint or index name.
  *
  * Primary keys are `{parent}_pkey`, so the column name is not part of the

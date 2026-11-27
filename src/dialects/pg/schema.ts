@@ -15,6 +15,7 @@ import {
   assertStoredText,
   identitySequenceName,
   printedIdentifier,
+  recoveredNameKey,
 } from "../../contracts/catalog/identifier.js";
 import {
   compareText,
@@ -1638,13 +1639,14 @@ function compileNamedForeignKeys(
     if (reference === undefined || target === undefined) continue;
     const sqlOf = (found: Prepared, column: string): string =>
       (found.byField.get(column) ?? found.bySql.get(column))?.sqlName ?? column;
+    const columns = spec.columns.map((column) => sqlOf(item, column));
     stage(jobs, () =>
       constraint({
         parent: item.parent,
         constraintKind: "foreignKey",
         name,
-        columns: spec.columns.map((column) => sqlOf(item, column)),
-        nameKey: name,
+        columns,
+        nameKey: recoveredNameKey("foreignKey", item.parent.name, name, columns),
         provenance: item.provenance,
         ...(spec.comment !== undefined ? { comment: spec.comment } : {}),
         references: {

@@ -11,7 +11,7 @@ import { catalog } from "../../contracts/catalog/build.js";
 import { OkmError, catalogError } from "../../contracts/error.js";
 import { domainType, enumType } from "../../contracts/catalog/enum.js";
 import { identityKey, staticNamespace } from "../../contracts/catalog/identity.js";
-import { isReservedIdentifier } from "../../contracts/catalog/identifier.js";
+import { isReservedIdentifier, recoveredNameKey } from "../../contracts/catalog/identifier.js";
 import { extensionObject } from "../../contracts/catalog/extension.js";
 import { column, constraint, index, sequence, table } from "../../contracts/catalog/object.js";
 import { policyObject } from "../../contracts/catalog/policy.js";
@@ -2519,20 +2519,7 @@ function constraintNameKey(
   name: string,
   columns: readonly string[],
 ): string {
-  if (kind === "primaryKey") return "pkey";
-  const tag = kind === "unique" ? "key" : kind === "foreignKey" ? "fkey" : "check";
-  const prefix = `${parent}_`;
-  const suffix = `_${tag}`;
-  if (
-    name.startsWith(prefix) &&
-    name.endsWith(suffix) &&
-    name.length > prefix.length + suffix.length
-  ) {
-    return name.slice(prefix.length, -suffix.length);
-  }
-  if (kind === "check") return name;
-  if (columns.length > 0) return columns.join("_");
-  return tag;
+  return recoveredNameKey(kind, parent, name, columns);
 }
 
 function readCheckExpression(row: Record<string, unknown>): string {
