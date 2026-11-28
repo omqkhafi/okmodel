@@ -154,32 +154,20 @@ The foreign key target has to be a primary key or a unique constraint. PostgreSQ
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when a column is a range, an exclusion constraint, or a temporal key with a PostgreSQL floor.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+Use [Checks](/docs/schema/checks) for a boolean SQL expression, and [Composite types](/docs/schema/composite-types) for named fields that are not a range.
 
 ## What the plan shows
 
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+Creating the range is step kind `create-range`, class expand, lock ACCESS EXCLUSIVE. An exclusion constraint is `add-constraint` with that lock and weight `blocking`.
 
 ## Errors
 
-- [OKM2128](/docs/reference/errors#okm2128)
+- [OKM2128](/docs/reference/errors#okm2128): A start and end pair without a check that the start is before the end warns OKM2128.
 
 ## Version [feature="type.range"]
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

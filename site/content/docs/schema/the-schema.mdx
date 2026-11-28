@@ -229,37 +229,25 @@ A value below 15 or not an integer is `minPostgres: 15 or later.` Passing both k
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when you are calling `schema()`: the tables array, casing, the Postgres floor, and what the client and the migrations both read.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+Use [Tables](/docs/schema/tables) for one table's columns and key, and [Names and casing](/docs/schema/names-and-casing) when only the identifier mapping is in question.
 
 ## What the plan shows
 
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+Each new table in that call is step kind `create-table`, class expand, lock ACCESS EXCLUSIVE.
 
 ## Errors
 
-- [OKM1020](/docs/reference/errors#okm1020)
-- [OKM1023](/docs/reference/errors#okm1023)
-- [OKM1060](/docs/reference/errors#okm1060)
-- [OKM1803](/docs/reference/errors#okm1803)
-- [OKM1812](/docs/reference/errors#okm1812)
-- [OKM1802](/docs/reference/errors#okm1802)
+- [OKM1020](/docs/reference/errors#okm1020): A table name that is not in the `tables` array is OKM1020.
+- [OKM1023](/docs/reference/errors#okm1023): The same table name twice is OKM1023.
+- [OKM1060](/docs/reference/errors#okm1060): `schema()` without a tables array is OKM1060.
+- [OKM1803](/docs/reference/errors#okm1803): A server below PostgreSQL 15, when no floor is named, is OKM1803.
+- [OKM1812](/docs/reference/errors#okm1812): A server below 18 with no `uuidv7()` function, on a column that needs it, is OKM1812.
+- [OKM1802](/docs/reference/errors#okm1802): A server below the floor this schema names is OKM1802.
 
 ## Version [feature="schema.core"]
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

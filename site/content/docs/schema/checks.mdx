@@ -2,7 +2,7 @@
 title: "Checks"
 description: "A check is named SQL."
 summary: "A check is named SQL."
-since: "0.10"
+since: "0.11"
 status: stable
 feature: check.notEnforced
 ---
@@ -259,37 +259,25 @@ export const app = schema({
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when a row must satisfy named SQL that is not a foreign key, a unique constraint, or a partition bound.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+Use [Validation](/docs/schema/validation) when the rule runs in the application before SQL, and [Policies](/docs/schema/policies) when it filters who can see the row.
 
 ## What the plan shows
 
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+Adding a check is step kind `add-constraint`, class expand, lock ACCESS EXCLUSIVE. An exclusion constraint on that path is weight `blocking`.
 
 ## Errors
 
-- [OKM1060](/docs/reference/errors#okm1060)
-- [OKM1812](/docs/reference/errors#okm1812)
-- [OKM1802](/docs/reference/errors#okm1802)
-- [OKM1020](/docs/reference/errors#okm1020)
-- [OKM1023](/docs/reference/errors#okm1023)
-- [OKM1122](/docs/reference/errors#okm1122)
+- [OKM1060](/docs/reference/errors#okm1060): A check callback that does not return sql text is OKM1060.
+- [OKM1812](/docs/reference/errors#okm1812): A check `minPostgres` below 18 is OKM1812.
+- [OKM1802](/docs/reference/errors#okm1802): A server below 18 for a not-enforced check is OKM1802.
+- [OKM1020](/docs/reference/errors#okm1020): Pull refuses a `NO INHERIT` check with OKM1020 because the catalog cannot represent it.
+- [OKM1023](/docs/reference/errors#okm1023): A picklist check name that collides with `{table}_{column}_check` is OKM1023.
+- [OKM1122](/docs/reference/errors#okm1122): An empty check name is OKM1122.
 
 ## Version [feature="check.notEnforced"]
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

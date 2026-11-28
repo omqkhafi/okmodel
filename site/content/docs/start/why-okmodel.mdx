@@ -69,32 +69,16 @@ The conformance table lists the drivers that pass the shared driver test suites:
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when you are deciding whether a Postgres schema that refuses an unbounded read or an unfiltered write is the model you want.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
-
-## What the plan shows
-
-This page does not emit a migration step.
+Use [The safety model](/docs/concepts/the-safety-model) for the full refusal list, and [First query](/docs/start/first-query) to try one call.
 
 ## Errors
 
-This page does not add an error code.
+- [OKM1101](/docs/reference/errors#okm1101): The unbounded read this page refuses is OKM1101.
 
 ## Version
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

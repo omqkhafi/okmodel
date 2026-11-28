@@ -2,7 +2,7 @@
 title: "Procedures"
 description: "CALL, OUT arguments, and procedures that commit."
 summary: "CALL, OUT arguments, and procedures that commit."
-since: "0.10"
+since: "0.11"
 status: stable
 feature: fn.procedure
 ---
@@ -182,39 +182,27 @@ The same argument modes and types are `CREATE OR REPLACE`. A different mode, a d
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when the routine is invoked with `CALL`, takes OUT arguments, or commits its own transaction.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+Use [Functions](/docs/schema/functions) for a routine that returns a value and does not commit.
 
 ## What the plan shows
 
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+The body is still a function step: `create-function` or `replace-function`, class expand, lock ACCESS EXCLUSIVE.
 
 ## Errors
 
-- [OKM1023](/docs/reference/errors#okm1023)
-- [OKM1120](/docs/reference/errors#okm1120)
-- [OKM1551](/docs/reference/errors#okm1551)
-- [OKM2126](/docs/reference/errors#okm2126)
-- [OKM1823](/docs/reference/errors#okm1823)
-- [OKM2125](/docs/reference/errors#okm2125)
-- [OKM2112](/docs/reference/errors#okm2112)
-- [OKM2127](/docs/reference/errors#okm2127)
+- [OKM1023](/docs/reference/errors#okm1023): Two routines with the same name and the same IN and INOUT types are OKM1023, including a function and a procedure.
+- [OKM1120](/docs/reference/errors#okm1120): `run` missing a required argument is OKM1120.
+- [OKM1551](/docs/reference/errors#okm1551): `run` inside a transaction is OKM1551 before any SQL is sent (PostgreSQL 2D000).
+- [OKM2126](/docs/reference/errors#okm2126): `COMMIT` or `ROLLBACK` inside an `EXCEPTION` block is warning OKM2126.
+- [OKM1823](/docs/reference/errors#okm1823): A definer procedure still needs `search_path`, or it is OKM1823.
+- [OKM2125](/docs/reference/errors#okm2125): A definer procedure that touches a tenant table is OKM2125 because the owner bypasses row security.
+- [OKM2112](/docs/reference/errors#okm2112): OKM2112 still applies when a definer names a forced-RLS table.
+- [OKM2127](/docs/reference/errors#okm2127): An undeclared custom errcode, or a standard-class code, is warning OKM2127.
 
 ## Version [feature="fn.procedure"]
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

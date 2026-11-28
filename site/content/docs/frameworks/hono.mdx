@@ -14,9 +14,9 @@ You get one Hono app that serves a read route and a write route, and two small e
 
 `okmodel/pg/bun` loads only on Bun. The example uses postgres.js so one driver covers both runtimes.
 
-`armCatalog()` is not required for the Bun entry or the bundled Node.js entry. Queries and mapped constraint errors do not call it. Call `armCatalog()` from `okmodel/pg/catalog` only before a direct `schema().catalog` read in a bundle that has no compiler file.
+`armCatalog()` is not required for the Bun entry or the bundled Node.js entry. Queries and mapped constraint errors do not call it. On the Hono page, call `armCatalog()` from `okmodel/pg/catalog` only before a direct `schema().catalog` read in a bundle that has no compiler file.
 
-A single-file bundle of this server carries the catalog compiler. `connect` imports it when the database has `okm_meta` and the process has no catalog artifact, and the bundler inlines that import. Pass `catalog` on `connect`, or leave `.okm/catalog.hash` and `catalog.json` from `okm build` where the process can read them, to skip running the compiler. The compiler stays in the file.
+A single-file bundle of this Hono server carries the catalog compiler. On Hono, `connect` imports it when the database has `okm_meta` and the process has no catalog artifact, and the bundler inlines that import. On Hono, pass `catalog` on `connect`, or leave `.okm/catalog.hash` and `catalog.json` from `okm build` where the process can read them, to skip running the compiler. The compiler stays in the file.
 
 ## Install
 
@@ -28,7 +28,7 @@ bun add okmodel postgres hono @hono/node-server
 
 ## `db` module and lifecycle
 
-There is one client per process, opened at module level in `src/db.ts`. It throws at import when `DATABASE_URL` is missing, because `connect` does not read the environment. Both entry files call `closeDb()` on `SIGINT` and `SIGTERM`.
+There is one client per process, opened at module level in `src/db.ts`. The Hono client throws at import when `DATABASE_URL` is missing, because `connect` does not read the environment. Both entry files call `closeDb()` on `SIGINT` and `SIGTERM`.
 
 ```ts title="src/db.ts" no-check="imports ./schema.js, which re-exports a file outside the example root (shown below)"
 /**
@@ -87,7 +87,7 @@ create table example_notes (
 `;
 ```
 
-In your own app, define the table in `src/schema.ts` directly. The table is named `example_notes`, so the client property is `db.example_notes`.
+In your own app, define the table in `src/schema.ts` directly. On the Hono example the table is named `example_notes`, so the client property is `db.example_notes`.
 
 ## Connection config
 
@@ -186,14 +186,14 @@ process.on("SIGTERM", () => void closeDb());
 
 ## Dev and test
 
-Start Postgres, point `DATABASE_URL` at it, create the table, then run either entry. In this repository, `bun run db:up` starts a local Postgres whose primary URL is below.
+Start Postgres, point `DATABASE_URL` at it, create the table, then run either entry. In this repository, `bun run db:up` starts a local Postgres for the Hono example, and the primary URL is below.
 
 ```sh
 bun run db:up
 export DATABASE_URL=postgres://okm:okm@127.0.0.1:55432/okm
 ```
 
-The example has no `okmodel.config.ts`. In your app, add one next to `package.json`:
+The example has no `okmodel.config.ts`. In your Hono app, add one next to `package.json`:
 
 ```ts title="okmodel.config.ts"
 import { defineConfig } from "okmodel/migrate";
@@ -204,7 +204,7 @@ export default defineConfig({
 });
 ```
 
-Create the table on a fresh database with `okm push`, which writes no SQL file and suits a database you can drop:
+Create the Hono table on a fresh database with `okm push`, which writes no SQL file and suits a database you can drop:
 
 ```sh
 bunx okm push
@@ -215,7 +215,7 @@ target default
 applied push-1
 ```
 
-For a database you will deploy, write the first migration and apply it, then commit `migrations/`. After a later schema change, run `bunx okm push` again on a dev database, or `bunx okm generate <name>` then `bunx okm migrate apply`.
+For a Hono database you will deploy, write the first migration and apply it, then commit `migrations/`. After a later change to the Hono schema, run `bunx okm push` again on a dev database, or `bunx okm generate <name>` then `bunx okm migrate apply`.
 
 ```sh
 bunx okm generate init
@@ -238,7 +238,7 @@ curl -i -X POST http://localhost:3102/notes -H 'content-type: application/json' 
 curl -i http://localhost:3102/notes
 ```
 
-These responses come from the Bun entry on a fresh database. `id` is a string, because the default codec for `t.identity()` is a string.
+These responses come from the Bun entry on a fresh database. On Hono, `id` is a string, because the default codec for `t.identity()` is a string.
 
 | Request | Status | Body |
 | --- | --- | --- |
@@ -248,7 +248,7 @@ These responses come from the Bun entry on a fresh database. `id` is a string, b
 | `POST /notes` with `{}` | 400 | `{"error":"title is required"}` |
 | `POST /notes` with `nope` as the body | 400 | `{"error":"title is required"}` |
 
-The example's own test does not run `okm`: it creates an isolated database and applies `NOTES_DDL` through `examples/shared/support.ts`, which is faster. To run it from a clone:
+The Hono example's own test does not run `okm`: it creates an isolated database and applies `NOTES_DDL` through `examples/shared/support.ts`, which is faster. To run it from a clone:
 
 ```sh
 bun run build
@@ -261,19 +261,19 @@ cd examples/hono && REQUIRE_DOCKER=1 bun test ./hono.test.ts
 
 Deploy the Bun entry or the bundled Node.js entry with `DATABASE_URL` set. Keep one client per process; do not open one per request.
 
-Apply migrations before the new version takes traffic. Run this in your release job, with `DATABASE_URL` pointing at a direct connection to the primary, not a pooler:
+Apply the Hono migrations before the new version takes traffic. Run this Hono release job with `DATABASE_URL` pointing at a direct connection to the primary, not a pooler:
 
 ```sh
 bunx okm migrate apply
 ```
 
-A migration that only adds things lets the old version keep running while the release rolls out ([Migrations in CI](/docs/guides/migrations-in-ci), [Environments](/docs/migrations/environments)).
+For this Hono app, a migration that only adds things lets the old version keep running while the release rolls out ([Migrations in CI](/docs/guides/migrations-in-ci), [Environments](/docs/migrations/environments)).
 
 ## Limits and gotchas
 
 - Run the Node.js entry from a bundle, not from the `.ts` files: the sources import `./db.js` and `./app.js`.
 - This app serves long-lived processes. For an isolate platform, see [Cloudflare Workers](/docs/frameworks/workers).
-- The route returns at most 50 rows. To read past them, page through the rest ([Read rows](/docs/queries/read-rows)).
+- The route returns at most 50 rows. On this Hono route, to read past them, page through the rest ([Read rows](/docs/queries/read-rows)).
 - The signal handlers close the pool and do not stop the listener. On Bun, a `SIGTERM` leaves `Bun.serve` answering `GET /health` while every query fails on a closed pool. Have your process manager follow `SIGTERM` with `SIGKILL` after a grace period, or exit from your own handler once `closeDb()` resolves.
 
 | Symptom | Cause | Fix |
@@ -294,4 +294,4 @@ A migration that only adds things lets the old version keep running while the re
 | Manual | By hand | `okm push` and the `curl` calls above against the Bun entry, including the 400s. With the table missing, the `POST` returned a plain-text 500. A `SIGTERM` closed the pool and left `/health` answering. |
 | Not covered | | `okm migrate apply` against this example, and any hosted deployment. |
 
-The frameworks job runs on pull requests that touch `examples/`, the runtime, the dialects, or the Frameworks pages, and after each merge.
+The frameworks job, which includes this Hono example, runs on pull requests that touch `examples/`, the runtime, the dialects, or the Frameworks pages, and after each merge.

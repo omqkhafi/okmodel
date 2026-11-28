@@ -754,6 +754,39 @@ postgresTest(
 
 postgresTest(
   gate,
+  "stop inside a push handler resolves and nothing runs after",
+  async () => {
+    await withApp(app, async (db) => {
+      let calls = 0;
+      let mode = "";
+      let handle!: Handle;
+      handle = db.orders.watch(
+        async () => {
+          calls += 1;
+          mode = handle.state;
+          if (calls === 1) return;
+          await sleep(20);
+          await handle.stop();
+        },
+        { every: "10m" },
+      );
+      await handle.run();
+      await waitFor(() => handle.state === "push");
+      expect(calls).toBe(1);
+      await db.orders.insert({ id: 1, status: "open" });
+      await waitFor(() => handle.state === "stopped");
+      expect(mode).toBe("push");
+      expect(calls).toBe(2);
+      await db.orders.insert({ id: 2, status: "open" });
+      await sleep(300);
+      expect(calls).toBe(2);
+    });
+  },
+  20_000,
+);
+
+postgresTest(
+  gate,
   "truncate wakes a live read",
   async () => {
     await withApp(app, async (db, url) => {

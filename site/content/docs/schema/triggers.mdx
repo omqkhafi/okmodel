@@ -258,34 +258,22 @@ A column the table does not have is `Trigger notes_touch names column missing, w
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when one table should call a function on insert, update, delete, or truncate.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+Use [Event triggers](/docs/schema/event-triggers) when the function runs for DDL in the whole database, and [Functions](/docs/schema/functions) to declare the routine the trigger calls.
 
 ## What the plan shows
 
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+Creating the trigger is step kind `create-trigger`, class expand, lock ACCESS EXCLUSIVE.
 
 ## Errors
 
-- [OKM1920](/docs/reference/errors#okm1920)
-- [OKM1020](/docs/reference/errors#okm1020)
-- [OKM1023](/docs/reference/errors#okm1023)
+- [OKM1920](/docs/reference/errors#okm1920): A `BEFORE` trigger `when` that names a generated column is OKM1920.
+- [OKM1020](/docs/reference/errors#okm1020): A trigger that calls a function not in the catalog is OKM1020.
+- [OKM1023](/docs/reference/errors#okm1023): The same trigger name on the same table twice is OKM1023.
 
 ## Version
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

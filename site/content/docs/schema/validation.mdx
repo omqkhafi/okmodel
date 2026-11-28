@@ -720,36 +720,20 @@ A failed `validate` is `Validation failed: title title_required.` The message na
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when a write should change or refuse input in the application before any SQL is sent.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
-
-## What the plan shows
-
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+Use [Checks](/docs/schema/checks) when the rule is SQL the database evaluates, and [Visibility](/docs/schema/visibility) when the column must not appear in the call.
 
 ## Errors
 
-- [OKM1120](/docs/reference/errors#okm1120)
-- [OKM1200](/docs/reference/errors#okm1200)
-- [OKM1060](/docs/reference/errors#okm1060)
-- [OKM1030](/docs/reference/errors#okm1030)
-- [OKM1201](/docs/reference/errors#okm1201)
+- [OKM1120](/docs/reference/errors#okm1120): An unknown write key is OKM1120 and names the key and the table.
+- [OKM1200](/docs/reference/errors#okm1200): A failing validation rule inside `batch()` rolls the batch back as OKM1200, with `issues` and `batchIndex`.
+- [OKM1060](/docs/reference/errors#okm1060): A validation key that is not a column is OKM1060.
+- [OKM1030](/docs/reference/errors#okm1030): The same field validated twice is OKM1030.
+- [OKM1201](/docs/reference/errors#okm1201): A write that validates without `okmodel/validate` imported is OKM1201.
 
 ## Version
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

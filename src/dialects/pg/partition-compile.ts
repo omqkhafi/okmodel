@@ -623,7 +623,12 @@ function compileRule(
         'Use a span such as "13 months".',
       );
     }
-    keepThen = body.then === undefined ? "detach" : body.then === "drop" ? "drop" : undefined;
+    keepThen =
+      body.then === undefined || body.then === "detach"
+        ? "detach"
+        : body.then === "drop"
+          ? "drop"
+          : undefined;
     if (keepThen === undefined) {
       refuse(
         `Table ${table} keep.then must be detach or drop.`,

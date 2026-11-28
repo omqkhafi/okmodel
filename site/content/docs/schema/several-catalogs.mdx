@@ -90,34 +90,18 @@ The file has `catalogHash` and, separately, `logical` (`namespace`, `name`, `for
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when two products share one database and `external()` names a table the other catalog owns.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
-
-## What the plan shows
-
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+Use [The schema](/docs/schema/the-schema) when every table belongs to the catalog you are writing.
 
 ## Errors
 
-- [OKM1842](/docs/reference/errors#okm1842)
-- [OKM1841](/docs/reference/errors#okm1841)
-- [OKM1520](/docs/reference/errors#okm1520)
+- [OKM1842](/docs/reference/errors#okm1842): A foreign key that points at another database is OKM1842.
+- [OKM1841](/docs/reference/errors#okm1841): A stale or missing external snapshot is OKM1841.
+- [OKM1520](/docs/reference/errors#okm1520): An external catalog hash that does not match is OKM1520.
 
 ## Version
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

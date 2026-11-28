@@ -2,7 +2,7 @@
 title: "Partitions"
 description: "table({ partition }) declares a range, list, or hash partition. OKM creates the children, or another tool owns them."
 summary: "A partition declaration creates range, list, or hash children."
-since: "0.10"
+since: "0.11"
 status: stable
 feature: partition.range
 ---
@@ -146,33 +146,21 @@ SQLSTATE 23514 with no constraint name, on a partitioned table, is the existing 
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when one logical table should be range, list, or hash children, including a conversion from a plain table.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+Use [Indexes](/docs/schema/indexes) for an index on a table that is not partitioned, and [Tables](/docs/schema/tables) before you split anything.
 
 ## What the plan shows
 
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+A new parent is step kind `create-table`, lock ACCESS EXCLUSIVE. Attaching a child of a live parent is `attach-partition`, and the parent lock is SHARE UPDATE EXCLUSIVE. The conversion path's attach is the same kind, lock ACCESS EXCLUSIVE, weight `blocking`.
 
 ## Errors
 
-- [OKM1854](/docs/reference/errors#okm1854)
-- [OKM2130](/docs/reference/errors#okm2130)
+- [OKM1854](/docs/reference/errors#okm1854): `okm partitions maintain` on a pooled URL is OKM1854, including `--dry-run`, because detach and finalize cannot use a transaction-mode pooler.
+- [OKM2130](/docs/reference/errors#okm2130): A query that does not mention the partition key warns OKM2130 because it scans every partition.
 
 ## Version [feature="partition.range"]
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

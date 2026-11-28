@@ -22,7 +22,7 @@ export default schema({ tables: [notes] });
 The [key](/docs/schema/keys-and-identity#keys) is one column. Each other field is a builder on its type family page. Use the table first, then the section for that storage. [Defaults](/docs/schema/defaults) come after the type.
 </Callout>
 
-Each field is a data type. The builder name is that type. Postgres is the only database today. A cell is `yes` when that database has the type built in, and `extension` when the schema must list that extension. Another database is another column on the same row. A missing extension declaration is OKM1020. See [extensions](/docs/schema/extensions).
+Each field is a data type. The builder name is that type. Postgres is the only database today. A cell is `yes` when that database has the type built in, and `extension` when the schema must list that extension. Another database is another column on the same row. A missing extension declaration is OKM1020. A column marked extension on this page is declared on [extensions](/docs/schema/extensions).
 
 An array is [`.array()`](/docs/schema/enums-arrays-picklists#array) on a scalar. A fixed set of strings on a text column is a [picklist](/docs/schema/enums-arrays-picklists#picklist). A named Postgres enum is its own type, under [enum](/docs/schema/enums-arrays-picklists#enum).
 
@@ -58,32 +58,16 @@ An array is [`.array()`](/docs/schema/enums-arrays-picklists#array) on a scalar.
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when you are choosing which builder names the SQL type, before the page for that family.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
-
-## What the plan shows
-
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+Use the family page ([text](/docs/schema/text-columns), [numbers](/docs/schema/number-columns), [time](/docs/schema/time-columns)) once the builder is chosen.
 
 ## Errors
 
-- [OKM1020](/docs/reference/errors#okm1020)
+- [OKM1020](/docs/reference/errors#okm1020): A column whose extension is not declared on the schema is OKM1020.
 
 ## Version
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

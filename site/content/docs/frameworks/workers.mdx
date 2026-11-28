@@ -14,7 +14,7 @@ You get a Worker that opens a client for each request that needs the database, r
 
 A Worker has no TCP socket, so postgres.js cannot run there. `okm` needs TCP too, so run migrations from Node.js or Bun on a machine that can reach Postgres. It connects with postgres.js, so add it as a dev dependency: `bun add -d postgres`.
 
-`okmodel/pg` under the `workerd` condition installs the catalog compilers inside `schema()`, so that entry does not need `armCatalog()`. The Node entry loads the compiler on the first direct `schema().catalog` read, through `createRequire` in `catalog-require.js`. That call needs `import.meta.url`. A Workers bundle of the Node entry used to evaluate it while loading `schema()`, which imports `catalog-load.ts`, and the isolate crashed before a query. Queries and mapped constraint errors do not read `.catalog` and do not need `armCatalog()`. A single-file Node or Lambda bundle has no sibling `catalog-compile.js`. Call `armCatalog()` from `okmodel/pg/catalog` only before a direct `schema().catalog` read in a bundle that has no compiler file.
+`okmodel/pg` under the `workerd` condition installs the catalog compilers inside `schema()`, so that entry does not need `armCatalog()`. The Node entry loads the compiler on the first direct `schema().catalog` read, through `createRequire` in `catalog-require.js`. That call needs `import.meta.url`. A Workers bundle of the Node entry used to evaluate it while loading `schema()`, which imports `catalog-load.ts`, and the isolate crashed before a query. Queries and mapped constraint errors do not read `.catalog` and do not need `armCatalog()`. A single-file Node or Lambda bundle has no sibling `catalog-compile.js`. On the Workers page, call `armCatalog()` from `okmodel/pg/catalog` only before a direct `schema().catalog` read in a bundle that has no compiler file.
 
 A single-file bundle of `connect` carries the catalog compiler. Drift imports it when `okm_meta` has a hash and the call has no catalog artifact, and the bundler inlines that import. Pass `catalog` on `connect` to skip running the compiler. A Worker has no project directory, so `.okm/catalog.hash` and `catalog.json` are not read there. The compiler stays in the file either way.
 
@@ -70,7 +70,7 @@ export function openRequestDb(url: string, mode: NeonMode = "websocket") {
 }
 ```
 
-`src/schema.ts` re-exports the table every framework example shares. In your own Worker, define the table in `src/schema.ts` directly. The table is named `example_notes`, so the client property is `db.example_notes`.
+`src/schema.ts` re-exports the table every framework example shares. In your own Worker, define the table in `src/schema.ts` directly. On the Workers example the table is named `example_notes`, so the client property is `db.example_notes`.
 
 ```ts title="src/schema.ts"
 import { schema, table, t } from "okmodel/pg";
@@ -394,4 +394,4 @@ globalThis.Temporal ??= Temporal;
 | Manual, 2026-11-03 | okmodel 0.10.2, a Neon primary, a Worker deployed to Cloudflare | A URL-shortener Worker in both modes: create, read, redirect, and stats. `tx()` in `http` mode refused with OKM1111 before any I/O, `batch()` atomic, and an interactive `tx()` in `websocket` mode. This run found that `http` mode read `date` and `timestamptz` columns as `null`, which 0.10.3 fixes. |
 | Not covered | | A deployed Worker in CI, `okm` against Neon, and cold starts. |
 
-The frameworks job runs on pull requests that touch `examples/`, the runtime, the dialects, or the Frameworks pages, and after each merge.
+The frameworks job, which includes this Workers example, runs on pull requests that touch `examples/`, the runtime, the dialects, or the Frameworks pages, and after each merge.

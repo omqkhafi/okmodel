@@ -15,9 +15,9 @@ You get one `db` module that App Router route handlers import, a route that read
 
 A module-level `connect(...)` suits the Node.js runtime, where one long-lived process serves many requests and keeps one pool. The Edge runtime has no TCP socket for postgres.js, so every route that imports `src/db.ts` sets `export const runtime = "nodejs"`, and no Edge route or middleware may import it.
 
-`armCatalog()` is not required for queries or mapped constraint errors, including when `okmodel` is left out of `serverExternalPackages` and Next.js bundles it with webpack or Turbopack. Call `armCatalog()` from `okmodel/pg/catalog` only before a direct `schema().catalog` read in a bundle that has no compiler file.
+`armCatalog()` is not required for queries or mapped constraint errors, including when `okmodel` is left out of `serverExternalPackages` and Next.js bundles it with webpack or Turbopack. On the Next.js page, call `armCatalog()` from `okmodel/pg/catalog` only before a direct `schema().catalog` read in a bundle that has no compiler file.
 
-When Next.js bundles `okmodel` into the route, that bundle carries the catalog compiler. `connect` imports it when `okm_meta` has a hash and the process has no catalog artifact, and webpack or Turbopack inlines that import. Pass `catalog` on `connect`, or leave `.okm/catalog.hash` and `catalog.json` from `okm build` where the process can read them, to skip running the compiler. The compiler stays in the bundle either way. This example lists `okmodel` in `serverExternalPackages`, so the compiler stays a file in the package instead of being copied into the route.
+When Next.js bundles `okmodel` into the route, that bundle carries the catalog compiler. `connect` imports it when `okm_meta` has a hash and the process has no catalog artifact, and webpack or Turbopack inlines that import. On Next.js, pass `catalog` on `connect`, or leave `.okm/catalog.hash` and `catalog.json` from `okm build` where the process can read them, to skip running the compiler. The compiler stays in the bundle either way. This example lists `okmodel` in `serverExternalPackages`, so the compiler stays a file in the package instead of being copied into the route.
 
 ## Install
 
@@ -42,7 +42,7 @@ export default config;
 
 ## `db` module and lifecycle
 
-There is one client per Node.js process: every route handler shares the pool that `src/db.ts` opens. It throws at import when `DATABASE_URL` is missing, because `connect` does not read the environment.
+There is one client per Node.js process: every route handler shares the pool that `src/db.ts` opens. The Next.js client throws at import when `DATABASE_URL` is missing, because `connect` does not read the environment.
 
 ```ts title="src/db.ts" no-check="imports ./schema without an extension, which the example's bundler resolves and the docs check does not"
 /**
@@ -70,7 +70,7 @@ export async function closeDb(): Promise<void> {
 }
 ```
 
-`src/schema.ts` types the client. The table is named `example_notes`, so the client property is `db.example_notes`.
+`src/schema.ts` types the client. On the Next.js example the table is named `example_notes`, so the client property is `db.example_notes`.
 
 ```ts title="src/schema.ts"
 import { schema, table, t } from "okmodel/pg";
@@ -138,14 +138,14 @@ export async function POST(request: Request) {
 
 ## Dev and test
 
-Start Postgres, point `DATABASE_URL` at it, create the table, then run Next.js. In this repository, `bun run db:up` starts a local Postgres whose primary URL is below.
+Start Postgres, point `DATABASE_URL` at it, create the table, then run Next.js. In this repository, `bun run db:up` starts a local Postgres for the Next.js example, and the primary URL is below.
 
 ```sh
 bun run db:up
 export DATABASE_URL=postgres://okm:okm@127.0.0.1:55432/okm
 ```
 
-The example has no `okmodel.config.ts`. In your app, add one next to `package.json`:
+The example has no `okmodel.config.ts`. In your Next.js app, add one next to `package.json`:
 
 ```ts title="okmodel.config.ts"
 import { defineConfig } from "okmodel/migrate";
@@ -188,7 +188,7 @@ curl -i -X POST http://localhost:3104/api/notes -H 'content-type: application/js
 curl -i http://localhost:3104/api/notes
 ```
 
-These responses come from that flow, run against `next dev` on a fresh database. `id` is a string, because the default codec for `t.identity()` is a string.
+These responses come from that flow, run against `next dev` on a fresh database. On Next.js, `id` is a string, because the default codec for `t.identity()` is a string.
 
 | Request | Status | Body |
 | --- | --- | --- |
@@ -198,7 +198,7 @@ These responses come from that flow, run against `next dev` on a fresh database.
 | `POST /api/notes` with `{}` | 400 | `{"error":"title is required"}` |
 | `POST /api/notes` with `nope` as the body | 400 | `{"error":"body must be JSON"}` |
 
-The example's own test does not run `okm`: it creates an isolated database and applies `NOTES_DDL` through `examples/shared/support.ts`, which is faster. To run it from a clone:
+The Next.js example's own test does not run `okm`: it creates an isolated database and applies `NOTES_DDL` through `examples/shared/support.ts`, which is faster. To run it from a clone:
 
 ```sh
 bun run build
@@ -229,12 +229,12 @@ Alternatively, put migrate in the Vercel build command for that environment:
 bunx okm migrate apply && bunx next build
 ```
 
-With that command, keep Preview and Production on separate databases, or a preview build migrates production. Commit `okmodel.config.ts` and `migrations/`. A protected target needs `--allow-protected` for steps that remove or rewrite things ([Protected targets](/docs/operate/protected-targets-and-roles)). A migration that only adds things lets the old version keep running while the release rolls out ([Migrations in CI](/docs/guides/migrations-in-ci), [Environments](/docs/migrations/environments)).
+With that command, keep Preview and Production on separate databases, or a preview build migrates production. Commit `okmodel.config.ts` and `migrations/`. A protected target needs `--allow-protected` for steps that remove or rewrite things ([Protected targets](/docs/operate/protected-targets-and-roles)). For this Next.js app, a migration that only adds things lets the old version keep running while the release rolls out ([Migrations in CI](/docs/guides/migrations-in-ci), [Environments](/docs/migrations/environments)).
 
 ## Limits and gotchas
 
 - Under `next dev`, Fast Refresh can remount `src/db.ts` and open another pool each time. Idle connections on the old pools close after the default idle timeout.
-- The route returns at most 50 rows. To read past them, page through the rest ([Read rows](/docs/queries/read-rows)).
+- The route returns at most 50 rows. On this Next.js route, to read past them, page through the rest ([Read rows](/docs/queries/read-rows)).
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
@@ -253,4 +253,4 @@ With that command, keep Preview and Production on separate databases, or a previ
 | Manual | By hand | `okm push` applies `push-1` on an empty database; `okm generate init` then `okm migrate apply` applies `0001_init`. `next build` fails with `DATABASE_URL is required` when the variable is unset and builds when it points at an unreachable database. `next dev` and `next start` returned the responses in the table above. |
 | Not covered | | `next dev` in CI, a Vercel deploy, and the Edge runtime. |
 
-The frameworks job runs on pull requests that touch `examples/`, the runtime, the dialects, or the Frameworks pages, and after each merge.
+The frameworks job, which includes this Next.js example, runs on pull requests that touch `examples/`, the runtime, the dialects, or the Frameworks pages, and after each merge.

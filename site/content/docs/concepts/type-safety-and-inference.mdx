@@ -48,32 +48,16 @@ Typed raw SQL is as precise as the lock or the class. It is not a substitute for
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when a key the table does not have should fail in the type of the call, or a typed raw statement is missing from the lock.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
-
-## What the plan shows
-
-This page does not emit a migration step.
+Use [Codecs and row types](/docs/schema/codecs-and-row-types) when the question is the runtime value, not whether the key exists.
 
 ## Errors
 
-- [OKM1601](/docs/reference/errors#okm1601)
+- [OKM1601](/docs/reference/errors#okm1601): A typed raw statement that is not in the lock is OKM1601.
 
 ## Version
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

@@ -258,7 +258,7 @@ The host is lowercased before the check. The message is `Refusing pooler host <h
 | `connect()` | Not refused. |
 
 <Callout type="warning" title="OKM1854">
-A host containing `pooler`, `pgbouncer`, or `-pooler`, port `6543` or `6432`, or `pgbouncer=true` is a pooler before any client opens. When no signal matched and the command still has to decide, it opens eight clients at once. Each reads `pg_backend_pid()`. A pid change, or fewer backends than clients, is OKM1854. A stable idle pid is not proof of a direct connection. `--allow-pooler` skips the URL check and the eight clients. Apply and push open those clients only when a step cannot share a transaction. Seed, baseline, resolve, a one-database `okm check`, and `okm migrate check` open them whenever the URL did not already match.
+A host containing `pooler`, `pgbouncer`, or `-pooler`, port `6543` or `6432`, or `pgbouncer=true` is a pooler before any client opens. When no signal matched and the command still has to decide, it opens eight clients at once. Each reads `pg_backend_pid()`. A pid change, or fewer backends than clients, is OKM1854. A stable idle pid is not proof of a direct connection when this config page's command is the one deciding. `--allow-pooler` skips the URL check and the eight clients. Apply and push open those clients only when a step cannot share a transaction. Seed, baseline, resolve, a one-database `okm check`, and `okm migrate check` open them whenever the URL did not already match.
 </Callout>
 
 Connection pool size is [`max`](/docs/operate/session-and-pool#max).

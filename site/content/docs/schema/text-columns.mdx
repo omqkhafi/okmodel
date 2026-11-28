@@ -72,7 +72,7 @@ A longer value is refused when it is encoded.
 
 ### Citext
 
-`t.citext()` is `citext`. The TypeScript value is a string. Comparison ignores case. Use it for case-insensitive text. `index(sql\`lower(...)\`)` is only for uniqueness of the lowered value. The schema lists `citext()` from `okmodel/pg/citext`. See [extensions](/docs/schema/extensions).
+`t.citext()` is `citext`. The TypeScript value is a string. Comparison ignores case. Use it for case-insensitive text. `index(sql\`lower(...)\`)` is only for uniqueness of the lowered value. The schema lists `citext()` from `okmodel/pg/citext`. citext on this page is declared on [extensions](/docs/schema/extensions).
 
 ```ts title="citext.ts"
 import { citext } from "okmodel/pg/citext";
@@ -101,35 +101,19 @@ Next: [Columns](/docs/schema/columns).
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when the column is unbounded text, varchar, char, or citext.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
-
-## What the plan shows
-
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+Use [Postgres-specific columns](/docs/schema/postgres-specific-columns) for types outside this family, and [Extensions](/docs/schema/extensions) before citext will push.
 
 ## Errors
 
-- [OKM1060](/docs/reference/errors#okm1060)
-- [OKM1210](/docs/reference/errors#okm1210)
-- [OKM1020](/docs/reference/errors#okm1020)
-- [OKM1810](/docs/reference/errors#okm1810)
+- [OKM1060](/docs/reference/errors#okm1060): A varchar or char length outside 1 to 10485760 is OKM1060.
+- [OKM1210](/docs/reference/errors#okm1210): A value longer than that declared length is OKM1210 when it is encoded.
+- [OKM1020](/docs/reference/errors#okm1020): citext used without the extension in the schema is OKM1020.
+- [OKM1810](/docs/reference/errors#okm1810): citext used while a different extension is declared is OKM1810.
 
 ## Version
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

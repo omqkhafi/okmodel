@@ -16,7 +16,9 @@ import { moduleSpecifiers } from "./specifiers.js";
  * it to send a CancelRequest. `catalog-require.js` may import `node:module`
  * so `schema()` can load the catalog compiler without putting it on the
  * featureless startup graph. The loader is JavaScript so a consumer typecheck
- * with `types: []` does not need Node types.
+ * with `types: []` does not need Node types. `watch.ts` may dynamically import
+ * `node:async_hooks` when a watch opens, so `stop()` can tell its own handler
+ * from a caller. The import is not at module scope.
  */
 export function checkCorePurity(options: {
   readonly root: string;
@@ -127,6 +129,14 @@ const NODE_NET = new Set([
 const NODE_MODULE = new Set([join("dialects", "pg", "catalog-require.js")]);
 
 /**
+ * Dynamic `node:async_hooks` for `stop()` inside a watch handler.
+ *
+ * The startup graph does not load `watch.ts`. A missing built-in is caught
+ * at the call, and `stop()` keeps waiting on that runtime.
+ */
+const NODE_ASYNC_HOOKS = new Set([join("runtime", "watch.ts")]);
+
+/**
  * The core imports of Node that a driver socket or the catalog loader needs.
  *
  * @param root - Repository or fixture root
@@ -137,6 +147,7 @@ const NODE_MODULE = new Set([join("dialects", "pg", "catalog-require.js")]);
 function nodeImportAllowed(root: string, file: string, specifier: string): boolean {
   const path = relative(root, file);
   if (specifier === "node:net" && NODE_NET.has(path)) return true;
+  if (specifier === "node:async_hooks" && NODE_ASYNC_HOOKS.has(path)) return true;
   return specifier === "node:module" && NODE_MODULE.has(path);
 }
 

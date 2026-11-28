@@ -196,33 +196,17 @@ export const notes = table("notes", {
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when an omitted insert should be filled by nullability, a literal, a generator, or a stored expression.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
-
-## What the plan shows
-
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+Use [Keys and identity](/docs/schema/keys-and-identity) when the fill is an identity sequence, and [Required rows](/docs/schema/required-rows) when the fill is a seeded row.
 
 ## Errors
 
-- [OKM1060](/docs/reference/errors#okm1060)
-- [OKM1920](/docs/reference/errors#okm1920)
+- [OKM1060](/docs/reference/errors#okm1060): A default outside a picklist is OKM1060.
+- [OKM1920](/docs/reference/errors#okm1920): A `BEFORE` trigger `when` that names a generated column is OKM1920, because PostgreSQL refuses it.
 
 ## Version [feature="column.generated"]
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

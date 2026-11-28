@@ -1,9 +1,11 @@
 /**
  * Learning-path, cheat-sheet, and schema examples on a real Postgres.
  *
- * Stdout is the handbook fence. A fence that needs pgvector, pg_cron, an
- * event trigger, or a role the topology does not provide is skipped here.
- * The gate without Docker skips the file.
+ * Stdout is the handbook fence. Every complete `schema()` program on a
+ * schema page is pushed. A fence without `schema()` stays type-checked by
+ * the docs code check. A refusal whose OKM code the page names is a pass.
+ * pgvector and pg_cron are skipped when the topology image lacks them, and
+ * they run at the release candidate. The gate without Docker skips the file.
  */
 
 import { expect, test } from "bun:test";
@@ -37,28 +39,40 @@ postgresTest(
 
 postgresTest(
   gate,
-  "one complete schema example from each schema page pushes",
+  "every complete schema program on a schema page pushes",
   async () => {
-    const skipped: string[] = [];
+    const extensions = new Map<string, number>();
+    const unexpected: string[] = [];
+    const refusals: string[] = [];
+    let found = 0;
     let applied = 0;
+    let refused = 0;
     for (const file of schemaFiles()) {
       const text = readFileSync(file, "utf8");
-      const sample = firstPushable(text);
-      if (sample === undefined) continue;
-      const reason = await pushSample(sample.body);
-      if (reason === undefined) {
-        applied += 1;
-        continue;
+      const rel = file.slice(docs.length + 1);
+      for (const sample of pushableSchemas(text)) {
+        found += 1;
+        const outcome = await pushSample(sample.body, text);
+        if (outcome.kind === "applied") applied += 1;
+        else if (outcome.kind === "refused") {
+          refused += 1;
+          refusals.push(`${rel} ${sample.title} ${outcome.code}`);
+        } else if (outcome.kind === "extension") {
+          extensions.set(outcome.name, (extensions.get(outcome.name) ?? 0) + 1);
+        } else unexpected.push(`${rel} ${sample.title}: ${outcome.detail}`);
       }
-      skipped.push(`${file.slice(docs.length + 1)} ${sample.title}: ${reason}`);
     }
-    const unexpected = skipped.filter(
-      (line) => !/(pgvector|pg_cron|event-trigger|roles|refusal)$/.test(line),
+    const skipped =
+      [...extensions.entries()].map(([name, count]) => `${name}=${String(count)}`).join(", ") ||
+      "none";
+    console.log(
+      `docs schema examples: found ${String(found)} applied ${String(applied)} refused ${String(refused)} (${refusals.join("; ")}) skipped ${skipped}`,
     );
     expect(unexpected).toEqual([]);
+    expect(found).toBeGreaterThan(0);
     expect(applied).toBeGreaterThan(5);
   },
-  180_000,
+  900_000,
 );
 
 /**
@@ -124,13 +138,20 @@ async function runProduction(page: string): Promise<void> {
   }
 }
 
+type PushOutcome =
+  | { readonly kind: "applied" }
+  | { readonly kind: "refused"; readonly code: string }
+  | { readonly kind: "extension"; readonly name: "pgvector" | "pg_cron" }
+  | { readonly kind: "error"; readonly detail: string };
+
 /**
  * Pushes one schema fence.
  *
  * @param body - Fence source
- * @returns A feature the topology lacks, or undefined when the push applied
+ * @param page - Page source, used to tell a documented refusal from a surprise
+ * @returns Applied, a documented OKM refusal, a missing extension, or an error
  */
-async function pushSample(body: string): Promise<string | undefined> {
+async function pushSample(body: string, page: string): Promise<PushOutcome> {
   const database = await createIsolatedDatabase();
   const cwd = mkdtempSync(join(tmpdir(), "okm-docs-schema-"));
   const previous = process.env.DATABASE_URL;
@@ -148,11 +169,16 @@ export default defineConfig({
 `),
     );
     const pushed = cliProc(cwd, ["push"]);
-    if (pushed.status === 0) return undefined;
-    const need = needFrom(pushed.stderr, body);
-    if (need !== undefined) return need;
-    if (/OKM\d+/.test(pushed.stderr)) return "refusal";
-    throw new Error(pushed.stderr || pushed.stdout);
+    if (pushed.status === 0) return { kind: "applied" };
+    const extension = extensionFrom(pushed.stderr);
+    if (extension !== undefined) return { kind: "extension", name: extension };
+    const code = /OKM\d{4}/.exec(`${pushed.stderr}\n${pushed.stdout}`)?.[0];
+    if (code !== undefined && page.includes(code)) return { kind: "refused", code };
+    const detail = (pushed.stderr || pushed.stdout || "push failed").slice(0, 500);
+    return {
+      kind: "error",
+      detail: code === undefined ? detail : `unexpected ${code}: ${detail}`,
+    };
   } finally {
     if (previous === undefined) delete process.env.DATABASE_URL;
     else process.env.DATABASE_URL = previous;
@@ -162,41 +188,39 @@ export default defineConfig({
 }
 
 /**
- * Feature a failed push is waiting on.
+ * An extension the local topology image does not install.
+ *
+ * pgvector and pg_cron run at the release candidate. Any other failure is
+ * not an extension skip.
  *
  * @param stderr - Command stderr
- * @param body - Fence source
  */
-function needFrom(stderr: string, body: string): string | undefined {
+function extensionFrom(stderr: string): "pgvector" | "pg_cron" | undefined {
   if (/vector|pgvector/i.test(stderr)) return "pgvector";
   if (/pg_cron/i.test(stderr)) return "pg_cron";
-  if (/event trigger/i.test(stderr) && /42501|permission|OKM2209/i.test(stderr))
-    return "event-trigger";
-  if (
-    /role .+ does not exist/i.test(stderr) ||
-    (body.includes("grants:") && /OKM19/.test(stderr))
-  ) {
-    return "roles";
-  }
   return undefined;
 }
 
 /**
- * The first fence that is a whole schema and does not import a sibling file.
+ * Every fence that is a complete `schema()` program.
+ *
+ * A fragment that never calls `schema()`, or that imports a sibling file or
+ * opens a connection, stays with the typecheck and is not pushed.
  *
  * @param text - Page source
  */
-function firstPushable(text: string): { title: string; body: string } | undefined {
+function pushableSchemas(text: string): { title: string; body: string }[] {
+  const samples: { title: string; body: string }[] = [];
   for (const match of text.matchAll(/```ts([^\n]*)\n([\s\S]*?)```/g)) {
     const header = match[1] ?? "";
     const body = match[2] ?? "";
-    if (!body.includes("export default schema")) continue;
-    if (body.includes('from "./') || body.includes("from './") || body.includes("connect("))
-      continue;
+    if (!body.includes("schema(")) continue;
+    if (body.includes("connect(")) continue;
+    if (/from\s+["']\.\.?\/|import\s+["']\.\.?\//.test(body)) continue;
     const title = /title="([^"]+)"/.exec(header)?.[1] ?? "schema.ts";
-    return { title, body };
+    samples.push({ title, body });
   }
-  return undefined;
+  return samples;
 }
 
 /**
@@ -248,6 +272,8 @@ function rewrite(body: string): string {
   for (const [specifier, path] of imports) {
     next = next.replaceAll(`from "${specifier}"`, `from ${JSON.stringify(path)}`);
     next = next.replaceAll(`from '${specifier}'`, `from ${JSON.stringify(path)}`);
+    next = next.replaceAll(`import "${specifier}"`, `import ${JSON.stringify(path)}`);
+    next = next.replaceAll(`import '${specifier}'`, `import ${JSON.stringify(path)}`);
   }
   return next;
 }

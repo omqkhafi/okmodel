@@ -2,7 +2,7 @@
 title: "Event triggers"
 description: "Database-wide DDL triggers. Import okmodel/event before schema()."
 summary: "An event trigger fires for DDL in the whole database."
-since: "0.10"
+since: "0.11"
 status: stable
 feature: trigger.event
 ---
@@ -113,6 +113,7 @@ const auditRows = fn("audit_rows", {
   returns: triggerType,
   language: "plpgsql",
   body: sql`begin return null; end`,
+  dependsOn: [notes],
 });
 
 export default schema({
@@ -153,34 +154,22 @@ A trigger that inserts into an outbox table needs `INSERT` on that table when it
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when the function should run for DDL in the database, not for a row change on one table.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+Use [Triggers](/docs/schema/triggers) for insert, update, delete, or truncate on one table.
 
 ## What the plan shows
 
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+Creating one is step kind `create-event-trigger`, class expand, lock ACCESS EXCLUSIVE.
 
 ## Errors
 
-- [OKM1931](/docs/reference/errors#okm1931)
-- [OKM2129](/docs/reference/errors#okm2129)
-- [OKM2209](/docs/reference/errors#okm2209)
+- [OKM1931](/docs/reference/errors#okm1931): An event trigger on `login` is OKM1931.
+- [OKM2129](/docs/reference/errors#okm2129): A tag that cannot fire for the event, such as `sql_drop` with `CREATE TABLE`, is warning OKM2129.
+- [OKM2209](/docs/reference/errors#okm2209): A role that cannot create an event trigger gets SQLSTATE 42501, reported as OKM2209.
 
 ## Version [feature="trigger.event"]
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

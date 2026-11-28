@@ -2,7 +2,7 @@
 title: "References"
 description: "references() points a column at another table."
 summary: "references() points a column at another table."
-since: "0.10"
+since: "0.11"
 status: stable
 ---
 ```ts title="target.ts"
@@ -293,35 +293,23 @@ A [relation](/docs/schema/relations) is the name you query. The reference is the
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when a column should point at another table's key and you are choosing `on delete`.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+Use [Relations](/docs/schema/relations) when the link is how a query loads the other row, and [Keys and identity](/docs/schema/keys-and-identity) for the target key itself.
 
 ## What the plan shows
 
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+A foreign key is step kind `add-constraint`, class expand, lock ACCESS EXCLUSIVE.
 
 ## Errors
 
-- [OKM1060](/docs/reference/errors#okm1060)
-- [OKM1020](/docs/reference/errors#okm1020)
-- [OKM1021](/docs/reference/errors#okm1021)
-- [OKM1022](/docs/reference/errors#okm1022)
+- [OKM1060](/docs/reference/errors#okm1060): `references()` with an empty table name is OKM1060.
+- [OKM1020](/docs/reference/errors#okm1020): `schema()` refuses a `references()` target that is not in the schema, as OKM1020.
+- [OKM1021](/docs/reference/errors#okm1021): A `references()` target with no primary key, or an ambiguous key, is OKM1021.
+- [OKM1022](/docs/reference/errors#okm1022): A local column type that differs from the referenced column is OKM1022.
 
 ## Version
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

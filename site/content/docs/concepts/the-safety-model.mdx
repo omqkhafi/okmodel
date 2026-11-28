@@ -143,39 +143,26 @@ What to turn on before a real target — `protected`, `requireMeta`, `--target`,
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when you are tracing which refusal, drift finding, or protected-target rule stops a command before it changes rows.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
-
-## What the plan shows
-
-This page does not emit a migration step.
+Use [Query limits](/docs/operate/query-limits) for the numeric caps, and [Protected targets](/docs/operate/protected-targets-and-roles) to mark one database.
 
 ## Errors
 
-- [OKM1120](/docs/reference/errors#okm1120)
-- [OKM1101](/docs/reference/errors#okm1101)
-- [OKM1105](/docs/reference/errors#okm1105)
-- [OKM1102](/docs/reference/errors#okm1102)
-- [OKM1190](/docs/reference/errors#okm1190)
-- [OKM1511](/docs/reference/errors#okm1511)
-- [OKM1512](/docs/reference/errors#okm1512)
-- [OKM1510](/docs/reference/errors#okm1510)
+- [OKM1101](/docs/reference/errors#okm1101): A `find`, `page`, grouped `aggregate`, or to-many `include` with no limit is OKM1101.
+- [OKM1120](/docs/reference/errors#okm1120): An unknown key on a write, or `orderBy` without `limit` where this page names it, is OKM1120.
+- [OKM1105](/docs/reference/errors#okm1105): A to-many `include` without a limit is OKM1105.
+- [OKM1102](/docs/reference/errors#okm1102): `update` and `delete` without a filter are OKM1102.
+- [OKM1190](/docs/reference/errors#okm1190): A guarded column set from input is OKM1190.
+- [OKM1511](/docs/reference/errors#okm1511): Dropping a table is an error finding, OKM1511.
+- [OKM1512](/docs/reference/errors#okm1512): Dropping a column is an error finding, OKM1512.
+- [OKM1510](/docs/reference/errors#okm1510): An error finding fails the command as OKM1510.
+- [OKM2300](/docs/reference/errors#okm2300): A boilerplate reason on `okm check` or `okm migrate check` is warning OKM2300.
+- [OKM1853](/docs/reference/errors#okm1853): Omitting `--target` when several targets are configured is OKM1853 for a command that must pick one database.
+- [OKM1538](/docs/reference/errors#okm1538): A type change that rewrites the heap is warning OKM1538.
 
 ## Version
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

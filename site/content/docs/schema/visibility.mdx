@@ -155,35 +155,19 @@ A sealed trait field stays OKM1190. The message says the trait sets it. Insert o
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when a column should be hidden, sensitive, or guarded so a call cannot read or write it unless you name the exception.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
-
-## What the plan shows
-
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+Use [Validation](/docs/schema/validation) when the value is accepted and then checked, and [Tenancy](/docs/schema/tenancy) when the hidden column is the tenant key.
 
 ## Errors
 
-- [OKM1120](/docs/reference/errors#okm1120)
-- [OKM1123](/docs/reference/errors#okm1123)
-- [OKM1190](/docs/reference/errors#okm1190)
-- [OKM1704](/docs/reference/errors#okm1704)
+- [OKM1120](/docs/reference/errors#okm1120): `where` and `orderBy` on a hidden column are OKM1120.
+- [OKM1123](/docs/reference/errors#okm1123): `filters()` that names a hidden field in `allow`, `sort`, or `relations` is OKM1123.
+- [OKM1190](/docs/reference/errors#okm1190): A value that arrives for a guarded column is OKM1190.
+- [OKM1704](/docs/reference/errors#okm1704): An update or a `where` on a guarded tenant key is OKM1704.
 
 ## Version
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

@@ -2,7 +2,7 @@
 title: "Numbers"
 description: "Integers, numbers, and floats."
 summary: "Integers, numbers, and floats."
-since: "0.10"
+since: "0.11"
 status: stable
 feature: sequence.native
 ---
@@ -260,33 +260,17 @@ Next: [Columns](/docs/schema/columns).
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when the column is an integer, a numeric, a float, or a sequence that is not the identity primary key.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
-
-## What the plan shows
-
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+Use [Keys and identity](/docs/schema/keys-and-identity) for `t.identity()`, and [Codecs and row types](/docs/schema/codecs-and-row-types) for the bigint codec.
 
 ## Errors
 
-- [OKM1210](/docs/reference/errors#okm1210)
-- [OKM1060](/docs/reference/errors#okm1060)
+- [OKM1210](/docs/reference/errors#okm1210): A value that is not an integer in the builder's range is OKM1210 when it is encoded.
+- [OKM1060](/docs/reference/errors#okm1060): An `as` mode this numeric builder does not accept is OKM1060.
 
 ## Version [feature="sequence.native"]
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

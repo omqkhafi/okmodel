@@ -2,7 +2,7 @@
 title: "Extensions"
 description: "Extension definitions. schema() does not install them."
 summary: "An extension is declared on the schema, and schema() does not install it by hand."
-since: "0.10"
+since: "0.11"
 status: stable
 feature: ext.pgvector
 ---
@@ -569,39 +569,28 @@ A later move of that extension is `Extension hstore is not relocatable, so it ca
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when the schema declares citext, pg_trgm, pgvector, or another extension `schema()` does not install by hand.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+Use [Postgres-specific columns](/docs/schema/postgres-specific-columns) for a built-in type that is not an extension, and [Text columns](/docs/schema/text-columns) for citext as a column once the extension is declared.
 
 ## What the plan shows
 
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+Creating an extension is step kind `create-extension`, class expand, lock ACCESS EXCLUSIVE.
 
 ## Errors
 
-- [OKM1210](/docs/reference/errors#okm1210)
-- [OKM1930](/docs/reference/errors#okm1930)
-- [OKM1125](/docs/reference/errors#okm1125)
-- [OKM1812](/docs/reference/errors#okm1812)
-- [OKM1020](/docs/reference/errors#okm1020)
-- [OKM1810](/docs/reference/errors#okm1810)
-- [OKM1813](/docs/reference/errors#okm1813)
-- [OKM1811](/docs/reference/errors#okm1811)
+- [OKM1210](/docs/reference/errors#okm1210): An empty vector, a non-finite number, or the wrong length is OKM1210 before SQL.
+- [OKM1930](/docs/reference/errors#okm1930): `vector(n)` and `halfvec(n)` above 16000 dimensions are OKM1930.
+- [OKM1125](/docs/reference/errors#okm1125): Selecting a cosine distance against a zero vector is OKM1125 because that distance is `NaN`.
+- [OKM1812](/docs/reference/errors#okm1812): Declaring pgvector's floor below the version this page names is OKM1812.
+- [OKM1020](/docs/reference/errors#okm1020): A citext or ltree column with the extension omitted from the schema is OKM1020.
+- [OKM1810](/docs/reference/errors#okm1810): A column that uses an extension the schema list does not declare is OKM1810.
+- [OKM1813](/docs/reference/errors#okm1813): The same extension name twice is OKM1813.
+- [OKM1811](/docs/reference/errors#okm1811): An extension the server does not provide is OKM1811.
+- [OKM1814](/docs/reference/errors#okm1814): Moving a non-relocatable extension is OKM1814.
 
 ## Version [feature="ext.pgvector"]
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

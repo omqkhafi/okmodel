@@ -2,7 +2,7 @@
 title: "Views"
 description: "Views and materialized views built with the query API."
 summary: "Views and materialized views built with the query API."
-since: "0.10"
+since: "0.11"
 status: stable
 feature: view.typed
 ---
@@ -151,37 +151,25 @@ These three are not emitted. Each needs a proof on the server you run before it 
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when a saved query should be a view or a materialized view, including check option, security, and refresh.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+Use [Relations](/docs/schema/relations) when the load is an `include` on a table, not a stored query.
 
 ## What the plan shows
 
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+A view is step kind `create-view` or `replace-view`, class expand, lock ACCESS EXCLUSIVE. A materialized view is `create-matview` with that lock. `refresh-matview` is class expand.
 
 ## Errors
 
-- [OKM1900](/docs/reference/errors#okm1900)
-- [OKM1901](/docs/reference/errors#okm1901)
-- [OKM1120](/docs/reference/errors#okm1120)
-- [OKM1822](/docs/reference/errors#okm1822)
-- [OKM1902](/docs/reference/errors#okm1902)
-- [OKM1820](/docs/reference/errors#okm1820)
+- [OKM1900](/docs/reference/errors#okm1900): A cycle in the view dependency list is OKM1900.
+- [OKM1901](/docs/reference/errors#okm1901): A view column left non-null that comes back NULL throws OKM1901.
+- [OKM1120](/docs/reference/errors#okm1120): `orderBy` on a view read without `limit` is OKM1120.
+- [OKM1822](/docs/reference/errors#okm1822): `refresh: "concurrently"` without a unique index on plain columns is OKM1822.
+- [OKM1902](/docs/reference/errors#okm1902): `okm doctor` warns OKM1902 when the session role cannot select a base table of a security-invoker view.
+- [OKM1820](/docs/reference/errors#okm1820): A tenant view that hides the tenant key is OKM1820.
 
 ## Version [feature="view.typed"]
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.
