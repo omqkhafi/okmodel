@@ -15,6 +15,17 @@ import { gzipSync } from "node:zlib";
 import { exitOnProblems } from "./report.js";
 import { repoRoot } from "./root.js";
 
+/**
+ * Bun binary that is running this process.
+ *
+ * Size builds spawn this instead of `bun` on `PATH`. A different Bun changes the bytes.
+ *
+ * @returns `process.execPath`
+ */
+export function bunExecutable(): string {
+  return process.execPath;
+}
+
 /** Published entry the runtime budget measures. D127. */
 export const RUNTIME_ENTRY = "src/contracts/index.ts";
 
@@ -28,6 +39,21 @@ export const PG_ENTRY = "src/dialects/pg/index.ts";
 
 /** Tree-shaken 10-table app. D133. Byte size is reported. It is not a gate. */
 export const APP_ENTRY = "scripts/app-startup.ts";
+
+/**
+ * Featureless connect app for the single-file bundle report.
+ *
+ * `connect` from `okmodel/pg/bun`, `schema()`, and one table. Not a gate (D365).
+ */
+export const SINGLE_FILE_CONNECT_ENTRY = "scripts/app-connect-bundle.ts";
+
+/**
+ * How {@link measureSingleFileConnect} builds the reported bundle.
+ *
+ * Gzip is level 9. Compiler inputs are metafile paths that contain `catalog-compile`.
+ */
+export const SINGLE_FILE_CONNECT_METHOD =
+  "bun build scripts/app-connect-bundle.ts --target=bun --minify (single file; gzip level 9; metafile inputs containing catalog-compile)";
 
 /** The same app with `archivable()` on one table. Reported, not gated (D167). */
 export const ARCHIVABLE_ENTRY = "scripts/app-archivable.ts";
@@ -272,7 +298,7 @@ export function measureEntry(
   try {
     const proc = Bun.spawnSync(
       [
-        "bun",
+        bunExecutable(),
         "build",
         join(root, entry),
         "--target",
@@ -362,7 +388,7 @@ export function measureStartup(
   try {
     const proc = Bun.spawnSync(
       [
-        "bun",
+        bunExecutable(),
         "build",
         join(root, entry),
         "--target",
@@ -406,6 +432,19 @@ function walkAll(dir: string, file: string, seen: Set<string>): void {
       if (name !== undefined) walkAll(dir, name, seen);
     }
   }
+}
+
+/**
+ * Built entry filename for `entry`.
+ *
+ * `bun build --outdir` names the file from the entry's basename.
+ *
+ * @param entry - Source entry, possibly under a directory
+ * @returns The JavaScript filename in the output directory
+ */
+function builtEntryName(entry: string): string {
+  const base = entry.split("/").pop() ?? entry;
+  return base.endsWith(".ts") ? `${base.slice(0, -".ts".length)}.js` : base;
 }
 
 function walkStartup(dir: string, file: string, seen: Set<string>, lazy: Set<string>): void {
@@ -753,7 +792,7 @@ export async function startupGraphSources(
   try {
     const proc = Bun.spawnSync(
       [
-        "bun",
+        bunExecutable(),
         "build",
         join(root, entry),
         "--target",
@@ -780,13 +819,6 @@ export async function startupGraphSources(
 }
 
 /**
- * Fails when the app fixture's startup graph contains an operator it does not import,
- * or the timestamps trait and its clock.
- *
- * @param root - Repository root
- * @returns Problem lines. Empty when only `eq` is present
- */
-/**
  * `okmodel/session` must not load the roles config until `okmodel/session/role`.
  *
  * @param root - Repository root
@@ -797,7 +829,7 @@ export function sessionRoleProblems(root: string): readonly string[] {
   try {
     const proc = Bun.spawnSync(
       [
-        "bun",
+        bunExecutable(),
         "build",
         join(root, "src/runtime/session/index.ts"),
         "--target",
@@ -879,14 +911,28 @@ export async function featurelessCompilerProblems(root: string): Promise<readonl
   return problems;
 }
 
-export function shakenOperatorProblems(root: string): readonly string[] {
+/**
+ * Fails when the app fixture's startup graph contains an operator it does not import,
+ * or the timestamps trait and its clock.
+ *
+ * Traits, tenancy, and the clock are read from the startup chunks only. A lazy
+ * chunk such as `tenancy/scope-pool.js`, imported from `topology.ts`, is not a
+ * startup failure. `eq`, validation, and unused operators are still read from
+ * every chunk.
+ *
+ * @param root - Repository root, or the directory that holds `entry`
+ * @param entry - App entry relative to `root`. Defaults to the featureless fixture
+ * @returns Problem lines. Empty when the startup graph is the featureless fixture
+ */
+export function shakenOperatorProblems(root: string, entry: string = APP_ENTRY): readonly string[] {
   const dir = mkdtempSync(join(tmpdir(), "okm-shake-"));
+  const built = builtEntryName(entry);
   try {
     const proc = Bun.spawnSync(
       [
-        "bun",
+        bunExecutable(),
         "build",
-        join(root, APP_ENTRY),
+        join(root, entry),
         "--target",
         "node",
         "--splitting",
@@ -911,14 +957,14 @@ export function shakenOperatorProblems(root: string): readonly string[] {
     }
     const startup = new Set<string>();
     const lazy = new Set<string>();
-    walkStartup(dir, "app-startup.js", startup, lazy);
+    walkStartup(dir, built, startup, lazy);
     for (const name of lazy) startup.delete(name);
     let startupText = "";
     for (const name of startup) startupText += readFileSync(join(dir, name), "utf8");
-    if (startupText.includes("src/runtime/traits/") || text.includes("src/runtime/traits/")) {
+    if (startupText.includes("src/runtime/traits/")) {
       problems.push("size: app fixture kept okmodel/traits");
     }
-    if (startupText.includes("src/runtime/tenancy/") || text.includes("src/runtime/tenancy/")) {
+    if (startupText.includes("src/runtime/tenancy/")) {
       problems.push("size: app fixture kept okmodel/tenancy");
     }
     if (startupText.includes(" = now()")) {
@@ -976,7 +1022,7 @@ function oneColdImport(file: string): number {
 }
 
 function printQueryLatency(root: string): readonly string[] {
-  const proc = Bun.spawnSync(["bun", join(root, "scripts/query-latency.ts")], {
+  const proc = Bun.spawnSync([bunExecutable(), join(root, "scripts/query-latency.ts")], {
     cwd: root,
     stdout: "pipe",
     stderr: "pipe",
@@ -1015,7 +1061,7 @@ export function bundleInputBytes(
   try {
     const proc = Bun.spawnSync(
       [
-        "bun",
+        bunExecutable(),
         "build",
         join(root, entry),
         "--target",
@@ -1047,6 +1093,76 @@ export function bundleInputBytes(
       }
     }
     return { total, files };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** Minified single-file connect bundle. Reported, not gated (D365). */
+export type SingleFileConnectSize = {
+  readonly minBytes: number;
+  readonly gzipBytes: number;
+  /** Distinct metafile inputs across outputs. */
+  readonly inputCount: number;
+  /** Inputs whose path contains the catalog compiler. */
+  readonly compilerInputs: readonly string[];
+  readonly method: string;
+};
+
+/**
+ * Minifies {@link SINGLE_FILE_CONNECT_ENTRY} into one file and lists compiler inputs.
+ *
+ * A dynamic import of `catalog-compile.ts` is inlined. The startup graph stubs
+ * that import, so this row is the bundle a featureless `connect` actually ships (D365).
+ *
+ * @param root - Repository root
+ * @returns Minified bytes, gzip bytes, and the compiler inputs
+ */
+export function measureSingleFileConnect(root: string): SingleFileConnectSize {
+  const dir = mkdtempSync(join(tmpdir(), "okm-file-"));
+  const outfile = join(dir, "app.js");
+  const meta = join(dir, "meta.json");
+  try {
+    const proc = Bun.spawnSync(
+      [
+        bunExecutable(),
+        "build",
+        join(root, SINGLE_FILE_CONNECT_ENTRY),
+        "--target",
+        "bun",
+        "--minify",
+        "--outfile",
+        outfile,
+        `--metafile=${meta}`,
+      ],
+      { cwd: root, stdout: "pipe", stderr: "pipe" },
+    );
+    if (proc.exitCode !== 0) {
+      throw new Error(
+        `bun build ${SINGLE_FILE_CONNECT_ENTRY} exited ${String(proc.exitCode)}\n${proc.stderr.toString()}`,
+      );
+    }
+    const bytes = readFileSync(outfile);
+    const graph = JSON.parse(readFileSync(meta, "utf8")) as {
+      outputs: Record<string, { inputs: Record<string, { bytesInOutput: number }> }>;
+    };
+    const inputs = new Set<string>();
+    const compilerInputs: string[] = [];
+    for (const output of Object.values(graph.outputs)) {
+      for (const file of Object.keys(output.inputs)) {
+        const key = file.startsWith(root) ? file.slice(root.length + 1) : file;
+        inputs.add(key);
+        if (key.includes("catalog-compile")) compilerInputs.push(key);
+      }
+    }
+    compilerInputs.sort();
+    return {
+      minBytes: bytes.byteLength,
+      gzipBytes: gzipSync(bytes, { level: 9 }).byteLength,
+      inputCount: inputs.size,
+      compilerInputs,
+      method: SINGLE_FILE_CONNECT_METHOD,
+    };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -1095,7 +1211,17 @@ export function exportShakeProblems(
         `import { ${item.name} } from ${JSON.stringify(from)};\nexport const keep = ${item.use ?? item.name};\n`,
       );
       const proc = Bun.spawnSync(
-        ["bun", "build", entry, "--target", "node", "--outdir", dir, "--external", "postgres"],
+        [
+          bunExecutable(),
+          "build",
+          entry,
+          "--target",
+          "node",
+          "--outdir",
+          dir,
+          "--external",
+          "postgres",
+        ],
         { cwd: root, stdout: "pipe", stderr: "pipe" },
       );
       if (proc.exitCode !== 0) {
@@ -1214,6 +1340,17 @@ async function reportSize(): Promise<void> {
     console.log(formatStubbed(appStubbed));
     console.log(formatReference(app, true));
     console.log(formatTotal(app));
+    try {
+      const file = measureSingleFileConnect(root);
+      const compilers = file.compilerInputs.join(", ");
+      console.log(
+        `size: ${SINGLE_FILE_CONNECT_ENTRY} single-file min ${String(file.minBytes)} bytes, gzip ${String(file.gzipBytes)} bytes, inputs ${String(file.inputCount)}, compiler ${compilers.length > 0 ? compilers : "(none)"} (${file.method})`,
+      );
+    } catch (error) {
+      console.error(
+        `size: single-file connect report failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
     const archivable = measureStartup(
       root,
       ARCHIVABLE_ENTRY,

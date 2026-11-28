@@ -16,6 +16,8 @@ CI boots the example with Bun only. The [Hono](/docs/frameworks/hono) example sh
 
 `armCatalog()` is not required, including a single-file Node or Lambda bundle of this server. Queries and mapped constraint errors do not call it. Call `armCatalog()` from `okmodel/pg/catalog` only before a direct `schema().catalog` read in a bundle that has no compiler file.
 
+A single-file bundle of this server carries the catalog compiler. `connect` imports it when the database has `okm_meta` and the process has no catalog artifact, and the bundler inlines that import. Pass `catalog` on `connect`, or leave `.okm/catalog.hash` and `catalog.json` from `okm build` where the process can read them, to skip running the compiler. The compiler stays in the file.
+
 ## Install
 
 ```sh

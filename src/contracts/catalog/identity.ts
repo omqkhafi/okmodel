@@ -9,6 +9,8 @@ import { catalogError } from "../error.js";
 import { assertIdentifier } from "./identifier.js";
 import type { Namespace, ObjectIdentity, ObjectKind, ObjectRef } from "./types.js";
 
+// Re-exported for callers outside the connect bundle. The catalog compiler
+// imports `identity-key.ts` directly so this line stays tree-shaken at startup (D365).
 export { identityKey, identityToJson, namespaceToJson } from "./identity-key.js";
 
 const UUID_HEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

@@ -13,7 +13,7 @@ import { pathToFileURL } from "node:url";
 
 import type { Casing } from "../../dialects/pg/casing.js";
 import { catalog } from "../../contracts/catalog/build.js";
-import { enumType } from "../../contracts/catalog/enum.js";
+import { enumType } from "../../contracts/catalog/enum-type.js";
 import { staticNamespace } from "../../contracts/catalog/identity.js";
 import { deterministicName } from "../../contracts/catalog/identifier.js";
 import { column, constraint, index, sequence, table } from "../../contracts/catalog/object.js";

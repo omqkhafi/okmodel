@@ -75,7 +75,7 @@ test("a cold import loads the startup chunks and not the lazy ones", async () =>
   try {
     const proc = Bun.spawnSync(
       [
-        "bun",
+        process.execPath,
         "build",
         join(dir, "entry.ts"),
         "--target",

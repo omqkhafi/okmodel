@@ -24,7 +24,8 @@ import {
 } from "./identity.js";
 import { catalog } from "./build.js";
 import { compositeType, isComposite } from "./composite.js";
-import { domainType, enumType, isDomain } from "./enum.js";
+import { domainType, enumType } from "./enum-type.js";
+import { isDomain } from "./enum.js";
 import { isRange, rangeType } from "./range.js";
 import { extensionObject } from "./extension.js";
 import { defaultPrivilegeObject, grantObject, roleObject } from "./privilege.js";

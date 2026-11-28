@@ -9,7 +9,7 @@ import type { Sql } from "postgres";
 import { catalog } from "../src/contracts/catalog/build.js";
 import { catalogHash, serializeCatalog } from "../src/contracts/catalog/document.js";
 import { staticNamespace } from "../src/contracts/catalog/identity.js";
-import { enumType } from "../src/contracts/catalog/enum.js";
+import { enumType } from "../src/contracts/catalog/enum-type.js";
 import { column, constraint, index, sequence, table } from "../src/contracts/catalog/object.js";
 import type { Catalog, CatalogObject, Provenance } from "../src/contracts/catalog/types.js";
 import { renderCatalog } from "../src/dialects/pg/ddl.js";

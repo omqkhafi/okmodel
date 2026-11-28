@@ -4,6 +4,8 @@ Numbers are from `bun run size` ([`scripts/size.ts`](../scripts/size.ts)). Gates
 
 The gated bytes are the static startup graph: every relative dynamic `import()` is an empty module. The reference rows are the full `bun build`, printed and not gated. The runtime entry has no dynamic import, so its gate is the single-file build. Adapter incremental bytes are still the full adapter build; lazy adapter chunks count (D245). Those adapter gates are 17,000 and 12,700. Byte gates fail in CI. Install size is the unminified `dist/` and is printed, not gated.
 
+`shakenOperatorProblems` reads traits, tenancy, and the clock from the startup chunks only. A lazy `tenancy/scope-pool` chunk is not a failure. A static import of `okmodel/tenancy` is. The pull-request size report also prints one single-file bundle of `scripts/app-connect-bundle.ts`: `bun build --target=bun --minify`, gzip level 9, and the metafile inputs whose path contains `catalog-compile`. That row is not a gate (D365). An artifact skips running the compiler. The file still carries it.
+
 Sample on `d528978` (P101):
 
 | Graph | Minified | Gzip | Cold import | Gate |
