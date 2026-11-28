@@ -28,18 +28,18 @@ export const app = schema({ casing: "snake", tables: [orders] });
 
 export async function seen(url: string): Promise<number> {
   await using db = connect(url, { schema: app });
+  await db.orders.insert({ status: "open" });
   let count = 0;
   await using updates = db.orders.watch(async () => {
     const rows = await db.orders.find({ where: { status: "open" }, limit: 20 });
     count = rows.length;
   });
-  await db.orders.insert({ status: "open" });
   await updates.run();
   return count;
 }
 ```
 
-`const updates = db.orders.watch(...)` returns the handle immediately. `await using` calls `stop()`. `updates.state` is `"push"`, `"poll"`, or `"stopped"`. `updates.stats` counts runs, errors, wakes, and queries. `await updates.run()` runs the handler now. `updates.stop()` ends it.
+`const updates = db.orders.watch(...)` returns the handle immediately. `await using` calls `stop()`. `updates.state` is `"push"`, `"poll"`, or `"stopped"`. `updates.stats` counts runs, errors, wakes, and queries. `await updates.run()` settles the read already running, or starts one. `updates.stop()` ends it.
 
 The handler runs one at a time. Wakes that arrive while it is running become one more run after it finishes. A thrown handler goes to `onError` and the process stays up. The next run tries again.
 
