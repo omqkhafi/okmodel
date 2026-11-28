@@ -208,6 +208,7 @@ const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/docs/guides/soft-delete": Archive,
   "/docs/guides/multi-tenant": Building2,
   "/docs/guides/paginate": GalleryHorizontal,
+  "/docs/guides/queues-leases": Lock,
   "/docs/guides/required-column": Columns3,
   "/docs/guides/migrations-in-ci": GitPullRequest,
   "/docs/guides/from-prisma": Map,

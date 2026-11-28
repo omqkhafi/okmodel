@@ -11,7 +11,7 @@ The fenced write that the typed API cannot express is `raw`. One form inlines th
 
 ```ts title="jobs.ts"
 import { connect } from "okmodel/pg/postgresjs";
-import { raw, schema, table, t } from "okmodel/pg";
+import { schema, table, t } from "okmodel/pg";
 
 const jobs = table("jobs", {
   id: t.identity(),
@@ -35,16 +35,22 @@ export async function claim(url: string, worker: string) {
     });
     const job = rows[0];
     if (job === undefined) return undefined;
-    const updated = await tx.jobs.update(
-      {
-        where: { id: job.id, fence: job.fence },
-        set: { owner: worker, fence: job.fence + 1 },
-      },
-      { returning: ["id", "fence", "leasedUntil"] },
-    );
-    return updated[0];
+    const updated = await tx.jobs.update({
+      where: { id: job.id, fence: job.fence },
+      set: { owner: worker, fence: job.fence + 1 },
+    });
+    if (updated.count !== 1) return undefined;
+    return { id: job.id, fence: job.fence + 1 };
   });
 }
+```
+
+`raw` is the statement the typed update cannot say. The docs typecheck has no `.okm/raw.lock.json`, so this fence is `no-check`. `okm raw sync` describes it before it runs.
+
+```ts title="fence.ts" no-check="okm raw sync describes these statements; the docs typecheck has no lock file"
+import { connect } from "okmodel/pg/postgresjs";
+import { raw } from "okmodel/pg";
+import { app } from "./jobs.js";
 
 export async function fenceLiteral(url: string, id: number, token: number) {
   await using db = connect(url, { schema: app, max: 1 });

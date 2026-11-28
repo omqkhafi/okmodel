@@ -96,13 +96,22 @@ else
     async () => {
       const page = readFileSync(join(root, "site/content/docs/guides/queues-leases.mdx"), "utf8");
       const source = body(page, "jobs.ts");
+      const fenceSource = body(page, "fence.ts");
       const database = await createIsolatedDatabase(vector.url);
       const cwd = mkdtempSync(join(tmpdir(), "okm-queue-"));
       try {
         const schemaFile = join(cwd, "schema.ts");
         writeFileSync(schemaFile, rewrite(source));
         mkdirSync(join(cwd, "src"));
-        writeFileSync(join(cwd, "src", "jobs.ts"), source.endsWith("\n") ? source : `${source}\n`);
+        writeFileSync(
+          join(cwd, "src", "fence.ts"),
+          fenceSource.endsWith("\n") ? fenceSource : `${fenceSource}\n`,
+        );
+        const fenceFile = join(cwd, "fence-run.ts");
+        writeFileSync(
+          fenceFile,
+          rewrite(fenceSource).replaceAll('from "./jobs.js"', `from ${JSON.stringify(schemaFile)}`),
+        );
         writeFileSync(
           join(cwd, "okmodel.config.ts"),
           [
@@ -114,13 +123,16 @@ else
         const example = (await import(
           `${pathToFileURL(schemaFile).href}?t=${String(Date.now())}`
         )) as Example;
+        const fence = (await import(
+          `${pathToFileURL(fenceFile).href}?t=${String(Date.now())}`
+        )) as Example;
         if (example.app === undefined) throw new Error("jobs.ts exports no app");
         await apply(example.app.catalog, database.url);
         await runRawSync(cwd, false, { allowProtected: false, allowPooler: false });
         registerRawLock(JSON.parse(readFileSync(join(cwd, ".okm/raw.lock.json"), "utf8")));
         const claim = example.claim;
-        const fenceLiteral = example.fenceLiteral;
-        const fenceParams = example.fenceParams;
+        const fenceLiteral = fence.fenceLiteral;
+        const fenceParams = fence.fenceParams;
         if (
           typeof claim !== "function" ||
           typeof fenceLiteral !== "function" ||
