@@ -79,7 +79,7 @@ export type CompileExclusion = (
  */
 export function loadCatalogCompiler(): (input: CatalogCompileInput) => Catalog {
   if (installedCompiler !== undefined) return installedCompiler;
-  const loaded = requireSibling(COMPILER) as {
+  const loaded = loadSibling(COMPILER) as {
     compileCatalog?: (input: CatalogCompileInput) => Catalog;
   };
   if (typeof loaded.compileCatalog !== "function") missing(COMPILER[0]);
@@ -95,9 +95,52 @@ export function loadCatalogCompiler(): (input: CatalogCompileInput) => Catalog {
  */
 export function loadCompileExclusion(): CompileExclusion {
   if (installedExclusion !== undefined) return installedExclusion;
-  const loaded = requireSibling(EXCLUSION) as { compileExclusion?: CompileExclusion };
+  const loaded = loadSibling(EXCLUSION) as { compileExclusion?: CompileExclusion };
   if (typeof loaded.compileExclusion !== "function") missing(EXCLUSION[0]);
   return loaded.compileExclusion;
+}
+
+/**
+ * Loads a sibling module, or names the bundle fix when the file is absent.
+ *
+ * `createRequire` looks beside this file. A single-file bundle has no sibling,
+ * so the load is `MODULE_NOT_FOUND`. {@link import("./catalog-arm.js").armCatalog}
+ * installs the compilers before that read.
+ *
+ * @param specifiers - Paths tried in order
+ * @returns The loaded module
+ */
+function loadSibling(specifiers: readonly string[]): object {
+  try {
+    return requireSibling(specifiers);
+  } catch (error) {
+    if (!absentModule(error)) throw error;
+    throw new OkmError(
+      "OKM1020",
+      `Catalog compiler ${specifiers[0]} is not next to this file. A single-file bundle has no sibling module.`,
+      {
+        cause: error,
+        fix: {
+          summary:
+            'Import { armCatalog } from "okmodel/pg/catalog" and call armCatalog() before reading schema().catalog.',
+        },
+      },
+    );
+  }
+}
+
+/**
+ * Whether `error` is a missing sibling, not a bug inside the compiler.
+ *
+ * @param error - Caught value
+ * @returns `true` when the module file is absent
+ */
+function absentModule(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const code = Reflect.get(error, "code");
+  if (code === "MODULE_NOT_FOUND" || code === "ERR_MODULE_NOT_FOUND") return true;
+  const message = error instanceof Error ? error.message : "";
+  return message.includes("Cannot find module") || message.includes("Cannot find package");
 }
 
 function missing(specifier: string): never {

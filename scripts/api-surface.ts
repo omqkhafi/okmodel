@@ -39,6 +39,8 @@ export const API_ENTRIES = [
   { subpath: "okmodel/pg/fuzzystrmatch", file: "src/dialects/pg/ext/fuzzystrmatch.ts" },
   { subpath: "okmodel/pg/pgcrypto", file: "src/dialects/pg/ext/pgcrypto.ts" },
   { subpath: "okmodel/pg", file: "src/dialects/pg/index.ts" },
+  { subpath: "okmodel/pg/catalog", file: "src/dialects/pg/catalog-arm.ts" },
+  { subpath: "okmodel/event", file: "src/dialects/pg/event/index.ts" },
   { subpath: "okmodel/pg/postgresjs", file: "src/runtime/pg/postgresjs.ts" },
   { subpath: "okmodel/pg/pglite", file: "src/runtime/pg/pglite.ts" },
   { subpath: "okmodel/pg/pg", file: "src/runtime/pg/pg.ts" },
