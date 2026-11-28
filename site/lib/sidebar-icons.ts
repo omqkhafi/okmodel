@@ -178,6 +178,7 @@ const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/docs/queries/search-and-trees": TextSearch,
   "/docs/queries/where-operators": Filter,
   "/docs/queries/transactions": ArrowLeftRight,
+  "/docs/queries/watch": Bell,
   "/docs/queries/shape-results": ChartColumn,
   "/docs/queries/computed": Sigma,
   "/docs/schema/required-rows": Rows3,

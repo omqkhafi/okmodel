@@ -6,9 +6,14 @@
  */
 
 import { open } from "../../adapters/pg/postgresjs.js";
+import { armListen } from "../../runtime/client.js";
 import { explainDelivery, queueWarning } from "../../runtime/watch.js";
 import { driverUrl } from "./driver-url.js";
 import { finishQuiet } from "./lost.js";
+
+armListen(1, () =>
+  import("../../runtime/listen-postgresjs.js").then((mod) => mod.openPostgresJsListen),
+);
 
 /**
  * Runs the self-test against `url` and returns the doctor lines.

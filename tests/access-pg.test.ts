@@ -162,7 +162,9 @@ postgresTest(
             },
             declared.objects,
           );
-          expect(await doctorProject(cwd, undefined)).toBe("no triggers\n");
+          expect(await doctorProject(cwd, undefined)).toBe(
+            "no triggers\nwatch: push works on this URL (a private ping was delivered).\n",
+          );
         } finally {
           await pool.close();
         }

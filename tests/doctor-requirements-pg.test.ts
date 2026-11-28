@@ -40,7 +40,9 @@ postgresTest(
     const database = await createIsolatedDatabase();
     const cwd = project(database.url, plainSchema());
     try {
-      expect(await doctorProject(cwd, undefined)).toBe("no triggers\n");
+      expect(await doctorProject(cwd, undefined)).toBe(
+        "no triggers\nwatch: push works on this URL (a private ping was delivered).\n",
+      );
       const checked = await checkProject(cwd);
       expect(checked.findings).toEqual([]);
       expect(checked.notice).toBeUndefined();
@@ -69,7 +71,9 @@ postgresTest(
           const check = await refused(() => checkProject(cwd));
           expect(check.code).toBe("OKM1802");
         } else {
-          expect(await doctorProject(cwd, undefined)).toBe("no triggers\n");
+          expect(await doctorProject(cwd, undefined)).toBe(
+            "no triggers\nwatch: push works on this URL (a private ping was delivered).\n",
+          );
           expect((await checkProject(cwd)).findings).toEqual([]);
         }
       } finally {
@@ -93,7 +97,9 @@ postgresTest(
       if (!(await extensionAvailable(sql, "pg_trgm"))) return;
       const cwd = project(database.url, trigramSchema());
       try {
-        expect(await doctorProject(cwd, undefined)).toBe("no triggers\n");
+        expect(await doctorProject(cwd, undefined)).toBe(
+          "no triggers\nwatch: push works on this URL (a private ping was delivered).\n",
+        );
         const checked = await checkProject(cwd);
         expect(checked.findings).toEqual([]);
         expect(checked.notice).toBeUndefined();
@@ -150,7 +156,9 @@ postgresTest(
       await sql.unsafe("create extension pg_trgm");
       const cwd = project(database.url, trigramSchema());
       try {
-        expect(await doctorProject(cwd, undefined)).toBe("no triggers\n");
+        expect(await doctorProject(cwd, undefined)).toBe(
+          "no triggers\nwatch: push works on this URL (a private ping was delivered).\n",
+        );
       } finally {
         rmSync(cwd, { recursive: true, force: true });
       }
@@ -173,7 +181,9 @@ postgresTest(
       const cwd = project(database.url, trigramSchema());
       try {
         await cli(cwd, ["generate", "init"]);
-        expect(await doctorProject(cwd, undefined)).toBe("no triggers\n");
+        expect(await doctorProject(cwd, undefined)).toBe(
+          "no triggers\nwatch: push works on this URL (a private ping was delivered).\n",
+        );
         const checked = await checkProject(cwd);
         expect(checked.findings).toEqual([]);
         expect(checked.notice).toBeUndefined();
@@ -214,7 +224,9 @@ postgresTest(
     const database = await createIsolatedDatabase();
     const cwd = project(database.url, btreeInt4Schema());
     try {
-      expect(await doctorProject(cwd, undefined)).toBe("no triggers\n");
+      expect(await doctorProject(cwd, undefined)).toBe(
+        "no triggers\nwatch: push works on this URL (a private ping was delivered).\n",
+      );
       expect((await checkProject(cwd)).findings).toEqual([]);
       await cli(cwd, ["generate", "init"]);
       const applied = await cli(cwd, ["migrate", "apply"]);

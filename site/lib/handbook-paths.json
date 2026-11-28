@@ -54,6 +54,7 @@
   "/docs/queries/shape-results",
   "/docs/queries/transactions",
   "/docs/queries/typed-raw-sql",
+  "/docs/queries/watch",
   "/docs/queries/where-operators",
   "/docs/queries/write-rows",
   "/docs/reference/cli",

@@ -1217,6 +1217,15 @@
     "docs": "docs/errors/OKM1933.md"
   },
   {
+    "code": "OKM1934",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "watch was started with push: required, and this URL cannot deliver notifications. The driver has no listen socket, LISTEN failed, or the delivery self-test received nothing. The subscription stopped.",
+    "fix": "Use a direct URL, or connect({ listenUrl }) when the application URL is pooled. Omit push: required to poll.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1934.md"
+  },
+  {
     "code": "OKM1928",
     "kind": "invalid",
     "category": "input",
@@ -2769,6 +2778,15 @@
         "docs": "docs/errors/OKM2211.md#escape"
       }
     ]
+  },
+  {
+    "code": "OKM2212",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "pg_notification_queue_usage() is at least one half. A full queue drops NOTIFY. watch keeps reading on its timer, and the warning is the queue.",
+    "fix": "Slow the writers, set watch push: false on a hot table, or raise throttle so commits are not waiting on the notification queue.",
+    "retryable": false,
+    "docs": "docs/errors/OKM2212.md"
   },
   {
     "code": "OKM2300",
