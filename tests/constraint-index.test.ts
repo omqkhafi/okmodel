@@ -123,8 +123,8 @@ function spyCatalog(source: object): () => number {
   let reads = 0;
   const desc = Object.getOwnPropertyDescriptor(source, "catalog");
   if (desc?.get === undefined) throw new Error("catalog getter missing");
-  // oxlint-disable-next-line typescript/unbound-method -- the getter is invoked on the schema object
   const read = (target: object): unknown =>
+    // oxlint-disable-next-line typescript/unbound-method -- the getter is invoked on the schema object
     Reflect.apply(desc.get as (this: object) => unknown, target, []);
   Object.defineProperty(source, "catalog", {
     configurable: true,
