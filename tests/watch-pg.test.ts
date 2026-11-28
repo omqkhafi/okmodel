@@ -8,11 +8,12 @@
 import { expect } from "bun:test";
 import net from "node:net";
 
+import { catalog } from "../src/contracts/catalog/build.js";
 import { OkmError } from "../src/contracts/error.js";
 import type { Catalog } from "../src/contracts/catalog/types.js";
 import { renderCatalog } from "../src/dialects/pg/ddl.js";
 import { introspectSchema, type CatalogQuery } from "../src/dialects/pg/introspect.js";
-import { schema, table, t } from "../src/dialects/pg/index.js";
+import { fragment, schema, table, t } from "../src/dialects/pg/index.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { createIsolatedDatabase, openPostgres } from "../packages/harness/src/postgres.js";
 import { replicaUrl } from "../packages/harness/src/topology.js";
@@ -67,6 +68,8 @@ postgresTest(gate, "proof:watch.wake", async () => {
       await sleep(200);
       expect(calls).toBe(before);
     } finally {
+      hold = false;
+      release();
       await sub.stop();
     }
   });
@@ -547,6 +550,332 @@ postgresTest(
   90_000,
 );
 
+postgresTest(
+  gate,
+  "a wake during a shared read reaches a subscriber that joins late",
+  async () => {
+    await withApp(app, async (db, url) => {
+      const sql = openPostgres(url);
+      try {
+        await installNap(sql, 6);
+        const slow = { where: { status: fragment`(select okm_nap())` }, limit: 20 };
+        const seen: string[][] = [];
+        const left = db.orders.watch(slow, { every: "10m" }, (rows) => {
+          seen.push(rows.map((row) => row.status));
+        });
+        await waitForSleep(url);
+        await db.orders.insert({ id: 1, status: "open" });
+        await sleep(800);
+        if (left.stats.wakes < 1) {
+          throw new Error(
+            `no wake state=${left.state} wakes=${String(left.stats.wakes)} runs=${String(left.stats.runs)} errors=${String(left.stats.errors)} queries=${String(left.stats.queries)}`,
+          );
+        }
+        const joined: string[][] = [];
+        const right = db.orders.watch(slow, { every: "10m" }, (rows) => {
+          joined.push(rows.map((row) => row.status));
+        });
+        await waitFor(() => joined.some((rows) => rows.includes("open")), 3_000);
+        await waitFor(() => seen.some((rows) => rows.includes("open")), 12_000);
+        expect(right.stats.queries).toBeGreaterThan(0);
+        await left.stop();
+        await right.stop();
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
+    });
+  },
+  25_000,
+);
+
+postgresTest(
+  gate,
+  "until does not join a read that started before the wake",
+  async () => {
+    await withApp(app, async (db, url) => {
+      const sql = openPostgres(url);
+      try {
+        await installNap(sql, 6);
+        const slow = { where: { status: fragment`(select okm_nap())` }, limit: 1 };
+        const left = db.orders.watch(slow, { every: "10m" }, () => undefined);
+        await waitForSleep(url);
+        await db.orders.insert({ id: 7, status: "open" });
+        await waitFor(() => left.stats.wakes >= 1);
+        const started = Date.now();
+        const row = await db.orders.until(slow, { timeout: "8s" });
+        expect(Date.now() - started).toBeLessThan(2_500);
+        expect(row).toMatchObject({ id: 7, status: "open" });
+        await left.stop();
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
+    });
+  },
+  20_000,
+);
+
+postgresTest(
+  gate,
+  "identical subscriptions share one query when no wake lands during the read",
+  async () => {
+    let finds = 0;
+    await withApp(
+      app,
+      async (db) => {
+        const query = { where: { status: "open" }, limit: 10 };
+        const left = db.orders.watch(query, { every: "10m" }, () => undefined);
+        const right = db.orders.watch(query, { every: "10m" }, () => undefined);
+        await left.run();
+        await right.run();
+        const before = finds;
+        await db.orders.insert({ id: 1, status: "open" });
+        await waitFor(() => finds >= before + 1);
+        await sleep(300);
+        expect(finds - before).toBe(1);
+        expect(left.stats.queries + right.stats.queries).toBe(finds);
+        await left.stop();
+        await right.stop();
+      },
+      (event) => {
+        if (event.op === "find") finds += 1;
+      },
+    );
+  },
+  15_000,
+);
+
+postgresTest(
+  gate,
+  "scoped clients do not share a live read",
+  async () => {
+    const notes = table(
+      "notes",
+      { id: t.integer().primaryKey(), title: t.text() },
+      { watch: true },
+    );
+    const columned = schema({
+      casing: "snake",
+      tenancy: columnTenancy({ key: "tenantId", type: "text" }),
+      tables: [notes],
+    });
+    const acme = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c8d";
+    const beta = "01890c5a-8f0e-7c3a-9b2d-6e4f1a0b9c8e";
+    await withApp(columned, async (db, url) => {
+      const sql = openPostgres(url);
+      try {
+        await installNap(sql, 4);
+        const slow = { where: { title: fragment`(select okm_nap())` }, limit: 5 };
+        const left = db
+          .for({ tenantId: acme })
+          .notes.watch(slow, { every: "10m" }, () => undefined);
+        await waitForSleep(url);
+        const started = Date.now();
+        const right = db
+          .for({ tenantId: beta })
+          .notes.watch(slow, { every: "10m" }, () => undefined);
+        await right.run();
+        expect(Date.now() - started).toBeLessThan(2_000);
+        expect(left.stats.queries + right.stats.queries).toBe(2);
+        await left.stop();
+        await right.stop();
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
+    });
+  },
+  20_000,
+);
+
+postgresTest(
+  gate,
+  "stop waits for the handler and nothing runs after the pool closes",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const sql = openPostgres(database.url);
+    const db = connect(database.url, { schema: app, max: 2 }) as unknown as Client;
+    let calls = 0;
+    let finished = false;
+    let errors = 0;
+    try {
+      for (const statement of renderCatalog(app.catalog, "public")) await sql.unsafe(statement);
+      {
+        await using updates = db.orders.watch(
+          async () => {
+            calls += 1;
+            await sleep(400);
+            finished = true;
+          },
+          {
+            every: "10m",
+            onError: () => {
+              errors += 1;
+            },
+          },
+        );
+        await waitFor(() => calls === 1);
+        void updates;
+      }
+      expect(finished).toBe(true);
+      const after = calls;
+      await db.close();
+      await sleep(500);
+      expect(calls).toBe(after);
+      expect(errors).toBe(0);
+      let thrown = false;
+      const again = connect(database.url, { schema: app, max: 1 }) as unknown as Client;
+      try {
+        let seen: unknown;
+        const sub = again.orders.watch(
+          () => {
+            thrown = true;
+            throw new Error("handler failed");
+          },
+          {
+            every: "10m",
+            onError: (error: unknown) => {
+              seen = error;
+            },
+          },
+        );
+        await sub.run();
+        await sub.stop();
+        expect(thrown).toBe(true);
+        expect(seen).toBeInstanceOf(Error);
+      } finally {
+        await again.close();
+      }
+    } finally {
+      await sql.end({ timeout: 5 });
+      await database.close();
+    }
+  },
+  15_000,
+);
+
+postgresTest(
+  gate,
+  "truncate wakes a live read",
+  async () => {
+    await withApp(app, async (db, url) => {
+      await db.orders.insert({ id: 1, status: "open" });
+      const seen: number[] = [];
+      const sub = db.orders.watch({ limit: 10 }, { every: "10m" }, (rows) => {
+        seen.push(rows.length);
+      });
+      await sub.run();
+      expect(seen.at(-1)).toBe(1);
+      const sql = openPostgres(url);
+      try {
+        const triggers = await sql.unsafe(
+          `select tgname from pg_trigger t
+           join pg_class c on c.oid = t.tgrelid
+           where c.relname = 'orders' and t.tgname like 'okm_watch_%' and not t.tgisinternal
+           order by 1`,
+        );
+        expect(triggers.map((row) => String(row.tgname))).toEqual([
+          "okm_watch_delete",
+          "okm_watch_insert",
+          "okm_watch_truncate",
+          "okm_watch_update",
+        ]);
+        await sql.unsafe("truncate orders");
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
+      await waitFor(() => seen.at(-1) === 0, 3_000);
+      await sub.stop();
+    });
+  },
+  15_000,
+);
+
+postgresTest(gate, "truncate on a partitioned parent wakes and replans clean", async () => {
+  const events = table(
+    "events",
+    { id: t.integer(), tenantId: t.integer(), body: t.text() },
+    {
+      primaryKey: ["id", "tenantId"],
+      watch: true,
+      partition: { by: "hash", key: "tenantId", count: 4 },
+    },
+  );
+  const partitioned = schema({ casing: "snake", tables: [events] });
+  const database = await createIsolatedDatabase();
+  const sql = openPostgres(database.url);
+  const db = connect(database.url, { schema: partitioned, max: 2 }) as unknown as Client & {
+    events: TableApi;
+  };
+  try {
+    const plan = planMigration({
+      before: catalog([]),
+      after: partitioned.catalog,
+      schema: "public",
+      name: "create",
+    });
+    for (const step of plan.steps) await sql.unsafe(step.sql);
+    await db.events.insert({ id: 1, tenantId: 1, body: "a" });
+    const seen: number[] = [];
+    const sub = db.events.watch({ limit: 10 }, { every: "10m" }, (rows) => {
+      seen.push(rows.length);
+    });
+    await sub.run();
+    expect(seen.at(-1)).toBe(1);
+    await sql.unsafe("truncate events");
+    await waitFor(() => seen.at(-1) === 0, 3_000);
+    await sub.stop();
+    const live = await introspectSchema(queryOf(sql), "public", "public");
+    const again = planMigration({
+      before: live,
+      after: partitioned.catalog,
+      schema: "public",
+      name: "again",
+    });
+    expect(again.steps.map((step) => `${step.kind} ${step.sql}`)).toEqual([]);
+    await db.close();
+  } finally {
+    await sql.end({ timeout: 5 });
+    await database.close();
+  }
+});
+
+async function installNap(sql: ReturnType<typeof openPostgres>, seconds: number): Promise<void> {
+  await sql.unsafe(
+    `create sequence if not exists okm_nap_seq;
+     create or replace function okm_nap() returns boolean language plpgsql volatile as $fn$
+     begin
+       if nextval('okm_nap_seq') = 1 then
+         perform pg_sleep(${String(seconds)});
+       end if;
+       return true;
+     end
+     $fn$`,
+  );
+}
+
+async function waitForSleep(url: string): Promise<void> {
+  const sql = openPostgres(url);
+  const deadline = Date.now() + 5_000;
+  try {
+    for (;;) {
+      const rows = await sql.unsafe(
+        `select query from pg_stat_activity
+         where state = 'active' and query ilike '%okm_nap%' and query not ilike '%pg_stat_activity%'`,
+      );
+      if (rows.length > 0) return;
+      if (Date.now() > deadline) {
+        const active = await sql.unsafe(
+          `select state, left(query, 180) as query from pg_stat_activity
+           where datname = current_database() and pid <> pg_backend_pid()`,
+        );
+        throw new Error(`okm_nap did not start: ${JSON.stringify(active)}`);
+      }
+      await sleep(20);
+    }
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
 async function blackhole(open: typeof connect, port: number): Promise<void> {
   const database = await createIsolatedDatabase();
   const proxy = await tcpProxy(port);
@@ -600,12 +929,24 @@ async function timedCommits(
 }
 
 type Rows = { id: number; status: string; title: string };
-type Handle = { readonly state: string; run(): Promise<void>; stop(): Promise<void> };
+type Handle = {
+  readonly state: string;
+  readonly stats: {
+    readonly runs: number;
+    readonly errors: number;
+    readonly wakes: number;
+    readonly queries: number;
+  };
+  run(): Promise<void>;
+  stop(): Promise<void>;
+  [Symbol.asyncDispose](): Promise<void>;
+};
 type TableApi = {
   insert(row: object): Promise<unknown>;
   find(options: object): Promise<Rows[]>;
   watch(handler: () => unknown, options?: object): Handle;
-  watch(options: object, handler: (rows: Rows[]) => unknown, extra?: object): Handle;
+  watch(query: object, handler: (rows: Rows[]) => unknown): Handle;
+  watch(query: object, options: object, handler: (rows: Rows[]) => unknown): Handle;
   until(query: object, options: object): Promise<Rows>;
 };
 type Client = {

@@ -2,10 +2,11 @@
  * Statement-level watch triggers.
  *
  * One function per watched table. PostgreSQL refuses transition tables on a
- * trigger that lists more than one event, so a tenant table gets three
- * triggers (insert, update, delete) and the function branches on `TG_OP`.
- * A table with no tenant column uses the same three triggers and a body that
- * only notifies. `push: false` emits nothing.
+ * trigger that lists more than one event, and it refuses them on truncate, so
+ * a watched table gets four triggers (insert, update, delete, truncate). A
+ * tenant function branches on `TG_OP` and notifies `''` for truncate before it
+ * reads a transition table. A table with no tenant column uses the same four
+ * triggers and a body that only notifies. `push: false` emits nothing.
  *
  * The payload is `''` (wake every listener) or a JSON array of distinct tenant
  * keys. It is never row data. A payload longer than {@link WATCH_PAYLOAD_MAX}
@@ -22,6 +23,7 @@ import { WATCH_PAYLOAD_MAX, watchChannel } from "./watch-channel.js";
 const TRIGGER_INSERT = "okm_watch_insert";
 const TRIGGER_UPDATE = "okm_watch_update";
 const TRIGGER_DELETE = "okm_watch_delete";
+const TRIGGER_TRUNCATE = "okm_watch_truncate";
 
 /** A prepared table the compiler can see. */
 type WatchTable = CatalogCompileInput["prepared"][number];
@@ -30,10 +32,15 @@ type WatchTable = CatalogCompileInput["prepared"][number];
  * Whether `name` is a watch trigger this compiler emits.
  *
  * @param name - Trigger name
- * @returns True for the three watch trigger names
+ * @returns True for the four watch trigger names
  */
 export function isWatchTriggerName(name: string): boolean {
-  return name === TRIGGER_INSERT || name === TRIGGER_UPDATE || name === TRIGGER_DELETE;
+  return (
+    name === TRIGGER_INSERT ||
+    name === TRIGGER_UPDATE ||
+    name === TRIGGER_DELETE ||
+    name === TRIGGER_TRUNCATE
+  );
 }
 
 /**
@@ -109,6 +116,15 @@ export function watchObjects(input: CatalogCompileInput): CatalogObject[] {
         ...(tenant === undefined ? {} : { referencing: { old: "okm_old" } }),
         provenance,
       }),
+      triggerObject({
+        parent: item.parent,
+        name: TRIGGER_TRUNCATE,
+        timing: "after",
+        events: ["truncate"],
+        level: "statement",
+        calls: call,
+        provenance,
+      }),
     );
   }
   return objects;
@@ -151,6 +167,10 @@ function tenantBody(channel: string, columns: readonly string[]): string {
   return [
     "declare tenants text;",
     "begin",
+    "  if tg_op = 'TRUNCATE' then",
+    `    perform pg_notify('${channel}', '');`,
+    "    return null;",
+    "  end if;",
     "  if tg_op = 'INSERT' then",
     `    select json_agg(distinct ${expr})::text into tenants from okm_new;`,
     "  elsif tg_op = 'DELETE' then",
