@@ -83,6 +83,49 @@ if (POOLER_URL === undefined || POOLER_URL.length === 0) {
     }, 30_000);
   }
 
+  test("a committing procedure inside a transaction is OKM1551 before send", async () => {
+    const stamp = Math.random().toString(36).slice(2, 10);
+    const tableName = quoteIdent(`okm_hold_${stamp}`);
+    const routine = quoteIdent(`okm_hold_take_${stamp}`);
+    const direct = postgres(primaryUrl(), { max: 1, onnotice: () => {} });
+    const batches = table(`okm_hold_${stamp}`, { n: t.integer().primaryKey() });
+    const take = fn(`okm_hold_take_${stamp}`, {
+      kind: "procedure",
+      commits: true,
+      dependsOn: [batches],
+      body: "begin commit; end",
+    });
+    const app = schema({ tables: [batches], functions: [take] });
+    try {
+      await direct.unsafe(`create table ${tableName} (n integer primary key)`);
+      await direct.unsafe(
+        `create procedure ${routine}() language plpgsql as $okm$ begin insert into ${tableName} (n) values (1); commit; end $okm$`,
+      );
+      const pooled = connect(url, { schema: app, max: 1 });
+      try {
+        let failed: unknown;
+        await pooled.tx(async (tx) => {
+          try {
+            await take.run(tx, {});
+          } catch (error) {
+            failed = error;
+          }
+        });
+        expect(failed).toBeInstanceOf(OkmError);
+        expect((failed as OkmError).code).toBe("OKM1551");
+        expect((failed as OkmError).message).toContain("2D000");
+        const rows = await direct.unsafe(`select n from ${tableName}`);
+        expect(rows).toEqual([]);
+      } finally {
+        await pooled.close();
+      }
+    } finally {
+      await direct.unsafe(`drop procedure if exists ${routine}()`);
+      await direct.unsafe(`drop table if exists ${tableName}`);
+      await direct.end();
+    }
+  }, 20_000);
+
   test("a committing procedure keeps finished batches through transaction pooling", async () => {
     const stamp = Math.random().toString(36).slice(2, 10);
     const tableName = quoteIdent(`okm_batch_${stamp}`);
@@ -296,6 +339,7 @@ async function expectGuardBelt(url: string): Promise<void> {
     await direct
       .unsafe(`delete from okm_history where migration_id = 'belt'`)
       .catch(() => undefined);
+    await direct.unsafe(`delete from okm_meta where migration_id = 'belt'`).catch(() => undefined);
     for (const name of ledgers) {
       if (existed.has(name)) continue;
       await direct.unsafe(`drop table if exists ${quoted(name)}`).catch(() => undefined);

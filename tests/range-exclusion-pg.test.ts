@@ -10,6 +10,8 @@ import { expect, test } from "bun:test";
 import postgres from "postgres";
 
 import { OkmError } from "../src/contracts/error.js";
+import { mapDriverError } from "../src/adapters/lazy-errors.js";
+import { mapPostgresError } from "../src/dialects/pg/errors.js";
 import { catalog } from "../src/contracts/catalog/build.js";
 import { schemaDeclarations } from "../src/dialects/pg/declarations.js";
 import {
@@ -320,6 +322,7 @@ postgresTest(
         await holder.unsafe("commit");
         const waited = await waiting;
         expect(waited).toBeInstanceOf(Error);
+        expect((waited as { code?: string }).code).toBe("23P01");
         expect((waited as Error).message).toContain("bookings_noDouble_excl");
         await sql.unsafe(
           `create table later (id integer primary key, room_id integer, during tstzrange)`,
@@ -337,6 +340,9 @@ postgresTest(
         const deferred = await holder.unsafe("commit").catch((error: unknown) => error);
         expect(deferred).toBeInstanceOf(Error);
         expect((deferred as Error).message).toContain("later_one_excl");
+        const mapped = mapPostgresError(mapDriverError(deferred));
+        expect(mapped.kind).toBe("exclusion");
+        expect(mapped.constraint).toBe("later_one_excl");
       } finally {
         await holder.end({ timeout: 5 });
         await waiter.end({ timeout: 5 });

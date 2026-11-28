@@ -145,6 +145,8 @@ function copyFunction(
       ? { searchPath: object.definition.searchPath }
       : {}),
     ...(object.definition.atomic === true ? { atomic: true } : {}),
+    ...(object.definition.routine === "procedure" ? { routine: "procedure" as const } : {}),
+    ...(object.definition.commits === true ? { commits: true } : {}),
     owner: object.owner,
     provenance: object.provenance,
     dependencies,
