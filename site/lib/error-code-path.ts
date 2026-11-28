@@ -2,11 +2,17 @@
  * Public URLs for one registry code.
  *
  * `/docs/reference/errors/OKM1101.md` is the markdown twin. The extensionless
- * path is the same document when `Accept` prefers markdown. This module stays
- * free of the handbook corpus so the proxy can import it.
+ * path is that twin when `Accept` prefers markdown, and a 308 to the Errors
+ * page anchor otherwise. This module stays free of the handbook corpus so
+ * the proxy can import it.
  */
 
+import { ERROR_FIXES } from "./generated/error-fixes";
+
 const CODE_PATH = /^\/docs\/reference\/errors\/(okm\d{4})(\.md)?$/i;
+
+/** Registry codes that have a twin and an anchor. */
+const KNOWN_CODES = new Set(ERROR_FIXES.map((row) => row.code));
 
 /** A code path, or `undefined` when this URL is not one code. */
 export type ErrorCodePath = {
@@ -32,10 +38,22 @@ export function errorCodePath(pathname: string): ErrorCodePath | undefined {
 /**
  * Extensionless path for one code.
  *
+ * A browser request here redirects to {@link errorCodeHtmlUrl}. Markdown
+ * Accept still returns the twin.
+ *
  * @param code - `OKM####`
  */
 export function errorCodePageUrl(code: string): string {
   return `/docs/reference/errors/${code}`;
+}
+
+/**
+ * The Errors page anchor a person reads for this code.
+ *
+ * @param code - `OKM####`
+ */
+export function errorCodeHtmlUrl(code: string): string {
+  return `/docs/reference/errors#${code.toLowerCase()}`;
 }
 
 /**
@@ -62,4 +80,19 @@ export function errorCodeRewrite(pathname: string, markdownPreferred: boolean): 
   if (parsed === undefined) return undefined;
   if (!parsed.markdownFile && !markdownPreferred) return undefined;
   return parsed.code;
+}
+
+/**
+ * 308 target for a browser request to a known extensionless code.
+ *
+ * The proxy calls this only when Accept does not prefer markdown. An unknown
+ * code returns `undefined` so the proxy can 404 it with suggestions.
+ *
+ * @param pathname - Request pathname
+ */
+export function errorCodeBrowserRedirect(pathname: string): string | undefined {
+  const parsed = errorCodePath(pathname);
+  if (parsed === undefined || parsed.markdownFile) return undefined;
+  if (!KNOWN_CODES.has(parsed.code)) return undefined;
+  return errorCodeHtmlUrl(parsed.code);
 }

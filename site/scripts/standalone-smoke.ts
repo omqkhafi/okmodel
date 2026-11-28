@@ -43,7 +43,8 @@ const PROBES: readonly Probe[] = [
   { path: "/docs/reference/errors", markdown: true, expect: [200] },
   { path: "/docs/reference/errors/OKM1101.md", expect: [200] },
   { path: "/docs/reference/errors/OKM1101", markdown: true, expect: [200] },
-  { path: "/docs/reference/errors/OKM1101", expect: [404] },
+  { path: "/docs/reference/errors/OKM1101", expect: [308, 200] },
+  { path: "/docs/reference/errors/OKM0000", expect: [404] },
   { path: "/docs/reference/errors/OKM0000.md", expect: [404] },
 ];
 

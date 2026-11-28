@@ -7,7 +7,7 @@
  * every request.
  */
 
-import { errorCodeMarkdownUrl, errorCodePageUrl } from "./error-code-path";
+import { errorCodeHtmlUrl, errorCodeMarkdownUrl } from "./error-code-path";
 import { ERROR_FIXES } from "./generated/error-fixes";
 import { handbookPages, type HandbookPage } from "./handbook-corpus";
 import { absoluteDocsUrl, markdownPathForHref } from "./markdown-url";
@@ -205,7 +205,7 @@ function scorePage(page: HandbookPage, query: string, code: string | null): numb
 }
 
 /**
- * JSON hit. A code query links that code's markdown twin when the registry has it.
+ * JSON hit. A known code links the Errors page anchor, and its markdown is the twin.
  *
  * @param page - Handbook page
  * @param code - Exact code, when the query is one
@@ -215,7 +215,7 @@ function toResult(page: HandbookPage, code: string | null): SearchResult {
   if (row !== undefined && code !== null) {
     return {
       title: code,
-      url: errorCodePageUrl(code),
+      url: errorCodeHtmlUrl(code),
       markdown: absoluteDocsUrl(errorCodeMarkdownUrl(code)),
       summary: oneLine(row.summary),
       section: page.section,
