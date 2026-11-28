@@ -259,6 +259,53 @@ export type DependencyEdge = {
 export type PartitionMethod = "range" | "list" | "hash";
 
 /**
+ * One partition bound, stored so a declared child and a read child compare
+ * as the same value.
+ *
+ * A time bound is a UTC instant with an explicit `+00` offset. Numeric bounds
+ * are decimal text. List values are the author's literals.
+ */
+export type PartitionBound =
+  | { readonly kind: "range"; readonly from: string; readonly to: string }
+  | { readonly kind: "list"; readonly values: readonly string[] }
+  | { readonly kind: "hash"; readonly modulus: number; readonly remainder: number }
+  | { readonly kind: "default" };
+
+/** One child OKM created or read. The SQL name is `{table}_{suffix}`. */
+export type PartitionChild = {
+  readonly suffix: string;
+  readonly bound: PartitionBound;
+};
+
+/**
+ * A managed range rule.
+ *
+ * Postgres does not store this. Introspection leaves it unset, and plan
+ * comparison ignores it. `okm partitions maintain` reads it from the declared
+ * catalog.
+ */
+export type PartitionRule = {
+  readonly every: string;
+  readonly from: string;
+  readonly ahead: number;
+  readonly at?: string;
+  readonly keepFor?: string;
+  readonly keepThen?: "detach" | "drop";
+};
+
+/** Partition declaration stored on a table. Absent fields match an older catalog. */
+export type TablePartition = {
+  readonly method: PartitionMethod;
+  readonly columns: readonly string[];
+  /** `external` when another tool owns the children. Absent on a parent-only read. */
+  readonly ownership?: "managed" | "external";
+  readonly children?: readonly PartitionChild[];
+  readonly rule?: PartitionRule;
+  /** Hash modulus. Absent on range and list. Comparison uses the children. */
+  readonly count?: number;
+};
+
+/**
  * Table-level row security when no policy carries it.
  *
  * Absent means row security is off. Policies carry enable and force when
@@ -271,10 +318,7 @@ export type RowSecurity = {
 
 /** Table definition. Columns, indexes, and constraints are their own objects. */
 export type TableDefinition = {
-  readonly partition?: {
-    readonly method: PartitionMethod;
-    readonly columns: readonly string[];
-  };
+  readonly partition?: TablePartition;
   /** Enable and force when the table has no policy. Absent means off. */
   readonly rowSecurity?: RowSecurity;
 };

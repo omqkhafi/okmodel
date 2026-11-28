@@ -169,6 +169,7 @@ export const NEEDS_DATABASE = [
   "OKM1923",
   "OKM1926",
   "OKM2209",
+  "OKM2210",
 ] as const;
 
 /**
@@ -1268,6 +1269,93 @@ reported(
       tables: [],
       functions: [log],
       triggers: [trigger("log_ddl", { event: "sql_drop", tags: ["DROP TABLE"], calls: log })],
+    });
+    return schemaAdvice({ catalog: built.catalog, model: built.model }, [], {}).advice.map(
+      (item) => item.code,
+    );
+  },
+);
+
+thrown(
+  "OKM1932",
+  () => {
+    const built = schema({
+      tables: [
+        table(
+          "events",
+          { id: t.integer().primaryKey(), at: t.timestamptz() },
+          {
+            partition: {
+              by: "range",
+              key: "at",
+              every: "month",
+              at: "UTC",
+              from: "2026-01-01",
+              ahead: 1,
+            },
+          },
+        ),
+      ],
+    });
+    if (built.catalog.objects.length === 0) throw new Error("OKM1932 example built nothing");
+  },
+  () => {
+    const built = schema({
+      tables: [
+        table(
+          "events",
+          { id: t.integer(), at: t.timestamptz() },
+          {
+            primaryKey: ["id", "at"],
+            partition: {
+              by: "range",
+              key: "at",
+              every: "month",
+              at: "UTC",
+              from: "2026-01-01",
+              ahead: 1,
+            },
+          },
+        ),
+      ],
+    });
+    if (built.catalog.objects.length === 0) throw new Error("OKM1932 example built nothing");
+  },
+);
+
+reported(
+  "OKM2130",
+  () => {
+    const built = schema({
+      tables: [
+        table(
+          "regions",
+          { id: t.integer(), region: t.text() },
+          {
+            primaryKey: ["id", "region"],
+            partition: { by: "list", key: "region" },
+            partitions: { eu: { in: ["eu"] }, rest: { default: true } },
+          },
+        ),
+      ],
+    });
+    return schemaAdvice({ catalog: built.catalog, model: built.model }, [], {}).advice.map(
+      (item) => item.code,
+    );
+  },
+  () => {
+    const built = schema({
+      tables: [
+        table(
+          "regions",
+          { id: t.integer(), region: t.text() },
+          {
+            primaryKey: ["id", "region"],
+            partition: { by: "list", key: "region" },
+            partitions: { eu: { in: ["eu"] } },
+          },
+        ),
+      ],
     });
     return schemaAdvice({ catalog: built.catalog, model: built.model }, [], {}).advice.map(
       (item) => item.code,

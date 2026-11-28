@@ -87,6 +87,8 @@ postgresTest(
         .filter((object) => object.kind === "table")
         .map((object) => object.identity.name);
       expect(names).toEqual(["parent"]);
+      const parent = found.objects.find((object) => object.kind === "table");
+      expect(parent?.kind === "table" ? parent.definition.partition?.children?.length : 0).toBe(1);
       const indexes = found.objects.filter((object) => object.kind === "index");
       expect(indexes.map((object) => object.identity.name)).toEqual(["parent_id_idx"]);
       const keys = found.objects.filter(

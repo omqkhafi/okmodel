@@ -426,6 +426,13 @@ async function runUnit(
   session: RunSession,
   lock: LockRun,
 ): Promise<void> {
+  if (unit.steps.some((item) => item.step.sql.includes("okm-partition-rows"))) {
+    const { guardPartitionRows } = await import("./partition-probe.js");
+    await guardPartitionRows(
+      connection,
+      unit.steps.map((item) => item.step.sql),
+    );
+  }
   const only = unit.steps.length === 1 ? unit.steps[0] : undefined;
   if (only?.step.backfill !== undefined) {
     await runBackfill(connection, unit, only, only.step.backfill, run, lock);

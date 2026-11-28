@@ -411,6 +411,50 @@ export type TableOptions<TColumns> = {
    */
   readonly foreignKeys?: (columns: Handles<TColumns>) => Readonly<Record<string, ForeignKeySpec>>;
   /**
+   * How rows are partitioned.
+   *
+   * `children: "external"` validates the parent only. A rule, a hash count, or
+   * `partitions` means OKM owns the children. A table is one or the other.
+   */
+  readonly partition?:
+    | {
+        readonly by: "range";
+        readonly key: (keyof TColumns & string) | readonly (keyof TColumns & string)[];
+        readonly every: string;
+        readonly from: string;
+        readonly ahead: number;
+        readonly at?: string;
+        readonly keep?: { readonly for: string; readonly then?: "detach" | "drop" };
+      }
+    | {
+        readonly by: "hash";
+        readonly key: (keyof TColumns & string) | readonly (keyof TColumns & string)[];
+        readonly count: number;
+      }
+    | {
+        readonly by: "range" | "list" | "hash";
+        readonly key: (keyof TColumns & string) | readonly (keyof TColumns & string)[];
+        readonly children: "external";
+      }
+    | {
+        readonly by: "range" | "list";
+        readonly key: (keyof TColumns & string) | readonly (keyof TColumns & string)[];
+        readonly at?: string;
+      };
+  /**
+   * Explicit children, keyed like foreign keys.
+   *
+   * `in` is a list. `from` and `to` are a range. `default: true` is the default.
+   */
+  readonly partitions?: Readonly<
+    Record<
+      string,
+      | { readonly in: readonly string[] }
+      | { readonly from: string; readonly to: string }
+      | { readonly default: true }
+    >
+  >;
+  /**
    * Exclusion constraints. The key is the name stem. The stored name is
    * `{table}_{key}_excl`.
    */
@@ -573,6 +617,8 @@ const TABLE_KNOWN = new Set([
   "grants",
   "indexes",
   "omitDefaults",
+  "partition",
+  "partitions",
   "policies",
   "presets",
   "rls",

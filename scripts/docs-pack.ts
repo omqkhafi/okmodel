@@ -60,6 +60,7 @@ export const SITE_DOC_SOURCES = {
   "migrate-check.md": "migrations/checks-and-lint.mdx",
   "migration-failure.md": "migrations/failures.mdx",
   "observer-events.md": "reference/observer-events.mdx",
+  "partitions.md": "schema/partitions.mdx",
   "policies.md": "schema/policies.mdx",
   "production.md": "operate/production-checklist.mdx",
   "protection.md": "operate/protected-targets-and-roles.mdx",

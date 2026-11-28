@@ -114,6 +114,7 @@ export function schemaAdvice(
     ...seriesFindings(input.catalog),
     ...exclusionBounds(input.catalog),
     ...eventTagFindings(input.catalog),
+    ...partitionFindings(input.catalog),
   ].sort(compareFound);
   const ignore = config.ignore ?? [];
   const used = new Set<WarningIgnore>();
@@ -336,6 +337,24 @@ function compareFound(left: Found, right: Found): number {
   if (left.rule.code !== right.rule.code) return left.rule.code < right.rule.code ? -1 : 1;
   if (left.target === right.target) return 0;
   return left.target < right.target ? -1 : 1;
+}
+
+function partitionFindings(catalog: Catalog): readonly Found[] {
+  const rule = warningRule("partition");
+  if (rule === undefined) return [];
+  const found: Found[] = [];
+  for (const object of catalog.objects) {
+    if (object.kind !== "table") continue;
+    const children = object.definition.partition?.children ?? [];
+    if (!children.some((child) => child.bound.kind === "default")) continue;
+    found.push({
+      rule,
+      table: object.identity.name,
+      target: object.identity.name,
+      reason: `Table ${object.identity.name} has a default partition. A row that matches no other bound lands there and blocks a later partition for that range (23514).`,
+    });
+  }
+  return found;
 }
 
 function checked(rule: string): boolean {

@@ -58,11 +58,14 @@ import type {
   ObjectIdentity,
   ObjectRef,
   Owner,
+  PartitionBound,
+  PartitionRule,
   Provenance,
   ExtensionObject,
   SequenceObject,
   SeriesDefinition,
   SeriesReset,
+  TableDefinition,
   TableObject,
   ViewObject,
 } from "./types.js";
@@ -481,7 +484,7 @@ function rewriteTable(
       ? {}
       : {
           partition: {
-            method: partition.method,
+            ...partition,
             columns: renamed
               ? partition.columns.map((name) => (name === change.from ? change.to : name))
               : [...partition.columns],
@@ -1125,9 +1128,7 @@ function definitionToJson(object: CatalogObject): Json {
       const rowSecurity = object.definition.rowSecurity;
       if (partition === undefined && rowSecurity === undefined) return {};
       return {
-        ...(partition === undefined
-          ? {}
-          : { partition: { columns: partition.columns, method: partition.method } }),
+        ...(partition === undefined ? {} : { partition: partitionJson(partition) }),
         ...(rowSecurity === undefined
           ? {}
           : { rowSecurity: { enable: rowSecurity.enable, force: rowSecurity.force } }),
@@ -2477,17 +2478,117 @@ function parseDefaultPrivilege(
   });
 }
 
-function parsePartition(value: unknown): {
-  readonly method: "range" | "list" | "hash";
-  readonly columns: readonly string[];
-} {
+function partitionJson(partition: NonNullable<TableDefinition["partition"]>): Json {
+  return {
+    columns: [...partition.columns],
+    method: partition.method,
+    ...(partition.children !== undefined
+      ? {
+          children: partition.children.map((child) => ({
+            bound: child.bound,
+            suffix: child.suffix,
+          })),
+        }
+      : {}),
+    ...(partition.count !== undefined ? { count: partition.count } : {}),
+    ...(partition.ownership !== undefined ? { ownership: partition.ownership } : {}),
+    ...(partition.rule !== undefined ? { rule: partition.rule } : {}),
+  };
+}
+
+function parsePartition(value: unknown): NonNullable<TableDefinition["partition"]> {
   const record = requireRecord(value, "partition");
-  rejectUnknown(record, ["columns", "method"], "partition");
+  rejectUnknown(
+    record,
+    ["children", "columns", "count", "method", "ownership", "rule"],
+    "partition",
+  );
   const method = requireString(record.method, "partition method");
   if (method !== "range" && method !== "list" && method !== "hash") {
     catalogError("OKM1020", `Partition method ${method} must be range, list, or hash.`);
   }
-  return { method, columns: requireStrings(record.columns, "partition columns") };
+  const ownership = record.ownership;
+  if (ownership !== undefined && ownership !== "managed" && ownership !== "external") {
+    catalogError("OKM1020", "Partition ownership must be managed or external.");
+  }
+  const count = record.count;
+  if (count !== undefined && (typeof count !== "number" || !Number.isInteger(count))) {
+    catalogError("OKM1020", "Partition count must be a whole number.");
+  }
+  return {
+    method,
+    columns: requireStrings(record.columns, "partition columns"),
+    ...(ownership === "managed" || ownership === "external" ? { ownership } : {}),
+    ...(typeof count === "number" ? { count } : {}),
+    ...(record.rule !== undefined ? { rule: parseRule(record.rule) } : {}),
+    ...(record.children !== undefined ? { children: parseChildren(record.children) } : {}),
+  };
+}
+
+function parseRule(value: unknown): PartitionRule {
+  const record = requireRecord(value, "partition rule");
+  rejectUnknown(record, ["ahead", "at", "every", "from", "keepFor", "keepThen"], "partition rule");
+  const keepThen = record.keepThen;
+  if (keepThen !== undefined && keepThen !== "detach" && keepThen !== "drop") {
+    catalogError("OKM1020", "Partition keepThen must be detach or drop.");
+  }
+  const ahead = record.ahead;
+  if (typeof ahead !== "number") catalogError("OKM1020", "Partition ahead must be a number.");
+  return {
+    every: requireString(record.every, "partition every"),
+    from: requireString(record.from, "partition from"),
+    ahead,
+    ...(record.at !== undefined ? { at: requireString(record.at, "partition at") } : {}),
+    ...(record.keepFor !== undefined
+      ? { keepFor: requireString(record.keepFor, "partition keepFor") }
+      : {}),
+    ...(keepThen === "detach" || keepThen === "drop" ? { keepThen } : {}),
+  };
+}
+
+function parseChildren(
+  value: unknown,
+): NonNullable<NonNullable<TableDefinition["partition"]>["children"]> {
+  if (!Array.isArray(value)) catalogError("OKM1020", "Partition children must be a list.");
+  return value.map((item) => {
+    const record = requireRecord(item, "partition child");
+    rejectUnknown(record, ["bound", "suffix"], "partition child");
+    return {
+      suffix: requireString(record.suffix, "partition suffix"),
+      bound: parseBoundRecord(record.bound),
+    };
+  });
+}
+
+function parseBoundRecord(value: unknown): PartitionBound {
+  const record = requireRecord(value, "partition bound");
+  const kind = requireString(record.kind, "partition bound kind");
+  if (kind === "default") {
+    rejectUnknown(record, ["kind"], "partition bound");
+    return { kind: "default" };
+  }
+  if (kind === "hash") {
+    rejectUnknown(record, ["kind", "modulus", "remainder"], "partition bound");
+    const modulus = record.modulus;
+    const remainder = record.remainder;
+    if (typeof modulus !== "number" || typeof remainder !== "number") {
+      catalogError("OKM1020", "Hash bound needs modulus and remainder.");
+    }
+    return { kind: "hash", modulus, remainder };
+  }
+  if (kind === "list") {
+    rejectUnknown(record, ["kind", "values"], "partition bound");
+    return { kind: "list", values: requireStrings(record.values, "partition values") };
+  }
+  if (kind === "range") {
+    rejectUnknown(record, ["from", "kind", "to"], "partition bound");
+    return {
+      kind: "range",
+      from: requireString(record.from, "partition from"),
+      to: requireString(record.to, "partition to"),
+    };
+  }
+  catalogError("OKM1020", `Partition bound kind ${kind} must be range, list, hash, or default.`);
 }
 
 function parseReferences(value: unknown): {

@@ -321,6 +321,10 @@ async function route(
   if (id === "protect add") return protectAdd(project, parsed, human);
   if (id === "protect remove") return protectRemove(project, parsed, human);
   if (id === "protect list") return protectList(human);
+  if (id === "partitions" || id === "partitions maintain") {
+    const { partitionsCommand } = await import("./partition-cmd.js");
+    return partitionsCommand(id, project, parsed, cwd, human);
+  }
   if (id === "call") {
     const { callCommand } = await import("./call-cmd.js");
     return callCommand(project, parsed, cwd, human);

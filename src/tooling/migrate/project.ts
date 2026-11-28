@@ -616,7 +616,21 @@ export async function checkProject(
     opened.previous,
   );
   await assertSchemaExtensions(target.url, opened.built, directory);
-  const noted = information.length > 0 ? { information } : {};
+  const { assertPartitionManager, partitionDoctorLines } = await import("./partition-maintain.js");
+  await assertPartitionManager(
+    target.url,
+    opened.built.catalog,
+    opened.config.namespace ?? "public",
+  );
+  const partitionNotes = await partitionDoctorLines(
+    target.url,
+    opened.built.catalog,
+    opened.config.namespace ?? "public",
+  );
+  const noted =
+    information.length > 0 || partitionNotes.length > 0
+      ? { information: [...information, ...partitionNotes] }
+      : {};
   await rawOnlineCheck(cwd, opened.config, target.url, allowPooler);
   return finish({ findings, ...noted });
 }

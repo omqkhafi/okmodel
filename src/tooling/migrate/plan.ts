@@ -53,6 +53,7 @@ import type {
   FunctionObject,
   IndexObject,
   MaterializedViewObject,
+  PartitionChild,
   PolicyObject,
   TableObject,
   ViewColumn,
@@ -373,6 +374,13 @@ export function planMigration(
   const ungenerate: { readonly before: ColumnObject; readonly after: ColumnObject }[] = [];
   const enforcement: { readonly before: ConstraintObject; readonly after: ConstraintObject }[] = [];
   const storageReplaces: { readonly before: IndexObject; readonly after: IndexObject }[] = [];
+  const attaches: { readonly table: TableObject; readonly missing: readonly PartitionChild[] }[] =
+    [];
+  const converts: {
+    readonly table: TableObject;
+    readonly attach: PartitionChild;
+    readonly others: readonly PartitionChild[];
+  }[] = [];
   const sequenceAlters: {
     readonly before: Extract<CatalogObject, { kind: "sequence" }>;
     readonly after: Extract<CatalogObject, { kind: "sequence" }>;
@@ -394,6 +402,51 @@ export function planMigration(
     const previous = beforeBy.get(item.key);
     if (previous === undefined || sameDefinition(previous, item.object, extensionSchemas)) continue;
     if (handsOff(item.object) || childOfHandsOff(item.object, afterBy)) continue;
+    if (parentIsConverting(item.object, request.before, request.after, dialect)) continue;
+    if (
+      previous.kind === "table" &&
+      item.object.kind === "table" &&
+      dialect.partitionChange !== undefined
+    ) {
+      const change = dialect.partitionChange(
+        previous.definition.partition,
+        item.object.definition.partition,
+      );
+      if (change.kind === "convert") {
+        const blockers =
+          dialect.partitionBlockers?.(item.object.identity.name, request.before) ?? [];
+        if (blockers.length > 0) {
+          throw new OkmError(
+            "OKM1932",
+            `Table ${item.object.identity.name} cannot become partitioned while ${blockers.join("; ")} still depends on it.`,
+            {
+              fix: {
+                summary:
+                  "Drop those foreign keys and views, convert the table, then add them again.",
+              },
+            },
+          );
+        }
+        converts.push({ table: item.object, attach: change.attach, others: change.others });
+        continue;
+      }
+      if (change.kind === "attach") {
+        attaches.push({ table: item.object, missing: change.missing });
+        if (sameSecurity(previous, item.object)) continue;
+      }
+      if (change.kind === "same" && sameSecurity(previous, item.object)) continue;
+    }
+    if (
+      previous.kind === "column" &&
+      item.object.kind === "column" &&
+      partitionKeyTypeChanged(previous, item.object, request.before, request.after)
+    ) {
+      throw new OkmError(
+        "OKM1932",
+        `Partition key ${item.object.identity.parent.name}.${item.object.identity.name} changed type.`,
+        { fix: { summary: "Create a new partitioned table and copy the rows." } },
+      );
+    }
     if (previous.kind === "extension" && item.object.kind === "extension") continue;
     if (previous.kind === "eventTrigger" && item.object.kind === "eventTrigger") {
       if (eventBodySame(previous, item.object)) {
@@ -698,6 +751,35 @@ export function planMigration(
     );
   }
 
+  for (const change of converts) {
+    steps.push(
+      ...take(
+        dialect.lower({
+          op: "convert-partition",
+          schema,
+          table: change.table,
+          catalog: request.after,
+          before: request.before,
+          attach: change.attach,
+          others: change.others,
+        }),
+      ),
+    );
+  }
+  for (const change of attaches) {
+    steps.push(
+      ...take(
+        dialect.lower({
+          op: "attach-partition",
+          schema,
+          table: change.table,
+          catalog: request.after,
+          children: change.missing,
+        }),
+      ),
+    );
+  }
+
   const createdTables = new Set(
     [...createKeys]
       .map((key) => afterBy.get(key))
@@ -774,8 +856,19 @@ export function planMigration(
     }
     if (object.kind === "index") {
       const onExistingTable = !tableIsNew && parent !== undefined && hasTable(renamed, parent);
+      const partitionChildren = onExistingTable
+        ? partitionChildNames(request.after, parent, dialect)
+        : undefined;
       steps.push(
-        ...take(dialect.lower({ op: "create-index", index: object, schema, onExistingTable })),
+        ...take(
+          dialect.lower({
+            op: "create-index",
+            index: object,
+            schema,
+            onExistingTable,
+            ...(partitionChildren !== undefined ? { partitionChildren } : {}),
+          }),
+        ),
       );
       continue;
     }
@@ -3256,4 +3349,79 @@ function order(value: unknown): unknown {
     return next;
   }
   return value;
+}
+
+function sameSecurity(left: TableObject, right: TableObject): boolean {
+  const before = left.definition.rowSecurity;
+  const after = right.definition.rowSecurity;
+  return before?.enable === after?.enable && before?.force === after?.force;
+}
+
+function parentIsConverting(
+  object: CatalogObject,
+  before: Catalog,
+  after: Catalog,
+  dialect: DdlDialect,
+): boolean {
+  const table = parentTableName(object);
+  if (table === undefined || dialect.partitionChange === undefined) return false;
+  const previous = findTable(before, table);
+  const next = findTable(after, table);
+  if (previous === undefined || next === undefined) return false;
+  return (
+    dialect.partitionChange(previous.definition.partition, next.definition.partition).kind ===
+    "convert"
+  );
+}
+
+function parentTableName(object: CatalogObject): string | undefined {
+  switch (object.kind) {
+    case "column":
+    case "index":
+    case "constraint":
+    case "trigger":
+    case "policy":
+      return object.identity.parent.name;
+    default:
+      return undefined;
+  }
+}
+
+function findTable(catalog: Catalog, name: string): TableObject | undefined {
+  return catalog.objects.find(
+    (object): object is TableObject => object.kind === "table" && object.identity.name === name,
+  );
+}
+
+function partitionKeyTypeChanged(
+  before: ColumnObject,
+  after: ColumnObject,
+  previous: Catalog,
+  next: Catalog,
+): boolean {
+  if (before.definition.dataType === after.definition.dataType) return false;
+  return [previous, next].some((catalog) =>
+    catalog.objects.some(
+      (object) =>
+        object.kind === "table" &&
+        object.identity.name === after.identity.parent.name &&
+        object.definition.partition?.columns.includes(after.identity.name) === true,
+    ),
+  );
+}
+
+function partitionChildNames(
+  catalog: Catalog,
+  table: string | undefined,
+  dialect: DdlDialect,
+): readonly string[] | undefined {
+  if (table === undefined || dialect.partitionChildName === undefined) return undefined;
+  const object = catalog.objects.find(
+    (item): item is TableObject => item.kind === "table" && item.identity.name === table,
+  );
+  const partition = object?.definition.partition;
+  if (partition === undefined || partition.ownership === "external") return undefined;
+  const children = partition.children ?? [];
+  if (children.length === 0 || dialect.partitionChildName === undefined) return undefined;
+  return children.map((child) => dialect.partitionChildName?.(table, child.suffix) ?? child.suffix);
 }

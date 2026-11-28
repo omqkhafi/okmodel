@@ -16,6 +16,7 @@ import { isDomain } from "../../contracts/catalog/enum.js";
 import { identityKey } from "../../contracts/catalog/identity.js";
 import { deterministicName } from "../../contracts/catalog/identifier.js";
 import { renderCatalog } from "../../dialects/pg/ddl.js";
+import { suggestEvery } from "../../dialects/pg/partition-compile.js";
 import type {
   Catalog,
   CatalogObject,
@@ -25,6 +26,7 @@ import type {
   PolicyObject,
   SequenceObject,
   SeriesReset,
+  PartitionBound,
   TableObject,
 } from "../../contracts/catalog/types.js";
 import {
@@ -205,7 +207,6 @@ export function emitPull(
   }
 
   for (const table of tables) {
-    if (table.definition.partition !== undefined) continue;
     const exportName = freshIdent(
       declaredIdent(table.provenance.source, table.identity.name, casing),
       usedExports,
@@ -215,19 +216,6 @@ export function emitPull(
 
   const pulledColumns = pulledColumnNames(tables, byParent, enums, domains, composites, ranges);
   for (const table of tables) {
-    if (table.definition.partition !== undefined) {
-      skipped.push(
-        skip(
-          table,
-          "table",
-          table.identity.name,
-          "table() has no partition option",
-          statementFor(statements, table.identity.name),
-        ),
-      );
-      skipChildren(table.identity.name, byParent, statements, skipped);
-      continue;
-    }
     const exportName = tableExports.get(table.identity.name);
     if (exportName === undefined) continue;
     const planned = planTable(
@@ -816,6 +804,7 @@ function planTable(
     options.push(...indexLines);
     options.push("    ],");
   }
+  options.push(...partitionOptions(table, fields));
   const policyLines = policyOptions(bag.policies);
   if (policyLines.length > 0) {
     options.push(...policyLines);
@@ -1333,60 +1322,6 @@ function plainConstraint(constraint: ConstraintObject): boolean {
   if (constraint.definition.nullsNotDistinct) return false;
   if (constraint.definition.constraintKind === "foreignKey") return true;
   return !constraint.definition.deferrable && constraint.definition.initially === "immediate";
-}
-
-function skipChildren(
-  table: string,
-  byParent: ReadonlyMap<string, ParentBag>,
-  statements: readonly string[],
-  skipped: PullSkip[],
-): void {
-  const bag = byParent.get(table);
-  if (bag === undefined) return;
-  for (const column of bag.columns) {
-    skipped.push(
-      skip(
-        column,
-        "column",
-        `${table}.${column.identity.name}`,
-        "the table is partitioned, and table() has no partition option",
-        "",
-      ),
-    );
-  }
-  for (const constraint of bag.constraints) {
-    skipped.push(
-      skip(
-        constraint,
-        "constraint",
-        `${table}.${constraint.identity.name}`,
-        "the table is partitioned, and table() has no partition option",
-        statementFor(statements, constraint.identity.name),
-      ),
-    );
-  }
-  for (const index of bag.indexes) {
-    skipped.push(
-      skip(
-        index,
-        "index",
-        `${table}.${index.identity.name}`,
-        "the table is partitioned, and table() has no partition option",
-        statementFor(statements, index.identity.name),
-      ),
-    );
-  }
-  for (const sequence of bag.sequences) {
-    skipped.push(
-      skip(
-        sequence,
-        "sequence",
-        sequence.identity.name,
-        "the owning table is partitioned, and table() has no partition option",
-        statementFor(statements, sequence.identity.name),
-      ),
-    );
-  }
 }
 
 function identitySequence(table: string, column: string): string {
@@ -2098,4 +2033,59 @@ function compare(left: string, right: string): number {
   if (left < right) return -1;
   if (left > right) return 1;
   return 0;
+}
+
+function partitionOptions(
+  table: TableObject,
+  fields: ReadonlyMap<string, string>,
+): readonly string[] {
+  const partition = table.definition.partition;
+  if (partition === undefined) return [];
+  const names = partition.columns.map((name) => JSON.stringify(fields.get(name) ?? name));
+  const key = names.length === 1 ? names[0] : `[${names.join(", ")}]`;
+  const by = JSON.stringify(partition.method);
+  const children = partition.children ?? [];
+  if (partition.ownership === "external" || children.length === 0) {
+    return [`    partition: { by: ${by}, key: ${key}, children: "external" },`];
+  }
+  if (partition.method === "hash") {
+    const hash = children.find((child) => child.bound.kind === "hash");
+    const count =
+      partition.count ?? (hash?.bound.kind === "hash" ? hash.bound.modulus : children.length);
+    return [`    partition: { by: "hash", key: ${key}, count: ${String(count)} },`];
+  }
+  if (partition.rule !== undefined) {
+    const rule = partition.rule;
+    const at = rule.at !== undefined ? `, at: ${JSON.stringify(rule.at)}` : "";
+    const keep =
+      rule.keepFor === undefined
+        ? ""
+        : `, keep: { for: ${JSON.stringify(rule.keepFor)}, then: ${JSON.stringify(rule.keepThen ?? "detach")} }`;
+    return [
+      `    partition: { by: ${by}, key: ${key}, every: ${JSON.stringify(rule.every)}, from: ${JSON.stringify(rule.from)}, ahead: ${String(rule.ahead)}${at}${keep} },`,
+    ];
+  }
+  const every = suggestEvery(children);
+  const first = children[0]?.bound;
+  if (every !== undefined && first?.kind === "range") {
+    return [
+      `    // Children are evenly spaced. Confirm every and at before applying.`,
+      `    partition: { by: ${by}, key: ${key}, every: ${JSON.stringify(every)}, from: ${JSON.stringify(first.from.slice(0, 10))}, ahead: ${String(Math.max(children.length - 1, 0))}, at: "UTC" },`,
+    ];
+  }
+  const lines = [`    partition: { by: ${by}, key: ${key} },`, "    partitions: {"];
+  for (const child of children) {
+    lines.push(`      ${jsKey(child.suffix)}: ${boundOption(child.bound)},`);
+  }
+  lines.push("    },");
+  return lines;
+}
+
+function boundOption(bound: PartitionBound): string {
+  if (bound === undefined) return "{}";
+  if (bound.kind === "default") return "{ default: true }";
+  if (bound.kind === "list") return `{ in: ${JSON.stringify(bound.values)} }`;
+  if (bound.kind === "hash")
+    return `{ modulus: ${String(bound.modulus)}, remainder: ${String(bound.remainder)} }`;
+  return `{ from: ${JSON.stringify(bound.from)}, to: ${JSON.stringify(bound.to)} }`;
 }

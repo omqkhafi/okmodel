@@ -71,6 +71,7 @@ The table is generated from `STEP_KINDS`, `postgresHasProbe`, and `unitMode`. Do
 | Kind | Transactional | Built-in probe | Resume | Code |
 | --- | --- | --- | --- | --- |
 | `create-table` | yes | no | rolls back with the history row; the next apply runs the step again | — |
+| `attach-partition` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `drop-table` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `add-column` | yes | no | rolls back with the history row; the next apply runs the step again | — |
 | `add-column-required` | yes | no | rolls back with the history row; the next apply runs the step again | — |

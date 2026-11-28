@@ -39,6 +39,13 @@ function note(used: Set<string>, object: CatalogObject): void {
   if (object.kind === "table") {
     used.add("schema.core");
     if (moved(object.identity.namespace)) used.add("namespace");
+    const partition = object.definition.partition;
+    if (partition !== undefined) {
+      if (partition.ownership === "external") used.add("partition.external");
+      else if (partition.method === "range") used.add("partition.range");
+      else if (partition.method === "list") used.add("partition.list");
+      else used.add("partition.hash");
+    }
   }
   if (object.kind === "type") {
     if (isDomain(object.definition)) used.add("type.domain");

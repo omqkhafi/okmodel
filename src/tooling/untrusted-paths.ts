@@ -111,4 +111,6 @@ export const UNTRUSTED_PATHS: readonly UntrustedPath[] = [
   { command: "roles generate", path: "data", treatment: "none" },
   { command: "roles status", path: "data.rows[].name", treatment: "text" },
   { command: "access", path: "data.grants[].object", treatment: "text" },
+  { command: "partitions", path: "data.children[].bound", treatment: "text" },
+  { command: "partitions maintain", path: "data.statements", treatment: "text" },
 ];

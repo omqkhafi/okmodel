@@ -700,5 +700,30 @@ function copyPartition(
   for (const name of partition.columns) {
     assertIdentifier(name, "partition column");
   }
-  return { method: partition.method, columns: [...partition.columns] };
+  return {
+    method: partition.method,
+    columns: [...partition.columns],
+    ...(partition.ownership !== undefined ? { ownership: partition.ownership } : {}),
+    ...(partition.count !== undefined ? { count: partition.count } : {}),
+    ...(partition.rule !== undefined ? { rule: { ...partition.rule } } : {}),
+    ...(partition.children !== undefined
+      ? {
+          children: partition.children.map((child) => ({
+            suffix: child.suffix,
+            bound:
+              child.bound.kind === "list"
+                ? { kind: "list" as const, values: [...child.bound.values] }
+                : child.bound.kind === "range"
+                  ? { kind: "range" as const, from: child.bound.from, to: child.bound.to }
+                  : child.bound.kind === "hash"
+                    ? {
+                        kind: "hash" as const,
+                        modulus: child.bound.modulus,
+                        remainder: child.bound.remainder,
+                      }
+                    : { kind: "default" as const },
+          })),
+        }
+      : {}),
+  };
 }

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://okmodel.dev/schemas/cli-1/partitions-maintain.json",
+  "title": "okm partitions maintain data",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "table",
+    "dryRun",
+    "statements"
+  ],
+  "properties": {
+    "table": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "statements": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

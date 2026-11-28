@@ -82,6 +82,7 @@ test("every code is an offline pair, needs a database, or is not thrown", async 
     "OKM1923",
     "OKM1926",
     "OKM2209",
+    "OKM2210",
   ]);
   expect(silent).toEqual(["OKM1051", "OKM1110", "OKM1191"]);
   expect(offline.length + database.length + silent.length).toBe(ERROR_DOCS.length);

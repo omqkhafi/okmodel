@@ -795,6 +795,13 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     fix: "Import okmodel/event, fix the function or the tag, or use a direct URL for the step.",
   },
   {
+    code: "OKM1932",
+    title: "Partition",
+    summary:
+      "A partition declaration cannot be planned. The key, the bounds, a hash count, or a conversion blocker is outside what PostgreSQL can change in place. Nothing was planned.",
+    fix: "Keep the method and the key. Include every key column in the primary key. Drop inbound foreign keys and views before converting a plain table.",
+  },
+  {
     code: "OKM1928",
     title: "Virtual column fill",
     summary:
@@ -1409,6 +1416,13 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
       "Creating an event trigger needs a superuser, or a host role that can create one. A plain role gets 42501. Neon grants this to neon_superuser. Supabase grants it to postgres. Another host has to say which role can create one.",
     fix: "Connect as that role for okm check and okm apply, or ask the provider which role can create an event trigger.",
     since: "0.11",
+  },
+  {
+    code: "OKM2210",
+    title: "Partition manager overlap",
+    summary:
+      "partman.part_config lists a table that also has an OKM partition rule. pg_partman stops pre-making partitions after a partition OKM created. okm check fails.",
+    fix: 'Remove the partman row, or set children: "external" and let pg_partman own the children.',
   },
   {
     code: "OKM2300",

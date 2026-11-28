@@ -36,6 +36,8 @@ import { VIEW_DEPENDENCIES, viewDependencyEdges } from "./view/depend.js";
 import { qualify, quoteIdent, typeRef } from "./ddl.js";
 import { visibleExtensionType } from "../extension-type.js";
 import { quoteLiteral } from "./quote.js";
+import { parseBound } from "./partition-compile.js";
+import type { PartitionChild } from "../../contracts/catalog/types.js";
 import { withUnvalidatedNotNull } from "../../contracts/catalog/not-null.js";
 import { unvalidatedNotNullSql } from "./not-null.js";
 import { columnPrivilege } from "./role/sql.js";
@@ -245,6 +247,7 @@ export async function introspectSchema(
   ]);
   const objects: CatalogObject[] = [];
   const parents = new Map<string, ObjectRef>();
+  const liveChildren = await partitionChildren(runner, concrete);
   for (const row of tables) {
     const name = text(row, "name");
     const parent: ObjectRef = { namespace, name };
@@ -258,7 +261,13 @@ export async function introspectSchema(
         provenance,
         ...(method === undefined || partColumns.length === 0
           ? {}
-          : { partition: { method, columns: partColumns } }),
+          : {
+              partition: {
+                method,
+                columns: partColumns,
+                ...(liveChildren.has(name) ? { children: liveChildren.get(name) ?? [] } : {}),
+              },
+            }),
       }),
     );
   }
@@ -2345,6 +2354,56 @@ async function runDrops(runner: CatalogQuery, statements: readonly string[]): Pr
 }
 
 const CHILD = "not exists (select 1 from pg_inherits i where i.inhrelid = c.oid)";
+
+const PARTITION_CHILDREN = `
+  select parent.relname as parent, child.relname as name,
+    pg_get_expr(child.relpartbound, child.oid) as bound
+  from pg_inherits i
+  join pg_class parent on parent.oid = i.inhparent
+  join pg_class child on child.oid = i.inhrelid
+  join pg_namespace n on n.oid = parent.relnamespace
+  where n.nspname = $1
+    and child.relispartition
+    and child.relkind in ('r', 'p', 'f')
+  order by parent.relname, child.relname
+`;
+
+/**
+ * Reads partition bounds in UTC and folds them onto the parent.
+ *
+ * The session zone is restored. A child that is not `{parent}_{suffix}` keeps
+ * its own name as the suffix so a later plan can report it.
+ *
+ * @param runner - Introspection connection
+ * @param schema - Concrete schema name
+ * @returns Children keyed by parent name
+ */
+async function partitionChildren(
+  runner: CatalogQuery,
+  schema: string,
+): Promise<ReadonlyMap<string, readonly PartitionChild[]>> {
+  const saved = await runner.query("select current_setting('TimeZone') as tz");
+  const zone = text(saved[0] ?? {}, "tz");
+  await runner.query("select set_config('TimeZone', 'UTC', false)");
+  try {
+    const rows = await runner.query(PARTITION_CHILDREN, [schema]);
+    const grouped = new Map<string, PartitionChild[]>();
+    for (const row of rows) {
+      const parent = text(row, "parent");
+      const name = text(row, "name");
+      const bound = parseBound(text(row, "bound"));
+      if (bound === undefined) continue;
+      const prefix = `${parent}_`;
+      const suffix = name.startsWith(prefix) ? name.slice(prefix.length) : name;
+      const list = grouped.get(parent) ?? [];
+      list.push({ suffix, bound });
+      grouped.set(parent, list);
+    }
+    return grouped;
+  } finally {
+    if (zone.length > 0) await runner.query("select set_config('TimeZone', $1, false)", [zone]);
+  }
+}
 
 const TABLES = `
   select c.relname as name, pt.partstrat as partstrat,

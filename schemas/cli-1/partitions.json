@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://okmodel.dev/schemas/cli-1/partitions.json",
+  "title": "okm partitions data",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "table",
+    "managed",
+    "daysLeft",
+    "defaultRows",
+    "gaps",
+    "overlaps",
+    "children"
+  ],
+  "properties": {
+    "table": {
+      "type": "string"
+    },
+    "managed": {
+      "type": "boolean"
+    },
+    "daysLeft": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "defaultRows": {
+      "type": "number"
+    },
+    "gaps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "overlaps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "children": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "suffix",
+          "bound",
+          "rows",
+          "bytes"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "suffix": {
+            "type": "string"
+          },
+          "bound": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "number"
+          },
+          "bytes": {
+            "type": "number"
+          }
+        }
+      }
+    }
+  }
+}

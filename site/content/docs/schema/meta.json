@@ -3,6 +3,7 @@
   "pages": [
     "---Tables and columns---",
     "tables",
+    "partitions",
     "columns",
     "text-columns",
     "number-columns",
