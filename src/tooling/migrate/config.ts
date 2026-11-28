@@ -38,6 +38,12 @@ export type MigrateConfig = {
   readonly targets?: Readonly<Record<string, TargetInput>>;
   /** Apply against a known pooler URL. The default refuses those hosts. */
   readonly allowPooler?: boolean;
+  /**
+   * Direct URL for `okm doctor`'s delivery self-test when `database` is pooled.
+   *
+   * Absent, doctor uses the target URL.
+   */
+  readonly listenUrl?: string;
   /** Milliseconds for `lock_timeout` and `statement_timeout` during apply. */
   readonly timeouts?: {
     readonly lock?: number;

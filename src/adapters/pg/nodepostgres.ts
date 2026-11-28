@@ -17,7 +17,7 @@ import type {
   DriverStats,
   WireValue,
 } from "../../contracts/driver.js";
-import { NODE_POSTGRES_CAPABILITIES } from "../capabilities.js";
+import { markPushDriver, NODE_POSTGRES_CAPABILITIES } from "../capabilities.js";
 import {
   driverErrors,
   mapFailure,
@@ -199,7 +199,7 @@ export function open(config: NodePostgresConfig): DriverPool {
   const checkout = (): Promise<DriverConnection> =>
     closed ? rejectClosed() : import("./nodepostgres-extra.js").then((mod) => mod.checkout(held));
 
-  return {
+  const opened: DriverPool = {
     capabilities: NODE_POSTGRES_CAPABILITIES,
     execute(text, params, options) {
       return runCall(closed, options, async (watch) => {
@@ -270,6 +270,8 @@ export function open(config: NodePostgresConfig): DriverPool {
       await pool.end();
     },
   };
+  markPushDriver(opened, 2);
+  return opened;
 }
 
 export function send(

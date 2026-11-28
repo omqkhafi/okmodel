@@ -41,7 +41,9 @@ postgresTest(
       await admin.unsafe(`alter database ${databaseName(database.url)} owner to ${role}`);
       const superuser = mkdtempSync(join(tmpdir(), "okm-n140-super-"));
       writeProject(superuser, database.url, amcheckSchema());
-      expect(await doctorProject(superuser, undefined)).toBe("no triggers\n");
+      expect(await doctorProject(superuser, undefined)).toBe(
+        "no triggers\nwatch: push works on this URL (a private ping was delivered).\n",
+      );
       expect((await checkProject(superuser)).findings).toEqual([]);
       rmSync(superuser, { recursive: true, force: true });
       writeProject(cwd, roleUrl(database.url, role, "n140"), amcheckSchema());

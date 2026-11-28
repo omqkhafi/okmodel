@@ -295,6 +295,14 @@ export type TableModel = {
    */
   readonly presets?: Readonly<Record<string, unknown>>;
   /**
+   * Statement-level wake for `db.<table>.watch`.
+   *
+   * Absent when the table does not set `watch`. `push` is false when the
+   * table asked for the timer only. `tenant` is the tenant field names, in
+   * key order, when a scoped watcher should ignore other tenants.
+   */
+  readonly watch?: { readonly push: boolean; readonly tenant?: readonly string[] };
+  /**
    * Validation for this table.
    *
    * Absent until the engine fills it on the first validated call. `schema()`

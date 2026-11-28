@@ -475,6 +475,10 @@ test("refusal:query.paths", () => refuse("query.paths"));
 test("refusal:migrate.fleet", () => refuse("migrate.fleet"));
 test("refusal:migrate.fleet.canary", () => refuse("migrate.fleet.canary"));
 test("refusal:migrate.fleet.ensureHead", () => refuse("migrate.fleet.ensureHead"));
+test("refusal:watch.wake", () => refuse("watch.wake"));
+test("refusal:watch.liveRead", () => refuse("watch.liveRead"));
+test("refusal:watch.signal", () => refuse("watch.signal"));
+test("refusal:watch.until", () => refuse("watch.until"));
 
 test("closed profile keeps the most restrictive observer costs", () => {
   const closed = closedRegistry();

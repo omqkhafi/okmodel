@@ -10,8 +10,8 @@
  */
 
 import { OkmError } from "../../contracts/error.js";
+import { poolerUrlSignal } from "../../dialects/pg/pooler-url.js";
 import { tagOutcome } from "../cli/outcome.js";
-import { postgresEndpoint } from "./fingerprint.js";
 
 /** Which signal decided the connection is pooled. */
 export type PoolerSignal = "host" | "port" | "parameter" | "config" | "pid";
@@ -156,27 +156,5 @@ function concurrentSignal(concurrent: ConcurrentPids | undefined): "pooled" | "d
 }
 
 function urlSignal(url: string): { signal: PoolerSignal; detail: string } | undefined {
-  let endpoint: { host: string; port: string };
-  let parsed: URL;
-  try {
-    endpoint = postgresEndpoint(url);
-    parsed = new URL(url);
-  } catch {
-    return undefined;
-  }
-  const host = endpoint.host;
-  if (host.includes("-pooler")) return { signal: "host", detail: "the host name contains -pooler" };
-  if (host.includes(".pooler.supabase.com")) {
-    return { signal: "host", detail: "the host name contains .pooler.supabase.com" };
-  }
-  if (host.includes("pooler") || host.includes("pgbouncer")) {
-    return { signal: "host", detail: "a pooler host" };
-  }
-  if (endpoint.port === "6543" || endpoint.port === "6432") {
-    return { signal: "port", detail: "the port (6543 or 6432)" };
-  }
-  if (parsed.searchParams.get("pgbouncer") === "true") {
-    return { signal: "parameter", detail: "the pgbouncer=true parameter" };
-  }
-  return undefined;
+  return poolerUrlSignal(url);
 }

@@ -9,6 +9,7 @@
     "search-and-trees",
     "where-operators",
     "transactions",
+    "watch",
     "typed-raw-sql",
     "presets",
     "request-filters"

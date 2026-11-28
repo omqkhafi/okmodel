@@ -17,7 +17,7 @@ import type {
   Notice,
   WireValue,
 } from "../../contracts/driver.js";
-import { POSTGRESJS_CAPABILITIES } from "../capabilities.js";
+import { markPushDriver, POSTGRESJS_CAPABILITIES } from "../capabilities.js";
 import { mapFailure, rejectClosed } from "../failure.js";
 import type { BatchSession } from "./batch.js";
 import { nextTransactionDepth, runCall, type Watch } from "./call.js";
@@ -256,7 +256,7 @@ export function open(config: PostgresJsConfig): DriverPool {
   };
   lives.push(held);
 
-  return {
+  const opened: DriverPool = {
     capabilities: POSTGRESJS_CAPABILITIES,
     execute(text, params, options) {
       return sockets.occupy(() =>
@@ -321,6 +321,8 @@ export function open(config: PostgresJsConfig): DriverPool {
       await root.sql.end({ timeout: 5 });
     },
   };
+  markPushDriver(opened, 1);
+  return opened;
 }
 
 export class PgSession implements BatchSession {

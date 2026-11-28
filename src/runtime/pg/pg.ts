@@ -9,8 +9,11 @@
 import type { DriverPool } from "../../contracts/driver.js";
 import type { QuerySchema } from "../../dialects/pg/model.js";
 import { open, type NodePostgresConfig } from "../../adapters/pg/nodepostgres.js";
-import { createClient } from "../client.js";
+import { createClient, registerListenDriver, withListenUrl } from "../client.js";
+import { openPgListen } from "../listen-pg.js";
 import type { RoutedClient, TopologyInput, TopologyOptions } from "../topology.js";
+
+registerListenDriver(2, openPgListen);
 import type { SessionContext } from "../session/index.js";
 import type { Bounded, ConnectOptions, Connected, Limits, NoLimits } from "../types.js";
 
@@ -82,7 +85,7 @@ export function connect<
         searchPath: options.searchPath,
         ssl: options.ssl,
       } as NodePostgresConfig);
-  return createClient(options.schema, pool, options, owned);
+  return createClient(options.schema, pool, withListenUrl(options, target), owned);
 }
 
 function isPool(target: NodePostgresTarget | TopologyInput): target is DriverPool {

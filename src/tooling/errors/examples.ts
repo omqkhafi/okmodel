@@ -172,6 +172,8 @@ export const NEEDS_DATABASE = [
   "OKM1926",
   "OKM2209",
   "OKM2210",
+  "OKM1934",
+  "OKM2212",
 ] as const;
 
 /**

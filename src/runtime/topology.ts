@@ -447,6 +447,7 @@ export async function connectTopology<
       requireMeta: options.requireMeta,
       generators: options.generators,
       session: options.session,
+      listenUrl: options.listenUrl ?? primaryUrl,
     };
     const router = routePool(handle);
     const client = createClient(options.schema, router, { ownsPool: true, ...shared });
@@ -1237,6 +1238,10 @@ function routePool(handle: Handle): DriverPool {
       generation: endpoint.generation,
       pool: endpoint.pool,
     }));
+  const watchKind = (primary.pool as unknown as Record<symbol, unknown>)[Symbol.for("okm.w")];
+  if (typeof watchKind === "number") {
+    Object.defineProperty(pool, Symbol.for("okm.w"), { value: watchKind });
+  }
   return pool;
 }
 

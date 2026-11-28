@@ -128,7 +128,18 @@ export async function doctorProject(
       partitions = "";
     }
   }
-  return `${emulation}${notice}${formatTriggers(objects)}${events}${partitions}`;
+  let watch = "";
+  if (targets.length === 1 || (targets.length > 1 && flags?.target !== undefined)) {
+    const target = selectTarget(opened.config, flags?.target);
+    const url = opened.config.listenUrl ?? target.url;
+    try {
+      const { watchDoctorText } = await import("./doctor-watch.js");
+      watch = await watchDoctorText(url);
+    } catch {
+      watch = "watch: push does not work on this URL (the connection failed).\n";
+    }
+  }
+  return `${emulation}${notice}${formatTriggers(objects)}${events}${partitions}${watch}`;
 }
 
 /**

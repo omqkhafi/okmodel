@@ -13,7 +13,7 @@
  * read it. That method walks keyset batches on every driver.
  */
 
-import type { DriverCapabilities } from "../contracts/driver.js";
+import type { DriverCapabilities, DriverPool } from "../contracts/driver.js";
 
 /** Capability names a caller can read. */
 export const CAPABILITY_NAMES = ["transactions", "stream", "listen", "cancel"] as const;
@@ -139,4 +139,20 @@ export function hasCapability(
   name: "stream" | "listen" | "cancel",
 ): boolean {
   return flags[name];
+}
+
+/** Symbol {@link markPushDriver} stores. `watch` reads it and does not import the drivers. */
+export const PUSH_DRIVER = Symbol.for("okm.w");
+
+/**
+ * Marks a pool whose driver can own the `watch` listen socket.
+ *
+ * 1 is postgres.js, 2 is node-postgres, and 3 is PGlite. A pool without the
+ * mark polls. Bun and Neon stay unmarked even when `listen` is set.
+ *
+ * @param pool - The pool `open` returns
+ * @param kind - Which listen socket to open
+ */
+export function markPushDriver(pool: DriverPool, kind: 1 | 2 | 3): void {
+  Object.defineProperty(pool, PUSH_DRIVER, { value: kind });
 }

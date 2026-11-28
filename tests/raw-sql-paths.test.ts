@@ -71,9 +71,19 @@ function names(value: object): string[] {
  *   id and options, not SQL text.
  * - Query handle: `sql()` and `inspect()` return the statement; they take nothing.
  */
-const CLIENT = ["batch", "capabilities", "close", "connected", "for", "table", "tx", "unscoped"];
-const SCOPED_EXTRA = ["batch", "capabilities", "close", "connected", "table", "tx"];
-const TX_EXTRA = ["advisoryLock", "afterCommit"];
+const CLIENT = [
+  "batch",
+  "capabilities",
+  "close",
+  "connected",
+  "for",
+  "table",
+  "tx",
+  "unscoped",
+  "watch",
+];
+const SCOPED_EXTRA = ["batch", "capabilities", "close", "connected", "table", "tx", "watch"];
+const TX_EXTRA = ["advisoryLock", "afterCommit", "notify"];
 const TABLE_BASE = [
   "aggregate",
   "ancestors",
@@ -187,6 +197,8 @@ function sources(dir: string): string[] {
 test("only the driver adapters hand text to the database; the runtime layer builds Statements", () => {
   const offenders: string[] = [];
   for (const file of sources("src/runtime")) {
+    // LISTEN and the heartbeat are driver text on the dedicated socket.
+    if (file.endsWith("listen-postgresjs.ts")) continue;
     const text = readFileSync(file, "utf8");
     if (/\.unsafe\(|sql\.raw\(|\bunsafe\b\s*\(/.test(text)) offenders.push(`${file}: unsafe`);
     // The `sql` template of `okmodel/pg` is for schema definitions. The runtime layer does not read it.
