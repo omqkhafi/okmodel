@@ -22,4 +22,4 @@ A contract section is written with content specific to that page, or it is omitt
 - **Errors** gives each code with one line of what triggers it.
 - **Version** is the generated phrase (`<SupportPhrase />`).
 
-`scripts/docs-sentences.ts` fails when the same sentence, after whitespace is collapsed, is 40 or more characters and appears on three or more handbook pages. The check does not name a sentence. `<SupportPhrase />` and `<Tagline />` are not page text, so the generated support sentence is exempt. A page's `since` is the first minor in which one of its registry keys exists. `scripts/docs-since.ts` derives that from the registry at tag `v0.10.6`.
+`scripts/docs-sentences.ts` fails when the same sentence, after whitespace is collapsed, is 40 or more characters and appears on three or more handbook pages. The check does not name a sentence. `<SupportPhrase />` and `<Tagline />` are not page text, so the generated support sentence is exempt. A page's `since` is `"0.11"` when its file does not exist at tag `v0.10.6`. `scripts/docs-since.ts` follows renames and otherwise keeps the value already in the file.
