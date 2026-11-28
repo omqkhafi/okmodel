@@ -14,6 +14,8 @@ You get one Hono app that serves a read route and a write route, and two small e
 
 `okmodel/pg/bun` loads only on Bun. The example uses postgres.js so one driver covers both runtimes.
 
+`armCatalog()` is not required for the Bun entry or the bundled Node.js entry. Queries and mapped constraint errors do not call it. Call `armCatalog()` from `okmodel/pg/catalog` only before a direct `schema().catalog` read in a bundle that has no compiler file.
+
 ## Install
 
 ```sh

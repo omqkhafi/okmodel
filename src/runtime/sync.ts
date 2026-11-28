@@ -17,6 +17,7 @@
 import { OkmError, throwNamed } from "../contracts/error.js";
 import type { Catalog, ColumnDefinition } from "../contracts/catalog/types.js";
 import type { ExecuteOptions, Statement } from "../contracts/driver.js";
+import { columnOmissible } from "../dialects/pg/constraint-index.js";
 import type { ColumnModel, PresetUse, QuerySchema, RelationModel } from "../dialects/pg/model.js";
 import { queryHandle, settleCall, type Mods as ReadMods, type Session } from "./client.js";
 import {
@@ -272,11 +273,9 @@ function oneToMany(
       "The foreign key is only the tenant key.",
     );
   }
-  const catalog = catalogOf(session.schema);
   for (const link of clearing) {
     const column = related.model.columns.find((item) => item.sql === link.child);
-    const stored = storedColumn(catalog, related.model.sql, link.child);
-    if (stored === undefined || stored.nullable !== true) {
+    if (column?.nullable !== true) {
       fail(
         "OKM1120",
         `sync on ${owner.model.name}.${relation.name} would delete rows to drop a link. ${related.model.name}.${column?.field ?? link.child} is not nullable.`,
@@ -359,11 +358,9 @@ function manyThrough(
     );
   }
   const slots = joinSlots(relation, relatedId);
-  const catalog = catalogOf(session.schema);
   for (const column of join.model.columns) {
     if (slots.some((slot) => slot.join === column.sql)) continue;
-    const stored = storedColumn(catalog, join.model.sql, column.sql);
-    if (stored !== undefined && canOmit(stored)) continue;
+    if (canFill(session.schema, join.model.sql, column)) continue;
     fail(
       "OKM1120",
       `sync on ${owner.model.name}.${relation.name} cannot fill ${join.model.name}.${column.field}.`,
@@ -801,6 +798,14 @@ function tenantSql(session: Session, table: Indexed): ReadonlySet<string> {
     if (column !== undefined) sql.add(column.sql);
   }
   return sql;
+}
+
+function canFill(schema: QuerySchema, tableSql: string, column: ColumnModel): boolean {
+  if (column.nullable === true) return true;
+  const known = columnOmissible(schema, tableSql, column.sql);
+  if (known !== undefined) return known;
+  const stored = storedColumn(catalogOf(schema), tableSql, column.sql);
+  return stored !== undefined && canOmit(stored);
 }
 
 function catalogOf(schema: QuerySchema): Catalog {

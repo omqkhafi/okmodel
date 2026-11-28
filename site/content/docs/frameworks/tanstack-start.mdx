@@ -13,6 +13,8 @@ You get one `db` module that TanStack Start server routes import, a `/api/notes`
 | Driver | `okmodel/pg/postgresjs` + `postgres` |
 | Example | `examples/tanstack-start` |
 
+`armCatalog()` is not required. The Vite server bundle maps unique, foreign-key, and check errors without it. Call `armCatalog()` from `okmodel/pg/catalog` only before a direct `schema().catalog` read in a bundle that has no compiler file.
+
 ## Install
 
 ```sh

@@ -115,17 +115,10 @@ function loadSibling(specifiers: readonly string[]): object {
     return requireSibling(specifiers);
   } catch (error) {
     if (!absentModule(error)) throw error;
-    throw new OkmError(
-      "OKM1020",
-      `Catalog compiler ${specifiers[0]} is not next to this file. A single-file bundle has no sibling module.`,
-      {
-        cause: error,
-        fix: {
-          summary:
-            'Import { armCatalog } from "okmodel/pg/catalog" and call armCatalog() before reading schema().catalog.',
-        },
-      },
-    );
+    throw new OkmError("OKM1020", "Catalog compiler is not in this bundle.", {
+      cause: error,
+      fix: { summary: "Run okm help OKM1020." },
+    });
   }
 }
 
@@ -145,6 +138,6 @@ function absentModule(error: unknown): boolean {
 
 function missing(specifier: string): never {
   throw new OkmError("OKM1020", `Catalog compiler ${specifier} is not in this build.`, {
-    fix: { summary: "Use the published okmodel build, which emits the compiler next to schema()." },
+    fix: { summary: "Run okm help OKM1020." },
   });
 }

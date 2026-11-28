@@ -14,7 +14,7 @@ You get a Worker that opens a client for each request that needs the database, r
 
 A Worker has no TCP socket, so postgres.js cannot run there. `okm` needs TCP too, so run migrations from Node.js or Bun on a machine that can reach Postgres. It connects with postgres.js, so add it as a dev dependency: `bun add -d postgres`.
 
-`okmodel/pg` under the `workerd` condition installs the catalog compilers inside `schema()`. The Node entry loads them on the first `.catalog` read, through `createRequire` in `catalog-require.js`. That call needs `import.meta.url`. A Workers bundle of the Node entry used to evaluate it while loading `schema()`, which imports `catalog-load.ts`, and the isolate crashed before a query. Queries do not read `.catalog`. A single-file Node bundle has no sibling `catalog-compile.js`. Call `armCatalog()` from `okmodel/pg/catalog` before that read. A featureless app does not import it.
+`okmodel/pg` under the `workerd` condition installs the catalog compilers inside `schema()`, so that entry does not need `armCatalog()`. The Node entry loads the compiler on the first direct `schema().catalog` read, through `createRequire` in `catalog-require.js`. That call needs `import.meta.url`. A Workers bundle of the Node entry used to evaluate it while loading `schema()`, which imports `catalog-load.ts`, and the isolate crashed before a query. Queries and mapped constraint errors do not read `.catalog` and do not need `armCatalog()`. A single-file Node or Lambda bundle has no sibling `catalog-compile.js`. Call `armCatalog()` from `okmodel/pg/catalog` only before a direct `schema().catalog` read in a bundle that has no compiler file.
 
 ## Install
 

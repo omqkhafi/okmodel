@@ -8,6 +8,11 @@
 import { isOperator, operatorName, operatorValue } from "../../dialects/pg/operators.js";
 import type { QuerySchema, RelationModel, TableModel } from "../../dialects/pg/model.js";
 import type { Catalog } from "../../contracts/catalog/types.js";
+import {
+  constraintRows,
+  dataCatalog,
+  type ConstraintRow,
+} from "../../dialects/pg/constraint-index.js";
 import type { CallScope, IncludeOut, ReadDone } from "../plan.js";
 import {
   FANOUT_LIMIT,
@@ -329,13 +334,18 @@ type ComputedKey = {
  */
 function unindexedComputed(schema: QuerySchema, call: WarningCall): false | string {
   const keys = isWarningRecord(call.computed) ? call.computed.keys : undefined;
-  const catalog = (schema as { readonly catalog?: Catalog }).catalog;
-  if (!Array.isArray(keys) || catalog === undefined) return false;
+  if (!Array.isArray(keys)) return false;
+  const rows = constraintRows(schema);
+  const catalog = rows === undefined ? dataCatalog(schema) : undefined;
+  if (rows === undefined && catalog === undefined) return false;
   const found: string[] = [];
   for (const key of keys as readonly ComputedKey[]) {
     const model = schema.model[key.table];
     if (model === undefined || key.columns.length === 0) continue;
-    const lists = indexLists(catalog, model.sql);
+    const lists =
+      rows !== undefined
+        ? indexListsFromRows(rows, model.sql)
+        : indexLists(catalog as Catalog, model.sql);
     if (lists === undefined || covered(lists, key.columns, tenantColumns(schema, model))) continue;
     const fields = key.columns.map((column) => model.columns.find((c) => c.sql === column)?.field);
     if (fields.includes(undefined)) continue;
@@ -343,6 +353,23 @@ function unindexedComputed(schema: QuerySchema, call: WarningCall): false | stri
     found.push(`${key.table} indexes: (columns) => [index(${args})]`);
   }
   return found.length === 0 ? false : found.join("; ");
+}
+
+function indexListsFromRows(
+  rows: readonly ConstraintRow[],
+  table: string,
+): readonly (readonly string[])[] | undefined {
+  const lists: (readonly string[])[] = [];
+  for (const row of rows) {
+    if (row.table !== table) continue;
+    if (row.kind === "index") {
+      if (row.expression) return undefined;
+      lists.push(row.columns);
+    } else if (row.constraintKind === "primaryKey" || row.constraintKind === "unique") {
+      lists.push(row.columns);
+    }
+  }
+  return lists;
 }
 
 function indexLists(catalog: Catalog, table: string): readonly (readonly string[])[] | undefined {

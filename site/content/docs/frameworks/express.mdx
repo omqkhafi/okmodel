@@ -14,6 +14,8 @@ You get a small Express server with a read route, a write route, and a clean shu
 
 CI boots the example with Bun only. The [Hono](/docs/frameworks/hono) example shows a bundled Node.js entry, if you want the build step.
 
+`armCatalog()` is not required, including a single-file Node or Lambda bundle of this server. Queries and mapped constraint errors do not call it. Call `armCatalog()` from `okmodel/pg/catalog` only before a direct `schema().catalog` read in a bundle that has no compiler file.
+
 ## Install
 
 ```sh

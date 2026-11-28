@@ -15,6 +15,8 @@ You get one `db` module that App Router route handlers import, a route that read
 
 A module-level `connect(...)` suits the Node.js runtime, where one long-lived process serves many requests and keeps one pool. The Edge runtime has no TCP socket for postgres.js, so every route that imports `src/db.ts` sets `export const runtime = "nodejs"`, and no Edge route or middleware may import it.
 
+`armCatalog()` is not required for queries or mapped constraint errors, including when `okmodel` is left out of `serverExternalPackages` and Next.js bundles it with webpack or Turbopack. Call `armCatalog()` from `okmodel/pg/catalog` only before a direct `schema().catalog` read in a bundle that has no compiler file.
+
 ## Install
 
 ```sh

@@ -67,8 +67,9 @@ test("a single-file bundle without armCatalog names the fix", () => {
     const ran = spawnSync(process.execPath, [out], { encoding: "utf8" });
     expect(ran.status).not.toBe(0);
     const text = `${ran.stdout}\n${ran.stderr}`;
-    expect(text).toContain("armCatalog");
-    expect(text).toContain("okmodel/pg/catalog");
+    expect(text).toContain("OKM1020");
+    expect(text).toContain("okm help OKM1020");
+    expect(text).not.toContain("armCatalog");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
