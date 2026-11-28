@@ -138,7 +138,7 @@ export function compileCatalog(input: CatalogCompileInput): Catalog {
   }
   const rlsSchemas = declaredRlsSchemas(input.triggers);
   if (rlsSchemas !== undefined) {
-    refuseDisabledRls(input.tables, rlsSchemas);
+    refuseDisabledRls(input.tables, objects, rlsSchemas, input.names);
     const events = readEventCompiler();
     if (events === undefined) {
       throw new OkmError(
@@ -332,17 +332,29 @@ function rememberSequenceGrants(prepared: readonly CompileTable[]): void {
  *
  * The policy compiler omits row security when it is off, so the catalog
  * object cannot tell an explicit false from a default. The table options
- * still can. Tables declared here live in `public` until a later placement.
+ * still can. A table's schema is the namespace on its catalog object after
+ * trigger placement. A table that has not moved is `public`.
  *
  * @param tables - Tables passed to `schema()`
+ * @param objects - Catalog objects built so far, after trigger placement
  * @param schemas - Schema names the preset covers
+ * @param names - SQL names for the tables
  */
 function refuseDisabledRls(
   tables: CatalogCompileInput["tables"],
+  objects: readonly CatalogObject[],
   schemas: readonly string[],
+  names: CatalogCompileInput["names"],
 ): void {
-  if (!schemas.includes("public")) return;
+  const covered = new Set(schemas);
+  const home = new Map<string, string>();
+  for (const object of objects) {
+    if (object.kind !== "table" || object.identity.namespace.form !== "static") continue;
+    home.set(object.identity.name, object.identity.namespace.name);
+  }
   for (const item of tables) {
+    const schemaName = home.get(names.table(item)) ?? "public";
+    if (!covered.has(schemaName)) continue;
     const options = item.options as { readonly rls?: unknown } | undefined;
     const rls = options?.rls;
     const off =
@@ -354,7 +366,7 @@ function refuseDisabledRls(
     if (!off) continue;
     throw new OkmError(
       "OKM1931",
-      `Table ${item.name} sets rls: false, and enableRls covers schema public.`,
+      `Table ${item.name} sets rls: false, and enableRls covers schema ${schemaName}.`,
       { fix: { summary: "Remove rls: false, or take the table's schema out of enableRls." } },
     );
   }

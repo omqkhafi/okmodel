@@ -941,8 +941,9 @@ async function eventTriggerNote(
   error: unknown,
 ): Promise<string | undefined> {
   const message = error instanceof Error ? error.message : "";
-  const state = Reflect.get(error as object, "sqlstate") ?? Reflect.get(error as object, "code");
-  if (state !== "P0001" && state !== "42501" && !message.includes("okm_guard")) return undefined;
+  const where = errorWhere(error);
+  const guard = `${message}\n${where}`.includes("okm_guard");
+  if (!guard && !where.includes("function")) return undefined;
   const listed = await connection.execute(
     `select e.evtname, coalesce(array_to_string(e.evttags, ', '), ''), p.proname
      from pg_event_trigger e
@@ -951,6 +952,8 @@ async function eventTriggerNote(
      order by e.evtname`,
   );
   if (listed.rows.length === 0) return undefined;
+  const named = listed.rows.some((row) => namesEventFunction(where, String(row[2] ?? "")));
+  if (!guard && !named) return undefined;
   const lines = listed.rows.map((row) => {
     const name = String(row[0]);
     const tags = String(row[1]);
@@ -958,6 +961,41 @@ async function eventTriggerNote(
     return `${name} calls ${fn}${tags.length > 0 ? ` on ${tags}` : ""}. Disable it with ALTER EVENT TRIGGER ${name} DISABLE or drop it with DROP EVENT TRIGGER ${name}.`;
   });
   return lines.join(" ");
+}
+
+/**
+ * Postgres `CONTEXT` (`where`) from an error or its cause.
+ *
+ * The driver keeps the server fields on the cause. A table-trigger `RAISE`
+ * names that function here, and an event-trigger `RAISE` names its function.
+ *
+ * @param error - Caught value
+ * @returns The context line, or an empty string
+ */
+function errorWhere(error: unknown): string {
+  const seen = new Set<unknown>();
+  let current = error;
+  while (typeof current === "object" && current !== null && !seen.has(current)) {
+    seen.add(current);
+    const where = Reflect.get(current, "where");
+    if (typeof where === "string" && where.length > 0) return where;
+    current = Reflect.get(current, "cause");
+  }
+  return "";
+}
+
+/**
+ * Whether `where` names `fn` as the raising function.
+ *
+ * @param where - Postgres context line
+ * @param fn - Function name of an enabled event trigger
+ * @returns `true` when the context is that function
+ */
+function namesEventFunction(where: string, fn: string): boolean {
+  if (fn.length === 0 || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(fn)) return false;
+  return new RegExp(
+    `\\bfunction\\s+(?:(?:"[^"]+"|[A-Za-z_]\\w*)\\.)?(?:"${fn}"|${fn})\\s*\\(`,
+  ).test(where);
 }
 
 function withNote(error: unknown, note: string): Error {

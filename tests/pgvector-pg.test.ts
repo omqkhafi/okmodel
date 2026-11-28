@@ -456,7 +456,7 @@ else
         await sql.unsafe("create extension vector");
         await sql.unsafe("create table sample (id int primary key, embedding vector(128))");
         await sql.unsafe(
-          "insert into sample (id, embedding) select i, array(select random() from generate_series(1, 128))::vector from generate_series(1, 200) as i",
+          "insert into sample (id, embedding) select i, array(select random() from generate_series(1, 128))::vector from generate_series(1, 50000) as i",
         );
         await sql.unsafe("set maintenance_work_mem = '64MB'");
         await sql.unsafe(
@@ -464,7 +464,7 @@ else
         );
         const queries = await sql<
           { embedding: string }[]
-        >`select embedding::text from sample order by id limit 20`;
+        >`select embedding::text from sample order by id limit 100`;
         const recalls: Record<string, number> = {};
         for (const ef of [40, 100, 400]) {
           let hit = 0;
@@ -491,7 +491,7 @@ else
           }
           recalls[String(ef)] = total === 0 ? 0 : hit / total;
         }
-        console.log(`pgvector recall n=200 d=128 q=20 k=10 ${JSON.stringify(recalls)}`);
+        console.log(`pgvector recall n=50000 d=128 q=100 k=10 ${JSON.stringify(recalls)}`);
         expect(recalls["40"]).toBeGreaterThan(0);
         expect(recalls["400"]).toBeGreaterThanOrEqual(recalls["40"] ?? 0);
       });

@@ -18,6 +18,7 @@
     "./pg/btree_gin": "8cd0d4f8b46db3afc69cbe3b4f8e4f8e4edcf1db169fb84d9e9d61765797f2a4",
     "./pg/btree_gist": "b5ec2d32f2cea49ab86113a92a2e29f13c9bd90228f225149961f10cc0aca8a6",
     "./pg/bun": "639825933b31b9d5a82cff36ec346adf6e889cd84d05a2e22c1ac210d9727a53",
+    "./pg/catalog": "dc620f775210005052fe336ce5fa83c9625820e5e290004dfef07aa6133e66ba",
     "./pg/citext": "74cbf992cbd946fc7ca97186805b0d0a33e59c7d7dda31593415a291b537cfc5",
     "./pg/fuzzystrmatch": "08dccce178945a58231c4d39410285b250b746fc9d907a9a341a53831131eabd",
     "./pg/hstore": "d97f36d07a7d745b6bf187675ef18b50ac7fe8b9ab5bab0dcb029c65e9ca3930",
@@ -99,6 +100,10 @@
     "./pg/bun": {
       "import": "./dist/runtime/pg/bun.js",
       "types": "./dist/runtime/pg/bun.d.ts"
+    },
+    "./pg/catalog": {
+      "import": "./dist/dialects/pg/catalog-arm.js",
+      "types": "./dist/dialects/pg/catalog-arm.d.ts"
     },
     "./pg/citext": {
       "import": "./dist/dialects/pg/ext/citext.js",

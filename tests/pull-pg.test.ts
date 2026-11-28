@@ -32,6 +32,7 @@ import { extension } from "../src/dialects/pg/ext/index.js";
 import { index, schema, sql, t, table, type AnyTable } from "../src/dialects/pg/index.js";
 import { catalogsEqual } from "../src/tooling/migrate/equal.js";
 import { unlistedTableFiles } from "../src/tooling/migrate/project.js";
+import { planMigration } from "../src/tooling/migrate/plan.js";
 import { pullProject, type PullResult } from "../src/tooling/migrate/pull.js";
 import { loadSchema } from "../src/tooling/migrate/project.js";
 import { canonicalTypeName } from "../src/tooling/migrate/type-name.js";
@@ -246,6 +247,40 @@ postgresTest(
       expect(source).toContain("materializedView(");
       expect(source).toContain("q.sql(");
       expect(source).toContain(".nullable()");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await database.close();
+    }
+  },
+  60_000,
+);
+
+postgresTest(
+  gate,
+  "pull of a plpgsql procedure and a commits procedure replans to zero",
+  async () => {
+    const database = await createIsolatedDatabase();
+    const cwd = tempProject();
+    try {
+      linkPackage();
+      await apply(database.url, [
+        "create table batches (n integer primary key)",
+        "create procedure take_one(n integer) language plpgsql as $$ begin null; end $$",
+        "create procedure take_batch() language plpgsql as $$ begin insert into batches (n) values (1); commit; end $$",
+      ]);
+      writeConfig(cwd, database.url);
+      const pulled = await pullProject(cwd, ["--out", "adopted"]);
+      const built = await loadSchema(cwd, "./adopted/schema.ts");
+      const live = await readLive(database.url);
+      const plan = planMigration({
+        before: align(live, keysOf(pulled)),
+        after: align(built.catalog, new Set()),
+        name: "again",
+      });
+      expect(plan.steps, plan.steps.map((step) => step.sql).join("\n")).toEqual([]);
+      const source = readFileSync(join(cwd, "adopted/schema.ts"), "utf8");
+      expect(source).toContain('kind: "procedure"');
+      expect(source).toContain("commits: true");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
       await database.close();

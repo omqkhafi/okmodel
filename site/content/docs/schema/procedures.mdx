@@ -95,6 +95,12 @@ await takeBatch.run(db, {});
 
 `CALL` outside a transaction commits through PgBouncer transaction pooling. `okm call --rollback` is refused when the procedure commits, because a rollback would not undo those commits.
 
+pg_cron is not in the test topology. This schedule was not run here. `CALL` passes `NULL` for every `OUT` argument. pg_cron runs the statement on its own, outside a transaction, which is what `commits: true` needs.
+
+```sql title="pg_cron" no-check="pg_cron is not installed here"
+select cron.schedule('take-batch', '0 * * * *', $$CALL take_batch(21, NULL)$$);
+```
+
 ### Transactions
 
 A procedure without `commits` joins the caller's transaction. `db.tx(() => procedure.run(db, args))` rolls the work back with the transaction. A procedure with `commits` must be called on the client, outside `db.tx()`.

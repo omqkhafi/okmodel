@@ -983,11 +983,19 @@
       "kind": "stable"
     },
     {
+      "name": "TableTriggerOptions",
+      "kind": "stable"
+    },
+    {
       "name": "TriggerDeclaration",
       "kind": "stable"
     },
     {
       "name": "TriggerOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "eventTriggerType",
       "kind": "stable"
     },
     {
@@ -2048,6 +2056,62 @@
     },
     {
       "name": "withOwner",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/pg/catalog": [
+    {
+      "name": "armCatalog",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/event": [
+    {
+      "name": "AuditDdlOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "COMMAND_TAGS",
+      "kind": "stable"
+    },
+    {
+      "name": "EnableRlsOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "EventCommandTag",
+      "kind": "stable"
+    },
+    {
+      "name": "GuardBlock",
+      "kind": "stable"
+    },
+    {
+      "name": "GuardDdlOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "NotifyDdlOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "auditDdl",
+      "kind": "stable"
+    },
+    {
+      "name": "enableRls",
+      "kind": "stable"
+    },
+    {
+      "name": "guardDdl",
+      "kind": "stable"
+    },
+    {
+      "name": "notifyDdl",
+      "kind": "stable"
+    },
+    {
+      "name": "resolveRoleTokens",
       "kind": "stable"
     }
   ],
