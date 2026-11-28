@@ -39,13 +39,13 @@ export async function seen(url: string): Promise<number> {
 }
 ```
 
-`const updates = db.orders.watch(...)` returns the handle immediately. `await using` calls `stop()`. `updates.state` is `"push"`, `"poll"`, or `"stopped"`. `updates.stats` counts runs, errors, wakes, and queries. `await updates.run()` settles the read already running, or starts one. `updates.stop()` ends it.
+`const updates = db.orders.watch(...)` returns the handle immediately. `await using` calls `stop()`. `updates.state` is `"push"`, `"poll"`, or `"stopped"`. `updates.stats` counts runs, errors, wakes, and queries. `await updates.run()` settles the read already running, or starts one. `await updates.stop()` marks the watch stopped and waits until the handler already running has finished. After that await, no handler, `onError`, or query from that watch runs. A handler that throws still settles `stop()`; the error goes to `onError`.
 
 The handler runs one at a time. Wakes that arrive while it is running become one more run after it finishes. A thrown handler goes to `onError` and the process stays up. The next run tries again.
 
 ## Live read [feature="watch.liveRead"]
 
-Pass the same object you would pass to `find()`. The library runs that read on the client you called, hashes the rows, and calls you at start and whenever the hash differs from the last one your handler finished. A handler that throws is retried on the next run. Two watches in one process with the same table, options, and scope share one query per wake. The rows are whatever that client is allowed to read.
+Pass the same object you would pass to `find()`. The library runs that read on the client you called, hashes the rows, and calls you at start and whenever the hash differs from the last one your handler finished. A handler that throws is retried on the next run. Each wake is followed by a read that started after that wake. Two watches share a query only when they are the same table, options, and scope and no wake has arrived since that read started. A different scope does not share. The rows are whatever that client is allowed to read.
 
 ```ts title="live.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -138,7 +138,7 @@ The listen connection runs `SELECT 1` every 30 seconds and allows 10 seconds for
 
 ## Hot tables
 
-The trigger is statement-level. One statement sends one notification, with the distinct tenant keys when the table has a tenant column. `NOTIFY` takes a global commit lock, so many sessions committing at once queue on it.
+The trigger is statement-level. Insert, update, delete, and truncate each have their own trigger and call the same function, so a truncate wakes a live read. One statement sends one notification, with the distinct tenant keys when the table has a tenant column. Truncate notifies every listener. `NOTIFY` takes a global commit lock, so many sessions committing at once queue on it.
 
 On one local PostgreSQL 17, 20,000 single-row commits on one connection took 792 ms with no trigger, 848 ms with `watch: true`, and 813 ms with `{ push: false }`. The same 20,000 commits split across 8 connections took 283 ms with no trigger, 1,181 ms with the trigger, and 269 ms with `{ push: false }`. `{ push: false }` installs no trigger. Use it, and `throttle`, on a table whose commits are already the bottleneck.
 

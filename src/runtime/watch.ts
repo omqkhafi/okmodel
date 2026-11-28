@@ -4,7 +4,10 @@
  * NOTIFY is a hint. The handler runs at start, after a wake, after reconnect,
  * and at least every `every`. A live read calls `find` on the same session
  * and invokes the handler when the hashed rows differ from the last run that
- * finished. Identical reads in one process share one query per wake.
+ * finished. A hub counts wakes. A shared read is joinable only when that
+ * count is still the one it started with, so a wake is never answered by a
+ * read that started earlier. Identical reads still share one query when no
+ * wake lands during it.
  *
  * The listen connection, the heartbeat, and the reconnect live in one hub per
  * process and URL. A driver without a push mark, a failed delivery self-test,
@@ -84,6 +87,8 @@ type Hub = {
   generation: number;
   closed: boolean;
   proof: { readonly ok: boolean; readonly reason: string } | undefined;
+  /** Wakes delivered to a live subscription. A flight records the value it started at. */
+  epoch: number;
 };
 
 type Registration = {
@@ -95,7 +100,13 @@ type Registration = {
 };
 
 const hubs = new Map<string, Hub>();
-const flights = new Map<string, Promise<unknown>>();
+
+type Flight = {
+  readonly epoch: number;
+  readonly pending: Promise<unknown>;
+};
+
+const flights = new Map<string, Flight>();
 const poolIds = new WeakMap<DriverPool, number>();
 let poolSeq = 1;
 let warned = false;
@@ -263,6 +274,7 @@ function openSubscription(
   let last = 0;
   let done: string | undefined;
   let waiting: ReturnType<typeof setTimeout> | undefined;
+  let releaseWait: (() => void) | undefined;
   let chain: Promise<void> = Promise.resolve();
   let registration: Registration | undefined;
   const channel =
@@ -276,7 +288,7 @@ function openSubscription(
     try {
       if (parsed.live !== undefined && table !== undefined) {
         const key = flightKey(session, table, parsed.live.query);
-        const rows = await sharedRead(key, () => {
+        const rows = await sharedRead(key, hub?.epoch ?? 0, () => {
           counts.queries += 1;
           return runRead(session, table, parsed.live?.query ?? {});
         });
@@ -298,7 +310,7 @@ function openSubscription(
   };
 
   const drain = (): Promise<void> => {
-    if (running) return chain;
+    if (stopped || running) return chain;
     running = true;
     chain = (async () => {
       do {
@@ -323,8 +335,13 @@ function openSubscription(
     const wait = last === 0 || throttleMs === 0 ? 0 : Math.max(0, throttleMs - (Date.now() - last));
     if (wait === 0) return drain();
     chain = new Promise((resolve) => {
+      releaseWait = () => {
+        releaseWait = undefined;
+        resolve();
+      };
       waiting = setTimeout(() => {
         waiting = undefined;
+        releaseWait = undefined;
         resolve(drain());
       }, wait);
     });
@@ -332,15 +349,21 @@ function openSubscription(
   };
 
   const stop = async (): Promise<void> => {
-    if (stopped) return;
+    if (stopped) {
+      await chain;
+      return;
+    }
     stopped = true;
     if (waiting !== undefined) clearTimeout(waiting);
     waiting = undefined;
+    releaseWait?.();
+    releaseWait = undefined;
     clearInterval(timer);
     if (registration !== undefined && hub !== undefined) {
       forget(hub, registration);
       registration = undefined;
     }
+    await chain;
   };
 
   if (hub !== undefined && channel !== undefined) {
@@ -436,6 +459,7 @@ function hubFor(session: Session): Hub {
     generation: 0,
     closed: false,
     proof: undefined,
+    epoch: 0,
   };
   hubs.set(key, hub);
   hub.connecting = connectHub(hub);
@@ -534,7 +558,16 @@ async function prove(
 function deliver(hub: Hub, channel: string, payload: string): void {
   const listeners = hub.channels.get(channel);
   if (listeners === undefined) return;
+  if (wakesSubscription(hub, channel, payload)) hub.epoch += 1;
   for (const listener of listeners) listener(payload);
+}
+
+function wakesSubscription(hub: Hub, channel: string, payload: string): boolean {
+  for (const registration of hub.subs) {
+    if (!registration.on || registration.channel !== channel) continue;
+    if (relevant(payload, registration.token)) return true;
+  }
+  return false;
 }
 
 function remember(hub: Hub, registration: Registration): void {
@@ -610,6 +643,7 @@ function armHeart(hub: Hub): void {
 }
 
 function kickAll(hub: Hub): void {
+  hub.epoch += 1;
   for (const registration of hub.subs) registration.kick();
 }
 
@@ -791,13 +825,15 @@ function flightKey(session: Session, table: string, query: Record<string, unknow
   return `${String(poolId(innerPool(session.pool)))}\u0000${table}\u0000${scopeText}\u0000${stable(session.settings ?? [])}\u0000${stable(query)}`;
 }
 
-function sharedRead(key: string, load: () => Promise<unknown>): Promise<unknown> {
+function sharedRead(key: string, epoch: number, load: () => Promise<unknown>): Promise<unknown> {
   const existing = flights.get(key);
-  if (existing !== undefined) return existing;
+  if (existing !== undefined && existing.epoch === epoch) return existing.pending;
+  let flight: Flight | undefined;
   const pending = load().finally(() => {
-    if (flights.get(key) === pending) flights.delete(key);
+    if (flight !== undefined && flights.get(key) === flight) flights.delete(key);
   });
-  flights.set(key, pending);
+  flight = { epoch, pending };
+  flights.set(key, flight);
   return pending;
 }
 
