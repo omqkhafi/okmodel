@@ -71,6 +71,35 @@ export function ruleFires(
   if (rule.code === "OKM2007") return largeList(call);
   if (rule.code === "OKM2008") return wideFanOut(schema, call);
   if (rule.code === "OKM2012") return unindexedComputed(schema, call);
+  if (rule.code === "OKM2130") return partitionScan(schema, call);
+  return false;
+}
+
+function partitionScan(schema: QuerySchema, call: WarningCall): boolean {
+  const table = schema.model[call.table];
+  const keys = table?.partitionKey;
+  if (keys === undefined || keys.length === 0) return false;
+  if (call.op === "insert" || call.op === "upsert") return false;
+  if (tenantCovers(schema, call, keys)) return false;
+  return !mentions(call.where, new Set(keys));
+}
+
+function tenantCovers(schema: QuerySchema, call: WarningCall, keys: readonly string[]): boolean {
+  if (call.scope === undefined || "unscoped" in call.scope) return false;
+  const tenancy = schema.tenancy;
+  if (tenancy === undefined) return false;
+  const covered =
+    tenancy.keys !== undefined && tenancy.keys.length > 0 ? tenancy.keys : [tenancy.key];
+  return keys.every((key) => covered.includes(key));
+}
+
+function mentions(value: unknown, keys: ReadonlySet<string>): boolean {
+  if (Array.isArray(value)) return value.some((item) => mentions(item, keys));
+  if (typeof value !== "object" || value === null) return false;
+  for (const [key, nested] of Object.entries(value)) {
+    if (keys.has(key)) return true;
+    if (mentions(nested, keys)) return true;
+  }
   return false;
 }
 

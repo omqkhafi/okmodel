@@ -210,6 +210,18 @@ export const POSTGRES_FEATURES = {
   "query.toOnePath": native("proof:query.toOnePath"),
   /** `"home.city"` and `"project.name"` in `db.*` where, select, orderBy, and groupBy. */
   "query.paths": native("proof:query.paths"),
+  /** A range rule or explicit range bounds. */
+  "partition.range": native("proof:partition.range"),
+  /** List values, including one default partition. */
+  "partition.list": native("proof:partition.list"),
+  /** Hash modulus and remainder. */
+  "partition.hash": native("proof:partition.hash"),
+  /** Another tool owns the children. OKM checks the parent only. */
+  "partition.external": native("proof:partition.external"),
+  /** `okm partitions maintain` creates the window and finalizes a pending detach. */
+  "partition.maintain": native("proof:partition.maintain"),
+  /** A plain table becomes the first partition when nothing blocks it. */
+  "partition.convert": native("proof:partition.convert"),
 } as const satisfies Registry;
 
 /** One Postgres feature key. */

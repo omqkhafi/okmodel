@@ -405,6 +405,8 @@ type StoredOptions = {
   readonly foreignKeys?: (
     columns: Readonly<Record<string, ColumnHandle>>,
   ) => Readonly<Record<string, ForeignKeySpec>>;
+  readonly partition?: unknown;
+  readonly partitions?: unknown;
 };
 
 /** Fields `schema()` reads from a column. Avoids instantiating {@link ColumnBuilder}. */
@@ -1802,7 +1804,20 @@ function tableModel(
     ...(item.provenance.source !== undefined ? { source: item.provenance.source } : {}),
     ...(item.archive !== undefined ? { archive: item.archive } : {}),
     ...(item.presets !== undefined ? { presets: item.presets } : {}),
+    ...partitionKeyOf(item.options?.partition),
   };
+}
+
+function partitionKeyOf(
+  partition: unknown,
+): { readonly partitionKey: readonly string[] } | undefined {
+  if (typeof partition !== "object" || partition === null || !("key" in partition))
+    return undefined;
+  const key = partition.key;
+  if (typeof key === "string") return { partitionKey: [key] };
+  if (Array.isArray(key) && key.every((item) => typeof item === "string"))
+    return { partitionKey: key };
+  return undefined;
 }
 
 function resolveRelations(

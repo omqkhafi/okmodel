@@ -976,7 +976,7 @@ export function trigger(name: string, options: TriggerOptions): TriggerDeclarati
         }
       }
       if (options.referencing !== undefined) {
-        assertReferencing(name, options, tablePartitioned(built, parent.name));
+        assertReferencing(name, options);
       }
       const when = options.when === undefined ? undefined : bodyText(options.when);
       for (const column of whenColumnNames(when)) {
@@ -1022,7 +1022,7 @@ function isEventTrigger(options: TriggerOptions): options is EventTriggerOptions
   return "event" in options && options.event !== undefined;
 }
 
-function assertReferencing(name: string, options: TableTriggerOptions, partitioned: boolean): void {
+function assertReferencing(name: string, options: TableTriggerOptions): void {
   const referencing = options.referencing;
   if (referencing === undefined) return;
   if (options.timing !== "after" || options.level !== "statement" || options.events.length !== 1) {
@@ -1036,13 +1036,6 @@ function assertReferencing(name: string, options: TableTriggerOptions, partition
     throw new OkmError("OKM1931", `Trigger ${name} transition tables cannot use updateOf.`, {
       fix: { summary: "Remove updateOf. A transition table sees the whole statement." },
     });
-  }
-  if (partitioned && options.level === "statement") {
-    throw new OkmError(
-      "OKM1931",
-      `Trigger ${name} names transition tables on a partitioned table. PostgreSQL refuses them there. Use a statement-level trigger without referencing, or a plain table.`,
-      { fix: { summary: "Remove referencing from the partitioned table." } },
-    );
   }
   const event = options.events[0];
   const old = referencing.old !== undefined;
@@ -1060,16 +1053,6 @@ function assertReferencing(name: string, options: TableTriggerOptions, partition
       },
     });
   }
-}
-
-function tablePartitioned(built: unknown, table: string): boolean {
-  if (!Array.isArray(built)) return false;
-  for (const object of built) {
-    if (!isRecord(object) || object.kind !== "table" || !isRecord(object.identity)) continue;
-    if (object.identity.name !== table) continue;
-    return isRecord(object.definition) && object.definition.partition !== undefined;
-  }
-  return false;
 }
 
 function bodyText(body: SqlText | string): string {

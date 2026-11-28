@@ -29,6 +29,13 @@ import type {
   ViewObject,
 } from "../../contracts/catalog/types.js";
 import { sealLowered, type DdlStep, type LogicalChange, type LoweredStep } from "../ddl.js";
+import {
+  conversionStatements,
+  liveAttachStatements,
+  newChildStatements,
+  partitionedIndexStatements,
+  type PartitionStatement,
+} from "./partition-sql.js";
 import { ddlStep } from "../ddl-step.js";
 import { classOf, type StepKind } from "../step-class.js";
 import {
@@ -141,6 +148,7 @@ function lowerChange(change: LogicalChange): readonly DdlStep[] {
           "ddl",
           ACCESS,
         ),
+        ...statementsOf(newChildStatements(change.table, change.catalog, schema)),
         ...(owner === undefined
           ? []
           : [
@@ -166,9 +174,24 @@ function lowerChange(change: LogicalChange): readonly DdlStep[] {
         change.constraint,
         change.schema,
       );
+    case "attach-partition":
+      return statementsOf(
+        liveAttachStatements(change.table, change.catalog, change.schema, change.children),
+      );
+    case "convert-partition":
+      return statementsOf(
+        conversionStatements(
+          change.table,
+          change.catalog,
+          change.before,
+          change.schema,
+          change.attach,
+          change.others,
+        ),
+      );
     case "create-index":
       return withObjectComment(
-        createIndex(change.index, change.schema, change.onExistingTable),
+        createIndex(change.index, change.schema, change.onExistingTable, change.partitionChildren),
         change.index,
         change.schema,
       );
@@ -685,11 +708,28 @@ function addConstraint(constraint: ConstraintObject, schema: string): readonly D
   return [step];
 }
 
+function statementsOf(statements: readonly PartitionStatement[]): readonly DdlStep[] {
+  return statements.map((statement) => {
+    const step = ddlStep(
+      statement.sql,
+      statement.kind,
+      "ddl",
+      statement.lock,
+      statement.transactional !== false,
+    );
+    return statement.weight === undefined ? step : { ...step, weight: statement.weight };
+  });
+}
+
 function createIndex(
   index: IndexObject,
   schema: string,
   onExistingTable: boolean,
+  partitionChildren?: readonly string[],
 ): readonly DdlStep[] {
+  if (onExistingTable && partitionChildren !== undefined && partitionChildren.length > 0) {
+    return statementsOf(partitionedIndexStatements(index, schema, partitionChildren));
+  }
   const sql = createObjectSql(index, schema);
   if (sql === undefined) return [];
   if (!onExistingTable) return [ddlStep(sql, "create-index", "ddl", SHARE)];

@@ -20,6 +20,7 @@ import type {
   IndexObject,
   MaterializedViewObject,
   PolicyObject,
+  PartitionChild,
   SequenceObject,
   TableObject,
   TriggerObject,
@@ -210,6 +211,7 @@ function statementMatchesKind(kind: StepKind, sql: string): boolean {
  */
 const KIND_SQL: Readonly<Record<StepKind, RegExp>> = {
   "create-table": /^create table\b/,
+  "attach-partition": /^alter table\b.*\battach partition\b/,
   "drop-table": /^drop table\b/,
   "add-column": /^alter table\b.*\badd column\b/,
   "add-column-required": /^alter table\b.*\badd column\b/,
@@ -238,7 +240,7 @@ const KIND_SQL: Readonly<Record<StepKind, RegExp>> = {
   "drop-index": /^drop index\b/,
   "rename-index": /^alter index\b.*\brename to\b/,
   "create-sequence": /^create sequence\b/,
-  "alter-sequence": /^alter sequence\b/,
+  "alter-sequence": /^(?:alter sequence\b|select setval\()/,
   "seed-counter": /^insert into\b.*\bokm_ctr_/,
   "drop-sequence": /^drop sequence\b/,
   "create-enum": /^create type\b.*\bas enum\b/,
@@ -481,6 +483,24 @@ export type LogicalChange =
        * The dialect chooses a non-blocking build when it can.
        */
       readonly onExistingTable: boolean;
+      /** Child tables when the parent is already partitioned. */
+      readonly partitionChildren?: readonly string[];
+    }
+  | {
+      readonly op: "attach-partition";
+      readonly schema: string;
+      readonly table: TableObject;
+      readonly catalog: Catalog;
+      readonly children: readonly PartitionChild[];
+    }
+  | {
+      readonly op: "convert-partition";
+      readonly schema: string;
+      readonly table: TableObject;
+      readonly catalog: Catalog;
+      readonly before: Catalog;
+      readonly attach: PartitionChild;
+      readonly others: readonly PartitionChild[];
     }
   | {
       readonly op: "drop-index";

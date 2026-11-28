@@ -90,6 +90,7 @@
   "/docs/schema/keys-and-identity",
   "/docs/schema/names-and-casing",
   "/docs/schema/number-columns",
+  "/docs/schema/partitions",
   "/docs/schema/policies",
   "/docs/schema/postgres-specific-columns",
   "/docs/schema/procedures",

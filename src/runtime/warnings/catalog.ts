@@ -535,6 +535,22 @@ export const WARNING_RULES: readonly WarningRule[] = [
     safeAlternatives: [alt("OKM2129", "Use a tag the event can see.")],
     escapeHatches: [hatch("OKM2129")],
   },
+  {
+    code: "OKM2130",
+    rule: "partition",
+    title: "Partition needs a key predicate",
+    summary:
+      "A query on a partitioned table does not constrain the partition key, so Postgres scans every partition. A default partition is allowed and holds rows that match no other bound. A grant on a child bypasses policies on the parent.",
+    fix: "A predicate on the partition key limits the scan. Rows leave the default partition before a tighter bound is added. Grants stay on the parent. okm partitions maintain creates the next partition when the last one is close to full.",
+    defaultLevel: "warn",
+    severity: "medium",
+    phase: "check",
+    evidence: "static",
+    safeAlternatives: [
+      alt("OKM2130", "Filter on the partition key, or rely on the tenant predicate."),
+    ],
+    escapeHatches: [hatch("OKM2130")],
+  },
 ];
 
 /**

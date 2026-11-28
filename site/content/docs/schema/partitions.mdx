@@ -1,0 +1,93 @@
+---
+title: "Partitions"
+description: "table({ partition }) declares a range, list, or hash partition. OKM creates the children, or another tool owns them."
+---
+
+`partition` is a table option. There is no partition builder and no second list. `schema()` stores the option. The catalog compiler turns it into children the first time something reads `.catalog`.
+
+A table is OKM-managed or `children: "external"`. It is not both. Names are `{table}_{suffix}`: `events_2026_01`, `events_h0`.
+
+### Range
+
+A time key uses `every`, `from`, `ahead`, and `at`. `at` is required when the key is `timestamptz`. Every bound is written with an explicit offset. OKM reads existing bounds with `SET TIME ZONE 'UTC'` and compares them as instants. The server prints bounds in the session time zone, so the text will not match.
+
+```ts
+export const events = table("events", {
+  id: t.integer(),
+  occurredAt: t.timestamptz(),
+  tenantId: t.integer(),
+  body: t.text(),
+}, {
+  primaryKey: ["id", "occurredAt"],
+  partition: {
+    by: "range",
+    key: "occurredAt",
+    every: "month",
+    at: "Asia/Riyadh",
+    from: "2026-01-01",
+    ahead: 3,
+    keep: { for: "13 months", then: "detach" },
+  },
+})
+```
+
+`every` is `year`, `quarter`, `month`, `week`, or `day`. A numeric key uses a positive integer, such as `every: "100"`. `date` does not need `at`. `timestamp` without a time zone is refused.
+
+Asia/Riyadh has no daylight saving. A key in `America/New_York` does. March 2026 runs from `2026-03-01 00:00:00-05` to `2026-04-01 00:00:00-04`. Read in UTC that is `2026-03-01 05:00:00+00` to `2026-04-01 04:00:00+00`. November runs from `2026-11-01 00:00:00-04` to `2026-12-01 00:00:00-05`, which is `2026-11-01 04:00:00+00` to `2026-12-01 05:00:00+00`.
+
+### Hash and list
+
+Hash when the key values grow. List when the set is closed. A default partition is allowed and linted. Hash has no default.
+
+```ts
+partition: { by: "hash", key: "tenantId", count: 8 }
+
+partition: { by: "list", key: "region" }
+partitions: { eu: { in: ["eu", "uk"] }, rest: { default: true } }
+```
+
+Rows that land in the default partition block a later partition for that value. PostgreSQL returns 23514. Move the rows and attach in one transaction.
+
+### Keys, grants, and conflicts
+
+The primary key, every unique constraint, and every exclusion must include the partition columns. A generated column cannot be the key. `references()` to a partitioned table must include those columns too. PostgreSQL returns 0A000 otherwise.
+
+`ON CONFLICT DO UPDATE` that changes the partition key is 0A000. A plain `UPDATE` moves the row.
+
+Row level security, policies, and grants live on the parent. A child does not inherit them. A direct grant on a child is a warning.
+
+### What the planner does
+
+A new child of a live parent is a standalone table (`LIKE` the parent `INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING INDEXES EXCLUDING IDENTITY`), a validated check, then `ATTACH PARTITION`. The parent lock is `SHARE UPDATE EXCLUSIVE`. The child lock is `ACCESS EXCLUSIVE`. `INCLUDING ALL` can copy an identity column, and attaching a table that still has identity fails.
+
+`DETACH` and `PARTITION OF` are not planned against a live parent. Both take `ACCESS EXCLUSIVE` on the parent.
+
+A parent index is `CREATE INDEX ON ONLY`, a concurrent index on each child, then `ALTER INDEX ... ATTACH PARTITION`. The parent index stays invalid until every child is attached.
+
+Changing the hash `count`, the key, or the key's type is a refusal. The message names the recipe. OKM does not drop the table to do it.
+
+### Maintenance
+
+`okm partitions <table>` is read only. `--json` prints bounds, estimated rows, size, gaps, overlaps, days left in the last partition, and rows in a default partition.
+
+`okm partitions maintain <table>` creates partitions through `ahead` and applies `keep`. `then: "detach"` is the default. The detached table stays a normal table. `then: "drop"` needs `--allow-protected`.
+
+`DETACH PARTITION ... CONCURRENTLY` runs outside a transaction. Inside a transaction, a function, or a procedure it fails with 25001. Before a new detach, maintain looks for `inhdetachpending` and runs `DETACH PARTITION ... FINALIZE`. A retry that skips that step fails with 55000.
+
+`okm apply` creates the window. It does not detach. Scheduling is a recipe: pg_cron runs the creation part only. There is no schedule API.
+
+`okm doctor` warns when fewer than 7 days remain in the last partition, or when `ahead` is not satisfied. `okm check` fails when `partman.part_config` lists a table that also has an OKM rule. pg_partman stops pre-making after a partition someone else created. Use `children: "external"` when pg_partman owns the children.
+
+```ts
+partition: { by: "range", key: "occurredAt", at: "UTC", children: "external" }
+```
+
+### Converting a plain table
+
+When a declared partition appears on a plain table, the planner converts it only when nothing inbound points at it: no foreign key, no view, no materialized view. The steps are a new partitioned table, `CHECK NOT VALID`, `VALIDATE`, `ATTACH`, and a rename, in one transaction. The attach is `weight: "blocking"`. Rows that would not fit the first partition are counted before that lock. The conversion stops and nothing is locked.
+
+Otherwise the plan refuses and lists the blockers.
+
+### Errors
+
+SQLSTATE 23514 with no constraint name, on a partitioned table, is the existing `check` kind with `reason: "no_partition"`. The hint is `okm partitions maintain`. A query that does not mention the partition key scans every partition and is warning OKM2130. A tenant key covered by the tenancy predicate is not that warning.

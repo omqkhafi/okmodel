@@ -845,6 +845,11 @@ export const TOOLING_ONLY_STARTUP = [
   "src/dialects/pg/series-slot.ts",
   "src/dialects/pg/generated-hold.ts",
   "src/dialects/pg/role/grant-slot.ts",
+  "src/dialects/pg/partition-compile.ts",
+  "src/dialects/pg/partition-sql.ts",
+  "src/tooling/migrate/partition-cmd.ts",
+  "src/tooling/migrate/partition-maintain.ts",
+  "src/tooling/migrate/partition-probe.ts",
 ] as const;
 
 /**

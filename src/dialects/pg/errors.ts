@@ -93,7 +93,11 @@ export function mapPostgresError(error: unknown, options?: MapPostgresErrorOptio
   if (search !== undefined) return search;
   const kind = kindOf(error);
   const columns = columnsOf(error);
-  const hint = hintOf(error, kind);
+  const noPartition =
+    error.sqlstate === "23514" && (error.constraint === undefined || error.constraint.length === 0);
+  const hint = noPartition
+    ? { reason: "no_partition", fix: { summary: "Run okm partitions maintain." } }
+    : hintOf(error, kind);
   const fieldReason =
     hint?.reason ??
     (kind === "not_null"

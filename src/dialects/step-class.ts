@@ -17,6 +17,7 @@ export type MigrationClass = "expand" | "contract" | "unclassified";
  */
 export const STEP_CLASS = {
   "create-table": "expand",
+  "attach-partition": "expand",
   "drop-table": "contract",
   "add-column": "expand",
   "add-column-required": "contract",
@@ -156,6 +157,7 @@ export type OperationClass = "additive" | "widening" | "data" | "destructive";
  */
 export const OPERATION_CLASS = {
   "create-table": "additive",
+  "attach-partition": "additive",
   "drop-table": "destructive",
   "add-column": "additive",
   "add-column-required": "additive",

@@ -113,7 +113,22 @@ export async function doctorProject(
       events = formatDeclaredEventTriggers(objects);
     }
   }
-  return `${emulation}${notice}${formatTriggers(objects)}${events}`;
+  let partitions = "";
+  if (targets.length === 1 || (targets.length > 1 && flags?.target !== undefined)) {
+    const target = selectTarget(opened.config, flags?.target);
+    try {
+      const { partitionDoctorLines } = await import("./partition-maintain.js");
+      const lines = await partitionDoctorLines(
+        target.url,
+        opened.built.catalog,
+        opened.config.namespace ?? "public",
+      );
+      if (lines.length > 0) partitions = `${lines.join("\n")}\n`;
+    } catch {
+      partitions = "";
+    }
+  }
+  return `${emulation}${notice}${formatTriggers(objects)}${events}${partitions}`;
 }
 
 /**

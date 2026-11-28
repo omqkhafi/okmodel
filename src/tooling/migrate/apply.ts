@@ -584,6 +584,16 @@ async function runApply(
       else progress.push(line);
     },
   });
+  if (built !== undefined) {
+    const { ensurePartitionWindow } = await import("./partition-maintain.js");
+    await ensurePartitionWindow({
+      url: target.url,
+      catalog: built.catalog,
+      schema: config.namespace ?? "public",
+      lockTimeoutMs: flags.lockTimeoutMs ?? DEFAULT_LOCK_MS,
+      lockWaitMs: flags.lockWaitMs ?? DEFAULT_LOCK_WAIT_MS,
+    });
+  }
   return { kind: "ran", report, progress };
 }
 

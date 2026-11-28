@@ -21,6 +21,7 @@ import { formatPlan, parsePlan, planMigration } from "../src/tooling/migrate/pla
 
 const EXPECTED = [
   ["create-table", "expand"],
+  ["attach-partition", "expand"],
   ["drop-table", "contract"],
   ["add-column", "expand"],
   ["add-column-required", "contract"],

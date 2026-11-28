@@ -34,6 +34,7 @@ import { declaredRlsSchemas, readEventCompiler } from "./event/slot.js";
 import { readPolicyCompiler } from "./policy-slot.js";
 import { rememberGrants } from "./role/grant-slot.js";
 import { readSeriesCompiler } from "./series-slot.js";
+import { compilePartition, refusePartitionForeignKeys } from "./partition-compile.js";
 
 /**
  * Compiles one schema's catalog.
@@ -149,10 +150,12 @@ export function compileCatalog(input: CatalogCompileInput): Catalog {
     }
     events.stampRls(objects, rlsSchemas);
   }
+  refusePartitionForeignKeys(objects);
   return catalog(objects);
 }
 
 function emitTable(input: CatalogCompileInput, item: CompileTable, objects: CatalogObject[]): void {
+  const partition = compileTablePartition(item);
   objects.push(
     catalogTable({
       namespace: input.namespace,
@@ -160,6 +163,7 @@ function emitTable(input: CatalogCompileInput, item: CompileTable, objects: Cata
       provenance: item.provenance,
       ...(item.options?.comment !== undefined ? { comment: item.options.comment } : {}),
       ...(item.tableDependencies.length > 0 ? { dependencies: item.tableDependencies } : {}),
+      ...(partition !== undefined ? { partition } : {}),
     }),
   );
   for (const column of item.columns) emitColumn(input, item, column, objects);
@@ -168,6 +172,36 @@ function emitTable(input: CatalogCompileInput, item: CompileTable, objects: Cata
   for (const unique of item.namedUniques) objects.push(constraint(unique));
   for (const index of item.indexes) objects.push(catalogIndex(index));
   for (const check of item.checks) emitCheck(objects, check);
+}
+
+function compileTablePartition(item: CompileTable) {
+  const options = item.options as
+    | { readonly partition?: unknown; readonly partitions?: unknown }
+    | undefined;
+  if (options?.partition === undefined && options?.partitions === undefined) return undefined;
+  const keys: string[][] = [];
+  if (item.primaryKey?.columns !== undefined) keys.push([...item.primaryKey.columns]);
+  for (const unique of item.namedUniques) {
+    if (unique.columns !== undefined) keys.push([...unique.columns]);
+  }
+  for (const exclusion of item.exclusions) {
+    const columns = (exclusion.exclusion ?? [])
+      .map((element) => element.column)
+      .filter((column): column is string => column !== undefined);
+    if (columns.length > 0) keys.push(columns);
+  }
+  return compilePartition({
+    table: item.sqlName,
+    partition: options?.partition,
+    partitions: options?.partitions,
+    columns: item.columns.map((column) => ({
+      field: column.field,
+      sql: column.sqlName,
+      dataType: column.state.baseType,
+      generated: column.state.generated !== undefined,
+    })),
+    keys,
+  });
 }
 
 function emitColumn(

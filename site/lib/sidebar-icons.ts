@@ -171,6 +171,7 @@ const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/docs/queries/request-filters": ListFilter,
   "/docs/schema/traits": Puzzle,
   "/docs/schema/tenancy": Building2,
+  "/docs/schema/partitions": Layers,
   "/docs/schema/policies": Shield,
   "/docs/queries/presets": Bookmark,
   "/docs/queries/search-and-trees": TextSearch,

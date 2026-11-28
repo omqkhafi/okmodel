@@ -301,6 +301,13 @@ export type TableModel = {
    * does not pack it, so a featureless table never carries it.
    */
   readonly validation?: ValidationModel;
+  /**
+   * Partition key field names.
+   *
+   * Absent when the table is not partitioned. A query warning reads this.
+   * The compiler that expands bounds is not on this object.
+   */
+  readonly partitionKey?: readonly string[];
 };
 
 /**
