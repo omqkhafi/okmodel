@@ -1,5 +1,6 @@
 import { Anatomy, AnatomyLine, AnatomyPart } from "@/components/anatomy";
 import { Callout } from "@/components/callout";
+import { featureHeading } from "@/components/feature-heading";
 import { TerminalSnippet } from "@/components/terminal-snippet";
 import { installDriverForFence, translatePackageScript } from "@/lib/package-managers";
 import { CodeBlock, Pre } from "@fumadocs/base-ui/components/codeblock";
@@ -8,6 +9,13 @@ import { Tab, Tabs } from "@fumadocs/base-ui/components/tabs";
 import defaultMdxComponents from "@fumadocs/base-ui/mdx";
 import type { MDXComponents } from "mdx/types";
 import { isValidElement, type ComponentProps, type ReactNode } from "react";
+
+const H1 = featureHeading("h1");
+const H2 = featureHeading("h2");
+const H3 = featureHeading("h3");
+const H4 = featureHeading("h4");
+const H5 = featureHeading("h5");
+const H6 = featureHeading("h6");
 
 /**
  * MDX component map. `bun add` and `bunx` fences render as a terminal.
@@ -20,6 +28,12 @@ import { isValidElement, type ComponentProps, type ReactNode } from "react";
 export function getMDXComponents(components?: MDXComponents): MDXComponents {
   return {
     ...defaultMdxComponents,
+    h1: H1,
+    h2: H2,
+    h3: H3,
+    h4: H4,
+    h5: H5,
+    h6: H6,
     pre: DocsPre,
     Step,
     Steps,

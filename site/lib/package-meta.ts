@@ -6,6 +6,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { TAGLINE } from "./generated/docs-constants";
 import { repoRoot } from "./repo";
 import {
   SITE_APPLICATION_CATEGORY,
@@ -42,12 +43,12 @@ export function readRootPackage(): RootPackage {
 export function readTagline(): string {
   const description = readRootPackage().description;
   const sentence = readmePositioningSentence();
-  if (sentence !== description) {
+  if (sentence !== description || description !== TAGLINE) {
     throw new Error(
-      `README positioning line (${sentence}) does not match package.json description (${description})`,
+      `README positioning line (${sentence}) does not match the generated tagline (${TAGLINE})`,
     );
   }
-  return description;
+  return TAGLINE;
 }
 
 /**

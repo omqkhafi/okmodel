@@ -8,7 +8,9 @@ import {
   rulesProblems,
   structureProblems,
 } from "./decisions.js";
+import { handbookProblems } from "./docs-frontmatter.js";
 import { hygieneProblems } from "./docs-hygiene.js";
+import { docsSupportProblems } from "./docs-support.js";
 import { generatePackedDocs, generatedDocsProblems } from "./docs-pack.js";
 import { exitOnProblems } from "./report.js";
 import { repoRoot } from "./root.js";
@@ -218,6 +220,8 @@ if (import.meta.main) {
       ...indexProblems(root, loaded.records),
       ...rulesProblems(root, loaded.records),
       ...hygieneProblems(root, version),
+      ...docsSupportProblems(root),
+      ...handbookProblems(root),
     ]);
   }
 }

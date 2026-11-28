@@ -1,3 +1,4 @@
+import { DOCS_REDIRECTS, withRedirectDestinations } from "@/lib/docs-redirects";
 import { SITE_ORIGIN } from "@/lib/site-identity";
 import { changelogSeriesPath, loadChangelogSeries } from "@/lib/changelog";
 import { source } from "@/lib/source";
@@ -9,10 +10,15 @@ export const revalidate = false;
  * HTML handbook pages plus the machine-readable entry points.
  */
 export default function sitemap(): MetadataRoute.Sitemap {
-  const pages: MetadataRoute.Sitemap = source.getPages().map((page) => ({
-    url: `${SITE_ORIGIN}${page.url}`,
+  const pageUrls = withRedirectDestinations(
+    source.getPages().map((page) => `${SITE_ORIGIN}${page.url}`),
+    DOCS_REDIRECTS,
+    SITE_ORIGIN,
+  );
+  const pages: MetadataRoute.Sitemap = pageUrls.map((url) => ({
+    url,
     changeFrequency: "weekly",
-    priority: page.url === "/docs" ? 0.9 : 0.7,
+    priority: url === `${SITE_ORIGIN}/docs` ? 0.9 : 0.7,
   }));
 
   return [

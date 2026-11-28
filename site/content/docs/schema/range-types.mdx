@@ -1,6 +1,9 @@
 ---
 title: Range types
 description: Built-in and custom range columns, exclusion constraints, and PostgreSQL 18 temporal keys.
+summary: "Range columns, exclusion constraints, and temporal keys each have a PostgreSQL floor."
+since: "0.10"
+status: stable
 ---
 
 A range column reads as `{ empty, lower, upper, lowerInclusive, upperInclusive }`. `{ empty: true }` has no bounds. A write, and a filter, accepts that object or a `[lower, upper)` tuple. A null bound is unbounded. The default bounds of a tuple are `[)`.
@@ -63,7 +66,7 @@ export async function nearby(url: string): Promise<void> {
 
 A grouped view does not take `groupBy` on the query builder. Put `range_agg` in `q.sql`. The [Bookings](/docs/guides/bookings) guide does that and unions the taken time.
 
-## Exclusions
+## Exclusions [feature="constraint.exclusion"]
 
 `exclusions` is a table option. The key is the constraint name: `{table}_{key}_excl`. Each element is a column or `range()`, with `eq`, `overlaps`, or `adjacent`. A tenant key is added as `eq`. A `via()` table has no tenant column, so the exclusion must name a scope column. `eq` on a scalar needs `btree_gist`, and the planner adds that extension. `where` is the usual where object, or SQL you already printed, and it must be immutable. `now()` is refused. Store a buffer in its own column. `timestamptz + interval` is not immutable.
 
@@ -103,7 +106,7 @@ An exclusion that exists in the database and is not declared is drift. `okm pull
 
 `UNIQUE ... WITHOUT OVERLAPS` is not a separate call. It is the primary key below.
 
-## Temporal keys
+## Temporal keys [feature="temporal.keys"]
 
 PostgreSQL 18 accepts `withoutOverlaps: true` on a primary key and `period: true` on a foreign key. The range column is last. On an older server the plan is refused before any SQL, and the message points at `exclusions`.
 

@@ -10,6 +10,7 @@
  * labels and the one-line notes are written by hand.
  */
 
+import { FLOOR_PHRASE } from "./generated/docs-constants";
 import derivedJson from "./hero-derived.json";
 import { HERO_QUERIES, type HeroQuerySpec } from "./hero-queries";
 import type { HeroDiffRow, HeroGroupId, HeroScenarioId } from "./hero-types";
@@ -481,7 +482,4 @@ export function shownScenarios(): ReadonlyArray<HeroScenario> {
 }
 
 /** Package contract cells for the foot rail. The version is appended by the caller. */
-export const HERO_CONTRACT: ReadonlyArray<string> = [
-  "PostgreSQL 15 and later",
-  "Apache-2.0",
-];
+export const HERO_CONTRACT: ReadonlyArray<string> = [FLOOR_PHRASE, "Apache-2.0"];

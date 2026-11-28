@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
 
+import { FLOOR_PHRASE, SUPPORT_PHRASE } from "./generated/docs-constants";
 import { applyEdits, HERO_BASE_SCHEMA, HERO_CONTRACT, HERO_GROUPS, HERO_SCENARIOS, heroSpecs } from "./hero";
 import { HERO_QUERIES } from "./hero-queries";
 import { repoRoot } from "./repo";
@@ -45,7 +46,7 @@ test("the base schema is a default-exported schema", () => {
 
 test("the contract cells repeat claims the README makes", () => {
   const readme = readFileSync(join(repoRoot(), "README.md"), "utf8");
-  expect(HERO_CONTRACT).toContain("PostgreSQL 15 and later");
-  expect(readme).toContain("PostgreSQL 15 and later; tested on 15 to 19");
+  expect(HERO_CONTRACT).toContain(FLOOR_PHRASE);
+  expect(readme).toContain(SUPPORT_PHRASE);
   expect(readme).toContain("Apache-2.0");
 });

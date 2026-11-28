@@ -13,7 +13,8 @@ export const revalidate = false;
 export const dynamicParams = false;
 
 /**
- * Serve byte-identical source markdown (YAML frontmatter stripped).
+ * Serve the page markdown (YAML frontmatter stripped). A heading attribute
+ * `[feature="key"]` is replaced by the plain support line.
  * Canonical: `/llms.mdx/docs/⟨slug⟩.md`. Also accepts `/content.md`
  * and the extensionless slug. Rewrite target for `Accept: text/markdown`
  * on `/docs/⟨slug⟩`, so the response carries `Vary: Accept`.

@@ -13,7 +13,7 @@ export type DocsRedirect = {
 
 /**
  * Specific retired paths first, then the `/docs/define` catch-all.
- * Order matters: Next applies the first match.
+ * Order matters: Next applies the first match. An empty list resolves nothing.
  */
 export const DOCS_REDIRECTS: readonly DocsRedirect[] = [
   {
@@ -57,3 +57,64 @@ export const DOCS_REDIRECTS: readonly DocsRedirect[] = [
     permanent: true,
   },
 ];
+
+/**
+ * Destination for one path, using the first matching redirect.
+ *
+ * `:path*` at the end of a source captures the rest. A table with no rows
+ * returns undefined.
+ *
+ * @param pathname - Request path, no query
+ * @param table - Redirects in match order. Defaults to {@link DOCS_REDIRECTS}
+ * @returns The destination, or undefined when nothing matches
+ */
+export function resolveRedirect(
+  pathname: string,
+  table: readonly DocsRedirect[] = DOCS_REDIRECTS,
+): string | undefined {
+  const path = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+  for (const entry of table) {
+    const destination = matchRedirect(path, entry);
+    if (destination !== undefined) return destination;
+  }
+  return undefined;
+}
+
+/**
+ * Page URLs plus any redirect destination that is not already a page.
+ *
+ * Sources are not listed. An empty redirect table leaves the page list as it is.
+ *
+ * @param urls - Absolute page URLs already in the sitemap
+ * @param redirects - Redirect table
+ * @param origin - Site origin, no trailing slash
+ * @returns Absolute URLs, page order first
+ */
+export function withRedirectDestinations(
+  urls: readonly string[],
+  redirects: readonly DocsRedirect[],
+  origin: string,
+): string[] {
+  const seen = new Set(urls);
+  const extra: string[] = [];
+  for (const entry of redirects) {
+    if (entry.destination.includes(":") || entry.destination.includes("*")) continue;
+    const url = `${origin}${entry.destination}`;
+    if (seen.has(url)) continue;
+    seen.add(url);
+    extra.push(url);
+  }
+  return [...urls, ...extra];
+}
+
+function matchRedirect(pathname: string, entry: DocsRedirect): string | undefined {
+  const star = entry.source.indexOf(":");
+  if (star < 0) return pathname === entry.source ? entry.destination : undefined;
+  if (entry.source.slice(star) !== ":path*") return undefined;
+  const prefix = entry.source.slice(0, star);
+  if (!pathname.startsWith(prefix)) return undefined;
+  const rest = pathname.slice(prefix.length);
+  if (rest.length === 0) return undefined;
+  if (entry.destination.includes(":path*")) return entry.destination.replace(":path*", rest);
+  return entry.destination;
+}
