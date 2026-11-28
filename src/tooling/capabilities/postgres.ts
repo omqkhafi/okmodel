@@ -222,6 +222,12 @@ export const POSTGRES_FEATURES = {
   "partition.maintain": native("proof:partition.maintain"),
   /** A plain table becomes the first partition when nothing blocks it. */
   "partition.convert": native("proof:partition.convert"),
+  /** `okm migrate --fleet` applies one database per target and records each result. */
+  "migrate.fleet": native("proof:migrate.fleet"),
+  /** The smallest database that is still behind runs before the others. */
+  "migrate.fleet.canary": native("proof:migrate.fleet.canary"),
+  /** An empty database reaches the same tables as replaying the migration files. */
+  "migrate.fleet.ensureHead": native("proof:migrate.fleet.ensureHead"),
 } as const satisfies Registry;
 
 /** One Postgres feature key. */

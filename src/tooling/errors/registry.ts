@@ -802,6 +802,14 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     fix: "Keep the method and the key. Include every key column in the primary key. Drop inbound foreign keys and views before converting a plain table.",
   },
   {
+    code: "OKM1933",
+    title: "Fleet plan head",
+    summary:
+      "A database moved after the fleet plan was written, or the checkout migrations no longer match that plan. Apply did not start that target.",
+    fix: "Write the fleet plan again with okm migrate plan --fleet --out, then apply that file.",
+    since: "0.11",
+  },
+  {
     code: "OKM1928",
     title: "Virtual column fill",
     summary:
@@ -1423,6 +1431,15 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     summary:
       "partman.part_config lists a table that also has an OKM partition rule. pg_partman stops pre-making partitions after a partition OKM created. okm check fails.",
     fix: 'Remove the partman row, or set children: "external" and let pg_partman own the children.',
+  },
+  {
+    code: "OKM2211",
+    title: "Fleet contract",
+    summary:
+      "A migration has a contract step, and at least one database does not have the previous expand migration. An unreachable database counts as missing. Nothing was applied.",
+    fix: "Apply the expand migration to every target first, including ones this attempt could not reach. Each protected target still stops on its own.",
+    escapeHatches: [hatch("OKM2211", "--allow-protected")],
+    since: "0.11",
   },
   {
     code: "OKM2300",

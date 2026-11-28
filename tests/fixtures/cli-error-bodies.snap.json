@@ -1208,6 +1208,15 @@
     "docs": "docs/errors/OKM1932.md"
   },
   {
+    "code": "OKM1933",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A database moved after the fleet plan was written, or the checkout migrations no longer match that plan. Apply did not start that target.",
+    "fix": "Write the fleet plan again with okm migrate plan --fleet --out, then apply that file.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1933.md"
+  },
+  {
     "code": "OKM1928",
     "kind": "invalid",
     "category": "input",
@@ -2744,6 +2753,22 @@
     "fix": "Remove the partman row, or set children: \"external\" and let pg_partman own the children.",
     "retryable": false,
     "docs": "docs/errors/OKM2210.md"
+  },
+  {
+    "code": "OKM2211",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A migration has a contract step, and at least one database does not have the previous expand migration. An unreachable database counts as missing. Nothing was applied.",
+    "fix": "Apply the expand migration to every target first, including ones this attempt could not reach. Each protected target still stops on its own.",
+    "retryable": false,
+    "docs": "docs/errors/OKM2211.md",
+    "escapeHatches": [
+      {
+        "name": "--allow-protected",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2211.md#escape"
+      }
+    ]
   },
   {
     "code": "OKM2300",

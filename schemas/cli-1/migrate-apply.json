@@ -2,20 +2,84 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://okmodel.dev/schemas/cli-1/migrate-apply.json",
   "title": "okm migrate apply data",
-  "type": "object",
-  "additionalProperties": false,
-  "required": [
-    "text"
-  ],
-  "properties": {
-    "text": {
-      "type": "string"
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "attempts": {
+          "type": "number"
+        },
+        "waitedMs": {
+          "type": "number"
+        }
+      }
     },
-    "attempts": {
-      "type": "number"
-    },
-    "waitedMs": {
-      "type": "number"
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event",
+        "text"
+      ],
+      "properties": {
+        "event": {
+          "enum": [
+            "target",
+            "summary"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "current",
+            "behind",
+            "ahead",
+            "failed",
+            "unreachable",
+            "drifted",
+            "skipped"
+          ]
+        },
+        "behind": {
+          "type": "number"
+        },
+        "bytes": {
+          "type": "number"
+        },
+        "code": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "fix": {
+          "type": "string"
+        },
+        "targets": {
+          "type": "number"
+        },
+        "failures": {
+          "type": "number"
+        },
+        "unreachable": {
+          "type": "number"
+        },
+        "exit": {
+          "type": "number"
+        }
+      }
     }
-  }
+  ]
 }

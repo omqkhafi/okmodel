@@ -169,6 +169,18 @@ export const INDEX_ENTRIES: readonly IndexEntry[] = [
     group: "migrate",
   },
   {
+    path: "docs/fleet.md",
+    purpose: "One plan applied to many databases, each with its own history.",
+    when: "Read this when a tenant has its own database.",
+    group: "migrate",
+  },
+  {
+    path: "docs/database-per-tenant.md",
+    purpose: "Signup brings an empty database to the head, then expand precedes contract.",
+    when: "Read this when a new tenant database is created.",
+    group: "migrate",
+  },
+  {
     path: "docs/production.md",
     purpose: "Protected targets, requireMeta, and pooler refusal.",
     when: "Read this before pointing a command at production.",

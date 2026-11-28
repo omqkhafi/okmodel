@@ -62,6 +62,8 @@ With one target, or with `--target`, a database that answers adds `pg_class` row
 
 An error finding is OKM1510 and the command exits 1 after the plan text. `--json` prints one envelope and no SQL text. `data` is `name`, `class`, `operationClass`, `fromCatalogHash`, `toCatalogHash`, `planHash`, `requiresAck`, `destructiveOperations`, each step's `class`, `operationClass`, `lock`, and `sql`, and the findings (`severity`, `code`, `place`, `reason`, `fix`). `lock` is the human `-- lock:` line. `reason` is an untrusted object. `planHash` covers the dialect, the two catalog hashes, and each step's SQL as executed. `requiresAck` is true when `operationClass` is `destructive`. Apply does not read it. The command still exits 1 after that document when a finding is an error. `--replace` is the same flag as [generate](#generate).
 
+`--fleet` prints one row per database. A name is not required. The same command with `--out` writes the frozen plan. See [Fleet](/docs/migrations/fleet).
+
 ```sh
 bunx okm migrate plan init
 ```
@@ -88,6 +90,8 @@ A protected target allows expand, reference rows, and provision of an empty data
 
 A schema module that does not export a `schema()` still lets apply run. It installs no reference rows. The message is on [Schema](/docs/reference/config#schema).
 
+`--fleet` applies one plan to every database. `--group` runs one stage, `--only` keeps the named databases, `--parallel` sets how many run at once, `--max-failures` sets how many failures stop the rest, and `--report` writes the summary. `--plan` reads a frozen plan file. See [Fleet](/docs/migrations/fleet).
+
 ```sh
 bunx okm migrate apply --target prod
 ```
@@ -103,6 +107,8 @@ A committed step that is in flight or broken follows as its own section: a line 
 An unfinished backfill follows as its own section: a line `backfill`, then the tab-separated header `migration`, `step`, `rows`, `key`, `state`.
 
 A pooler host is not refused. The command is read-only, including on a protected target.
+
+`--fleet` prints one row per database. `--drift` compares the live catalog with the catalog this checkout expects. See [Fleet](/docs/migrations/fleet).
 
 ```sh
 bunx okm migrate status

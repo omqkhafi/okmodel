@@ -205,6 +205,55 @@ const statementTimeout: FlagSpec = {
   hint: "<duration> one statement may run. Default 30s.",
 };
 
+const fleetFlag: FlagSpec = {
+  name: "fleet",
+  type: "boolean",
+  hint: "Run every database from fleet.targets. No short form.",
+};
+
+const fleetDrift: FlagSpec = {
+  name: "drift",
+  type: "boolean",
+  hint: "Compare each database with the catalog its history names. No short form.",
+};
+
+const fleetPlan: FlagSpec = {
+  name: "plan",
+  type: "string",
+  hint: "<file> from plan --fleet --out. Apply refuses a database whose head moved.",
+};
+
+const fleetGroup: FlagSpec = {
+  name: "group",
+  type: "string",
+  hint: "<name> runs one stage: canary, rest, or a fleet group.",
+};
+
+const fleetOnly: FlagSpec = {
+  name: "only",
+  type: "string",
+  multiple: true,
+  hint: "<name> limits the run to that target. Repeat for more than one.",
+};
+
+const fleetParallel: FlagSpec = {
+  name: "parallel",
+  type: "string",
+  hint: "<n> targets in flight. Default 4.",
+};
+
+const fleetMaxFailures: FlagSpec = {
+  name: "max-failures",
+  type: "string",
+  hint: "<n>, <n>%, or all. Default 0, which stops at the first failure.",
+};
+
+const fleetReport: FlagSpec = {
+  name: "report",
+  type: "string",
+  hint: "<file> writes the summary. Names and codes only.",
+};
+
 /** Every command, longest word list first so `migrate plan` wins over a prefix. */
 export const COMMANDS: readonly CommandSpec[] = [
   spec({
@@ -218,7 +267,8 @@ export const COMMANDS: readonly CommandSpec[] = [
     missing: "okm migrate plan needs a name.",
     usesDatabase: true,
     ownOut: false,
-    flags: [target, allowProtected, replace, rename, dropAndAdd, fill],
+    ownOutFlag: "fleet",
+    flags: [target, allowProtected, replace, rename, dropAndAdd, fill, fleetFlag],
   }),
   spec({
     id: "migrate apply",
@@ -238,6 +288,13 @@ export const COMMANDS: readonly CommandSpec[] = [
       lockTimeout,
       lockWait,
       statementTimeout,
+      fleetFlag,
+      fleetPlan,
+      fleetGroup,
+      fleetOnly,
+      fleetParallel,
+      fleetMaxFailures,
+      fleetReport,
     ],
   }),
   spec({
@@ -250,7 +307,7 @@ export const COMMANDS: readonly CommandSpec[] = [
     maxOperands: 0,
     usesDatabase: true,
     ownOut: false,
-    flags: [target],
+    flags: [target, fleetFlag, fleetDrift],
   }),
   spec({
     id: "migrate resolve",

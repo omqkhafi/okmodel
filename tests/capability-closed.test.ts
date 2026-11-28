@@ -472,6 +472,9 @@ test("refusal:view.dependencyOrder", () => refuse("view.dependencyOrder"));
 test("refusal:query.exprSelect", () => refuse("query.exprSelect"));
 test("refusal:query.toOnePath", () => refuse("query.toOnePath"));
 test("refusal:query.paths", () => refuse("query.paths"));
+test("refusal:migrate.fleet", () => refuse("migrate.fleet"));
+test("refusal:migrate.fleet.canary", () => refuse("migrate.fleet.canary"));
+test("refusal:migrate.fleet.ensureHead", () => refuse("migrate.fleet.ensureHead"));
 
 test("closed profile keeps the most restrictive observer costs", () => {
   const closed = closedRegistry();

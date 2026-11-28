@@ -24,7 +24,7 @@
 
 <!-- docs-constants -->
 
-okmodel 0.10.6. PostgreSQL 15 and later; tested on 15 to 19. 5 tested majors. 146 registry features.
+okmodel 0.10.6. PostgreSQL 15 and later; tested on 15 to 19. 5 tested majors. 149 registry features.
 <!-- /docs-constants -->
 
 <!-- docs-support -->

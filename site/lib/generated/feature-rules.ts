@@ -5851,6 +5851,126 @@ export const FEATURE_RULES: Readonly<Record<string, EngineRule>> = {
       },
     ],
   },
+  "migrate.fleet": {
+    engine: "postgres",
+    kind: "any",
+    label: "any",
+    line: "PostgreSQL any, tested 15 to 19",
+    docsOnly: false,
+    tested: [18],
+    versions: [
+      {
+        version: 15,
+        available: true,
+        tested: false,
+        note: "",
+      },
+      {
+        version: 16,
+        available: true,
+        tested: false,
+        note: "",
+      },
+      {
+        version: 17,
+        available: true,
+        tested: false,
+        note: "",
+      },
+      {
+        version: 18,
+        available: true,
+        tested: true,
+        note: "",
+      },
+      {
+        version: 19,
+        available: true,
+        tested: false,
+        note: "",
+      },
+    ],
+  },
+  "migrate.fleet.canary": {
+    engine: "postgres",
+    kind: "any",
+    label: "any",
+    line: "PostgreSQL any, tested 15 to 19",
+    docsOnly: false,
+    tested: [18],
+    versions: [
+      {
+        version: 15,
+        available: true,
+        tested: false,
+        note: "",
+      },
+      {
+        version: 16,
+        available: true,
+        tested: false,
+        note: "",
+      },
+      {
+        version: 17,
+        available: true,
+        tested: false,
+        note: "",
+      },
+      {
+        version: 18,
+        available: true,
+        tested: true,
+        note: "",
+      },
+      {
+        version: 19,
+        available: true,
+        tested: false,
+        note: "",
+      },
+    ],
+  },
+  "migrate.fleet.ensureHead": {
+    engine: "postgres",
+    kind: "any",
+    label: "any",
+    line: "PostgreSQL any, tested 15 to 19",
+    docsOnly: false,
+    tested: [18],
+    versions: [
+      {
+        version: 15,
+        available: true,
+        tested: false,
+        note: "",
+      },
+      {
+        version: 16,
+        available: true,
+        tested: false,
+        note: "",
+      },
+      {
+        version: 17,
+        available: true,
+        tested: false,
+        note: "",
+      },
+      {
+        version: 18,
+        available: true,
+        tested: true,
+        note: "",
+      },
+      {
+        version: 19,
+        available: true,
+        tested: false,
+        note: "",
+      },
+    ],
+  },
 };
 
 /** Chip for a heading that names Postgres and no registry key. */

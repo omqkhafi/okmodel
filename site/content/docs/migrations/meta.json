@@ -8,6 +8,8 @@
     "backfill",
     "failures",
     "waiting-for-locks",
-    "environments"
+    "environments",
+    "fleet",
+    "database-per-tenant"
   ]
 }

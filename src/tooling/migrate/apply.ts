@@ -74,6 +74,7 @@ import {
   assertDirectConnection,
   assertStoreTerminal,
   assertTargetPolicy,
+  guardStoredDriverUrl,
   policySubject,
   selectTarget,
   type InvokeFlags,
@@ -505,6 +506,55 @@ export async function applyProjectResult(
   return { report: result.report, text };
 }
 
+/**
+ * Applies pending migrations to one URL (D366).
+ *
+ * The same path as `okm migrate apply`: snapshot on an empty database,
+ * history replay otherwise, advisory lock, fill, blocking, and pooler checks.
+ * A store fingerprint still needs a terminal.
+ *
+ * @param project - Project directory or context
+ * @param direct - Name, URL, and the optional protected flag
+ * @param flags - Protection, pooler, and timeouts. `target` is ignored
+ * @param write - Optional progress sink
+ * @returns The report and the CLI text
+ */
+export async function applyDirect(
+  project: string | ProjectContext,
+  direct: { readonly name: string; readonly url: string; readonly protected?: boolean },
+  flags: InvokeFlags,
+  write?: (text: string) => void,
+): Promise<{ readonly report: ApplyReport; readonly text: string }> {
+  guardStoredDriverUrl(direct.url);
+  const target = {
+    name: direct.name,
+    url: direct.url,
+    protected: direct.protected === true,
+    ...(direct.protected === true ? { protection: "project" as const } : {}),
+  };
+  if (target.protected) assertStoreTerminal(target, "contract");
+  const result = await runResolved(project, target, flags, write);
+  if (result.kind === "empty") {
+    return {
+      report: { target: result.target, applied: [] },
+      text: `target ${result.target}\nnothing to apply\n`,
+    };
+  }
+  const summary = formatApplyText(result.report);
+  const text =
+    write !== undefined || result.progress.length === 0
+      ? summary
+      : `${result.progress.join("\n")}\n${summary}`;
+  return { report: result.report, text };
+}
+
+type ResolvedTarget = {
+  readonly name: string;
+  readonly url: string;
+  readonly protected: boolean;
+  readonly protection?: ProtectionMatch;
+};
+
 async function runApply(
   project: string | ProjectContext,
   flags: InvokeFlags,
@@ -517,10 +567,27 @@ async function runApply(
       readonly progress: readonly string[];
     }
 > {
-  const { cwd } = asProject(project);
   const config = await loadConfig(project);
   const target = selectTarget(config, flags.target);
   assertStoreTerminal(target, "contract");
+  return runResolved(project, target, flags, write);
+}
+
+async function runResolved(
+  project: string | ProjectContext,
+  target: ResolvedTarget,
+  flags: InvokeFlags,
+  write?: (text: string) => void,
+): Promise<
+  | { readonly kind: "empty"; readonly target: string }
+  | {
+      readonly kind: "ran";
+      readonly report: ApplyReport;
+      readonly progress: readonly string[];
+    }
+> {
+  const { cwd } = asProject(project);
+  const config = await loadConfig(project);
   const directory = joinMigrations(cwd, config.migrations);
   const migrations = loadMigrations(directory);
   const head = loadHeadSnapshot(directory);
@@ -545,7 +612,7 @@ async function runApply(
     url: target.url,
     target: target.name,
     protected: target.protected,
-    protection: target.protection,
+    ...(target.protection !== undefined ? { protection: target.protection } : {}),
     allowProtected: flags.allowProtected,
     allowPooler: flags.allowPooler || config.allowPooler === true,
     allowBlocking: flags.allowBlocking === true,

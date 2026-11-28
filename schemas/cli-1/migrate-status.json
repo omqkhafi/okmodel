@@ -2,157 +2,221 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://okmodel.dev/schemas/cli-1/migrate-status.json",
   "title": "okm migrate status data",
-  "type": "object",
-  "additionalProperties": false,
-  "required": [
-    "text",
-    "steps"
-  ],
-  "properties": {
-    "text": {
-      "type": "string"
-    },
-    "steps": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "id",
-          "kind",
-          "state",
-          "attempt",
-          "nextAction"
-        ],
-        "properties": {
-          "id": {
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "steps"
+      ],
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
             "type": "object",
             "additionalProperties": false,
             "required": [
-              "untrusted",
-              "origin",
-              "text",
-              "truncated",
-              "modified"
+              "id",
+              "kind",
+              "state",
+              "attempt",
+              "nextAction"
             ],
             "properties": {
-              "untrusted": {
-                "const": true
+              "id": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "untrusted",
+                  "origin",
+                  "text",
+                  "truncated",
+                  "modified"
+                ],
+                "properties": {
+                  "untrusted": {
+                    "const": true
+                  },
+                  "origin": {
+                    "enum": [
+                      "schema.identifier",
+                      "schema.comment",
+                      "schema.enum",
+                      "schema.default",
+                      "constraint.name",
+                      "index.name",
+                      "migration.comment",
+                      "db.error",
+                      "db.object-name",
+                      "user.query",
+                      "package.json"
+                    ]
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  },
+                  "modified": {
+                    "type": "boolean"
+                  }
+                }
               },
-              "origin": {
-                "enum": [
-                  "schema.identifier",
-                  "schema.comment",
-                  "schema.enum",
-                  "schema.default",
-                  "constraint.name",
-                  "index.name",
-                  "migration.comment",
-                  "db.error",
-                  "db.object-name",
-                  "user.query",
-                  "package.json"
-                ]
+              "kind": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "untrusted",
+                  "origin",
+                  "text",
+                  "truncated",
+                  "modified"
+                ],
+                "properties": {
+                  "untrusted": {
+                    "const": true
+                  },
+                  "origin": {
+                    "enum": [
+                      "schema.identifier",
+                      "schema.comment",
+                      "schema.enum",
+                      "schema.default",
+                      "constraint.name",
+                      "index.name",
+                      "migration.comment",
+                      "db.error",
+                      "db.object-name",
+                      "user.query",
+                      "package.json"
+                    ]
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  },
+                  "modified": {
+                    "type": "boolean"
+                  }
+                }
               },
-              "text": {
+              "state": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "untrusted",
+                  "origin",
+                  "text",
+                  "truncated",
+                  "modified"
+                ],
+                "properties": {
+                  "untrusted": {
+                    "const": true
+                  },
+                  "origin": {
+                    "enum": [
+                      "schema.identifier",
+                      "schema.comment",
+                      "schema.enum",
+                      "schema.default",
+                      "constraint.name",
+                      "index.name",
+                      "migration.comment",
+                      "db.error",
+                      "db.object-name",
+                      "user.query",
+                      "package.json"
+                    ]
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  },
+                  "modified": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "attempt": {
+                "type": "number"
+              },
+              "nextAction": {
                 "type": "string"
-              },
-              "truncated": {
-                "type": "boolean"
-              },
-              "modified": {
-                "type": "boolean"
               }
             }
-          },
-          "kind": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "untrusted",
-              "origin",
-              "text",
-              "truncated",
-              "modified"
-            ],
-            "properties": {
-              "untrusted": {
-                "const": true
-              },
-              "origin": {
-                "enum": [
-                  "schema.identifier",
-                  "schema.comment",
-                  "schema.enum",
-                  "schema.default",
-                  "constraint.name",
-                  "index.name",
-                  "migration.comment",
-                  "db.error",
-                  "db.object-name",
-                  "user.query",
-                  "package.json"
-                ]
-              },
-              "text": {
-                "type": "string"
-              },
-              "truncated": {
-                "type": "boolean"
-              },
-              "modified": {
-                "type": "boolean"
-              }
-            }
-          },
-          "state": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "untrusted",
-              "origin",
-              "text",
-              "truncated",
-              "modified"
-            ],
-            "properties": {
-              "untrusted": {
-                "const": true
-              },
-              "origin": {
-                "enum": [
-                  "schema.identifier",
-                  "schema.comment",
-                  "schema.enum",
-                  "schema.default",
-                  "constraint.name",
-                  "index.name",
-                  "migration.comment",
-                  "db.error",
-                  "db.object-name",
-                  "user.query",
-                  "package.json"
-                ]
-              },
-              "text": {
-                "type": "string"
-              },
-              "truncated": {
-                "type": "boolean"
-              },
-              "modified": {
-                "type": "boolean"
-              }
-            }
-          },
-          "attempt": {
-            "type": "number"
-          },
-          "nextAction": {
-            "type": "string"
           }
         }
       }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event",
+        "text"
+      ],
+      "properties": {
+        "event": {
+          "enum": [
+            "target",
+            "summary"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "current",
+            "behind",
+            "ahead",
+            "failed",
+            "unreachable",
+            "drifted",
+            "skipped"
+          ]
+        },
+        "behind": {
+          "type": "number"
+        },
+        "bytes": {
+          "type": "number"
+        },
+        "code": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "fix": {
+          "type": "string"
+        },
+        "targets": {
+          "type": "number"
+        },
+        "failures": {
+          "type": "number"
+        },
+        "unreachable": {
+          "type": "number"
+        },
+        "exit": {
+          "type": "number"
+        }
+      }
     }
-  }
+  ]
 }

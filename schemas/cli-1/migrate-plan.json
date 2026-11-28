@@ -2,136 +2,211 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://okmodel.dev/schemas/cli-1/migrate-plan.json",
   "title": "okm migrate plan data",
-  "type": "object",
-  "additionalProperties": false,
-  "required": [
-    "name",
-    "class",
-    "operationClass",
-    "fromCatalogHash",
-    "toCatalogHash",
-    "planHash",
-    "requiresAck",
-    "steps",
-    "destructiveOperations",
-    "findings"
-  ],
-  "properties": {
-    "name": {
-      "type": "string"
-    },
-    "class": {
-      "enum": [
-        "expand",
-        "contract",
-        "unclassified"
-      ]
-    },
-    "operationClass": {
-      "enum": [
-        "additive",
-        "widening",
-        "data",
-        "destructive"
-      ]
-    },
-    "fromCatalogHash": {
-      "type": "string"
-    },
-    "toCatalogHash": {
-      "type": "string"
-    },
-    "planHash": {
-      "type": "string"
-    },
-    "requiresAck": {
-      "type": "boolean"
-    },
-    "steps": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "class",
-          "operationClass",
-          "lock",
-          "sql"
-        ],
-        "properties": {
-          "class": {
-            "enum": [
-              "expand",
-              "contract",
-              "unclassified"
-            ]
-          },
-          "operationClass": {
-            "enum": [
-              "additive",
-              "widening",
-              "data",
-              "destructive"
-            ]
-          },
-          "lock": {
-            "type": "string"
-          },
-          "sql": {
-            "type": "string"
-          },
-          "probe": {
-            "type": "string"
-          },
-          "data": {
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "class",
+        "operationClass",
+        "fromCatalogHash",
+        "toCatalogHash",
+        "planHash",
+        "requiresAck",
+        "steps",
+        "destructiveOperations",
+        "findings"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "class": {
+          "enum": [
+            "expand",
+            "contract",
+            "unclassified"
+          ]
+        },
+        "operationClass": {
+          "enum": [
+            "additive",
+            "widening",
+            "data",
+            "destructive"
+          ]
+        },
+        "fromCatalogHash": {
+          "type": "string"
+        },
+        "toCatalogHash": {
+          "type": "string"
+        },
+        "planHash": {
+          "type": "string"
+        },
+        "requiresAck": {
+          "type": "boolean"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
             "type": "object",
             "additionalProperties": false,
             "required": [
-              "emptyRows"
+              "class",
+              "operationClass",
+              "lock",
+              "sql"
             ],
             "properties": {
-              "emptyRows": {
-                "type": [
-                  "number",
-                  "string"
+              "class": {
+                "enum": [
+                  "expand",
+                  "contract",
+                  "unclassified"
                 ]
               },
-              "fill": {
+              "operationClass": {
+                "enum": [
+                  "additive",
+                  "widening",
+                  "data",
+                  "destructive"
+                ]
+              },
+              "lock": {
+                "type": "string"
+              },
+              "sql": {
+                "type": "string"
+              },
+              "probe": {
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "emptyRows"
+                ],
+                "properties": {
+                  "emptyRows": {
+                    "type": [
+                      "number",
+                      "string"
+                    ]
+                  },
+                  "fill": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "destructiveOperations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "stepIndex",
+              "kind",
+              "objectKind",
+              "name",
+              "summary"
+            ],
+            "properties": {
+              "stepIndex": {
+                "type": "number"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "objectKind": {
+                "type": "string"
+              },
+              "name": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "untrusted",
+                      "origin",
+                      "text",
+                      "truncated",
+                      "modified"
+                    ],
+                    "properties": {
+                      "untrusted": {
+                        "const": true
+                      },
+                      "origin": {
+                        "enum": [
+                          "schema.identifier",
+                          "schema.comment",
+                          "schema.enum",
+                          "schema.default",
+                          "constraint.name",
+                          "index.name",
+                          "migration.comment",
+                          "db.error",
+                          "db.object-name",
+                          "user.query",
+                          "package.json"
+                        ]
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "truncated": {
+                        "type": "boolean"
+                      },
+                      "modified": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                ]
+              },
+              "summary": {
                 "type": "string"
               }
             }
           }
-        }
-      }
-    },
-    "destructiveOperations": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "stepIndex",
-          "kind",
-          "objectKind",
-          "name",
-          "summary"
-        ],
-        "properties": {
-          "stepIndex": {
-            "type": "number"
-          },
-          "kind": {
-            "type": "string"
-          },
-          "objectKind": {
-            "type": "string"
-          },
-          "name": {
-            "oneOf": [
-              {
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "severity",
+              "code",
+              "place",
+              "reason",
+              "fix"
+            ],
+            "properties": {
+              "severity": {
+                "enum": [
+                  "error",
+                  "warning"
+                ]
+              },
+              "code": {
                 "type": "string"
               },
-              {
+              "place": {
+                "type": "string"
+              },
+              "reason": {
                 "type": "object",
                 "additionalProperties": false,
                 "required": [
@@ -170,85 +245,74 @@
                     "type": "boolean"
                   }
                 }
+              },
+              "fix": {
+                "type": "string"
               }
-            ]
-          },
-          "summary": {
-            "type": "string"
+            }
           }
         }
       }
     },
-    "findings": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "severity",
-          "code",
-          "place",
-          "reason",
-          "fix"
-        ],
-        "properties": {
-          "severity": {
-            "enum": [
-              "error",
-              "warning"
-            ]
-          },
-          "code": {
-            "type": "string"
-          },
-          "place": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "untrusted",
-              "origin",
-              "text",
-              "truncated",
-              "modified"
-            ],
-            "properties": {
-              "untrusted": {
-                "const": true
-              },
-              "origin": {
-                "enum": [
-                  "schema.identifier",
-                  "schema.comment",
-                  "schema.enum",
-                  "schema.default",
-                  "constraint.name",
-                  "index.name",
-                  "migration.comment",
-                  "db.error",
-                  "db.object-name",
-                  "user.query",
-                  "package.json"
-                ]
-              },
-              "text": {
-                "type": "string"
-              },
-              "truncated": {
-                "type": "boolean"
-              },
-              "modified": {
-                "type": "boolean"
-              }
-            }
-          },
-          "fix": {
-            "type": "string"
-          }
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event",
+        "text"
+      ],
+      "properties": {
+        "event": {
+          "enum": [
+            "target",
+            "summary"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "current",
+            "behind",
+            "ahead",
+            "failed",
+            "unreachable",
+            "drifted",
+            "skipped"
+          ]
+        },
+        "behind": {
+          "type": "number"
+        },
+        "bytes": {
+          "type": "number"
+        },
+        "code": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "fix": {
+          "type": "string"
+        },
+        "targets": {
+          "type": "number"
+        },
+        "failures": {
+          "type": "number"
+        },
+        "unreachable": {
+          "type": "number"
+        },
+        "exit": {
+          "type": "number"
         }
       }
     }
-  }
+  ]
 }

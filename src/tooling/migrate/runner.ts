@@ -2,7 +2,8 @@
  * One-target apply runner (D195).
  *
  * `okm migrate apply` calls {@link runTarget} with the units of one target.
- * Bounded concurrency, several targets, canaries, and class flags are M5.
+ * A fleet runs this once per database. The scheduler does not change the lock,
+ * the history, or the step rules.
  * A backfill step is one transaction per batch, with a checkpoint in
  * `okm_backfill` after each commit.
  */
