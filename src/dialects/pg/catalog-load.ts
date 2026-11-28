@@ -2,9 +2,11 @@
  * Loads the catalog compiler when `.catalog` is first read.
  *
  * `import()` is async and a literal `require()` is inlined into the app bundle.
- * `catalog-require.js` calls `createRequire`, so a featureless app never parses the
- * compiler and a consumer typecheck does not import `node:module`. The compiler is
- * also emitted beside `dist/dialects/pg`. A shared chunk looks one directory up.
+ * `catalog-require.js` calls `createRequire` on that read, so a featureless app never
+ * parses the compiler and a consumer typecheck does not import `node:module`. The
+ * compiler is also emitted beside `dist/dialects/pg`. A shared chunk looks one
+ * directory up. Cloudflare Workers have no `import.meta.url`; `okmodel/pg`'s
+ * `workerd` export installs the compilers before `schema()` runs.
  */
 
 import { OkmError } from "../../contracts/error.js";
@@ -18,6 +20,34 @@ const COMPILER = ["./catalog-compile.js", "../dialects/pg/catalog-compile.js"] a
 
 /** Same layout for the exclusion checker, which runs at `schema()` only when a table sets it. */
 const EXCLUSION = ["./exclusion.js", "../dialects/pg/exclusion.js"] as const;
+
+/** Installed by the Workers entry. Node leaves this empty and loads on demand. */
+let installedCompiler: ((input: CatalogCompileInput) => Catalog) | undefined;
+
+/** Installed by the Workers entry. Node leaves this empty and loads on demand. */
+let installedExclusion: CompileExclusion | undefined;
+
+/**
+ * Installs `compileCatalog` for a runtime that cannot `createRequire`.
+ *
+ * A later call replaces it. Node does not call this.
+ *
+ * @param compiler - Function the first `.catalog` read runs
+ */
+export function installCatalogCompiler(compiler: (input: CatalogCompileInput) => Catalog): void {
+  installedCompiler = compiler;
+}
+
+/**
+ * Installs `compileExclusion` for a runtime that cannot `createRequire`.
+ *
+ * A later call replaces it. `schema()` calls it only when a table sets `exclusions`.
+ *
+ * @param compiler - Checker `schema()` runs while it is still building the query model
+ */
+export function installCompileExclusion(compiler: CompileExclusion): void {
+  installedExclusion = compiler;
+}
 
 /**
  * One exclusion, as `schema()` calls it.
@@ -48,6 +78,7 @@ export type CompileExclusion = (
  * @returns The compiler for one schema's stored descriptors
  */
 export function loadCatalogCompiler(): (input: CatalogCompileInput) => Catalog {
+  if (installedCompiler !== undefined) return installedCompiler;
   const loaded = requireSibling(COMPILER) as {
     compileCatalog?: (input: CatalogCompileInput) => Catalog;
   };
@@ -63,6 +94,7 @@ export function loadCatalogCompiler(): (input: CatalogCompileInput) => Catalog {
  * @returns The checker `schema()` runs while it is still building the query model
  */
 export function loadCompileExclusion(): CompileExclusion {
+  if (installedExclusion !== undefined) return installedExclusion;
   const loaded = requireSibling(EXCLUSION) as { compileExclusion?: CompileExclusion };
   if (typeof loaded.compileExclusion !== "function") missing(EXCLUSION[0]);
   return loaded.compileExclusion;
