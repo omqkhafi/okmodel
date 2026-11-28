@@ -141,6 +141,46 @@ test("enableRls defaults rls on and refuses rls false", () => {
   ).toContain("rls: false");
 });
 
+test("enableRls follows a non-public covered schema", () => {
+  const audit = auditDdl({ into: "billing" });
+  const covered = schema({
+    tables: [audit.transactions, audit.commands],
+    triggers: [enableRls({ schemas: ["billing"] }), audit],
+  }).catalog;
+  const tx = covered.objects.find(
+    (object) => object.kind === "table" && object.identity.name === "ddl_tx",
+  );
+  expect(
+    tx?.kind === "table" && tx.identity.namespace.form === "static" && tx.identity.namespace.name,
+  ).toBe("billing");
+  expect(tx?.kind === "table" && tx.definition.rowSecurity?.enable).toBe(true);
+
+  const open = table("open_notes", { id: t.identity() }, { rls: false });
+  const left = schema({
+    tables: [open, audit.transactions, audit.commands],
+    triggers: [enableRls({ schemas: ["billing"] }), audit],
+  }).catalog;
+  const notes = left.objects.find(
+    (object) => object.kind === "table" && object.identity.name === "open_notes",
+  );
+  expect(notes?.kind === "table" ? notes.definition.rowSecurity : "missing").toBeUndefined();
+
+  const source = audit.transactions;
+  const blocked = {
+    ...source,
+    options: { ...source.options, rls: false as const },
+  };
+  expect(
+    capture(
+      () =>
+        schema({
+          tables: [blocked, audit.commands],
+          triggers: [enableRls({ schemas: ["billing"] }), audit],
+        }).catalog,
+    ).message,
+  ).toContain("schema billing");
+});
+
 test("event triggers are created last and dropped first", () => {
   const notes = table("notes", { id: t.identity(), title: t.text() });
   const good = fn("plan_fn", {

@@ -10,6 +10,7 @@ import { normalizeRoles } from "../../dialects/pg/role/config.js";
 import { OkmError } from "../../contracts/error.js";
 import { formatLiveEventTriggers, readEventTriggers } from "./event-check.js";
 import type { MigrateConfig } from "./config.js";
+import type { ProjectContext } from "./paths.js";
 
 /** One grant row. */
 export type AccessGrant = {
@@ -25,12 +26,14 @@ export type AccessGrant = {
  * @param config - Project config
  * @param url - Migration URL. Not printed
  * @param which - Table name or role key
+ * @param project - Project directory. Absent means the schema was not loaded
  * @returns Rows and unmanaged role names
  */
 export async function accessReport(
   config: MigrateConfig,
   url: string,
   which: string,
+  project?: ProjectContext,
 ): Promise<{
   readonly grants: readonly AccessGrant[];
   readonly memberships: readonly { readonly role: string; readonly memberOf: string }[];
@@ -153,11 +156,55 @@ export async function accessReport(
         .map((row) => String(row[0] ?? ""))
         .filter((name) => name.length > 0 && !named.has(name)),
       policies: await policyPart(pool, tableName, roleName),
-      eventTriggers: formatLiveEventTriggers(await readEventTriggers(url), new Set()).trim(),
+      eventTriggers: await eventTriggerLines(config, url, project),
     };
   } finally {
     await pool.close();
   }
+}
+
+/**
+ * Live event triggers, labelled from the project catalog when one was loaded.
+ *
+ * The schema module loads through {@link import("./project.js").loadBuiltSchema},
+ * and the names come from its lazy `.catalog` getter. With no project, every
+ * live row stays `unmanaged` and the text says the schema was not loaded.
+ *
+ * @param config - Project config
+ * @param url - Migration URL. Not printed
+ * @param project - Project directory, when the command discovered one
+ * @returns The listing
+ */
+async function eventTriggerLines(
+  config: MigrateConfig,
+  url: string,
+  project: ProjectContext | undefined,
+): Promise<string> {
+  const declared = await declaredEventTriggers(config, project);
+  const live = formatLiveEventTriggers(await readEventTriggers(url), declared ?? new Set()).trim();
+  if (declared !== undefined) return live;
+  return live.length > 0 ? `${live}\nschema was not loaded` : "schema was not loaded";
+}
+
+/**
+ * Event-trigger names the project schema declares.
+ *
+ * @param config - Project config
+ * @param project - Project directory. Absent skips the load
+ * @returns Names, or `undefined` when the schema was not loaded
+ */
+async function declaredEventTriggers(
+  config: MigrateConfig,
+  project: ProjectContext | undefined,
+): Promise<ReadonlySet<string> | undefined> {
+  if (project === undefined) return undefined;
+  const { loadBuiltSchema } = await import("./project.js");
+  const built = await loadBuiltSchema(project.cwd, config);
+  const names = new Set<string>();
+  for (const object of built.catalog.objects) {
+    if (object.kind === "eventTrigger") names.add(object.identity.name);
+  }
+  return names;
 }
 
 const COMMANDS: Readonly<Record<string, string>> = {

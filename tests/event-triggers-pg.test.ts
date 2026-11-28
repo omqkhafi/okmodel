@@ -6,6 +6,10 @@
  * drops every event trigger, then `close()` drops the database with FORCE.
  */
 
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { expect } from "bun:test";
 import type { Sql } from "postgres";
 import postgres from "postgres";
@@ -30,7 +34,9 @@ import {
   ownerUrl,
   SCHEMA_OWNER,
 } from "../packages/harness/src/postgres.js";
+import { repoRoot } from "../scripts/root.js";
 import { applyTarget } from "../src/tooling/migrate/apply.js";
+import { accessReport } from "../src/tooling/migrate/access-cmd.js";
 import { checkEventTriggers } from "../src/tooling/migrate/event-check.js";
 import { planMigration, type PlanStep } from "../src/tooling/migrate/plan.js";
 import { runTarget, type RunnableUnit } from "../src/tooling/migrate/runner.js";
@@ -595,6 +601,179 @@ postgresTest(
 
 postgresTest(
   gate,
+  "a table trigger RAISE does not name enabled event triggers",
+  async () => {
+    await using(async (sql, url) => {
+      const watcher = fn("evt_watch", {
+        returns: eventTriggerType,
+        language: "plpgsql",
+        body: "begin end",
+      });
+      await apply(
+        sql,
+        schema({
+          tables: [],
+          functions: [watcher],
+          triggers: [trigger("evt_watch", { event: "ddl_command_end", calls: watcher })],
+        }).catalog,
+      );
+      await sql.unsafe(`create table notes (id int)`);
+      await sql.unsafe(
+        `create function note_raise() returns trigger language plpgsql as $okm$ begin raise exception 'plain boom' using errcode = 'P0001'; end $okm$`,
+      );
+      await sql.unsafe(
+        `create trigger note_raise before insert on notes for each row execute function note_raise()`,
+      );
+      const pool = open({ url, max: 1 });
+      if (pool.reserve === undefined) throw new Error("reserve");
+      const connection = await pool.reserve();
+      try {
+        const refused = await reject(
+          runTarget(
+            connection,
+            {
+              policy: { target: "default", protected: false, allowProtected: false },
+              units: [
+                unitOf({
+                  sql: `insert into notes (id) values (1)`,
+                  class: "expand",
+                  action: "ddl",
+                  lock: "row exclusive",
+                  transactional: true,
+                }),
+              ],
+              lockWaitMs: 0,
+              lockTimeoutMs: 1_000,
+              directPid: "1",
+              statementTimeoutMs: 5_000,
+            },
+            {},
+          ),
+        );
+        expect(refused.message).toContain("plain boom");
+        expect(refused.message).not.toContain("Enabled event triggers");
+      } finally {
+        await connection.release();
+        await pool.close();
+      }
+    });
+  },
+  40_000,
+);
+
+postgresTest(
+  gate,
+  "a custom event trigger RAISE names the enabled trigger",
+  async () => {
+    await using(async (sql, url) => {
+      const custom = fn("custom_evt_fn", {
+        returns: eventTriggerType,
+        language: "plpgsql",
+        body: "begin raise exception 'custom refused' using errcode = 'P0001'; end",
+      });
+      await apply(
+        sql,
+        schema({
+          tables: [],
+          functions: [custom],
+          triggers: [trigger("custom_evt", { event: "ddl_command_end", calls: custom })],
+        }).catalog,
+      );
+      const pool = open({ url, max: 1 });
+      if (pool.reserve === undefined) throw new Error("reserve");
+      const connection = await pool.reserve();
+      try {
+        const refused = await reject(
+          runTarget(
+            connection,
+            {
+              policy: { target: "default", protected: false, allowProtected: false },
+              units: [
+                unitOf({
+                  sql: `create table sneaky (id int)`,
+                  class: "expand",
+                  kind: "create-table",
+                  action: "ddl",
+                  lock: "access exclusive",
+                  transactional: true,
+                }),
+              ],
+              lockWaitMs: 0,
+              lockTimeoutMs: 1_000,
+              directPid: "1",
+              statementTimeoutMs: 5_000,
+            },
+            {},
+          ),
+        );
+        expect(refused.message).toContain("custom refused");
+        expect(refused.message).not.toContain("okm_guard");
+        expect(refused.message).toContain("Enabled event triggers");
+        expect(refused.message).toContain("custom_evt");
+        expect(refused.message).toContain("DROP EVENT TRIGGER");
+      } finally {
+        await connection.release();
+        await pool.close();
+      }
+    });
+  },
+  40_000,
+);
+
+postgresTest(
+  gate,
+  "okm access labels a declared event trigger and says when the schema was not loaded",
+  async () => {
+    await using(async (sql, url) => {
+      const good = fn("access_fn", {
+        returns: eventTriggerType,
+        language: "plpgsql",
+        body: "begin end",
+      });
+      await apply(
+        sql,
+        schema({
+          tables: [],
+          functions: [good],
+          triggers: [trigger("access_evt", { event: "ddl_command_end", calls: good })],
+        }).catalog,
+      );
+      await sql.unsafe(
+        `create function stray_fn() returns event_trigger language plpgsql as $okm$ begin end $okm$`,
+      );
+      await sql.unsafe(
+        `create event trigger stray_evt on ddl_command_end execute function stray_fn()`,
+      );
+      const roles = {
+        schema: "./schema.ts",
+        roles: {
+          migration: { name: "okm_migrate" },
+          app: { name: "okm_app" },
+        },
+      };
+      const bare = await accessReport(roles, url, "okm_app");
+      expect(bare.eventTriggers).toContain("access_evt unmanaged");
+      expect(bare.eventTriggers).toContain("stray_evt unmanaged");
+      expect(bare.eventTriggers).toContain("schema was not loaded");
+      const cwd = accessProject();
+      try {
+        const loaded = await accessReport(roles, url, "okm_app", {
+          cwd,
+          configPath: join(cwd, "okmodel.config.ts"),
+        });
+        expect(loaded.eventTriggers).toContain("access_evt declared");
+        expect(loaded.eventTriggers).toContain("stray_evt unmanaged");
+        expect(loaded.eventTriggers).not.toContain("schema was not loaded");
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+      }
+    });
+  },
+  40_000,
+);
+
+postgresTest(
+  gate,
   "a concurrent session is refused while apply holds the guard",
   async () => {
     await using(async (sql, url) => {
@@ -810,6 +989,47 @@ async function ensureRoles(sql: Sql, login: boolean): Promise<void> {
       create role decoy nologin;
     end if;
   end $$`);
+}
+
+/**
+ * A project whose schema declares `access_evt`.
+ *
+ * @returns The project directory. The caller deletes it
+ */
+function accessProject(): string {
+  const cwd = mkdtempSync(join(tmpdir(), "okm-access-evt-"));
+  const root = repoRoot();
+  const pg = JSON.stringify(join(root, "src/dialects/pg/index.ts"));
+  const fns = JSON.stringify(join(root, "src/dialects/pg/fn/index.ts"));
+  const event = JSON.stringify(join(root, "src/dialects/pg/event/index.ts"));
+  const config = JSON.stringify(join(root, "src/tooling/migrate/index.ts"));
+  writeFileSync(
+    join(cwd, "schema.ts"),
+    [
+      `import { schema } from ${pg};`,
+      `import { eventTriggerType, fn, trigger } from ${fns};`,
+      `import ${event};`,
+      `const good = fn("access_fn", { returns: eventTriggerType, language: "plpgsql", body: "begin end" });`,
+      `const declared = trigger("access_evt", { event: "ddl_command_end", calls: good });`,
+      `export const app = schema({ tables: [], functions: [good], triggers: [declared] });`,
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(
+    join(cwd, "okmodel.config.ts"),
+    [
+      `import { defineConfig } from ${config};`,
+      "export default defineConfig({",
+      '  schema: "./schema.ts",',
+      "  roles: {",
+      '    migration: { name: "okm_migrate" },',
+      '    app: { name: "okm_app" },',
+      "  },",
+      "});",
+      "",
+    ].join("\n"),
+  );
+  return cwd;
 }
 
 async function using(body: (sql: Sql, url: string) => Promise<void>): Promise<void> {

@@ -33,7 +33,9 @@ import { fn } from "../src/dialects/pg/fn/index.js";
 import { schema, t, table } from "../src/dialects/pg/index.js";
 import { sequence } from "../src/dialects/pg/seq/index.js";
 import { primaryUrl } from "../packages/harness/src/topology.js";
-import { planMigration } from "../src/tooling/migrate/plan.js";
+import { planMigration, type PlanStep } from "../src/tooling/migrate/plan.js";
+import { ensureMigrationTables } from "../src/tooling/migrate/apply.js";
+import { runTarget, type RunnableUnit } from "../src/tooling/migrate/runner.js";
 import { connect } from "../src/runtime/pg/postgresjs.js";
 import { sessionSettings } from "../src/runtime/session/index.js";
 
@@ -128,6 +130,10 @@ if (POOLER_URL === undefined || POOLER_URL.length === 0) {
     await expectRoleRefused(url);
   }, 30_000);
 
+  test("the GUC belt through transaction pooling stays on one step and does not leak", async () => {
+    await expectGuardBelt(url);
+  }, 40_000);
+
   test("counter: two clients in one scope get different numbers", async () => {
     const suffix = Date.now().toString(36);
     const series = `pool${suffix}`;
@@ -178,6 +184,157 @@ if (POOLER_URL === undefined || POOLER_URL.length === 0) {
       await other.close();
     }
   }, 30_000);
+}
+
+/**
+ * Proves the drop belt on a transaction pooler.
+ *
+ * The session form is refused when `directPid` is absent. A transactional
+ * drop sets `okm.allow_drop` for that transaction. A second client, after
+ * commit, does not see it, and neither does the client after that.
+ *
+ * @param url - PgBouncer URL
+ */
+async function expectGuardBelt(url: string): Promise<void> {
+  const stamp = Math.random().toString(36).slice(2, 10);
+  const notes = `belt_notes_${stamp}`;
+  const index = `belt_notes_${stamp}_id`;
+  const probe = `belt_probe_${stamp}`;
+  const routine = `belt_fn_${stamp}`;
+  const event = `belt_evt_${stamp}`;
+  const direct = postgres(primaryUrl(), { max: 1, onnotice: () => {} });
+  const quoted = (name: string): string => quoteIdent(name);
+  const ledgers = ["okm_meta", "okm_history", "okm_backfill", "okm_steps"] as const;
+  const present = await direct<{ name: string }[]>`
+    select relname as name from pg_class
+    where relkind = 'r' and relname in ('okm_meta', 'okm_history', 'okm_backfill', 'okm_steps')
+  `;
+  const existed = new Set(present.map((row) => row.name));
+  try {
+    await direct.unsafe(`create table ${quoted(notes)} (id int)`);
+    await direct.unsafe(`create index ${quoted(index)} on ${quoted(notes)} (id)`);
+    await direct.unsafe(`create table ${quoted(probe)} (v text)`);
+    await direct.unsafe(
+      `create function ${quoted(routine)}() returns event_trigger language plpgsql as $okm$ begin insert into ${quoted(probe)} (v) values (current_setting('okm.allow_drop', true)); end $okm$`,
+    );
+    await direct.unsafe(
+      `create event trigger ${quoted(event)} on sql_drop execute function ${quoted(routine)}()`,
+    );
+    await ensureMigrationTables((sql) => direct.unsafe(sql));
+
+    const session = openPostgres({ url, max: 1 });
+    if (session.reserve === undefined) throw new Error("reserve");
+    const held = await session.reserve();
+    try {
+      const refused = await reject(
+        runTarget(
+          held,
+          {
+            policy: { target: "default", protected: true, allowProtected: true },
+            units: [
+              beltUnit(
+                `drop index concurrently if exists ${quoted(index)}`,
+                false,
+                "drop-index",
+                false,
+              ),
+            ],
+            lockWaitMs: 0,
+            lockTimeoutMs: 1_000,
+            statementTimeoutMs: 5_000,
+          },
+          {},
+        ),
+      );
+      expect(refused).toBeInstanceOf(OkmError);
+      expect(refused.code).toBe("OKM1931");
+      expect(refused.message).toContain("direct URL");
+      expect(refused.message).toContain("okm.allow_drop");
+    } finally {
+      await held.release();
+      await session.close();
+    }
+
+    const apply = openPostgres({ url, max: 1 });
+    if (apply.reserve === undefined) throw new Error("reserve");
+    const connection = await apply.reserve();
+    try {
+      await runTarget(
+        connection,
+        {
+          policy: { target: "default", protected: true, allowProtected: true },
+          units: [beltUnit(`drop table if exists ${quoted(notes)}`, true, "drop-table", false)],
+          lockWaitMs: 0,
+          lockTimeoutMs: 1_000,
+          statementTimeoutMs: 5_000,
+        },
+        {},
+      );
+    } finally {
+      await connection.release();
+      await apply.close();
+    }
+
+    const second = postgres(url, { max: 1 });
+    const third = postgres(url, { max: 1 });
+    try {
+      const seen = await second.unsafe(`select v from ${quoted(probe)}`);
+      expect(seen.map((row) => String(row.v))).toEqual(["true"]);
+      const gone = await second.unsafe(`select current_setting('okm.allow_drop', true) as v`);
+      expect(gone[0]?.v === "true").toBe(false);
+      const next = await third.unsafe(`select current_setting('okm.allow_drop', true) as v`);
+      expect(next[0]?.v === "true").toBe(false);
+    } finally {
+      await second.end({ timeout: 5 });
+      await third.end({ timeout: 5 });
+    }
+  } finally {
+    await direct.unsafe(`drop event trigger if exists ${quoted(event)}`).catch(() => undefined);
+    await direct.unsafe(`drop function if exists ${quoted(routine)}()`).catch(() => undefined);
+    await direct.unsafe(`drop table if exists ${quoted(probe)}`).catch(() => undefined);
+    await direct.unsafe(`drop table if exists ${quoted(notes)}`).catch(() => undefined);
+    await direct
+      .unsafe(`delete from okm_history where migration_id = 'belt'`)
+      .catch(() => undefined);
+    for (const name of ledgers) {
+      if (existed.has(name)) continue;
+      await direct.unsafe(`drop table if exists ${quoted(name)}`).catch(() => undefined);
+    }
+    await direct.end({ timeout: 5 });
+  }
+}
+
+function beltUnit(
+  sql: string,
+  transactional: boolean,
+  kind: "drop-index" | "drop-table",
+  finishes: boolean,
+): RunnableUnit {
+  const step: PlanStep = {
+    sql,
+    class: "contract",
+    kind,
+    action: "ddl",
+    lock: "access exclusive",
+    transactional,
+  };
+  return {
+    migrationId: "belt",
+    catalogHash: "belt",
+    finishes,
+    transactional,
+    steps: [{ index: 0, step }],
+  };
+}
+
+async function reject(run: Promise<unknown>): Promise<OkmError> {
+  try {
+    await run;
+  } catch (error) {
+    if (error instanceof OkmError) return error;
+    throw error;
+  }
+  throw new Error("expected a rejection");
 }
 
 /**
