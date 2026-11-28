@@ -34,6 +34,7 @@ test("package exports resolve under node and bun", async () => {
       'import * as otel from "okmodel/otel";',
       'import * as citext from "okmodel/pg/citext";',
       'import * as pgTrgm from "okmodel/pg/pg_trgm";',
+      'import * as pgvector from "okmodel/pg/pgvector";',
       'import * as unaccent from "okmodel/pg/unaccent";',
       'import * as hstore from "okmodel/pg/hstore";',
       'import * as ltree from "okmodel/pg/ltree";',

@@ -12,6 +12,7 @@
 import { sha256 } from "../../contracts/sha256.js";
 import { OkmError } from "../../contracts/error.js";
 import { errorDoc } from "../errors/registry.js";
+import { extensionCreateDenied, hnswSharedMemory } from "./extensions.js";
 import type { LockWaiter } from "./lock-wait.js";
 
 /** What a probe can say about a committed step. */
@@ -424,6 +425,21 @@ function presentFailure(
     fix = {
       summary: `DROP INDEX CONCURRENTLY ${indexLabel}. Then run apply again. Finished steps are not repeated.`,
     };
+  }
+  const denied = extensionCreateDenied(wrapped.sqlstate, step.sql);
+  if (denied !== undefined) {
+    message = `${sentence(message)} ${denied}`;
+    fix = { summary: denied };
+  }
+  const memory = hnswSharedMemory(wrapped.sqlstate, step.sql);
+  if (memory !== undefined) {
+    message = `${sentence(message)} ${memory}`;
+    return new OkmError("OKM2208", message, {
+      kind: "unavailable",
+      cause: wrapped.cause ?? wrapped,
+      fix: { summary: memory },
+      ...(wrapped.sqlstate !== undefined ? { sqlstate: wrapped.sqlstate } : {}),
+    });
   }
   return new OkmError(wrapped.code, message, {
     kind: wrapped.kind,

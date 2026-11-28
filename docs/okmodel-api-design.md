@@ -344,7 +344,7 @@ Objects that belong to an extension (found through `pg_depend` deptype `e`) are 
 
 **Own definitions.** A developer writes `extension("acme_geo", { requires, provides: { types, operators, indexMethods, functions, triggers, views } })`. Functions, triggers and views are first-class catalog objects (section 5.7), owned by the extension as `external`. Forward-only SQL bundles do not exist; `okm migrate new --sql` is the explicit escape hatch.
 
-**Extension without a definition.** `okm ext scaffold <name>` reads the connected server's catalog (`pg_depend`, `pg_type`, `pg_proc`, `pg_operator`, `pg_settings`) and prints a starting definition that the developer owns and edits. It writes a file only when `--out` is given, and it never overwrites an existing file. `vector` is not a built-in in this version: the CI images do not ship pgvector (D281).
+**Extension without a definition.** `okm ext scaffold <name>` reads the connected server's catalog (`pg_depend`, `pg_type`, `pg_proc`, `pg_operator`, `pg_settings`) and prints a starting definition that the developer owns and edits. It writes a file only when `--out` is given, and it never overwrites an existing file. The hand pack is `okmodel/pg/pgvector` (D358). The generated contrib table still omits `vector`: the CI images do not ship pgvector (D281).
 
 ### 4.2 Layers and the driver contract
 

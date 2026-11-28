@@ -1,0 +1,66 @@
+---
+title: Queues, leases and fenced writes
+description: Claim a job with a row lock, fence the write, and hold an advisory lock.
+---
+
+A worker claims one job that nobody else owns. The claim takes `lock: "update"` and `wait: "skip"` inside `tx()`, so a row another worker already locked is left behind. The write then checks the fence. A stale worker updates nothing. `tx.advisoryLock` keeps one worker on a key for the rest of the transaction. `leasedUntil` uses `.defaultNow()`, which is the database clock, not a value frozen when `schema()` ran.
+
+The fenced write that the typed API cannot express is `raw`. One form inlines the worker name. The other passes it as `$n`. `okm raw sync` describes both before they run.
+
+## Setup
+
+```ts title="jobs.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { raw, schema, table, t } from "okmodel/pg";
+
+const jobs = table("jobs", {
+  id: t.identity(),
+  payload: t.text(),
+  owner: t.text().nullable(),
+  fence: t.integer().default(0),
+  leasedUntil: t.timestamptz().defaultNow(),
+});
+
+export const app = schema({ casing: "snake", tables: [jobs] });
+
+export async function claim(url: string, worker: string) {
+  await using db = connect(url, { schema: app, max: 1 });
+  return await db.tx(async (tx) => {
+    await tx.advisoryLock(worker);
+    const rows = await tx.jobs.find({
+      where: { owner: null },
+      lock: "update",
+      wait: "skip",
+      limit: 1,
+    });
+    const job = rows[0];
+    if (job === undefined) return undefined;
+    const updated = await tx.jobs.update(
+      {
+        where: { id: job.id, fence: job.fence },
+        set: { owner: worker, fence: job.fence + 1 },
+      },
+      { returning: ["id", "fence", "leasedUntil"] },
+    );
+    return updated[0];
+  });
+}
+
+export async function fenceLiteral(url: string, id: number, token: number) {
+  await using db = connect(url, { schema: app, max: 1 });
+  return await raw(
+    db,
+    "update jobs set owner = 'worker-a', fence = fence + 1 where id = $1 and fence = $2 returning id, fence",
+    [id, token],
+  );
+}
+
+export async function fenceParams(url: string, id: number, token: number, worker: string) {
+  await using db = connect(url, { schema: app, max: 1 });
+  return await raw(
+    db,
+    "update jobs set owner = $3, fence = fence + 1 where id = $1 and fence = $2 returning id, fence",
+    [id, token, worker],
+  );
+}
+```

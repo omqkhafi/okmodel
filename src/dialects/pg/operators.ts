@@ -44,10 +44,28 @@ export type OperatorName =
   | "relevance"
   | "similar"
   | "wordSimilar"
+  | "within"
+  | "nearest"
   | "sql"
   | "json.set"
   | "arr.append"
   | "arr.remove";
+
+/** Distance metric for `vector` and `halfvec`. There is no default. */
+export type VectorMetric = "cosine" | "l2" | "ip";
+
+/**
+ * An encoded vector query.
+ *
+ * `text` is the pgvector literal. `dims` is the query length, checked against
+ * the column before SQL is sent.
+ */
+export type VectorQuery = {
+  readonly text: string;
+  readonly metric: VectorMetric;
+  readonly schema: string;
+  readonly dims: number;
+};
 
 /** A tagged operator. `value` is the operand the helper stored. */
 export type Tagged<Name extends OperatorName, V> = {
@@ -123,6 +141,12 @@ export type Matches = Tagged<"matches", MatchValue>;
 
 /** Order by how well a search column matches. Most relevant first. */
 export type Relevance = Tagged<"relevance", MatchValue>;
+
+/** Distance at most `max`. It belongs in `where`. */
+export type Within = Tagged<"within", VectorQuery & { readonly max: number }>;
+
+/** Nearest first. It belongs in `orderBy`, on the same arm as {@link Relevance}. */
+export type Nearest = Tagged<"nearest", VectorQuery>;
 
 /** Text stored on a `pg_trgm` operator. `schema` is the extension's install schema. */
 export type TrigramQuery = {

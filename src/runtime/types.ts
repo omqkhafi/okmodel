@@ -28,6 +28,7 @@ import type {
   ArrAppend,
   ArrRemove,
   JsonSet,
+  Nearest,
   Or,
   Relevance,
   SearchMatch,
@@ -170,6 +171,7 @@ type PathOrder =
   | "desc"
   | { readonly dir: "asc" | "desc"; readonly nulls?: "first" | "last" }
   | Relevance
+  | Nearest
   | undefined;
 
 /** The operand a resolved path accepts in `where` or `orderBy`. */
@@ -667,7 +669,7 @@ type DeleteFilterTarget<S extends QuerySchema, K extends keyof S["~byName"], W> 
  *
  * A `hidden({ filterable: true })` column is a key, the same set `where` uses.
  * A plain `.hidden()` column is not. The row stays the select list.
- * `page` refuses `relevance()` (OKM1120). The keyset cursor has no rank to encode.
+ * `page` refuses `relevance()` and `nearest()` (OKM1120). The keyset cursor has no rank to encode.
  */
 export type OrderBy<Row> = {
   readonly [K in keyof Row]?:
@@ -675,6 +677,7 @@ export type OrderBy<Row> = {
     | "desc"
     | { readonly dir: "asc" | "desc"; readonly nulls?: "first" | "last" }
     | Relevance
+    | Nearest
     | undefined;
 };
 
@@ -1006,6 +1009,7 @@ type PathAggregate<S extends QuerySchema, K extends keyof S["~byName"]> = Omit<
       | "desc"
       | { readonly dir: "asc" | "desc"; readonly nulls?: "first" | "last" }
       | Relevance
+      | Nearest
       | undefined;
   };
 };
@@ -1285,7 +1289,7 @@ export type PageOptions<S extends QuerySchema, K extends keyof S["~byName"]> = R
 };
 
 /**
- * `O`, or `never` when `orderBy` holds `relevance()`.
+ * `O`, or `never` when `orderBy` holds `relevance()` or `nearest()`.
  *
  * One check on the call's values. It does not rebuild `orderBy` for every column.
  */
@@ -1294,7 +1298,9 @@ type NoRank<O> = [O] extends [{ readonly orderBy?: infer B }]
     ? O
     : [Relevance] extends [NonNullable<B>[keyof NonNullable<B>]]
       ? never
-      : O
+      : [Nearest] extends [NonNullable<B>[keyof NonNullable<B>]]
+        ? never
+        : O
   : O;
 
 /** One `orderBy` value. `asc` is nulls last and `desc` is nulls first unless `nulls` is set. */

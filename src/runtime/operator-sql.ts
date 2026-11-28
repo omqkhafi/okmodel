@@ -15,6 +15,7 @@ import {
   textArray,
 } from "../dialects/pg/operator-fit.js";
 import type { ColumnModel } from "../dialects/pg/model.js";
+import { rejected } from "../dialects/pg/misuse.js";
 import {
   isOperator,
   operatorName,
@@ -82,6 +83,10 @@ function emitStructured(
     emitRelevance(column, ref, value, sink);
     sink.text(" desc");
     sink.mark(`o:${column.field}:relevance`);
+    return;
+  }
+  if (name === "within" || name === "nearest") {
+    emitVector(column, ref, name, value, sink, order);
     return;
   }
   if (name === "similar" || name === "wordSimilar") {
@@ -336,6 +341,103 @@ function emitTrigram(
   sink.text(quote(value.schema));
   sink.text(name === "similar" ? ".%) " : ".<%) ");
   sink.param(value.query);
+}
+
+const VECTOR_OPERATORS = { cosine: "<=>", l2: "<->", ip: "<#>" } as const;
+
+/**
+ * Compiles `within` and `nearest`.
+ *
+ * Both use the column's operator. `nearest` sorts ascending, on the same arm
+ * as `relevance`. The query length must match the column.
+ *
+ * @param column - Vector or halfvec column
+ * @param ref - SQL reference, already quoted
+ * @param name - `within` or `nearest`
+ * @param value - Encoded query
+ * @param sink - Statement builder
+ * @param order - Set when the operator is an `orderBy` value
+ */
+function emitVector(
+  column: ColumnModel,
+  ref: string,
+  name: "within" | "nearest",
+  value: unknown,
+  sink: Sink,
+  order?: true,
+): void {
+  if (name === "within" && order === true) {
+    fail("OKM1121", `within on ${column.field} belongs in where.`);
+  }
+  if (name === "nearest" && order !== true) {
+    fail("OKM1121", `nearest on ${column.field} belongs in orderBy.`);
+  }
+  const query = readVector(column, name, value);
+  sink.text(ref);
+  sink.text(" operator(");
+  sink.text(quote(query.schema));
+  sink.text(".");
+  sink.text(VECTOR_OPERATORS[query.metric]);
+  sink.text(") ");
+  sink.param(query.text);
+  if (name === "within") {
+    sink.text(" <= ");
+    sink.param(String(query.max));
+    return;
+  }
+  sink.text(" asc");
+  sink.mark(`o:${column.field}:nearest`);
+}
+
+/**
+ * Reads an encoded vector query and checks it against the column.
+ *
+ * @param column - Field being filtered or ordered
+ * @param name - `within` or `nearest`
+ * @param value - Operand the helper stored
+ * @returns The query, including `max` for `within`
+ */
+function readVector(
+  column: ColumnModel,
+  name: "within" | "nearest",
+  value: unknown,
+): {
+  readonly text: string;
+  readonly metric: "cosine" | "l2" | "ip";
+  readonly schema: string;
+  readonly max: number;
+} {
+  if (
+    !isRecord(value) ||
+    typeof value.text !== "string" ||
+    typeof value.schema !== "string" ||
+    typeof value.dims !== "number" ||
+    (value.metric !== "cosine" && value.metric !== "l2" && value.metric !== "ip")
+  ) {
+    fail("OKM1121", `${name} on ${column.field} needs an encoded vector.`);
+  }
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value.schema)) {
+    fail("OKM1121", `${name} on ${column.field} needs an extension schema name.`);
+  }
+  const width = /^(?:vector|halfvec)\((\d+)\)$/.exec(column.dataType);
+  if (width === null) {
+    fail("OKM1124", `${name} on ${column.field} needs a vector or halfvec column.`);
+  }
+  if (Number(width[1]) !== value.dims) {
+    rejected(
+      `${name} on ${column.field} has ${String(value.dims)} dimensions and the column has ${width[1] ?? ""}.`,
+    );
+  }
+  const max = name === "within" ? value.max : 0;
+  if (name === "within" && (typeof max !== "number" || !Number.isFinite(max))) {
+    fail("OKM1121", `within on ${column.field} needs a finite max.`);
+  }
+  return {
+    text: value.text,
+    metric: value.metric,
+    schema: value.schema,
+    max: typeof max === "number" ? max : 0,
+  };
 }
 
 installOperatorSql(emitStructured);

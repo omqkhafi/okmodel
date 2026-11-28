@@ -75,6 +75,8 @@ function note(used: Set<string>, object: CatalogObject): void {
     if (isUuidV7Default(definition.defaultExpression)) used.add("type.uuidv7");
     if (definition.dataType === "jsonb") used.add("type.jsonb");
     if (definition.dataType.endsWith("[]")) used.add("type.array");
+    if (definition.dataType.startsWith("vector(")) used.add("type.vector");
+    if (definition.dataType.startsWith("halfvec(")) used.add("type.halfvec");
     if (RANGE_TYPES.has(definition.dataType) || definition.dataType.endsWith("multirange")) {
       used.add("type.range");
     }
@@ -111,6 +113,8 @@ function note(used: Set<string>, object: CatalogObject): void {
   if (object.kind === "index") {
     if (object.definition.predicate !== undefined) used.add("index.partial");
     if (object.definition.expression !== undefined) used.add("index.expression");
+    if (object.definition.expression?.startsWith("using hnsw ")) used.add("index.hnsw");
+    if (object.definition.expression?.startsWith("using ivfflat ")) used.add("index.ivfflat");
     if (object.definition.include !== undefined && object.definition.include.length > 0) {
       used.add("index.covering");
     }
@@ -134,7 +138,10 @@ function note(used: Set<string>, object: CatalogObject): void {
   ) {
     used.add(object.kind === "view" ? "comment.view" : "comment.matview");
   }
-  if (object.kind === "extension") used.add("extension");
+  if (object.kind === "extension") {
+    used.add("extension");
+    if (object.identity.name === "vector") used.add("ext.pgvector");
+  }
   if (object.kind === "policy") {
     used.add("policies.table");
     if (isGeneratedPolicy(object)) {

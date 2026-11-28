@@ -759,13 +759,14 @@ export function createIndexSql(object: IndexObject, schema: string): string {
   const expression = definition.expression;
   const name = quoteIdent(object.identity.name);
   const on = qualify(schema, object.identity.parent.name);
+  const storage = indexStorageSql(definition.storage);
   if (
     expression !== undefined &&
     expression.startsWith("using ") &&
     definition.method === undefined &&
     definition.elements === undefined
   ) {
-    return `create ${unique}index ${name} on ${on} ${expression}${where}`;
+    return `create ${unique}index ${name} on ${on} ${expression}${storage}${where}`;
   }
   const method =
     definition.method !== undefined && definition.method !== "btree"
@@ -777,7 +778,6 @@ export function createIndexSql(object: IndexObject, schema: string): string {
       ? ` include (${definition.include.map((column) => quoteIdent(column)).join(", ")})`
       : "";
   const nulls = definition.nullsNotDistinct === true ? " nulls not distinct" : "";
-  const storage = indexStorageSql(definition.storage);
   return `create ${unique}index ${name} on ${on}${method} (${keys})${include}${nulls}${storage}${where}`;
 }
 

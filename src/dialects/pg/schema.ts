@@ -1655,7 +1655,7 @@ function compileIndexes(
         parent,
         columns: built.columns,
         unique: built.isUnique === true,
-        nameKey: built.columns.length > 0 ? built.columns.join("_") : "expr",
+        nameKey: built.nameKey ?? (built.columns.length > 0 ? built.columns.join("_") : "expr"),
         name: built.sqlName,
         predicate: built.predicate,
         expression: built.expression,

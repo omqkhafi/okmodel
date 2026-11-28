@@ -84,6 +84,68 @@ export default schema({
 });
 ```
 
+### pgvector
+
+`pgvector()` from `okmodel/pg/pgvector` declares the `vector` extension. `vector(n)` and `halfvec(n)` store `number[]`. The wire text is `[1,2,3]`. An empty array, a non-finite number, or the wrong length is refused before SQL (OKM1210). `vector(n)` and `halfvec(n)` stop at 16000 dimensions (OKM1930).
+
+`hnsw` and `ivfflat` take a metric. There is no default: `"cosine"`, `"l2"`, or `"ip"`. `efConstruction` is stored as the reloption `ef_construction`. `m` and `lists` keep those names. Pass the column handle from `indexes` so the operator class follows `vector` or `halfvec`. A bare SQL name is resolved the same way when `schema()` runs.
+
+`indexes` is a function, the same as `pgTrgm`. `select` is a list. `distance(...).as("distance")` names the result. `within` is a where value. `nearest` is an orderBy value on the same arm as `relevance()`.
+
+`<#>` is the negative inner product, so an inner product of 6 comes back as `-6`. Cosine distance against a zero vector is `NaN`, and selecting that distance fails OKM1125 because a select fragment must be a finite number. HNSW is approximate. On this server, recall at `hnsw.ef_search` 40, 100, and 400 was 0.85, 1, and 1 for 20 queries over 200 random 128-dimensional rows, k = 10, L2, `m` 16, `ef_construction` 64. That sample is indicative only. `within` after `nearest` is a post-filter and can return fewer rows than `limit`. Iterative scan is `hnsw.iterative_scan`. Raise `maintenance_work_mem` before building an hnsw index on a table that already has rows.
+
+A non-superuser can create `vector` when the provider allows it. The preflight does not decide that. A 42501 from `CREATE EXTENSION` says the extension is not trusted. hnsw above 2000 dimensions on `vector`, or above 4000 on `halfvec`, is OKM1930. ivfflat stops at 2000. One index per column and metric. Changing `vector` to `halfvec` drops the old operator-class index and creates the new one in the same plan. A storage change uses the existing replace path.
+
+Recall for one transaction is a session setting:
+
+```ts title="ef-search.ts"
+import { sessionSettings } from "okmodel/session";
+
+export const search = sessionSettings({
+  efSearch: { name: "hnsw.ef_search", type: "int" },
+});
+```
+
+```ts title="query.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { pgvector } from "okmodel/pg/pgvector";
+import { schema, table, t } from "okmodel/pg";
+import { sessionSettings } from "okmodel/session";
+
+const search = sessionSettings({
+  efSearch: { name: "hnsw.ef_search", type: "int" },
+});
+const vec = pgvector();
+const q = [1, 0, 0];
+
+const docs = table(
+  "docs",
+  { id: t.id(), body: t.text(), embedding: vec.vector(3) },
+  {
+    indexes: (column) => [
+      vec.hnsw(column.embedding, { metric: "cosine", m: 16, efConstruction: 64 }),
+    ],
+  },
+);
+
+export const app = schema({ tables: [docs], extensions: [vec] });
+
+export async function nearest(url: string) {
+  await using db = connect(url, { schema: app, session: search, max: 1 });
+  await db.docs.insert({ body: "near", embedding: [1, 0, 0] });
+  await db.docs.insert({ body: "far", embedding: [-1, 0, 0] });
+  await using tuned = db.with({ efSearch: 100 });
+  return await tuned.docs.find({
+    select: ["body", vec.distance("embedding", q, "cosine").as("distance")],
+    where: { embedding: vec.within(q, { metric: "cosine", max: 0.35 }) },
+    orderBy: { embedding: vec.nearest(q, "cosine") },
+    limit: 10,
+  });
+}
+```
+
+`query.ts` inlines the same setting the `ef-search.ts` fence declares.
+
 ### unaccent
 
 `unaccent()` from `okmodel/pg/unaccent` declares `unaccent`. `unaccent(value)` is `unaccent(column) = unaccent(value)`.

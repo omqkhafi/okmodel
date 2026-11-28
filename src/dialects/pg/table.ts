@@ -133,6 +133,13 @@ export type IndexCall = {
    */
   readonly sqlName?: string;
   /**
+   * Stable key for the generated name `{table}_{nameKey}_idx`.
+   *
+   * Absent means the column list. Two indexes on one column set this so the
+   * names do not collide. `.name()` still replaces the SQL name.
+   */
+  readonly nameKey?: string;
+  /**
    * Marks the index unique.
    *
    * On a tenant table the unique includes every tenant key, so two tenants may
@@ -192,7 +199,11 @@ export type IndexStorageFor<M extends string> = M extends "btree"
         ? { readonly pages_per_range?: number; readonly autosummarize?: boolean }
         : M extends "hash" | "spgist"
           ? { readonly fillfactor?: number }
-          : Readonly<Record<string, string | number | boolean>>;
+          : M extends "hnsw"
+            ? { readonly m?: number; readonly ef_construction?: number }
+            : M extends "ivfflat"
+              ? { readonly lists?: number }
+              : Readonly<Record<string, string | number | boolean>>;
 
 /** A where object, an expression, or `sql` text. */
 export type IndexPredicate = unknown;
@@ -805,6 +816,7 @@ export type IndexBuild = {
   readonly tenantGlobal?: string;
   readonly tenantScoped?: boolean;
   readonly sqlName?: string;
+  readonly nameKey?: string;
 };
 
 /**
@@ -834,6 +846,7 @@ type IndexData = {
   readonly tenantGlobal?: string;
   readonly tenantScoped?: boolean;
   readonly sqlName?: string;
+  readonly nameKey?: string;
 };
 
 function indexData(input: IndexBuild): IndexData {
@@ -851,6 +864,7 @@ function indexData(input: IndexBuild): IndexData {
     ...(input.tenantGlobal !== undefined ? { tenantGlobal: input.tenantGlobal } : {}),
     ...(input.tenantScoped === true ? { tenantScoped: true } : {}),
     ...(input.sqlName !== undefined ? { sqlName: input.sqlName } : {}),
+    ...(input.nameKey !== undefined ? { nameKey: input.nameKey } : {}),
   };
 }
 
@@ -869,6 +883,7 @@ function chain(state: IndexData): IndexChain {
     ...(state.tenantGlobal !== undefined ? { tenantGlobal: state.tenantGlobal } : {}),
     ...(state.tenantScoped === true ? { tenantScoped: true } : {}),
     ...(state.sqlName !== undefined ? { sqlName: state.sqlName } : {}),
+    ...(state.nameKey !== undefined ? { nameKey: state.nameKey } : {}),
     unique(options?: { readonly nullsNotDistinct?: boolean }) {
       return chain({
         ...state,

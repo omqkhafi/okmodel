@@ -16,6 +16,7 @@ import type {
   InList,
   Matches,
   Trigram,
+  Within,
   Not,
   NotIn,
   Overlaps,
@@ -111,6 +112,7 @@ type TypedOps<V> = [unknown] extends [V]
   ? TextOps | StructuredOps<V> | JsonOps
   :
       | (V extends string ? TextOps : never)
+      | (V extends readonly number[] ? Within : never)
       | (V extends readonly unknown[] ? StructuredOps<V> : never)
       | (V extends Range<unknown> ? RangeOps<V> : never)
       | (IsJsonObject<V> extends true ? JsonOps : never);

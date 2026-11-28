@@ -1361,7 +1361,11 @@ function indexExpression(
   const stored = text(row, "expression");
   const btree = method.length === 0 || method === "btree";
   if (btree) return stored;
-  const custom = list(text(row, "opc_custom"));
+  // hnsw and ivfflat have no default operator class that pg_get_indexdef keeps.
+  // `vector_l2_ops` is default and omitted there. `pg_opclass.opcname` is still
+  // unqualified, and the catalog stores it so the index round-trips.
+  const opclassColumn = method === "hnsw" || method === "ivfflat" ? "opc" : "opc_custom";
+  const custom = list(text(row, opclassColumn));
   if (stored.length === 0 && custom.every((name) => name.length === 0)) return "";
   const opclasses = list(text(row, "opc"));
   const body = columns
