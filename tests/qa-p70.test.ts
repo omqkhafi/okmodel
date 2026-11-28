@@ -218,10 +218,11 @@ test("QA-L13: lists_touch is the timestamps trigger, and only with enforce", () 
 });
 
 test("QA-S1: a hidden column in where and orderBy is OKM1120", () => {
-  const decisions = readFileSync(`${root}/docs/okmodel-decisions.md`, "utf8");
-  expect(decisions).toContain("| D215 |");
-  expect(decisions).toContain("| D226 |");
-  expect(decisions).toContain("allow where and refuse orderBy");
+  const hidden = readFileSync(`${root}/docs/decisions/D215.md`, "utf8");
+  const ordering = readFileSync(`${root}/docs/decisions/D226.md`, "utf8");
+  expect(hidden).toContain("# D215 —");
+  expect(ordering).toContain("# D226 —");
+  expect(hidden).toContain("allow where and refuse orderBy");
   const spec = readFileSync(`${root}/docs/okmodel-api-design.md`, "utf8");
   expect(spec).toContain("hidden({ filterable: true })");
 });

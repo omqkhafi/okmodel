@@ -125,7 +125,8 @@ test("the four corrected statements are what the pages say", () => {
   expect(checklist).toContain(notice);
   const doctor = page("site/content/docs/reference/cli/check.mdx");
   const pooler = page("site/content/docs/reference/config.mdx");
-  const decisions = page("docs/okmodel-decisions.md");
+  const decisions = page("docs/decisions/D315.md");
+  const amended = page("docs/decisions/D320.md");
   expect(production).toContain(connection);
   expect(checklist).toContain(connection);
   expect(doctor).toContain(connection);
@@ -135,8 +136,9 @@ test("the four corrected statements are what the pages say", () => {
   expect(decisions).toContain(
     "**Amended by D320 (a failed connection may append a driver token).**",
   );
-  expect(decisions).toContain("Amends D315.");
+  expect(amended).toContain("Amends D315.");
   expect(decisions).not.toContain("with no driver text");
+  expect(amended).not.toContain("with no driver text");
   expect(backfill).toContain(timeout);
   expect(backfillPage).toContain(timeout);
   expect(database).toContain("A stable idle pid is not proof of a direct connection.");
