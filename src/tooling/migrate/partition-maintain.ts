@@ -26,6 +26,7 @@ import {
 import { liveAttachStatements } from "../../dialects/pg/partition-sql.js";
 import { driverUrl } from "./driver-url.js";
 import { lockWaiter, type LockTally } from "./lock-wait.js";
+import { refusePooler } from "./pooler.js";
 
 /** One child as `okm partitions` reports it. */
 export type PartitionReportChild = {
@@ -121,6 +122,8 @@ export async function maintainPartitions(input: {
   readonly lockTimeoutMs: number;
   readonly lockWaitMs: number;
 }): Promise<{ readonly statements: readonly string[]; readonly ran: boolean }> {
+  const { resolvePooler } = await import("./pooler-probe.js");
+  refusePooler(await resolvePooler(input.url), false);
   const partition = input.table.definition.partition;
   if (partition === undefined || partition.ownership === "external") {
     throw new OkmError(
@@ -195,8 +198,11 @@ export async function partitionDoctorLines(
 /**
  * Fails when pg_partman and an OKM rule both own a table.
  *
- * A missing `partman.part_config` passes. This is a check against that table's
- * shape, not a proof the extension is installed.
+ * A missing `partman.part_config` passes. The only column read is
+ * `parent_table`, the primary key of pg_partman's `part_config`. That table
+ * also requires `control`, `partition_interval`, and `partition_type`. Those
+ * columns are not part of this check. This is not a proof the extension is
+ * installed.
  *
  * @param url - Target URL
  * @param catalog - Declared catalog

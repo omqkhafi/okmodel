@@ -29,6 +29,7 @@ import {
   type ClientGenerator,
 } from "../../contracts/generator.js";
 import { loadCatalogCompiler, loadCompileExclusion } from "./catalog-load.js";
+import { rememberSchemaFacts } from "./constraint-index.js";
 import type { HeldCheck } from "./catalog-draft.js";
 import {
   ColumnBuilder,
@@ -703,7 +704,7 @@ export function schema<const TTables extends readonly AnyTable[]>(
     extra,
     foreignKeys,
   };
-  return {
+  const built = {
     get catalog(): Catalog {
       if (document === undefined) document = loadCatalogCompiler()(compileInput);
       return document;
@@ -720,6 +721,8 @@ export function schema<const TTables extends readonly AnyTable[]>(
     ...(clientHooks !== undefined ? { hooks: clientHooks } : {}),
     ...(config.validation !== undefined ? { validation: config.validation } : {}),
   } as unknown as BuiltSchema<TTables>;
+  rememberSchemaFacts(built, compileInput);
+  return built;
 }
 
 function acceptTables(tables: readonly AnyTable[]): readonly string[] {

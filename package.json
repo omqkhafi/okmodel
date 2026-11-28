@@ -224,6 +224,7 @@
     "prepack": "bun ./scripts/strip-workspaces.ts strip && bun ./scripts/docs-pack.ts stamp",
     "postpack": "bun ./scripts/docs-pack.ts restore && bun ./scripts/strip-workspaces.ts restore",
     "size": "bun ./scripts/size.ts",
+    "proof:bundlers": "bun ./scripts/proof-bundlers.ts",
     "bundle-purity": "bun ./scripts/bundle-purity.ts",
     "test": "bun ./scripts/test-entry.ts",
     "test:postgres": "bun ./scripts/postgres-suite.ts",

@@ -11,6 +11,7 @@ import { catalogFileText } from "../contracts/catalog/document.js";
 import type { Catalog } from "../contracts/catalog/types.js";
 import type { DriverPool, ExecuteOptions } from "../contracts/driver.js";
 import { OkmError } from "../contracts/error.js";
+import { compileInputOf } from "../dialects/pg/constraint-index.js";
 import type { QuerySchema } from "../dialects/pg/model.js";
 import { artifactDir, readText } from "./artifact-file.js";
 
@@ -94,12 +95,17 @@ async function codeHash(
   if (listed !== undefined) return { hash: listed, fromFile: true };
   const { sealGenerated } = await import("../dialects/pg/generated-print.js");
   const { catalogHash } = await import("../contracts/catalog/document.js");
-  const catalog = schemaCatalog(schema);
+  const catalog = await schemaCatalog(schema);
   sealGenerated(catalog);
   return { hash: catalogHash(catalog), fromFile: false };
 }
 
-function schemaCatalog(schema: QuerySchema): Catalog {
+async function schemaCatalog(schema: QuerySchema): Promise<Catalog> {
+  const input = compileInputOf(schema);
+  if (input !== undefined) {
+    const { compileCatalog } = await import("../dialects/pg/catalog-compile.js");
+    return compileCatalog(input);
+  }
   const value: unknown = Reflect.get(schema, "catalog");
   if (typeof value !== "object" || value === null || !("objects" in value)) {
     throw new OkmError("OKM1520", "The schema has no catalog to compare.", {

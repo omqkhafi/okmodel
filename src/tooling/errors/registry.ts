@@ -81,7 +81,7 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     code: "OKM1020",
     title: "Unknown table",
     summary: "A table, dependency, or catalog object is missing or does not match its identity.",
-    fix: "Use a name that is in the schema. The error lists the accepted names and a nearest-name hint when one is close.",
+    fix: "Use a name that is in the schema. The error lists the accepted names and a nearest-name hint when one is close. When the message says the catalog compiler is not in the bundle, queries and mapped constraint errors do not need armCatalog(). Call armCatalog() from okmodel/pg/catalog only before reading schema().catalog in a bundle that has no compiler file.",
   },
   {
     code: "OKM1021",

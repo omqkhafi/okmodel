@@ -3,13 +3,14 @@
  *
  * Adapters normalise the driver into `DriverError`. They do not construct
  * `OkmError`. `connect()` passes its schema. A reason then comes from the
- * error's columns matched to a catalog object. With no catalog, the
- * constraint name is parsed.
+ * constraint index `schema()` stored. A catalog object is matched the same
+ * way. With neither, the constraint name is parsed. The compiler stays unloaded.
  */
 
 import { isConnectionFailure, isConnectionSqlstate } from "../../contracts/connection.js";
 import { connectionCause, isDroppedConnection, isPoolAcquireTimeout } from "./connect-failure.js";
 import type { Catalog, ConstraintObject, IndexObject } from "../../contracts/catalog/types.js";
+import { constraintRows, dataCatalog, type ConstraintRow } from "./constraint-index.js";
 import {
   OkmError,
   matchingParen,
@@ -455,9 +456,18 @@ function reasonOf(
   columns: readonly string[],
   schema: MapPostgresErrorSchema | undefined,
 ): string {
-  if (schema !== undefined && schema.catalog !== undefined && table !== undefined) {
-    const matched = matchObject(schema.catalog, table, constraint, columns);
-    if (matched !== undefined) return reasonFromObject(schema, table, matched, columns);
+  if (schema !== undefined && table !== undefined) {
+    const rows = constraintRows(schema);
+    if (rows !== undefined) {
+      const matched = matchRow(rows, table, constraint, columns);
+      if (matched !== undefined) return reasonFromRow(schema, table, matched, columns);
+      return reasonFromName(kind, table, constraint);
+    }
+    const catalog = dataCatalog(schema);
+    if (catalog !== undefined) {
+      const matched = matchObject(catalog, table, constraint, columns);
+      if (matched !== undefined) return reasonFromObject(schema, table, matched, columns);
+    }
   }
   return reasonFromName(kind, table, constraint);
 }
@@ -504,6 +514,44 @@ function matchObject(
   }
   if (constraint === undefined) return undefined;
   return rows.find((object) => object.identity.name === constraint);
+}
+
+function matchRow(
+  rows: readonly ConstraintRow[],
+  table: string,
+  constraint: string | undefined,
+  columns: readonly string[],
+): ConstraintRow | undefined {
+  const found: ConstraintRow[] = [];
+  for (const row of rows) {
+    if (row.table !== table) continue;
+    found.push(row);
+  }
+  if (columns.length > 0) {
+    const key = columns.join(",");
+    const hits = found.filter((row) => row.columns.join(",") === key);
+    if (constraint !== undefined) {
+      const named = hits.find((row) => row.name === constraint);
+      if (named !== undefined) return named;
+    }
+    const only = hits.length === 1 ? hits[0] : undefined;
+    if (only !== undefined) return only;
+  }
+  if (constraint === undefined) return undefined;
+  return found.find((row) => row.name === constraint);
+}
+
+function reasonFromRow(
+  schema: MapPostgresErrorSchema,
+  table: string,
+  row: ConstraintRow,
+  columns: readonly string[],
+): string {
+  if (row.kind === "index") return row.name;
+  if (columns.length === 0) return row.nameKey;
+  const sqlKey = row.columns.join("_");
+  if (row.nameKey !== sqlKey || row.columns.length < 2) return row.nameKey;
+  return fieldKey(schema, table, row.columns) ?? row.nameKey;
 }
 
 function reasonFromObject(

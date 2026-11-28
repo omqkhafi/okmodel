@@ -5,6 +5,9 @@
  */
 
 import { expect } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Sql } from "postgres";
 
 import { DriverError } from "../src/adapters/error.js";
@@ -12,8 +15,11 @@ import type { DriverConnection } from "../src/contracts/driver.js";
 import { catalog } from "../src/contracts/catalog/build.js";
 import type { Catalog } from "../src/contracts/catalog/types.js";
 import { introspectSchema, type CatalogQuery } from "../src/dialects/pg/introspect.js";
+import { OkmError } from "../src/contracts/error.js";
+import type { TableObject } from "../src/contracts/catalog/types.js";
 import { mapPostgresError } from "../src/dialects/pg/errors.js";
 import { schema, table, t } from "../src/dialects/pg/index.js";
+import { parseBound, sameBound } from "../src/dialects/pg/partition-compile.js";
 import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres-test.js";
 import { openPostgres, withPostgresSchema } from "../packages/harness/src/postgres.js";
 import { planMigration } from "../src/tooling/migrate/plan.js";
@@ -25,6 +31,7 @@ import {
 } from "../src/tooling/migrate/partition-maintain.js";
 import { guardPartitionRows } from "../src/tooling/migrate/partition-probe.js";
 import { primaryUrl } from "../packages/harness/src/topology.js";
+import { poolerConfig, POOLER_PORT } from "../scripts/pooler-proof.js";
 
 const gate = await loadPostgresGate();
 
@@ -295,12 +302,24 @@ postgresTest(gate, "a partitioned parent accepts a statement-level transition ta
 postgresTest(gate, "okm check fails when partman lists an okm-managed table", async () => {
   await withPostgresSchema(async (sql, name) => {
     await sql.unsafe(`create schema if not exists partman`);
+    // pg_partman part_config: parent_table is the primary key. control,
+    // partition_interval, and partition_type are NOT NULL and have no default.
+    // The check reads parent_table only. This is the stub of that shape, not
+    // an install of the extension.
+    await sql.unsafe(`drop table if exists partman.part_config`);
     await sql.unsafe(`
-      create table if not exists partman.part_config (
-        parent_table text
+      create table partman.part_config (
+        parent_table text not null primary key,
+        control text not null,
+        partition_interval text not null,
+        partition_type text not null,
+        premake int not null default 4
       )
     `);
-    await sql`insert into partman.part_config (parent_table) values (${`${name}.events`})`;
+    await sql`
+      insert into partman.part_config (parent_table, control, partition_interval, partition_type)
+      values (${`${name}.events`}, 'occurred_at', '1 month', 'range')
+    `;
     const app = events("range");
     let refused = false;
     try {
@@ -453,6 +472,93 @@ postgresTest(gate, "a direct grant on a child is a doctor warning", async () => 
   });
 });
 
+postgresTest(
+  gate,
+  "a bound that crosses daylight saving is the same instant in UTC and in the session zone",
+  async () => {
+    await withPostgresSchema(async (sql, name) => {
+      const app = schema({
+        tables: [
+          table(
+            "events",
+            { id: t.integer(), occurredAt: t.timestamptz(), body: t.text() },
+            {
+              primaryKey: ["id", "occurredAt"],
+              partition: {
+                by: "range",
+                key: "occurredAt",
+                every: "month",
+                at: "America/New_York",
+                from: "2026-01-01",
+                ahead: 12,
+              },
+            },
+          ),
+        ],
+      });
+      await roundTrip(sql, name, app);
+      const stored = app.catalog.objects.find((object) => object.kind === "table");
+      if (stored?.kind !== "table") throw new Error("missing table");
+      for (const suffix of ["2026_03", "2026_11"]) {
+        const declared = stored.definition.partition?.children?.find(
+          (child) => child.suffix === suffix,
+        );
+        if (declared?.bound.kind !== "range") throw new Error(`missing ${suffix}`);
+        await sql.unsafe(`set time zone 'America/New_York'`);
+        const local = await boundText(sql, name, `events_${suffix}`);
+        await sql.unsafe(`set time zone 'UTC'`);
+        const utc = await boundText(sql, name, `events_${suffix}`);
+        const localBound = parseBound(local);
+        const utcBound = parseBound(utc);
+        expect(localBound).toBeDefined();
+        expect(utcBound).toBeDefined();
+        expect(sameBound(localBound!, utcBound!)).toBe(true);
+        expect(sameBound(utcBound!, declared.bound)).toBe(true);
+        const report = await describePartitions(primaryUrl(), name, stored);
+        const child = report.children.find((item) => item.suffix === suffix);
+        const read = child === undefined ? undefined : parseBound(child.bound);
+        expect(read).toBeDefined();
+        expect(sameBound(read!, declared.bound)).toBe(true);
+      }
+    });
+  },
+);
+
+postgresTest(
+  gate,
+  "partitions maintain is OKM1854 on PgBouncer, including dry-run",
+  async () => {
+    if (Bun.which("pgbouncer") === null) return;
+    await withPostgresSchema(async (_sql, name) => {
+      const app = events("range");
+      const stored = app.catalog.objects.find(
+        (object): object is TableObject => object.kind === "table",
+      );
+      if (stored === undefined) throw new Error("missing table");
+      await withPgbouncer(primaryUrl(), async (url) => {
+        let failed: unknown;
+        try {
+          await maintainPartitions({
+            url,
+            schema: name,
+            catalog: app.catalog,
+            table: stored,
+            dryRun: true,
+            allowProtected: false,
+            lockTimeoutMs: 1_000,
+            lockWaitMs: 0,
+          });
+        } catch (error) {
+          failed = error;
+        }
+        expect(failed).toBeInstanceOf(OkmError);
+        if (failed instanceof OkmError) expect(failed.code).toBe("OKM1854");
+      });
+    });
+  },
+  60_000,
+);
+
 function plainEvents() {
   return schema({
     tables: [
@@ -542,6 +648,69 @@ async function roundTrip(
   const found = await introspectSchema(queryOf(sql), name, "public");
   const again = planMigration({ before: found, after: app.catalog, schema: name, name: "again" });
   expect(again.steps.map((step) => step.sql)).toEqual([]);
+}
+
+async function boundText(sql: Sql, schemaName: string, relname: string): Promise<string> {
+  const rows = await sql<{ bound: string }[]>`
+    select pg_get_expr(c.relpartbound, c.oid) as bound
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = ${schemaName} and c.relname = ${relname}
+  `;
+  const bound = rows[0]?.bound;
+  if (bound === undefined) throw new Error(`missing bound ${relname}`);
+  return bound;
+}
+
+async function withPgbouncer(
+  databaseUrl: string,
+  body: (url: string) => Promise<void>,
+): Promise<void> {
+  const primary = new URL(databaseUrl);
+  const dir = mkdtempSync(join(tmpdir(), "okm-part-pooler-"));
+  const port = POOLER_PORT + 30;
+  writeFileSync(join(dir, "users.txt"), `"${decodeURIComponent(primary.username)}" ""\n`);
+  const dbname = primary.pathname.replace(/^\//, "");
+  const ini = poolerConfig(
+    primary.hostname,
+    primary.port,
+    decodeURIComponent(primary.username),
+    decodeURIComponent(primary.password),
+    dir,
+  )
+    .replace(`listen_port = ${String(POOLER_PORT)}`, `listen_port = ${String(port)}`)
+    .replace("dbname=okm", `dbname=${dbname}`)
+    .replace("pool_mode = transaction", "pool_mode = transaction\ndefault_pool_size = 1");
+  writeFileSync(join(dir, "pgbouncer.ini"), ini);
+  const child = Bun.spawn(["pgbouncer", join(dir, "pgbouncer.ini")], {
+    cwd: dir,
+    stdout: "ignore",
+    stderr: "pipe",
+  });
+  try {
+    await waitForPort(port);
+    const url = `postgres://${encodeURIComponent(decodeURIComponent(primary.username))}:${encodeURIComponent(decodeURIComponent(primary.password))}@127.0.0.1:${String(port)}/${dbname}`;
+    await body(url);
+  } finally {
+    child.kill();
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+async function waitForPort(port: number): Promise<void> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const socket = await Bun.connect({
+      hostname: "127.0.0.1",
+      port,
+      socket: { data() {} },
+    }).catch(() => undefined);
+    if (socket !== undefined) {
+      socket.end();
+      return;
+    }
+    await Bun.sleep(100);
+  }
+  throw new Error(`pgbouncer did not open 127.0.0.1:${String(port)}`);
 }
 
 function queryOf(sql: Sql): CatalogQuery {
