@@ -7,6 +7,8 @@
  * every request.
  */
 
+import { errorCodeMarkdownUrl, errorCodePageUrl } from "./error-code-path";
+import { ERROR_FIXES } from "./generated/error-fixes";
 import { handbookPages, type HandbookPage } from "./handbook-corpus";
 import { absoluteDocsUrl, markdownPathForHref } from "./markdown-url";
 import { DOCS_TASKS } from "./tasks";
@@ -203,12 +205,23 @@ function scorePage(page: HandbookPage, query: string, code: string | null): numb
 }
 
 /**
- * JSON hit. A code query links the errors page at that code's anchor.
+ * JSON hit. A code query links that code's markdown twin when the registry has it.
  *
  * @param page - Handbook page
  * @param code - Exact code, when the query is one
  */
 function toResult(page: HandbookPage, code: string | null): SearchResult {
+  const row = code !== null && page.url === "/docs/reference/errors" ? errorFixRow(code) : undefined;
+  if (row !== undefined && code !== null) {
+    return {
+      title: code,
+      url: errorCodePageUrl(code),
+      markdown: absoluteDocsUrl(errorCodeMarkdownUrl(code)),
+      summary: oneLine(row.summary),
+      section: page.section,
+      chip: "",
+    };
+  }
   const anchored = code !== null && page.url === "/docs/reference/errors";
   const url = anchored ? `${page.url}#${code.toLowerCase()}` : page.url;
   const markdownPath = markdownPathForHref(url);
@@ -220,6 +233,15 @@ function toResult(page: HandbookPage, code: string | null): SearchResult {
     section: page.section,
     chip: page.chip,
   };
+}
+
+/**
+ * Registry row when this code has a per-code twin.
+ *
+ * @param code - `OKM####`
+ */
+function errorFixRow(code: string): (typeof ERROR_FIXES)[number] | undefined {
+  return ERROR_FIXES.find((row) => row.code === code);
 }
 
 /**

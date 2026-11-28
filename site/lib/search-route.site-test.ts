@@ -45,7 +45,10 @@ test("the search handler's median of 20 warm calls stays a report", async () => 
     const response = await ask("OKM1101");
     samples.push(performance.now() - started);
     expect(response.status).toBe(200);
-    expect(response.body.results[0]?.url).toContain("/docs/reference/errors");
+    expect(response.body.results[0]?.url).toBe("/docs/reference/errors/OKM1101");
+    expect(response.body.results[0]?.markdown).toBe(
+      "https://okm.omqkhafi.dev/docs/reference/errors/OKM1101.md",
+    );
   }
   const sorted = samples.slice().sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);

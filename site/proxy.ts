@@ -6,9 +6,11 @@
 import { isChromeInspectorProbe } from "@/lib/chrome-inspector";
 import { DISCOVERY_LINK, markdownAlternateLink } from "@/lib/discovery-links";
 import { isDocsRedirect } from "@/lib/docs-redirects";
+import { errorCodeRewrite } from "@/lib/error-code-path";
 import { docsPageExists } from "@/lib/handbook-pages";
 import { markdownNegotiation, markdownTwinPath } from "@/lib/markdown-negotiate";
 import { buildRobotsTxt } from "@/lib/robots-txt";
+import { isMarkdownPreferred } from "fumadocs-core/negotiation";
 import { type NextRequest, NextResponse } from "next/server";
 
 /**
@@ -33,6 +35,17 @@ export function proxy(request: NextRequest): NextResponse | Response {
         Link: DISCOVERY_LINK,
       },
     });
+  }
+
+  const code = errorCodeRewrite(request.nextUrl.pathname, isMarkdownPreferred(request));
+  if (code !== undefined) {
+    const url = request.nextUrl.clone();
+    // A query string on a proxy rewrite does not reach the route handler.
+    url.pathname = `/api/error-code/${code}`;
+    url.search = "";
+    const response = NextResponse.rewrite(url);
+    response.headers.set("Vary", "Accept");
+    return response;
   }
 
   const action = markdownNegotiation(request);

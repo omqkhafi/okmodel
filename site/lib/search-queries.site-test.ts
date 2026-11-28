@@ -7,9 +7,9 @@ import { expect, test } from "bun:test";
 import { searchHandbook } from "./search-docs";
 
 const QUERIES: readonly (readonly [string, string])[] = [
-  ["OKM1101", "/docs/reference/errors"],
-  ["OKM1102", "/docs/reference/errors"],
-  ["OKM1706", "/docs/reference/errors"],
+  ["OKM1101", "/docs/reference/errors/OKM1101"],
+  ["OKM1102", "/docs/reference/errors/OKM1102"],
+  ["OKM1706", "/docs/reference/errors/OKM1706"],
   ["rls", "/docs/schema/policies"],
   ["multi tenant", "/docs/guides/multi-tenant"],
   ["queue", "/docs/guides/queues-leases"],
