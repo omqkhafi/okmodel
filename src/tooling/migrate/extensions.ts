@@ -418,6 +418,9 @@ export async function assertRoleCanCreateExtensions(
     const found = known.get(name);
     if (found === undefined || found.installed) continue;
     if (found.trusted && create) continue;
+    // `vector` is advisory: Neon lets a non-superuser create it. The CREATE
+    // EXTENSION result is the verdict. A 42501 says the extension is not trusted.
+    if (!found.trusted && create && name === "vector") continue;
     const why = found.trusted
       ? `Grant CREATE on the database to ${role}. A non-superuser needs it to create ${name}.`
       : `Only a superuser can create ${name}. The default version is not trusted.`;
@@ -482,4 +485,51 @@ async function updatePath(
   );
   const path = result.rows[0]?.[0];
   return typeof path === "string" && path.length > 0;
+}
+
+/** Sentence a non-superuser 42501 on `CREATE EXTENSION` uses. */
+export const EXTENSION_NOT_TRUSTED = "not trusted: needs a superuser or a provider that allows it";
+
+/**
+ * The 42501 sentence for `CREATE EXTENSION`, when this failure is that case.
+ *
+ * Other 42501 errors stay on their own message. The preflight for `vector`
+ * does not decide trust; this result does.
+ *
+ * @param sqlstate - Driver SQLSTATE
+ * @param sql - Statement that failed
+ * @returns The sentence, or `undefined` when this is not that case
+ */
+export function extensionCreateDenied(
+  sqlstate: string | undefined,
+  sql: string,
+): string | undefined {
+  if (sqlstate !== "42501") return undefined;
+  if (!/^\s*create\s+extension\b/i.test(sql)) return undefined;
+  return EXTENSION_NOT_TRUSTED;
+}
+
+/**
+ * Hint for an hnsw build that failed with 53100 (shared memory).
+ *
+ * @param sqlstate - Driver SQLSTATE
+ * @param sql - Statement that failed
+ * @returns The hint, or `undefined` when this is not an hnsw build
+ */
+export function hnswSharedMemory(sqlstate: string | undefined, sql: string): string | undefined {
+  if (sqlstate !== "53100") return undefined;
+  if (!/\busing\s+hnsw\b/i.test(sql)) return undefined;
+  return "hnsw build needs more shared memory. Raise maintenance_work_mem, or lower m. A table that already has rows needs the memory before the index is created.";
+}
+
+/**
+ * Throws OKM2208 when an hnsw build failed for lack of shared memory.
+ *
+ * @param sqlstate - Driver SQLSTATE
+ * @param sql - Statement that failed
+ */
+export function refuseHnswMemory(sqlstate: string | undefined, sql: string): void {
+  const hint = hnswSharedMemory(sqlstate, sql);
+  if (hint === undefined) return;
+  throw new OkmError("OKM2208", hint, { kind: "unavailable", fix: { summary: hint } });
 }

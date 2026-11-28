@@ -18,6 +18,7 @@
   "/docs/guides/migrations-in-ci",
   "/docs/guides/multi-tenant",
   "/docs/guides/paginate",
+  "/docs/guides/queues-leases",
   "/docs/guides/required-column",
   "/docs/guides/soft-delete",
   "/docs/migrations",

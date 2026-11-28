@@ -7,6 +7,7 @@
     "required-column",
     "migrations-in-ci",
     "from-prisma",
-    "bookings"
+    "bookings",
+    "queues-leases"
   ]
 }

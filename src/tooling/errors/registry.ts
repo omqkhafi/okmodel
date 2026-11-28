@@ -774,6 +774,13 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     fix: "Drop that index or constraint in the same change, or keep the column's storage.",
   },
   {
+    code: "OKM1930",
+    title: "Vector declaration",
+    summary:
+      "A vector or halfvec column, or its hnsw or ivfflat index, is outside what pgvector accepts. That is too many dimensions, a missing metric, or two indexes on the same column and metric. Nothing was planned.",
+    fix: "Keep vector and halfvec at 16000 dimensions or fewer. hnsw allows 2000 for vector and 4000 for halfvec. ivfflat allows 2000. Use one index per column and metric.",
+  },
+  {
     code: "OKM1929",
     title: "Session roles",
     summary:
@@ -1372,6 +1379,13 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
       "okm doctor found a sequence that has used at least half of the range between its minimum and maximum.",
     fix: "Widen the sequence type or its maximum before the range ends.",
     since: "0.10",
+  },
+  {
+    code: "OKM2208",
+    title: "HNSW shared memory",
+    summary:
+      "An hnsw index build failed with SQLSTATE 53100. The build needs more shared memory than the session has. Nothing else in the plan was changed by this hint.",
+    fix: "Raise maintenance_work_mem for the build, or lower the index m. A table that already has rows needs the memory before the index is created.",
   },
   {
     code: "OKM2207",

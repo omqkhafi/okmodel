@@ -26,6 +26,7 @@
     "./pg/pg_trgm": "703e8ef267d4f493f368359e27d8358aedd7e95170f0f1fd7539cd86016ebb1f",
     "./pg/pgcrypto": "b54601d9247de001ccdb22590cb60347f12bf974fd61aacd93bb0a17fbfdba10",
     "./pg/pglite": "48d2f989f5327c475e24d7bc4dd790296698fb86e24a8965279e585cd62e6d13",
+    "./pg/pgvector": "e1c76aa53726c0ba44016ca36256ae2bbaae5dc103b45c80df61ffa8bc860722",
     "./pg/postgresjs": "bb3be6ae6c0a400dea8e15f095a0cdc073ccca28d1cb40eeb4cf8144328126b1",
     "./pg/unaccent": "0da9c3473f27c955fdddac3de4c990f9ffea4e4e9c0b9ce1097ef1e34e9d477f",
     "./policy": "052338b1674516151421f8036c2a1a7d6d0f77532add2df836eae5f90fdbace9",
@@ -128,6 +129,10 @@
     "./pg/pglite": {
       "import": "./dist/runtime/pg/pglite.js",
       "types": "./dist/runtime/pg/pglite.d.ts"
+    },
+    "./pg/pgvector": {
+      "import": "./dist/dialects/pg/ext/pgvector.js",
+      "types": "./dist/dialects/pg/ext/pgvector.d.ts"
     },
     "./pg/postgresjs": {
       "import": "./dist/runtime/pg/postgresjs.js",

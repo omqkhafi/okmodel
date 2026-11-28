@@ -623,12 +623,6 @@
       "kind": "stable"
     }
   ],
-  "okmodel/policy": [
-    {
-      "name": "compileUserPolicies",
-      "kind": "stable"
-    }
-  ],
   "okmodel/session": [
     {
       "name": "SessionContext",
@@ -660,6 +654,22 @@
     },
     {
       "name": "sessionSettings",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/session/role": [
+    {
+      "name": "RolesInput",
+      "kind": "stable"
+    },
+    {
+      "name": "bindSessionRoles",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/policy": [
+    {
+      "name": "compileUserPolicies",
       "kind": "stable"
     }
   ],
@@ -905,6 +915,10 @@
   ],
   "okmodel/fn": [
     {
+      "name": "ArgumentMode",
+      "kind": "stable"
+    },
+    {
       "name": "DependsOn",
       "kind": "stable"
     },
@@ -921,7 +935,51 @@
       "kind": "stable"
     },
     {
+      "name": "ProcedureArgs",
+      "kind": "stable"
+    },
+    {
+      "name": "ProcedureBodyHandle",
+      "kind": "stable"
+    },
+    {
+      "name": "ProcedureNotice",
+      "kind": "stable"
+    },
+    {
+      "name": "ProcedureOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "ProcedureQuery",
+      "kind": "stable"
+    },
+    {
+      "name": "ProcedureResult",
+      "kind": "stable"
+    },
+    {
+      "name": "ProcedureRoutine",
+      "kind": "stable"
+    },
+    {
+      "name": "ProcedureRunOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "ProcedureSpec",
+      "kind": "stable"
+    },
+    {
       "name": "Routine",
+      "kind": "stable"
+    },
+    {
+      "name": "RoutineBody",
+      "kind": "stable"
+    },
+    {
+      "name": "RoutineType",
       "kind": "stable"
     },
     {
@@ -937,7 +995,19 @@
       "kind": "stable"
     },
     {
+      "name": "registeredRoutines",
+      "kind": "stable"
+    },
+    {
       "name": "trigger",
+      "kind": "stable"
+    },
+    {
+      "name": "triggerType",
+      "kind": "stable"
+    },
+    {
+      "name": "voidType",
       "kind": "stable"
     }
   ],
@@ -1085,6 +1155,10 @@
       "kind": "stable"
     },
     {
+      "name": "isEmpty",
+      "kind": "stable"
+    },
+    {
       "name": "isExpr",
       "kind": "stable"
     },
@@ -1121,6 +1195,14 @@
       "kind": "stable"
     },
     {
+      "name": "range",
+      "kind": "stable"
+    },
+    {
+      "name": "rangeAgg",
+      "kind": "stable"
+    },
+    {
       "name": "setting",
       "kind": "stable"
     },
@@ -1145,6 +1227,36 @@
       "kind": "stable"
     }
   ],
+  "okmodel/seq": [
+    {
+      "name": "SequenceBounds",
+      "kind": "stable"
+    },
+    {
+      "name": "SequenceColumnOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "SequenceHandle",
+      "kind": "stable"
+    },
+    {
+      "name": "SequenceOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "SequenceType",
+      "kind": "stable"
+    },
+    {
+      "name": "numbered",
+      "kind": "stable"
+    },
+    {
+      "name": "sequence",
+      "kind": "stable"
+    }
+  ],
   "okmodel/pg/citext": [
     {
       "name": "citext",
@@ -1162,6 +1274,32 @@
     },
     {
       "name": "pgTrgm",
+      "kind": "stable"
+    }
+  ],
+  "okmodel/pg/pgvector": [
+    {
+      "name": "HnswOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "IvfflatOptions",
+      "kind": "stable"
+    },
+    {
+      "name": "PgVector",
+      "kind": "stable"
+    },
+    {
+      "name": "VectorColumn",
+      "kind": "stable"
+    },
+    {
+      "name": "VectorMetric",
+      "kind": "stable"
+    },
+    {
+      "name": "pgvector",
       "kind": "stable"
     }
   ],
@@ -1397,6 +1535,10 @@
       "kind": "stable"
     },
     {
+      "name": "RangeOptions",
+      "kind": "stable"
+    },
+    {
       "name": "RawStatements",
       "kind": "stable"
     },
@@ -1489,11 +1631,23 @@
       "kind": "stable"
     },
     {
+      "name": "adjacent",
+      "kind": "stable"
+    },
+    {
+      "name": "after",
+      "kind": "stable"
+    },
+    {
       "name": "and",
       "kind": "stable"
     },
     {
       "name": "arr",
+      "kind": "stable"
+    },
+    {
+      "name": "before",
       "kind": "stable"
     },
     {
@@ -1546,6 +1700,10 @@
     },
     {
       "name": "date",
+      "kind": "stable"
+    },
+    {
+      "name": "datemultirange",
       "kind": "stable"
     },
     {
@@ -1645,7 +1803,15 @@
       "kind": "stable"
     },
     {
+      "name": "int4multirange",
+      "kind": "stable"
+    },
+    {
       "name": "int4range",
+      "kind": "stable"
+    },
+    {
+      "name": "int8multirange",
       "kind": "stable"
     },
     {
@@ -1662,6 +1828,10 @@
     },
     {
       "name": "interval",
+      "kind": "stable"
+    },
+    {
+      "name": "isEmpty",
       "kind": "stable"
     },
     {
@@ -1749,6 +1919,10 @@
       "kind": "stable"
     },
     {
+      "name": "nummultirange",
+      "kind": "stable"
+    },
+    {
       "name": "numrange",
       "kind": "stable"
     },
@@ -1770,6 +1944,10 @@
     },
     {
       "name": "point",
+      "kind": "stable"
+    },
+    {
+      "name": "range",
       "kind": "stable"
     },
     {
@@ -1846,6 +2024,10 @@
     },
     {
       "name": "trusted",
+      "kind": "stable"
+    },
+    {
+      "name": "tstzmultirange",
       "kind": "stable"
     },
     {

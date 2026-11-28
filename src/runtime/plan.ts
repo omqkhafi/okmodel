@@ -560,7 +560,7 @@ function sawList(value: unknown): boolean {
 /**
  * Scans `orderBy` once.
  *
- * Bit 1 is a `relevance` term. Bit 2 is a nested object that is not
+ * Bit 1 is a tagged operator (`relevance`, `nearest`, and the rest). Bit 2 is a nested object that is not
  * `{ dir, nulls }`, which is the shape of an order on a relation. The
  * relation chunk loads only for bit 2.
  *
@@ -573,7 +573,7 @@ export function orderScan(orderBy: unknown): number {
   for (const key of Object.keys(orderBy)) {
     if (key.includes(".")) bits |= 4;
     const value = orderBy[key];
-    if (isOperator(value) && operatorName(value) === "relevance") bits |= 1;
+    if (isOperator(value)) bits |= 1;
     else if (isRecord(value) && value.dir == null && value.direction == null) bits |= 2;
   }
   return bits;
@@ -1482,12 +1482,12 @@ export function emitOrder(table: Indexed, orderBy: unknown, sink: Sink, alias: s
     refuseHidden(column);
     const value = orderBy[key];
     if (index > 0) sink.text(", ");
-    if (isOperator(value) && operatorName(value) === "relevance") {
+    if (isOperator(value)) {
       emitLazy(
         table,
         column,
         `${alias}.${quote(column.sql)}`,
-        "relevance",
+        operatorName(value),
         operatorValue(value),
         sink,
         true,

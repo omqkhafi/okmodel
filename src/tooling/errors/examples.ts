@@ -33,6 +33,8 @@ import { schemaDeclarations } from "../../dialects/pg/declarations.js";
 import { enumColumn } from "../../dialects/pg/enum.js";
 import { range } from "../../dialects/pg/expr/index.js";
 import { extension } from "../../dialects/pg/ext/index.js";
+import { pgvector } from "../../dialects/pg/ext/pgvector.js";
+import { refuseHnswMemory } from "../migrate/extensions.js";
 import { fn, triggerType } from "../../dialects/pg/fn/index.js";
 import {
   fragment,
@@ -3521,6 +3523,29 @@ reported(
         ],
       }),
     ),
+);
+
+thrown(
+  "OKM1930",
+  () => {
+    pgvector().vector(16001);
+  },
+  () => {
+    pgvector().vector(1536);
+  },
+);
+
+thrown(
+  "OKM2208",
+  () => {
+    refuseHnswMemory(
+      "53100",
+      'create index "docs_embedding_idx" using hnsw ("embedding" vector_cosine_ops)',
+    );
+  },
+  () => {
+    refuseHnswMemory("53100", 'create index "docs_id_idx" using btree ("id")');
+  },
 );
 
 function withColumn(

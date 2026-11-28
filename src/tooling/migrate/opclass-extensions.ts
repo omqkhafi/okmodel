@@ -3,7 +3,8 @@
  *
  * Contrib rows were read from PostgreSQL 17 after installing every package in
  * pg_available_extensions. pgvector rows are the classes in pgvector 0.8.0
- * sql/vector.sql. The stock images do not ship pgvector (D281). A built-in
+ * sql/vector.sql. The stock images do not ship pgvector (D281). Proofs use
+ * the pgvector image (D358). A built-in
  * class is absent: btree int4_ops is not btree_gin, and gin int4_ops is.
  */
 
