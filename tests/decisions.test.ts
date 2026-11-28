@@ -59,7 +59,16 @@ test("decision files parse, numbers are continuous, and supersedes links resolve
   expect(loaded.problems).toEqual([]);
   expect(structureProblems(loaded.records)).toEqual([]);
   expect(loaded.records.some((record) => record.id === "D16a")).toBe(true);
-  expect(nextDecisionId(loaded.records.map((record) => record.id))).toBe("D364");
+  const ids = loaded.records.map((record) => record.id);
+  let max = 0;
+  for (const id of ids) {
+    const match = /^D(\d+)/.exec(id);
+    const value = Number(match?.[1] ?? 0);
+    if (value > max) max = value;
+  }
+  expect(nextDecisionId(ids)).toBe(`D${String(max + 1)}`);
+  expect(nextDecisionId(["D1", "D2"])).toBe("D3");
+  expect(nextDecisionId(["D1", "D16a"])).toBe("D17");
   const byId = new Map(loaded.records.map((record) => [record.id, record]));
   expect(byId.get("D25")?.status).toEqual({ kind: "superseded", by: "D120" });
   expect(byId.get("D67")?.status).toEqual({ kind: "superseded", by: "D91" });

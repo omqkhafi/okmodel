@@ -155,6 +155,13 @@ test("size report prints deltas and does not invent a baseline", () => {
     tarballBytes: 1000,
     typeCost: { "inferred-200": { instantiations: 10, types: 4 } },
     notes: ["tarball: missing"],
+    singleFileConnect: {
+      minBytes: 7,
+      gzipBytes: 3,
+      inputCount: 2,
+      compilerInputs: ["src/dialects/pg/catalog-compile.ts"],
+      method: "bun build scripts/app-connect-bundle.ts --target=bun --minify",
+    },
   };
   const markdown = sizeReportMarkdown(measured, {
     startup: { minBytes: 10, gzipBytes: 9 },
@@ -165,6 +172,8 @@ test("size report prints deltas and does not invent a baseline", () => {
   expect(markdown).toContain("no baseline");
   expect(markdown).toContain("| inferred-200 | 10 | +2 | 4 | 0 |");
   expect(markdown).toContain("- tarball: missing");
+  expect(markdown).toContain("| single-file connect min | 7 | no baseline |");
+  expect(markdown).toContain("Compiler inputs: src/dialects/pg/catalog-compile.ts");
 });
 
 test("bundle purity rejects the harness barrel and an npm package in the metafile", () => {

@@ -7,7 +7,7 @@
 
 import { OkmError } from "../../contracts/error.js";
 import { catalog } from "../../contracts/catalog/build.js";
-import { enumType } from "../../contracts/catalog/enum.js";
+import { enumType } from "../../contracts/catalog/enum-type.js";
 import { extensionObject } from "../../contracts/catalog/extension.js";
 import { identitySequenceName } from "../../contracts/catalog/identifier.js";
 import {

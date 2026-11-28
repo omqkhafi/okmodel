@@ -16,6 +16,8 @@ A Worker has no TCP socket, so postgres.js cannot run there. `okm` needs TCP too
 
 `okmodel/pg` under the `workerd` condition installs the catalog compilers inside `schema()`, so that entry does not need `armCatalog()`. The Node entry loads the compiler on the first direct `schema().catalog` read, through `createRequire` in `catalog-require.js`. That call needs `import.meta.url`. A Workers bundle of the Node entry used to evaluate it while loading `schema()`, which imports `catalog-load.ts`, and the isolate crashed before a query. Queries and mapped constraint errors do not read `.catalog` and do not need `armCatalog()`. A single-file Node or Lambda bundle has no sibling `catalog-compile.js`. Call `armCatalog()` from `okmodel/pg/catalog` only before a direct `schema().catalog` read in a bundle that has no compiler file.
 
+A single-file bundle of `connect` carries the catalog compiler. Drift imports it when `okm_meta` has a hash and the call has no catalog artifact, and the bundler inlines that import. Pass `catalog` on `connect` to skip running the compiler. A Worker has no project directory, so `.okm/catalog.hash` and `catalog.json` are not read there. The compiler stays in the file either way.
+
 ## Install
 
 ```sh

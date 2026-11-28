@@ -12,7 +12,7 @@ import { foldSeries } from "./seq/engine.js";
 import { OkmError, catalogError } from "../../contracts/error.js";
 import { compositeType, isComposite } from "../../contracts/catalog/composite.js";
 import { rangeType } from "../../contracts/catalog/range.js";
-import { domainType, enumType } from "../../contracts/catalog/enum.js";
+import { domainType, enumType } from "../../contracts/catalog/enum-type.js";
 import { identityKey, staticNamespace } from "../../contracts/catalog/identity.js";
 import { isReservedIdentifier, recoveredNameKey } from "../../contracts/catalog/identifier.js";
 import { extensionObject } from "../../contracts/catalog/extension.js";

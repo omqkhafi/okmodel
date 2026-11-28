@@ -13,7 +13,8 @@ import {
   assertStoredText,
   fitIdentifier,
 } from "./identifier.js";
-import { assertNamespace, identityKey } from "./identity.js";
+import { assertNamespace } from "./identity.js";
+import { identityKey } from "./identity-key.js";
 import {
   referentialAction,
   type AnchoredIdentity,

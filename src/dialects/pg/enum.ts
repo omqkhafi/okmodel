@@ -6,7 +6,7 @@
  */
 
 import { catalogError } from "../../contracts/error.js";
-import { domainType } from "../../contracts/catalog/enum.js";
+import { domainType } from "../../contracts/catalog/enum-type.js";
 import { sameNamespace } from "../../contracts/catalog/identity.js";
 import { compareText } from "../../contracts/catalog/object.js";
 import type { ObjectIdentity } from "../../contracts/catalog/types.js";

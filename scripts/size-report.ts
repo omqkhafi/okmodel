@@ -23,9 +23,13 @@ import {
   REPORT_COLD_IMPORT_SAMPLES,
   RUNTIME_ENTRY,
   bundleInputBytes,
+  bunExecutable,
   incrementalMinBytes,
   measureEntry,
+  measureSingleFileConnect,
   measureStubbedStartup,
+  SINGLE_FILE_CONNECT_METHOD,
+  type SingleFileConnectSize,
 } from "./size.js";
 import { measureTypeBudgets, typeCostLines } from "./type-cost.js";
 
@@ -46,6 +50,8 @@ export type SizeReportNumbers = {
   readonly adapters: Readonly<Record<string, BytePair & { readonly incrementalMinBytes: number }>>;
   readonly cliChunkBytes: number;
   readonly tarballBytes: number | undefined;
+  /** Single-file featureless connect bundle. Not a gate (D365). */
+  readonly singleFileConnect: SingleFileConnectSize;
   readonly typeCost: Readonly<
     Record<string, { readonly instantiations: number; readonly types: number }>
   >;
@@ -62,6 +68,11 @@ export type SizeReportBaseline = {
   >;
   readonly cliChunkBytes?: number;
   readonly tarballBytes?: number;
+  readonly singleFileConnect?: {
+    readonly minBytes?: number;
+    readonly gzipBytes?: number;
+    readonly inputCount?: number;
+  };
   readonly typeCost?: Readonly<
     Record<string, { readonly instantiations?: number; readonly types?: number }>
   >;
@@ -191,6 +202,24 @@ export function sizeReportMarkdown(
       ),
     );
   }
+  const file = measured.singleFileConnect;
+  const fileBase = baseline.singleFileConnect;
+  const compilers = file.compilerInputs.length > 0 ? file.compilerInputs.join(", ") : "(none)";
+  lines.push(
+    row("single-file connect min", file.minBytes, signedDelta(file.minBytes, fileBase?.minBytes)),
+    row(
+      "single-file connect gzip",
+      file.gzipBytes,
+      signedDelta(file.gzipBytes, fileBase?.gzipBytes),
+    ),
+    row(
+      "single-file connect inputs",
+      file.inputCount,
+      signedDelta(file.inputCount, fileBase?.inputCount),
+    ),
+    "",
+    `Single-file connect method: ${file.method}. Compiler inputs: ${compilers}.`,
+  );
   lines.push(
     "",
     "#### Type cost",
@@ -296,6 +325,18 @@ export async function collectSizeReport(root: string): Promise<SizeReportNumbers
   } catch (error) {
     notes.push(`type-cost: ${messageOf(error)}`);
   }
+  const singleFileConnect = safeSync(
+    () => measureSingleFileConnect(root),
+    notes,
+    "single-file connect",
+    {
+      minBytes: 0,
+      gzipBytes: 0,
+      inputCount: 0,
+      compilerInputs: [],
+      method: SINGLE_FILE_CONNECT_METHOD,
+    },
+  );
   return {
     startup: { minBytes: startup.minBytes, gzipBytes: startup.gzipBytes },
     runtimeEntry: {
@@ -309,6 +350,7 @@ export async function collectSizeReport(root: string): Promise<SizeReportNumbers
     tarballBytes,
     typeCost,
     notes,
+    singleFileConnect,
   };
 }
 
@@ -326,7 +368,7 @@ function cliChunkSum(root: string): number {
   try {
     const proc = Bun.spawnSync(
       [
-        "bun",
+        bunExecutable(),
         "build",
         join(root, CLI_ENTRY),
         "--target",

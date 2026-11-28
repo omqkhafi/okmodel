@@ -47,6 +47,7 @@ import {
   RUNTIME_ENTRY,
   bundleInputBytes,
   incrementalMinBytes,
+  bunExecutable,
   measureEntry,
   measureStubbedStartup,
   startupChunkNames,
@@ -679,7 +680,7 @@ function compileSingle(
   const outfile = join(dir, "runtime.js");
   const mapToDir = sourcemap || outdir;
   const args = [
-    "bun",
+    bunExecutable(),
     "build",
     join(root, entry),
     "--target",

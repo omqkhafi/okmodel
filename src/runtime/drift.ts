@@ -103,6 +103,7 @@ async function codeHash(
 async function schemaCatalog(schema: QuerySchema): Promise<Catalog> {
   const input = compileInputOf(schema);
   if (input !== undefined) {
+    // D365. A bundler inlines this import. An artifact returns before schemaCatalog.
     const { compileCatalog } = await import("../dialects/pg/catalog-compile.js");
     return compileCatalog(input);
   }

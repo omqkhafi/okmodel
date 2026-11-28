@@ -17,6 +17,8 @@ A module-level `connect(...)` suits the Node.js runtime, where one long-lived pr
 
 `armCatalog()` is not required for queries or mapped constraint errors, including when `okmodel` is left out of `serverExternalPackages` and Next.js bundles it with webpack or Turbopack. Call `armCatalog()` from `okmodel/pg/catalog` only before a direct `schema().catalog` read in a bundle that has no compiler file.
 
+When Next.js bundles `okmodel` into the route, that bundle carries the catalog compiler. `connect` imports it when `okm_meta` has a hash and the process has no catalog artifact, and webpack or Turbopack inlines that import. Pass `catalog` on `connect`, or leave `.okm/catalog.hash` and `catalog.json` from `okm build` where the process can read them, to skip running the compiler. The compiler stays in the bundle either way. This example lists `okmodel` in `serverExternalPackages`, so the compiler stays a file in the package instead of being copied into the route.
+
 ## Install
 
 ```sh

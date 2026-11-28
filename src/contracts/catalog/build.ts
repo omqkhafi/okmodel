@@ -6,7 +6,8 @@
  */
 
 import { catalogError } from "../error.js";
-import { identityKey, identityLabel } from "./identity.js";
+import { identityKey } from "./identity-key.js";
+import { identityLabel } from "./identity.js";
 import { compareText } from "./object.js";
 import { indexObjects, orderIndexed } from "./order.js";
 import { CATALOG_VERSION, type Catalog, type CatalogObject } from "./types.js";
