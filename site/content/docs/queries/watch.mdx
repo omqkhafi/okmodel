@@ -1,0 +1,147 @@
+---
+title: Watch
+description: Wake one function when a table changes, and read the rows through the same client.
+summary: "A watch reads the table at start, after a wake, after reconnect, and on a timer."
+since: "0.11"
+status: stable
+feature: watch.wake
+---
+
+NOTIFY is a hint. The table is the truth. `watch` runs your function at start, after a wake, after the listen connection reconnects, and at least every `every` (30 seconds unless you set it, and never under 1 second). A payload is never the row. The library owns coalescing, the listen connection, the heartbeat, and the polling floor. You write one function.
+
+`watch: true` on the table is what adds `db.orders.watch`. A table without it has no such method. `okm pull` reads the option back as `watch: true`.
+
+```ts title="wake.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const orders = table(
+  "orders",
+  {
+    id: t.identity(),
+    status: t.text(),
+  },
+  { watch: true },
+);
+
+export const app = schema({ casing: "snake", tables: [orders] });
+
+export async function seen(url: string): Promise<number> {
+  await using db = connect(url, { schema: app });
+  let count = 0;
+  await using updates = db.orders.watch(async () => {
+    const rows = await db.orders.find({ where: { status: "open" }, limit: 20 });
+    count = rows.length;
+  });
+  await db.orders.insert({ status: "open" });
+  await updates.run();
+  return count;
+}
+```
+
+`const updates = db.orders.watch(...)` returns the handle immediately. `await using` calls `stop()`. `updates.state` is `"push"`, `"poll"`, or `"stopped"`. `updates.stats` counts runs, errors, wakes, and queries. `await updates.run()` runs the handler now. `updates.stop()` ends it.
+
+The handler runs one at a time. Wakes that arrive while it is running become one more run after it finishes. A thrown handler goes to `onError` and the process stays up. The next run tries again.
+
+## Live read [feature="watch.liveRead"]
+
+Pass the same object you would pass to `find()`. The library runs that read on the client you called, hashes the rows, and calls you at start and whenever the hash differs from the last one your handler finished. A handler that throws is retried on the next run. Two watches in one process with the same table, options, and scope share one query per wake. The rows are whatever that client is allowed to read.
+
+```ts title="live.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const orders = table(
+  "orders",
+  {
+    id: t.identity(),
+    status: t.text(),
+    createdAt: t.timestamptz().defaultNow(),
+  },
+  { watch: true },
+);
+
+const app = schema({ casing: "snake", tables: [orders] });
+
+export async function stream(url: string, send: (rows: readonly { status: string }[]) => void) {
+  await using db = connect(url, { schema: app });
+  await using updates = db.orders.watch(
+    { where: { status: "open" }, orderBy: { createdAt: "desc" }, limit: 50 },
+    (rows) => {
+      send(rows);
+    },
+  );
+  await updates.run();
+}
+```
+
+A scoped client keeps its filter and its policies. `db.for({ tenantId }).orders.watch(...)` reads through that scope. A tenant trigger names the distinct tenant keys of the statement, and a scoped watcher wakes for its own key. A payload over 7,900 bytes wakes every listener. The read is still the scoped query. The notification is not a security boundary.
+
+## Signals [feature="watch.signal"]
+
+`db.watch` listens for a string you choose. `tx.notify` sends it. The string is the whole message. A rolled-back transaction sends nothing.
+
+```ts title="signal.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const users = table("users", { id: t.identity(), email: t.text() });
+const app = schema({ casing: "snake", tables: [users] });
+
+export async function clearOnNotify(url: string, clear: () => void): Promise<void> {
+  await using db = connect(url, { schema: app });
+  await using updates = db.watch("cache:users", () => {
+    clear();
+  });
+  await db.tx(async (tx) => {
+    await tx.users.insert({ email: "a@example.com" });
+    await tx.notify("cache:users");
+  });
+  await updates.run();
+}
+```
+
+`tx.notify` and `db.watch` are on a transaction and on a scoped client as well.
+
+## Wait for a row [feature="watch.until"]
+
+`until` resolves with the first row that matches. It uses the same read as `find`, adds `limit: 1` when you omit it, and works while the subscription is polling.
+
+```ts title="until.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const orders = table(
+  "orders",
+  { id: t.integer().primaryKey(), status: t.text() },
+  { watch: true },
+);
+const app = schema({ casing: "snake", tables: [orders] });
+
+export async function paid(url: string, id: number) {
+  await using db = connect(url, { schema: app });
+  return await db.orders.until({ where: { id, status: "paid" } }, { timeout: "5s" });
+}
+```
+
+A timeout rejects with kind `timeout`. An aborted `signal` rejects with kind `cancelled`.
+
+## Options
+
+`every` is the longest you will wait without a read. The default is 30 seconds. The minimum is 1 second. It cannot be turned off. `throttle` is the shortest gap between runs. The default is 0. `signal` stops the watch when it aborts. `onError` receives handler errors. `push: "required"` throws [OKM1934](/docs/reference/errors#okm1934) when this URL cannot deliver a notification, after the first read.
+
+postgres.js, node-postgres, and PGlite keep a listen connection. Other drivers poll. A transaction pooler, a failed delivery self-test, and a dropped connection also poll. The library warns once: `okmodel: watch is polling (...)`. `until` still resolves from the table.
+
+Set `listenUrl` to a direct Postgres URL when the application URL is pooled. Session-mode pooling can push. Transaction-mode pooling accepts the session and delivers nothing, so the self-test fails and the watch polls. `push: "required"` fails on that URL.
+
+The listen connection runs `SELECT 1` every 30 seconds and allows 10 seconds for the answer. A socket that stops forwarding fails that heartbeat, the watch polls, and it reconnects with backoff. A hot standby refuses `LISTEN` during recovery. The watch catches that and polls.
+
+## Hot tables
+
+The trigger is statement-level. One statement sends one notification, with the distinct tenant keys when the table has a tenant column. `NOTIFY` takes a global commit lock, so many sessions committing at once queue on it.
+
+On one local PostgreSQL 17, 20,000 single-row commits on one connection took 792 ms with no trigger, 848 ms with `watch: true`, and 813 ms with `{ push: false }`. The same 20,000 commits split across 8 connections took 283 ms with no trigger, 1,181 ms with the trigger, and 269 ms with `{ push: false }`. `{ push: false }` installs no trigger. Use it, and `throttle`, on a table whose commits are already the bottleneck.
+
+## Doctor
+
+`okm doctor` runs the delivery self-test against `listenUrl` or the configured URL. The line is `watch: push works on this URL (...)` or `watch: push does not work on this URL (...)`. The host is not printed. At half of `pg_notification_queue_usage()` it also prints [OKM2212](/docs/reference/errors#okm2212).
