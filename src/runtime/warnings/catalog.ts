@@ -528,7 +528,7 @@ export const WARNING_RULES: readonly WarningRule[] = [
     summary:
       "An event trigger lists a command tag that its event never sees. sql_drop does not see a create. table_rewrite sees ALTER TABLE only.",
     fix: "Remove the tag, or move the trigger to ddl_command_end.",
-    defaultLevel: "warn",
+    defaultLevel: "hint",
     severity: "low",
     phase: "check",
     evidence: "static",

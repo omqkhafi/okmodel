@@ -35,7 +35,8 @@ import { range } from "../../dialects/pg/expr/index.js";
 import { extension } from "../../dialects/pg/ext/index.js";
 import { pgvector } from "../../dialects/pg/ext/pgvector.js";
 import { refuseHnswMemory } from "../migrate/extensions.js";
-import { fn, triggerType } from "../../dialects/pg/fn/index.js";
+import { eventTriggerType, fn, trigger, triggerType } from "../../dialects/pg/fn/index.js";
+import "../../dialects/pg/event/index.js";
 import {
   fragment,
   id,
@@ -167,6 +168,7 @@ export const NEEDS_DATABASE = [
   "OKM1915",
   "OKM1923",
   "OKM1926",
+  "OKM2209",
 ] as const;
 
 /**
@@ -1208,6 +1210,64 @@ reported(
           },
         ),
       ],
+    });
+    return schemaAdvice({ catalog: built.catalog, model: built.model }, [], {}).advice.map(
+      (item) => item.code,
+    );
+  },
+);
+
+thrown(
+  "OKM1931",
+  () => {
+    const log = fn("log_ddl", {
+      returns: eventTriggerType,
+      language: "plpgsql",
+      body: "begin end",
+    });
+    trigger("log_ddl", { event: "login", calls: log });
+  },
+  () => {
+    const log = fn("log_ddl", {
+      returns: eventTriggerType,
+      language: "plpgsql",
+      body: "begin end",
+    });
+    schema({
+      tables: [],
+      functions: [log],
+      triggers: [trigger("log_ddl", { event: "ddl_command_end", calls: log })],
+    });
+  },
+);
+
+reported(
+  "OKM2129",
+  () => {
+    const log = fn("log_ddl", {
+      returns: eventTriggerType,
+      language: "plpgsql",
+      body: "begin end",
+    });
+    const built = schema({
+      tables: [],
+      functions: [log],
+      triggers: [trigger("log_ddl", { event: "sql_drop", tags: ["CREATE TABLE"], calls: log })],
+    });
+    return schemaAdvice({ catalog: built.catalog, model: built.model }, [], {}).advice.map(
+      (item) => item.code,
+    );
+  },
+  () => {
+    const log = fn("log_ddl", {
+      returns: eventTriggerType,
+      language: "plpgsql",
+      body: "begin end",
+    });
+    const built = schema({
+      tables: [],
+      functions: [log],
+      triggers: [trigger("log_ddl", { event: "sql_drop", tags: ["DROP TABLE"], calls: log })],
     });
     return schemaAdvice({ catalog: built.catalog, model: built.model }, [], {}).advice.map(
       (item) => item.code,

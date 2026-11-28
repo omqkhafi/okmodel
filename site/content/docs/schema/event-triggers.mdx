@@ -10,9 +10,9 @@ An event trigger fires for DDL in the whole database, not for one table. Declare
 The function is plpgsql, has no arguments, and returns `eventTriggerType` (or the string `"event_trigger"`). Anything else is OKM1931. PostgreSQL reports 42P13 for arguments and 42P17 for the return type.
 
 ```ts title="log-ddl.ts"
-import { fn, trigger, eventTriggerType, sql } from "okmodel/fn";
+import { fn, trigger, eventTriggerType } from "okmodel/fn";
+import { schema, sql } from "okmodel/pg";
 import "okmodel/event";
-import { schema } from "okmodel/pg";
 
 const logIt = fn("log_ddl", {
   returns: eventTriggerType,
@@ -29,7 +29,7 @@ const logDdl = trigger("log_ddl_end", {
   enabled: "always",
 });
 
-export const db = schema({ functions: [logIt], triggers: [logDdl] });
+export const db = schema({ tables: [], functions: [logIt], triggers: [logDdl] });
 ```
 
 `tags` are command tags. Lower case is stored as upper case. A tag that can never fire for the event, such as `sql_drop` with `CREATE TABLE`, is warning OKM2129. A tag on a role, a database, or a tablespace is OKM1931. PostgreSQL reports 42601 for a tag it does not know and 0A000 for a shared object. `okm check` tries the tags in a transaction and rolls that transaction back.
@@ -82,14 +82,31 @@ When `okm apply` fails because an event trigger raised, the message names the en
 
 `referencing` names transition tables for one statement-level `after` trigger. One event. No `updateOf`. `insert` names `new`. `delete` names `old`. `update` names either. `truncate` names neither. A partitioned table cannot have them. Row-level transition tables are not SQL. Partition children and inheritance children are statement-level when PostgreSQL allows the trigger at all. This schema has no child-table declaration, so a child is not detected here.
 
-```ts
-trigger("note_audit", {
-  on: notes,
-  timing: "after",
-  events: ["insert"],
-  level: "statement",
-  referencing: { new: "new_rows" },
-  calls: auditRows,
+```ts title="referencing.ts"
+import { fn, trigger, triggerType } from "okmodel/fn";
+import { schema, sql, table, t } from "okmodel/pg";
+
+const notes = table("notes", { id: t.identity() });
+
+const auditRows = fn("audit_rows", {
+  returns: triggerType,
+  language: "plpgsql",
+  body: sql`begin return null; end`,
+});
+
+export default schema({
+  tables: [notes],
+  functions: [auditRows],
+  triggers: [
+    trigger("note_audit", {
+      on: notes,
+      timing: "after",
+      events: ["insert"],
+      level: "statement",
+      referencing: { new: "new_rows" },
+      calls: auditRows,
+    }),
+  ],
 });
 ```
 
