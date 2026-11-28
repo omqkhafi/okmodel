@@ -13,6 +13,7 @@ import { pathToFileURL } from "node:url";
 import { repoRoot } from "../scripts/root.js";
 import {
   CONNECT_ENTRIES,
+  featurelessCompilerProblems,
   measureStartup,
   measureStubbedStartup,
   startupChunkNames,
@@ -113,6 +114,11 @@ test("a cold import loads the startup chunks and not the lazy ones", async () =>
     rmSync(dir, { recursive: true, force: true });
   }
 }, 20_000);
+
+test("a featureless app does not load the catalog compilers", async () => {
+  const problems = await featurelessCompilerProblems(root);
+  expect(problems).toEqual([]);
+});
 
 test("stubbed sources match the full startup graph", async () => {
   const graphs = [

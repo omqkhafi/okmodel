@@ -7,24 +7,15 @@
 import type { DeclaredComputed, KnownTables } from "./computed-types.js";
 import { OkmError, catalogError, throwNamed } from "../../contracts/error.js";
 import { withLocation } from "../../contracts/location.js";
-import { catalog } from "../../contracts/catalog/build.js";
-import { extensionObject } from "../../contracts/catalog/extension.js";
-import { enumType, sameEnumLabels } from "../../contracts/catalog/enum.js";
+import { sameEnumLabels } from "../../contracts/catalog/enum.js";
 import { staticNamespace } from "../../contracts/catalog/identity.js";
 import {
   assertIdentifier,
   assertStoredText,
-  identitySequenceName,
   printedIdentifier,
   recoveredNameKey,
 } from "../../contracts/catalog/identifier.js";
-import {
-  compareText,
-  constraint,
-  index as catalogIndex,
-  sequence,
-  table as catalogTable,
-} from "../../contracts/catalog/object.js";
+import type { ConstraintInput, IndexInput } from "../../contracts/catalog/object.js";
 import type {
   Catalog,
   CatalogObject,
@@ -37,9 +28,8 @@ import {
   type ClientFill,
   type ClientGenerator,
 } from "../../contracts/generator.js";
-import { compileColumn, type CompilableColumn } from "./compile.js";
-import { readPolicyCompiler } from "./policy-slot.js";
-import { declaredRlsSchemas, readEventCompiler } from "./event/slot.js";
+import { loadCatalogCompiler, loadCompileExclusion } from "./catalog-load.js";
+import type { HeldCheck } from "./catalog-draft.js";
 import {
   ColumnBuilder,
   compositeMark,
@@ -49,20 +39,13 @@ import {
   type ForeignKeySpec,
   type ReferenceModifier,
 } from "./column.js";
-import { clearTypeGrants, rememberTypeGrant } from "./composite-mark.js";
-import { compileExclusion, type ExclusionSpec } from "./exclusion.js";
-import { rangeMark } from "./column-mark.js";
-import { holdGenerated } from "./generated-hold.js";
-import { rememberGrants } from "./role/grant-slot.js";
-import { readSeriesCompiler } from "./series-slot.js";
 import {
   formatPostgresFloor,
   isPostgresMajor,
   minPostgresDefinition,
   parsePostgresFloor,
-  TEMPORAL_POSTGRES,
   UUIDV7_POSTGRES,
-  temporalNeedsPostgres,
+  refuseTemporal,
   uuidv7NeedsPostgres,
   type PostgresMajor,
 } from "./floor.js";
@@ -396,9 +379,17 @@ type StoredOptions = {
   readonly primaryKey?:
     | readonly string[]
     | { readonly columns: readonly string[]; readonly withoutOverlaps?: true };
-  readonly exclusions?: (
-    columns: Readonly<Record<string, ColumnHandle>>,
-  ) => Readonly<Record<string, ExclusionSpec>>;
+  readonly exclusions?: (columns: Readonly<Record<string, ColumnHandle>>) => Readonly<
+    Record<
+      string,
+      {
+        readonly on: readonly (readonly [unknown, "eq" | "overlaps" | "adjacent"])[];
+        readonly where?: unknown;
+        readonly deferrable?: "deferred" | "immediate";
+        readonly comment?: string;
+      }
+    >
+  >;
   readonly indexes?: (columns: Readonly<Record<string, ColumnHandle>>) => readonly IndexCall[];
   readonly checks?: Readonly<
     Record<
@@ -417,7 +408,7 @@ type StoredOptions = {
 };
 
 /** Fields `schema()` reads from a column. Avoids instantiating {@link ColumnBuilder}. */
-type ColumnView = CompilableColumn & {
+type ColumnView = {
   readonly state: ColumnState<unknown>;
 };
 
@@ -429,22 +420,9 @@ type PreparedColumn = {
   readonly state: ColumnState<unknown>;
   /** Date and time mode after `defaults.time`. Absent on other columns. */
   readonly time: TimeMode | undefined;
+  /** File or trait provenance. The compiler copies it onto the column object. */
+  readonly provenance: Provenance;
 };
-
-/** Fills catalog objects on the first `.catalog` read. `schema()` itself does not. */
-type CatalogJob = (objects: CatalogObject[]) => void;
-
-/**
- * Runs `build` when `.catalog` is read.
- *
- * @param jobs - Work deferred from `schema()`
- * @param build - One catalog object
- */
-function stage(jobs: CatalogJob[], build: () => CatalogObject): void {
-  jobs.push((objects) => {
-    objects.push(build());
-  });
-}
 
 type FkEdge = RelationEdge;
 
@@ -474,6 +452,15 @@ type Prepared = {
     columns: Readonly<Record<string, ColumnHandle>>,
   ) => Readonly<Record<string, ForeignKeySpec>>;
   readonly handles: Readonly<Record<string, ColumnHandle>>;
+  /** Table options. The compiler reads the comment. Series reads tenancy off the same object. */
+  readonly options: StoredOptions | undefined;
+  /** Series identities. Empty when the table object is built, then filled by the compiler. */
+  readonly tableDependencies: ObjectIdentity[];
+  readonly primaryKey?: ConstraintInput;
+  readonly exclusions: readonly ConstraintInput[];
+  readonly namedUniques: readonly ConstraintInput[];
+  readonly indexes: readonly IndexInput[];
+  readonly checks: readonly HeldCheck[];
 };
 
 /**
@@ -643,8 +630,8 @@ export function schema<const TTables extends readonly AnyTable[]>(
   const requires = readFloor(config.minPostgres, config.requires);
   const namespace = staticNamespace("public");
   const accepted = acceptTables(config.tables);
-  const jobs: CatalogJob[] = [];
   const prepared: Prepared[] = [];
+  const foreignKeys: ConstraintInput[] = [];
   const extra = { gist: false };
   const sqlNames = new Set<string>();
   const enums = new Map<string, EnumNote>();
@@ -657,7 +644,6 @@ export function schema<const TTables extends readonly AnyTable[]>(
       codecs,
       requires,
       idDefault,
-      jobs,
       enums,
       schemaTraits,
       tenancy === undefined,
@@ -679,8 +665,8 @@ export function schema<const TTables extends readonly AnyTable[]>(
   }
   const edges: FkEdge[] = [];
   for (const item of prepared) {
-    compileForeignKeys(item, byName, accepted, jobs, edges);
-    compileNamedForeignKeys(item, byName, jobs, requires);
+    compileForeignKeys(item, byName, accepted, foreignKeys, edges);
+    compileNamedForeignKeys(item, byName, foreignKeys, requires);
   }
   const model = {} as Record<string, TableModel>;
   const scopeFields =
@@ -696,117 +682,28 @@ export function schema<const TTables extends readonly AnyTable[]>(
     : hooks;
   bindViews(config.views, model, tenancy, tables, names);
 
-  // Catalog objects, enum types, and the cycle check run on first read.
+  // Catalog objects run on first read, from a module this file does not import (D360).
   // Import pays for the query model only (D138).
   let document: Catalog | undefined;
+  const compileInput = {
+    namespace,
+    names,
+    requires,
+    tables: config.tables,
+    prepared,
+    enums,
+    extensions: config.extensions,
+    functions: config.functions,
+    triggers: config.triggers,
+    views: config.views,
+    sequences: config.sequences,
+    schemaTraits,
+    extra,
+    foreignKeys,
+  };
   return {
     get catalog(): Catalog {
-      if (document === undefined) {
-        clearTypeGrants();
-        const objects: CatalogObject[] = [];
-        for (const job of jobs) job(objects);
-        for (const [name, note] of [...enums.entries()].sort((left, right) =>
-          compareText(left[0], right[0]),
-        )) {
-          objects.push(
-            enumType({
-              namespace,
-              name,
-              labels: note.labels,
-              provenance: note.provenance,
-              ...(note.comment !== undefined ? { comment: note.comment } : {}),
-            }),
-          );
-          const schemaName = namespace.form === "static" ? namespace.name : "public";
-          rememberTypeGrant(schemaName, name, note.grants);
-        }
-        contributeListed(config.extensions, objects, names);
-        contributeListed(config.functions, objects, names, tables);
-        contributeListed(schemaTraits, objects, names);
-        for (const item of config.tables) {
-          contributeListed(
-            (item.options as { readonly traits?: unknown } | undefined)?.traits,
-            objects,
-            names,
-          );
-        }
-        contributeListed(config.triggers, objects, names);
-        contributeListed(config.views, objects, names);
-        if (
-          objects.some(
-            (object) =>
-              object.kind === "constraint" &&
-              (object.definition.withoutOverlaps === true || object.definition.period === true),
-          )
-        ) {
-          refuseTemporal(requires);
-        }
-        if (
-          extra.gist &&
-          !objects.some(
-            (object) => object.kind === "extension" && object.identity.name === "btree_gist",
-          )
-        ) {
-          objects.push(
-            extensionObject({
-              name: "btree_gist",
-              schema: "public",
-              provenance: { origin: "file", name: "btree_gist" },
-            }),
-          );
-        }
-        if (Array.isArray(config.sequences)) {
-          for (const item of config.sequences) item.contribute(namespace, objects);
-        }
-        rememberSequenceGrants(prepared);
-        if (tablesWantPolicies(config.tables)) {
-          const compile = readPolicyCompiler();
-          if (compile === undefined) {
-            throw new OkmError(
-              "OKM1924",
-              "Import okmodel/policy before schema() when a table sets policies or rls.",
-              {
-                fix: {
-                  summary: "Import okmodel/policy in the file that calls schema().",
-                },
-              },
-            );
-          }
-          compile(
-            config.tables,
-            (tsName) => {
-              const item = byName.get(tsName);
-              if (item === undefined) return undefined;
-              return {
-                sqlName: item.sqlName,
-                parent: item.parent,
-                provenance: item.provenance,
-                column: (field) => {
-                  const column = item.byField.get(field);
-                  return column === undefined
-                    ? undefined
-                    : { sql: column.sqlName, dataType: column.dataType };
-                },
-              };
-            },
-            objects,
-          );
-        }
-        const rlsSchemas = declaredRlsSchemas(config.triggers);
-        if (rlsSchemas !== undefined) {
-          refuseDisabledRls(config.tables, rlsSchemas);
-          const events = readEventCompiler();
-          if (events === undefined) {
-            throw new OkmError(
-              "OKM1931",
-              "Import okmodel/event before schema() when a trigger uses enableRls.",
-              { fix: { summary: "Import okmodel/event in the file that calls schema()." } },
-            );
-          }
-          events.stampRls(objects, rlsSchemas);
-        }
-        document = catalog(objects);
-      }
+      if (document === undefined) document = loadCatalogCompiler()(compileInput);
       return document;
     },
     types,
@@ -821,46 +718,6 @@ export function schema<const TTables extends readonly AnyTable[]>(
     ...(clientHooks !== undefined ? { hooks: clientHooks } : {}),
     ...(config.validation !== undefined ? { validation: config.validation } : {}),
   } as unknown as BuiltSchema<TTables>;
-}
-
-/**
- * `rls: false` in a schema `enableRls` covers is OKM1931.
- *
- * The policy compiler omits row security when it is off, so the catalog
- * object cannot tell an explicit false from a default. The table options
- * still can. Tables declared here live in `public` until a later placement.
- *
- * @param tables - Tables passed to `schema()`
- * @param schemas - Schema names the preset covers
- */
-function refuseDisabledRls(tables: readonly AnyTable[], schemas: readonly string[]): void {
-  if (!schemas.includes("public")) return;
-  for (const item of tables) {
-    const options = item.options as { readonly rls?: unknown } | undefined;
-    const rls = options?.rls;
-    const off =
-      rls === false ||
-      (typeof rls === "object" &&
-        rls !== null &&
-        "enable" in rls &&
-        (rls as { readonly enable?: unknown }).enable === false);
-    if (!off) continue;
-    throw new OkmError(
-      "OKM1931",
-      `Table ${item.name} sets rls: false, and enableRls covers schema public.`,
-      { fix: { summary: "Remove rls: false, or take the table's schema out of enableRls." } },
-    );
-  }
-}
-
-function tablesWantPolicies(tables: readonly AnyTable[]): boolean {
-  for (const item of tables) {
-    const options = item.options as
-      | { readonly policies?: unknown; readonly rls?: unknown }
-      | undefined;
-    if (options?.policies !== undefined || options?.rls !== undefined) return true;
-  }
-  return false;
 }
 
 function acceptTables(tables: readonly AnyTable[]): readonly string[] {
@@ -927,7 +784,7 @@ function noteEnum(
       `Enum ${name} lists ${previous.labels.join(", ")} on ${previous.table} and ${labels.join(", ")} on ${table}. One enum has one label list.`,
     );
   }
-  if (previous === undefined || compareText(table, previous.table) < 0) {
+  if (previous === undefined || table < previous.table) {
     const kept = comment ?? previous?.comment;
     const keptGrants = grants ?? previous?.grants;
     notes.set(name, {
@@ -1121,38 +978,6 @@ function bareTables(tables: readonly AnyTable[]): readonly AnyTable[] {
   return tables;
 }
 
-/**
- * Asks each value that carries `contribute` for its catalog objects.
- *
- * Extensions, functions, triggers, and traits use the same call. An omitted
- * option, or a trait with no catalog records, does nothing.
- *
- * @param value - The option or trait list the caller passed
- * @param objects - Objects the schema is collecting
- */
-function contributeListed(
-  value: unknown,
-  objects: CatalogObject[],
-  names: Names,
-  sources?: readonly object[],
-): void {
-  if (!Array.isArray(value)) return;
-  for (const item of value) {
-    const produced = (
-      item as {
-        contribute(
-          peers: unknown,
-          built: unknown,
-          names: Names,
-          sources?: readonly object[],
-        ): unknown;
-      }
-    ).contribute(value, objects, names, sources);
-    if (Array.isArray(produced))
-      for (const object of produced) objects.push(object as CatalogObject);
-  }
-}
-
 function openSchemaTraits(value: unknown): readonly Trait[] | undefined {
   if (value === undefined) return undefined;
   if (!Array.isArray(value)) definition("schema() traits must be a list of traits.");
@@ -1222,7 +1047,6 @@ function compileTable(
   codecs: SchemaCodecs,
   requires: SchemaRequires | undefined,
   idDefault: SchemaIdDefault | undefined,
-  jobs: CatalogJob[],
   enums: Map<string, EnumNote>,
   schemaTraits: readonly Trait[] | undefined,
   bare: boolean,
@@ -1251,15 +1075,6 @@ function compileTable(
       : { origin: "file", name: item.name, source: item.source };
   const parent: ObjectRef = { namespace, name: sqlName };
   const tableDependencies: ObjectIdentity[] = [];
-  stage(jobs, () =>
-    catalogTable({
-      namespace,
-      name: sqlName,
-      provenance,
-      ...(options?.comment !== undefined ? { comment: options.comment } : {}),
-      ...(tableDependencies.length > 0 ? { dependencies: tableDependencies } : {}),
-    }),
-  );
 
   const columns: PreparedColumn[] = [];
   const columnPrimary: string[] = [];
@@ -1296,86 +1111,13 @@ function compileTable(
             name: traitName,
             ...(provenance.source !== undefined ? { source: provenance.source } : {}),
           };
-    const identity = column.state.identity;
-    const draft = column.state.seriesDraft;
-    if (identity !== undefined) {
-      const seqName = identitySequenceName(sqlName, columnSql);
-      jobs.push((objects) => {
-        bindGenerated(column, handles, byField);
-        const seq = sequence({
-          namespace,
-          name: seqName,
-          dataType:
-            column.state.baseType === "integer" || column.state.baseType === "smallint"
-              ? column.state.baseType
-              : "bigint",
-          provenance,
-          dependencies: [{ kind: "table", namespace, name: sqlName }],
-          ...(identity.comment !== undefined ? { comment: identity.comment } : {}),
-          ...(identity.start !== undefined ? { start: identity.start } : {}),
-          ...(identity.increment !== undefined ? { increment: identity.increment } : {}),
-          ...(identity.min !== undefined ? { min: identity.min } : {}),
-          ...(identity.max !== undefined ? { max: identity.max } : {}),
-          ...(identity.cache !== undefined ? { cache: identity.cache } : {}),
-          ...(identity.cycle === true ? { cycle: true } : {}),
-        });
-        objects.push(seq);
-        pushCompiled(objects, column, {
-          parent,
-          name: columnSql,
-          provenance: columnProvenance,
-          dependencies: [seq.identity],
-        });
-      });
-    } else if (draft !== undefined) {
-      jobs.push((objects) => {
-        bindGenerated(column, handles, byField);
-        const compile = readSeriesCompiler();
-        if (compile === undefined) {
-          definition(
-            "Import sequence from okmodel/seq before schema() when a column uses sequence().",
-          );
-        }
-        compile({
-          tableName: item.name,
-          sqlName,
-          columnSql,
-          column,
-          draft,
-          options,
-          namespace,
-          provenance,
-          parent,
-          columnProvenance,
-          columns: byField,
-          handles,
-          tableDependencies,
-          objects,
-          finish: (dependencies) =>
-            pushCompiled(objects, column, {
-              parent,
-              name: columnSql,
-              provenance: columnProvenance,
-              ...(dependencies !== undefined ? { dependencies } : {}),
-            }),
-        });
-      });
-    } else {
-      jobs.push((objects) => {
-        bindGenerated(column, handles, byField);
-        pushCompiled(objects, column, {
-          parent,
-          name: columnSql,
-          provenance: columnProvenance,
-        });
-      });
-    }
     const prepared: PreparedColumn = {
       field,
       sqlName: columnSql,
       dataType: formatType(modelType(column.state), column.state.dims),
       state: column.state,
       time: column.state.time && (column.state.time.mode ?? codecs.timestamps),
+      provenance: columnProvenance,
     };
     columns.push(prepared);
     byField.set(field, prepared);
@@ -1425,45 +1167,46 @@ function compileTable(
     );
   }
   const primary = optionPrimary.columns.length > 0 ? optionPrimary.columns : columnPrimary;
-  if (primary.length > 0) {
-    if (optionPrimary.withoutOverlaps === true) {
-      const last = bySql.get(primary[primary.length - 1] ?? "");
-      if (last === undefined || !isRangeDataType(last.dataType, last.state.encode)) {
-        definition(`Primary key ${item.name} WITHOUT OVERLAPS needs a range as its last column.`);
-      }
+  const primaryKey: ConstraintInput | undefined =
+    primary.length === 0
+      ? undefined
+      : {
+          parent,
+          constraintKind: "primaryKey",
+          columns: primary,
+          provenance,
+          ...(optionPrimary.withoutOverlaps === true ? { withoutOverlaps: true as const } : {}),
+        };
+  if (primary.length > 0 && optionPrimary.withoutOverlaps === true) {
+    const last = bySql.get(primary[primary.length - 1] ?? "");
+    if (last === undefined || !isRangeDataType(last.dataType, last.state.encode)) {
+      definition(`Primary key ${item.name} WITHOUT OVERLAPS needs a range as its last column.`);
     }
-    stage(jobs, () =>
-      constraint({
-        parent,
-        constraintKind: "primaryKey",
-        columns: primary,
-        provenance,
-        ...(optionPrimary.withoutOverlaps === true ? { withoutOverlaps: true as const } : {}),
-      }),
-    );
   }
-  if (options?.exclusions !== undefined) {
-    compileTableExclusions(item.name, options, parent, provenance, byField, jobs, tenancy, extra);
-  }
-
-  if (options?.unique !== undefined) {
-    compileUniques(item.name, options, parent, provenance, byField, jobs);
-  }
-  if (options?.indexes !== undefined) {
-    compileIndexes(
-      item.name,
-      options,
-      handles,
-      parent,
-      provenance,
-      jobs,
-      bare,
-      (field) => byField.get(field)?.sqlName ?? field,
-    );
-  }
-  if (options?.checks !== undefined) {
-    compileChecks(item.name, options, handles, parent, provenance, byField, jobs);
-  }
+  const exclusions =
+    options?.exclusions === undefined
+      ? []
+      : compileTableExclusions(item.name, options, parent, provenance, byField, tenancy, extra);
+  const namedUniques =
+    options?.unique === undefined
+      ? []
+      : compileUniques(item.name, options, parent, provenance, byField);
+  const indexes =
+    options?.indexes === undefined
+      ? []
+      : compileIndexes(
+          item.name,
+          options,
+          handles,
+          parent,
+          provenance,
+          bare,
+          (field) => byField.get(field)?.sqlName ?? field,
+        );
+  const checks =
+    options?.checks === undefined
+      ? []
+      : compileChecks(item.name, options, handles, parent, provenance, byField);
 
   return {
     tsName: item.name,
@@ -1480,59 +1223,15 @@ function compileTable(
     presets: applied?.presets ?? options?.presets,
     ...(options?.foreignKeys !== undefined ? { foreignKeys: options.foreignKeys } : {}),
     handles,
+    options,
+    tableDependencies,
+    ...(primaryKey !== undefined ? { primaryKey } : {}),
+    exclusions,
+    namedUniques,
+    indexes,
+    checks,
     ...archiveModel(item),
   };
-}
-
-function rememberSequenceGrants(prepared: readonly Prepared[]): void {
-  for (const item of prepared) {
-    for (const column of item.columns) {
-      const grants = column.state.identity?.grants;
-      if (grants === undefined) continue;
-      rememberGrants(
-        "sequence",
-        "public",
-        identitySequenceName(item.sqlName, column.sqlName),
-        grants,
-      );
-    }
-  }
-  for (const item of prepared) {
-    for (const column of item.columns) {
-      const draft = column.state.seriesDraft;
-      if (
-        draft?.grants === undefined ||
-        draft.reset !== undefined ||
-        draft.when !== undefined ||
-        (draft.scope?.length ?? 0) > 0
-      ) {
-        continue;
-      }
-      const name =
-        draft.name.length > 0 ? draft.name : identitySequenceName(item.sqlName, column.sqlName);
-      rememberGrants("sequence", "public", name, draft.grants);
-    }
-  }
-}
-
-function bindGenerated(
-  column: ColumnView,
-  handles: Readonly<Record<string, ColumnHandle>>,
-  byField: ReadonlyMap<string, PreparedColumn>,
-): void {
-  const generated = column.state.generated;
-  if (
-    generated === undefined ||
-    generated.build === undefined ||
-    generated.expression !== undefined
-  ) {
-    return;
-  }
-  (generated as { expression: string }).expression = holdGenerated(
-    generated.build,
-    handles,
-    (field) => byField.get(field)?.sqlName ?? field,
-  );
 }
 
 function uniqueTargets(
@@ -1590,49 +1289,17 @@ function relationInput(tableName: string, options: StoredOptions | undefined): u
   return relations;
 }
 
-function pushCompiled(
-  objects: CatalogObject[],
-  column: ColumnView,
-  input: {
-    readonly parent: ObjectRef;
-    readonly name: string;
-    readonly provenance: Provenance;
-    readonly dependencies?: readonly ObjectIdentity[];
-  },
-): void {
-  const compiled = compileColumn(column, input);
-  objects.push(compiled.column);
-  if (compiled.check !== undefined) objects.push(compiled.check);
-  if (compiled.unique !== undefined) objects.push(compiled.unique);
-  column.state.domain?.emit?.(input.parent.namespace, input.provenance, objects);
-  const ranged = rangeMark(column.state.encode);
-  if (ranged?.emit !== undefined) {
-    ranged.emit(input.parent, input.provenance, objects, input.name, column.state.nullable);
-  }
-  const mark = compositeMark(column.state.encode);
-  if (mark !== undefined) {
-    if (column.state.generated?.stored === false) {
-      definition(
-        `A virtual generated column cannot use composite type ${mark.type}. PostgreSQL refuses it (0A000). Store the column.`,
-      );
-    }
-    mark.emit(input.parent, input.provenance, objects, input.name, column.state.nullable);
-  }
-}
-
 function compileUniques(
   tableName: string,
   options: StoredOptions | undefined,
   parent: ObjectRef,
   provenance: Provenance,
   byField: ReadonlyMap<string, PreparedColumn>,
-  jobs: CatalogJob[],
-): void {
+): ConstraintInput[] {
   const unique = options?.unique;
-  if (unique === undefined) {
-    return;
-  }
+  if (unique === undefined) return [];
   const accepted = [...byField.keys()].sort();
+  const held: ConstraintInput[] = [];
   for (const [name, fields] of Object.entries(unique)) {
     if (fields.length === 0) {
       definition(`Unique ${tableName}.${name} needs a column.`);
@@ -1650,16 +1317,15 @@ function compileUniques(
       }
       columns.push(column.sqlName);
     }
-    stage(jobs, () =>
-      constraint({
-        parent,
-        constraintKind: "unique",
-        columns,
-        nameKey: name,
-        provenance,
-      }),
-    );
+    held.push({
+      parent,
+      constraintKind: "unique",
+      columns,
+      nameKey: name,
+      provenance,
+    });
   }
+  return held;
 }
 
 function compileIndexes(
@@ -1668,14 +1334,11 @@ function compileIndexes(
   handles: Readonly<Record<string, ColumnHandle>>,
   parent: ObjectRef,
   provenance: Provenance,
-  jobs: CatalogJob[],
   bare: boolean,
   sqlNameOf: (field: string) => string,
-): void {
+): IndexInput[] {
   const build = options?.indexes;
-  if (build === undefined) {
-    return;
-  }
+  if (build === undefined) return [];
   bindIndexNames(sqlNameOf);
   let calls: readonly IndexCall[];
   try {
@@ -1686,6 +1349,7 @@ function compileIndexes(
   if (!Array.isArray(calls)) {
     definition(`Table ${tableName} indexes must return an array.`);
   }
+  const held: IndexInput[] = [];
   for (const call of calls) {
     if (bare && call.tenantGlobal !== undefined) {
       definition(`Table ${tableName} index().global() needs tenancy.`);
@@ -1694,25 +1358,24 @@ function compileIndexes(
       definition(`Table ${tableName} index().scoped() needs tenancy.`);
     }
     const built = readIndex(tableName, call);
-    stage(jobs, () =>
-      catalogIndex({
-        parent,
-        columns: built.columns,
-        unique: built.isUnique === true,
-        nameKey: built.nameKey ?? (built.columns.length > 0 ? built.columns.join("_") : "expr"),
-        name: built.sqlName,
-        predicate: built.predicate,
-        expression: built.expression,
-        method: built.method,
-        include: built.included,
-        elements: built.elements,
-        storage: built.storage,
-        nullsNotDistinct: built.nullsNotDistinct,
-        ...(built.commentText !== undefined ? { comment: built.commentText } : {}),
-        provenance,
-      }),
-    );
+    held.push({
+      parent,
+      columns: built.columns,
+      unique: built.isUnique === true,
+      nameKey: built.nameKey ?? (built.columns.length > 0 ? built.columns.join("_") : "expr"),
+      name: built.sqlName,
+      predicate: built.predicate,
+      expression: built.expression,
+      method: built.method,
+      include: built.included,
+      elements: built.elements,
+      storage: built.storage,
+      nullsNotDistinct: built.nullsNotDistinct,
+      ...(built.commentText !== undefined ? { comment: built.commentText } : {}),
+      provenance,
+    });
   }
+  return held;
 }
 
 type CheckBuild = (columns: Readonly<Record<string, ColumnHandle>>) => SqlText;
@@ -1724,47 +1387,41 @@ function compileChecks(
   parent: ObjectRef,
   provenance: Provenance,
   byField: ReadonlyMap<string, PreparedColumn>,
-  jobs: CatalogJob[],
-): void {
+): HeldCheck[] {
   const checks = options?.checks;
-  if (checks === undefined) {
-    return;
-  }
+  if (checks === undefined) return [];
+  const held: HeldCheck[] = [];
   for (const [name, build] of Object.entries(checks)) {
     const fn: CheckBuild =
       (build as { readonly expression?: CheckBuild }).expression ?? (build as CheckBuild);
     const used: string[] = [];
-    let made: CatalogObject | undefined;
     const value = fn(track(handles, used));
     const text = readCheck(tableName, name, value);
     const columns: string[] = [];
     for (const field of used) {
       const column = byField.get(field);
-      if (column !== undefined) {
-        columns.push(column.sqlName);
-      }
+      if (column !== undefined) columns.push(column.sqlName);
     }
-    stage(
-      jobs,
-      () => (
-        (made = constraint({
-          parent,
-          constraintKind: "check",
-          columns,
-          nameKey: name,
-          expression: text,
-          provenance,
-          ...(typeof (build as { readonly comment?: unknown }).comment === "string"
-            ? { comment: (build as { readonly comment: string }).comment }
-            : {}),
-        })),
-        fn !== build &&
-          (build as { readonly enforced?: false }).enforced === false &&
-          ((made as { enforced?: false }).enforced = false),
-        made
-      ),
-    );
+    const comment =
+      typeof (build as { readonly comment?: unknown }).comment === "string"
+        ? (build as { readonly comment: string }).comment
+        : undefined;
+    held.push({
+      input: {
+        parent,
+        constraintKind: "check",
+        columns,
+        nameKey: name,
+        expression: text,
+        provenance,
+        ...(comment !== undefined ? { comment } : {}),
+      },
+      ...(fn !== build && (build as { readonly enforced?: false }).enforced === false
+        ? { enforced: false as const }
+        : {}),
+    });
   }
+  return held;
 }
 
 type NormalizedReference = Omit<ReferenceModifier, "onDelete"> & {
@@ -1790,7 +1447,7 @@ function compileForeignKeys(
   item: Prepared,
   byName: ReadonlyMap<string, Prepared>,
   accepted: readonly string[],
-  jobs: CatalogJob[],
+  foreignKeys: ConstraintInput[],
   edges: FkEdge[],
 ): void {
   for (const column of item.columns) {
@@ -1842,31 +1499,29 @@ function compileForeignKeys(
       localNames.push(local.sqlName);
       remoteNames.push(remote.sqlName);
     }
-    stage(jobs, () =>
-      constraint({
-        parent: item.parent,
-        constraintKind: "foreignKey",
-        columns: localNames,
-        nameKey: column.sqlName,
-        provenance: item.provenance,
-        references: {
-          parent: target.parent,
-          columns: remoteNames,
-          ...(reference.onDelete !== undefined ? { onDelete: reference.onDelete } : {}),
-          ...(reference.onUpdate !== undefined ? { onUpdate: reference.onUpdate } : {}),
-          ...(reference.match === "full" ? { match: "full" as const } : {}),
-          ...(reference.onDeleteColumns !== undefined
-            ? { onDeleteColumns: reference.onDeleteColumns }
-            : {}),
-        },
-        ...(reference.deferrable === "deferred"
-          ? { deferrable: true, initially: "deferred" as const }
-          : reference.deferrable === "immediate"
-            ? { deferrable: true, initially: "immediate" as const }
-            : {}),
-        ...(reference.comment !== undefined ? { comment: reference.comment } : {}),
-      }),
-    );
+    foreignKeys.push({
+      parent: item.parent,
+      constraintKind: "foreignKey",
+      columns: localNames,
+      nameKey: column.sqlName,
+      provenance: item.provenance,
+      references: {
+        parent: target.parent,
+        columns: remoteNames,
+        ...(reference.onDelete !== undefined ? { onDelete: reference.onDelete } : {}),
+        ...(reference.onUpdate !== undefined ? { onUpdate: reference.onUpdate } : {}),
+        ...(reference.match === "full" ? { match: "full" as const } : {}),
+        ...(reference.onDeleteColumns !== undefined
+          ? { onDeleteColumns: reference.onDeleteColumns }
+          : {}),
+      },
+      ...(reference.deferrable === "deferred"
+        ? { deferrable: true, initially: "deferred" as const }
+        : reference.deferrable === "immediate"
+          ? { deferrable: true, initially: "immediate" as const }
+          : {}),
+      ...(reference.comment !== undefined ? { comment: reference.comment } : {}),
+    });
     edges.push({
       fromTable: item.tsName,
       fromField: column.field,
@@ -1880,7 +1535,7 @@ function compileForeignKeys(
 function compileNamedForeignKeys(
   item: Prepared,
   byName: ReadonlyMap<string, Prepared>,
-  jobs: CatalogJob[],
+  foreignKeys: ConstraintInput[],
   requires: SchemaRequires | undefined,
 ): void {
   const keys = item.foreignKeys?.(item.handles);
@@ -1919,33 +1574,31 @@ function compileNamedForeignKeys(
         );
       }
     }
-    stage(jobs, () =>
-      constraint({
-        parent: item.parent,
-        constraintKind: "foreignKey",
-        name,
-        columns,
-        ...(spec.period === true ? { period: true as const } : {}),
-        nameKey: recoveredNameKey("foreignKey", item.parent.name, name, columns),
-        provenance: item.provenance,
-        ...(spec.comment !== undefined ? { comment: spec.comment } : {}),
-        references: {
-          parent: target.parent,
-          columns: spec.references.columns.map((column) => sqlOf(target, column)),
-          ...(reference.onDelete !== undefined ? { onDelete: reference.onDelete } : {}),
-          ...(reference.onUpdate !== undefined ? { onUpdate: reference.onUpdate } : {}),
-          ...(reference.match === "full" ? { match: "full" as const } : {}),
-          ...(reference.onDeleteColumns !== undefined
-            ? { onDeleteColumns: reference.onDeleteColumns }
-            : {}),
-        },
-        ...(reference.deferrable === "deferred"
-          ? { deferrable: true, initially: "deferred" as const }
-          : reference.deferrable === "immediate"
-            ? { deferrable: true, initially: "immediate" as const }
-            : {}),
-      }),
-    );
+    foreignKeys.push({
+      parent: item.parent,
+      constraintKind: "foreignKey",
+      name,
+      columns,
+      ...(spec.period === true ? { period: true as const } : {}),
+      nameKey: recoveredNameKey("foreignKey", item.parent.name, name, columns),
+      provenance: item.provenance,
+      ...(spec.comment !== undefined ? { comment: spec.comment } : {}),
+      references: {
+        parent: target.parent,
+        columns: spec.references.columns.map((column) => sqlOf(target, column)),
+        ...(reference.onDelete !== undefined ? { onDelete: reference.onDelete } : {}),
+        ...(reference.onUpdate !== undefined ? { onUpdate: reference.onUpdate } : {}),
+        ...(reference.match === "full" ? { match: "full" as const } : {}),
+        ...(reference.onDeleteColumns !== undefined
+          ? { onDeleteColumns: reference.onDeleteColumns }
+          : {}),
+      },
+      ...(reference.deferrable === "deferred"
+        ? { deferrable: true, initially: "deferred" as const }
+        : reference.deferrable === "immediate"
+          ? { deferrable: true, initially: "immediate" as const }
+          : {}),
+    });
   }
 }
 
@@ -2279,10 +1932,9 @@ function compileTableExclusions(
   parent: ObjectRef,
   provenance: Provenance,
   byField: ReadonlyMap<string, PreparedColumn>,
-  jobs: CatalogJob[],
   tenancy: ColumnTenancy | undefined,
   extra: { gist: boolean },
-): void {
+): ConstraintInput[] {
   const declared = options.exclusions?.(
     Object.fromEntries(
       [...byField.keys()].map((field) => {
@@ -2295,7 +1947,9 @@ function compileTableExclusions(
       }),
     ),
   );
-  if (declared === undefined) return;
+  if (declared === undefined) return [];
+  const compile = loadCompileExclusion();
+  const held: ConstraintInput[] = [];
   const columns = new Map<string, { readonly sql: string; readonly dataType: string }>();
   for (const [field, column] of byField) {
     const info = { sql: column.sqlName, dataType: column.dataType };
@@ -2311,7 +1965,7 @@ function compileTableExclusions(
     return column === undefined ? [field] : [field, column.sqlName];
   });
   for (const [key, spec] of Object.entries(declared)) {
-    const compiled = compileExclusion(
+    const compiled = compile(
       tableName,
       key,
       spec,
@@ -2321,27 +1975,26 @@ function compileTableExclusions(
     );
     if (compiled.gist) extra.gist = true;
     const name = `${parent.name}_${key}_excl`;
-    stage(jobs, () =>
-      constraint({
-        parent,
-        constraintKind: "exclusion",
-        name,
-        nameKey: key,
-        columns: compiled.elements.flatMap((element) =>
-          element.column === undefined ? [] : [element.column],
-        ),
-        exclusion: compiled.elements,
-        provenance,
-        ...(compiled.expression !== undefined ? { expression: compiled.expression } : {}),
-        ...(spec.deferrable === "deferred"
-          ? { deferrable: true, initially: "deferred" as const }
-          : spec.deferrable === "immediate"
-            ? { deferrable: true, initially: "immediate" as const }
-            : {}),
-        ...(spec.comment !== undefined ? { comment: spec.comment } : {}),
-      }),
-    );
+    held.push({
+      parent,
+      constraintKind: "exclusion",
+      name,
+      nameKey: key,
+      columns: compiled.elements.flatMap((element) =>
+        element.column === undefined ? [] : [element.column],
+      ),
+      exclusion: compiled.elements,
+      provenance,
+      ...(compiled.expression !== undefined ? { expression: compiled.expression } : {}),
+      ...(spec.deferrable === "deferred"
+        ? { deferrable: true, initially: "deferred" as const }
+        : spec.deferrable === "immediate"
+          ? { deferrable: true, initially: "immediate" as const }
+          : {}),
+      ...(spec.comment !== undefined ? { comment: spec.comment } : {}),
+    });
   }
+  return held;
 }
 
 function modelType(state: {
@@ -2353,15 +2006,14 @@ function modelType(state: {
   return printedIdentifier(state.typeDependency);
 }
 
-function isRangeDataType(dataType: string, encode: (value: unknown) => string): boolean {
-  return dataType.endsWith("range") || rangeMark(encode) !== undefined;
-}
+/** Same symbol `column-mark.ts` stores. The PERIOD check reads it without calling `rangeMark`. */
+const RANGE_MARK = Symbol.for("okmodel.range");
 
-function refuseTemporal(requires: SchemaRequires | undefined): void {
-  const declared = parsePostgresFloor(requires?.postgres);
-  if (!(declared > 0) || declared >= TEMPORAL_POSTGRES) return;
-  const sentence = temporalNeedsPostgres();
-  throw new OkmError("OKM1812", sentence, { fix: { summary: sentence } });
+function isRangeDataType(dataType: string, encode: (value: unknown) => string): boolean {
+  return (
+    dataType.endsWith("range") ||
+    (encode as { readonly [RANGE_MARK]?: unknown })[RANGE_MARK] !== undefined
+  );
 }
 
 /** Database default or client generator that replaces a bare `t.id()`. */

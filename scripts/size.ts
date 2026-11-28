@@ -824,6 +824,56 @@ export function sessionRoleProblems(root: string): readonly string[] {
   }
 }
 
+/**
+ * Modules a query does not need.
+ *
+ * They compile DDL. `schema()` stores descriptors and loads them on the first
+ * `.catalog` read. A featureless app must not list them.
+ */
+export const TOOLING_ONLY_STARTUP = [
+  "src/dialects/pg/exclusion.ts",
+  "src/dialects/pg/catalog-compile.ts",
+  "src/dialects/pg/compile.ts",
+  "src/contracts/catalog/build.ts",
+  "src/contracts/catalog/order.ts",
+  "src/contracts/catalog/extension.ts",
+  "src/contracts/catalog/object.ts",
+  "src/contracts/catalog/json.ts",
+  "src/contracts/catalog/identity-key.ts",
+  "src/dialects/pg/composite-mark.ts",
+  "src/dialects/pg/policy-slot.ts",
+  "src/dialects/pg/series-slot.ts",
+  "src/dialects/pg/generated-hold.ts",
+  "src/dialects/pg/role/grant-slot.ts",
+] as const;
+
+/**
+ * Fails when the featureless app's stubbed startup graph loads a DDL compiler.
+ *
+ * The source list is `measureStubbedStartup` (`startupGraphSources` with dynamic
+ * imports stubbed). `catalog-load.ts` stays: it is the loader, not the compiler.
+ * `column-mark.ts` stays: composite enum labels are read while the query model is built.
+ *
+ * @param root - Repository root
+ * @returns Problem lines. Empty when the graph is query-only
+ */
+export async function featurelessCompilerProblems(root: string): Promise<readonly string[]> {
+  const sources = await startupGraphSources(root, APP_ENTRY, "app-startup.js", ["postgres"], true);
+  const problems: string[] = [];
+  for (const banned of TOOLING_ONLY_STARTUP) {
+    if (sources.includes(banned)) {
+      problems.push(`size: featureless startup kept ${banned}. sources: ${sources.join(", ")}`);
+    }
+  }
+  if (!sources.includes("src/dialects/pg/catalog-load.ts")) {
+    problems.push("size: featureless startup dropped catalog-load.ts");
+  }
+  if (!sources.includes("src/dialects/pg/schema.ts")) {
+    problems.push("size: featureless startup dropped schema.ts");
+  }
+  return problems;
+}
+
 export function shakenOperatorProblems(root: string): readonly string[] {
   const dir = mkdtempSync(join(tmpdir(), "okm-shake-"));
   try {
@@ -1192,6 +1242,7 @@ async function reportSize(): Promise<void> {
     const testingEntry = measureEntry(root, "src/tooling/testing/index.ts");
     console.log(`${formatEntry(testingEntry)} (okmodel/testing)`);
     printStubbed(app);
+    problems.push(...(await featurelessCompilerProblems(root)));
     problems.push(...shakenOperatorProblems(root));
     problems.push(...sessionRoleProblems(root));
     problems.push(...exportShakeProblems(root));
