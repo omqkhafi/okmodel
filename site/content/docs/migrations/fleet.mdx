@@ -35,13 +35,13 @@ export default defineConfig({
 
 ## Status, plan, apply [feature="migrate.fleet"]
 
-`okm migrate status --fleet` prints one row per database: `current`, `behind N`, `ahead`, `failed`, `unreachable`, or `drifted`. `--drift` compares a database with the catalog its own history names. Drift is off unless you pass it.
+`okm migrate status --fleet` prints one row per database: `current`, `behind N`, `ahead`, `failed`, `unreachable`, or `drifted`. `--drift` compares a database with the catalog its own history names. That comparison uses the fleet's 30 second first-connect timeout. Drift is off unless you pass it.
 
 `okm migrate plan --fleet --out fleet.plan.json` writes the steps and each database's head. The file has no URLs. `okm migrate apply --fleet --plan fleet.plan.json` refuses a database whose head changed since that file. Without `--plan`, apply plans and runs. The status table columns are the target name, the state, how many migrations are behind, the database size in bytes, and the recorded version. A fresh database has not recorded a version yet.
 
 ## Canary and groups [feature="migrate.fleet.canary"]
 
-The first stage is one database: the smallest that is still behind. A failed canary stops the later stages. Set `canary` to a count or to `(target) => boolean` to choose them yourself. `groups` are ordered stages after the canary. The first matching group wins. Everyone else is `rest`.
+The first stage is one database: the smallest that is still behind and accepted a connection. A failed canary stops the later stages. An unreachable canary stops them too, and the run exits 5 when nothing else failed. The plan file records the canary name. On a later run, if that database does not accept a connection, apply uses the smallest reachable database that still needs work, says which name it used and why, and leaves the saved name in the file. Set `canary` to a count or to `(target) => boolean` to choose them yourself. `groups` are ordered stages after the canary. The first matching group wins. Everyone else is `rest`.
 
 ```ts title="groups.ts"
 import { defineConfig } from "okmodel/migrate";
@@ -62,7 +62,7 @@ export default defineConfig({
 });
 ```
 
-`okm migrate apply --fleet --group canary` runs the canary only. Look at it, then run `okm migrate apply --fleet`. `--only acme` limits the run to that name. `--parallel` and `--max-failures` override the config for one invocation. `0` stops at the first failure. A count, a percent such as `2%`, or `all` records failures and keeps going until that budget is spent. A database that does not accept a connection is `unreachable`. It is retried, then reported, and it does not spend the failure budget.
+`okm migrate apply --fleet --group canary` runs the canary only. Look at it, then run `okm migrate apply --fleet`. `--only acme` limits the run to that name. `--parallel` and `--max-failures` override the config for one invocation. `0` stops at the first failure. A count, a percent such as `2%`, or `all` records failures and keeps going until that budget is spent. A database that does not accept a connection is `unreachable`. It is retried, then reported, and it does not spend the failure budget. When that database is the canary, later stages do not start.
 
 A step marked blocking or rewrite runs one database at a time on each host. The plan prints that cap and a duration estimate.
 
