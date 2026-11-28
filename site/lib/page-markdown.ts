@@ -7,6 +7,7 @@
 import { annotateFeatureMarkdown } from "./feature-heading";
 import { readDocsSourceBody } from "./markdown-source";
 import { type source, withMarkdownTwinIndex } from "./source";
+import { expandSupportMarkers } from "./support-phrase";
 
 /**
  * Page markdown for agents: the page body, with the title as the heading.
@@ -16,7 +17,7 @@ import { type source, withMarkdownTwinIndex } from "./source";
 export async function getPageSourceMarkdown(
   page: (typeof source)["$inferPage"],
 ): Promise<string> {
-  const body = annotateFeatureMarkdown(await readDocsSourceBody(page.path));
+  const body = expandSupportMarkers(annotateFeatureMarkdown(await readDocsSourceBody(page.path)));
   return withMarkdownTwinIndex(`# ${page.data.title}\n\n${body.trim()}\n`);
 }
 
@@ -26,6 +27,6 @@ export async function getPageSourceMarkdown(
  * @param page - Loaded page
  */
 export async function getLLMText(page: (typeof source)["$inferPage"]): Promise<string> {
-  const body = annotateFeatureMarkdown(await readDocsSourceBody(page.path));
+  const body = expandSupportMarkers(annotateFeatureMarkdown(await readDocsSourceBody(page.path)));
   return withMarkdownTwinIndex(`# ${page.data.title} (${page.url})\n\n${body.trim()}\n`);
 }

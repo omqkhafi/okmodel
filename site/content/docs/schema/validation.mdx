@@ -1,7 +1,23 @@
 ---
 title: "Validation"
 description: "A field's rules live in one place. They run when validation is enabled."
+summary: "Validation changes a write in the application before SQL runs."
+since: "0.10"
+status: stable
 ---
+```ts title="notes.ts"
+import { table, t } from "okmodel/pg";
+import { v } from "okmodel/validate";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  title: t.varchar(200).validate([v.trim(), v.min(1, "title_required")]), // [!code focus]
+  email: t.text().validate([v.lowercase(), v.email("email_invalid")]), // [!code focus]
+});
+```
+
+## What it does
+
 Validation rejects a value the column type still allows. On a table the rules sit on the field or in a validate section. On the schema a flag turns those rules on, off, or limits where they may live.
 
 ## On a table
@@ -16,16 +32,7 @@ A field's rules live in one place. Insert and update run them when validation is
 
 `.validate()` stores a list of [built-in](#trim) rules on the column, or one [Standard Schema](#standard-schema).
 
-```ts title="notes.ts"
-import { table, t } from "okmodel/pg";
-import { v } from "okmodel/validate";
 
-export const notes = table("notes", {
-  id: t.identity(),
-  title: t.varchar(200).validate([v.trim(), v.min(1, "title_required")]), // [!code focus]
-  email: t.text().validate([v.lowercase(), v.email("email_invalid")]), // [!code focus]
-});
-```
 
 ### Section
 
@@ -710,3 +717,39 @@ A failed `validate` is `Validation failed: title title_required.` The message na
 | Next | You use it for |
 | --- | --- |
 | [Visibility](/docs/schema/visibility) | Which fields a caller can read or write. |
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM1120](/docs/reference/errors#okm1120)
+- [OKM1200](/docs/reference/errors#okm1200)
+- [OKM1060](/docs/reference/errors#okm1060)
+- [OKM1030](/docs/reference/errors#okm1030)
+- [OKM1201](/docs/reference/errors#okm1201)
+
+## Version
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

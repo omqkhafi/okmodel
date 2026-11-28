@@ -1,29 +1,11 @@
 ---
 title: "Enums and picklists"
 description: "array() wraps a scalar. picklist() narrows a string column. enum() creates a Postgres type."
+summary: "An array wraps a scalar, a picklist narrows a string, and an enum is a Postgres type."
+since: "0.10"
+status: stable
+feature: type.enum
 ---
-<Callout type="info" title="Where this fits">
-A column is one value until you wrap it. An array repeats a scalar, a picklist narrows text, and an enum is a Postgres type. [Names](/docs/schema/names-and-casing#names) are what the database stores.
-</Callout>
-
-An array repeats one scalar. A picklist keeps the column as text and checks the value. An enum is its own Postgres type.
-
-### Array
-
-`.array()` wraps a scalar. The SQL type gains one `[]` per rank. There is no second `.array()` call to add a dimension.
-
-An empty array is a value. An element cannot be null. `.nullable()` makes the whole column null, not an element. A picklist or an enum is wrapped after it is declared: `.picklist(values).array()` or `t.enum(name, labels).array()`.
-
-| `dims` | Result |
-| --- | --- |
-| omitted | Rank 1. `text[]`. |
-| `2` to `6` | That many `[]`. `2` is `integer[][]`. |
-| outside 1 to 6 | Refused. |
-
-#### one
-
-Omit `dims` for a list.
-
 ```ts title="array.ts"
 import { connect } from "okmodel/pg/postgresjs";
 import { schema, table, t } from "okmodel/pg";
@@ -39,6 +21,32 @@ export async function add(url: string) {
   return await db.notes.insert({ tags: ["ship"] });
 }
 ```
+
+## What it does
+
+<Callout type="info" title="Where this fits">
+A column is one value until you wrap it. An array repeats a scalar, a picklist narrows text, and an enum is a Postgres type. [Names](/docs/schema/names-and-casing#names) are what the database stores.
+</Callout>
+
+An array repeats one scalar. A picklist keeps the column as text and checks the value. An enum is its own Postgres type.
+
+### Array [feature="type.array"]
+
+`.array()` wraps a scalar. The SQL type gains one `[]` per rank. There is no second `.array()` call to add a dimension.
+
+An empty array is a value. An element cannot be null. `.nullable()` makes the whole column null, not an element. A picklist or an enum is wrapped after it is declared: `.picklist(values).array()` or `t.enum(name, labels).array()`.
+
+| `dims` | Result |
+| --- | --- |
+| omitted | Rank 1. `text[]`. |
+| `2` to `6` | That many `[]`. `2` is `integer[][]`. |
+| outside 1 to 6 | Refused. |
+
+#### one
+
+Omit `dims` for a list.
+
+
 
 #### rank
 
@@ -118,7 +126,7 @@ An empty list, an empty value, or a repeated value is refused. A default outside
 A value outside the list is rejected when it is encoded. The message names the accepted values.
 </Callout>
 
-### Enum
+### Enum [feature="type.enum"]
 
 `t.enum(name, labels)` creates a Postgres enum. The column type is that name, not `text`. Labels are stored in that order. The TypeScript type is the union of the labels. Two columns may share the name when the label lists match.
 
@@ -151,3 +159,37 @@ A value outside the labels is rejected when it is encoded. The message names the
 <Callout type="error" title="OKM1020">
 The same enum name with a different label list is refused. The message names both tables.
 </Callout>
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM1060](/docs/reference/errors#okm1060)
+- [OKM1210](/docs/reference/errors#okm1210)
+- [OKM1020](/docs/reference/errors#okm1020)
+
+## Version [feature="type.enum"]
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

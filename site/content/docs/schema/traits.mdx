@@ -1,7 +1,21 @@
 ---
 title: "Traits"
 description: "trait() adds columns. The schema list is the default. A table adds its own, or opts out."
+summary: "A trait adds the columns you would otherwise repeat on every table."
+since: "0.10"
+status: stable
 ---
+```ts title="fields.ts"
+import { t } from "okmodel/pg";
+import { trait } from "okmodel/traits";
+
+export const labeled = trait("labeled", {
+  fields: { label: t.text() }, // [!code focus]
+});
+```
+
+## What it does
+
 A trait adds columns you would otherwise repeat on every table. On one table you write the trait, apply it, or use a built-in. On the schema that same list is copied onto every table that does not opt out.
 
 ## On one table
@@ -18,14 +32,7 @@ A trait adds columns you would otherwise repeat on every table. On one table you
 
 Required. Column builders, the same ones a table uses. An empty object is allowed. A missing object is OKM1060: `Trait labeled needs a fields object.` An empty name is OKM1060: `trait() trait needs a name.`
 
-```ts title="fields.ts"
-import { t } from "okmodel/pg";
-import { trait } from "okmodel/traits";
 
-export const labeled = trait("labeled", {
-  fields: { label: t.text() }, // [!code focus]
-});
-```
 
 #### touch
 
@@ -600,3 +607,40 @@ A column the table already declares is `Trait stamped adds notes.label, and note
 | Next | You use it for |
 | --- | --- |
 | [Tenancy](/docs/schema/tenancy#on-a-table) | The tenant key on one table or on the schema. |
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM1060](/docs/reference/errors#okm1060)
+- [OKM1040](/docs/reference/errors#okm1040)
+- [OKM1061](/docs/reference/errors#okm1061)
+- [OKM1012](/docs/reference/errors#okm1012)
+- [OKM1052](/docs/reference/errors#okm1052)
+- [OKM1120](/docs/reference/errors#okm1120)
+
+## Version
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

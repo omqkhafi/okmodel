@@ -1,21 +1,11 @@
 ---
 title: "Keys"
 description: "One table has one primary key. Identity is the id default and the generators."
+summary: "A table has one primary key, and identity is the default for id."
+since: "0.10"
+status: stable
+feature: schema.identity
 ---
-Keys identify a row. The id default is what a bare t.id() means, and a column option wins. Generators replace that function when you connect, once for each missing field.
-
-## Keys
-
-<Callout type="info" title="Where this fits">
-Start here. [Columns](/docs/schema/columns) are the other fields.
-</Callout>
-
-One table has one primary key. A unique is a separate constraint.
-
-### One column
-
-`.primaryKey()` marks that column. Update omits it. Insert still accepts the value, unless the column is generated or guarded.
-
 ```ts title="notes.ts"
 import { table, t } from "okmodel/pg";
 
@@ -27,6 +17,24 @@ export const notes = table(
   },
 );
 ```
+
+## What it does
+
+Keys identify a row. The id default is what a bare t.id() means, and a column option wins. Generators replace that function when you connect, once for each missing field.
+
+## Keys [feature="schema.identity"]
+
+<Callout type="info" title="Where this fits">
+Start here. [Columns](/docs/schema/columns) are the other fields.
+</Callout>
+
+One table has one primary key. A unique is a separate constraint.
+
+### One column
+
+`.primaryKey()` marks that column. Update omits it. Insert still accepts the value, unless the column is generated or guarded.
+
+
 
 <Callout type="warning" title="Not a composite">
 A second `.primaryKey()` is not a composite key. Use [several columns](#several-columns).
@@ -113,7 +121,7 @@ export const app = schema({
 An empty reason is `unique() global needs a reason.` `{ global: true }` with no reason is `Unique users.email sets global and needs a reason.`
 </Callout>
 
-### id()
+### id() [feature="identity.options"]
 
 Needs PostgreSQL 18 or higher.
 
@@ -222,7 +230,7 @@ export default schema({
 });
 ```
 
-### uuidv7
+### uuidv7 [feature="type.uuidv7"]
 
 `"uuidv7"` stores `uuidv7()`. Keep the previous default with `defaults: { id: "uuidv7" }`.
 
@@ -378,3 +386,36 @@ A function you wrote and passed to `.default()` keeps its own call. A bare `t.id
 | Next | You use it for |
 | --- | --- |
 | [References](/docs/schema/references) | A column that points at a row in another table. |
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM1060](/docs/reference/errors#okm1060)
+- [OKM1812](/docs/reference/errors#okm1812)
+
+## Version [feature="schema.identity"]
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

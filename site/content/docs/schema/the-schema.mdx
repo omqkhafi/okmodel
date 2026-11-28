@@ -1,7 +1,24 @@
 ---
 title: "The schema"
 description: "schema() compiles the tables into one catalog. Some options are sections of this page. Others are their own pages."
+summary: "schema() is the catalog the client and the migrations read."
+since: "0.10"
+status: stable
+feature: schema.core
 ---
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text(),
+});
+
+export default schema({ tables: [notes] }); // [!code focus]
+```
+
+## What it does
+
 schema() compiles the tables into one catalog. This page holds the declaration, the tables list, and the oldest PostgreSQL major the catalog allows. Each other option is linked from the declaration to the page that now holds it.
 
 <Anatomy call="schema" shape="object" exported>
@@ -13,7 +30,7 @@ schema() compiles the tables into one catalog. This page holds the declaration, 
   </AnatomyPart>
 </Anatomy>
 
-## The declaration
+## The declaration [feature="schema.core"]
 
 Options are sections of this page, or pages that still exist: tables, columns, and defaults. Tables come first, because every other option refers to them.
 
@@ -49,16 +66,7 @@ The list order is the order of the emitted interfaces. The catalog is sorted by 
 
 One table is a schema. The module default-exports it. [Config](/docs/reference/config#schema) points `schema` at this file.
 
-```ts title="schema.ts"
-import { schema, table, t } from "okmodel/pg";
 
-const notes = table("notes", {
-  id: t.identity(),
-  title: t.text(),
-});
-
-export default schema({ tables: [notes] }); // [!code focus]
-```
 
 ### several
 
@@ -109,7 +117,7 @@ This field is not part of the catalog hash. Changing the floor does not change i
 
 Omitted names 15. A bare `t.id()` stores `gen_random_uuid()`.
 
-Connect accepts PostgreSQL 15 and newer. `okm migrate apply` still looks for an explicit `default uuidv7()` before the first statement. A server below 18 that has no `uuidv7()` function is refused, and nothing is changed. A server that already defines `uuidv7()` is accepted. A migration with no such expression does not ask the server.
+Connect accepts <FloorPhrase />. `okm migrate apply` still looks for an explicit `default uuidv7()` before the first statement. A server below 18 that has no `uuidv7()` function is refused, and nothing is changed. A server that already defines `uuidv7()` is accepted. A migration with no such expression does not ask the server.
 
 ```ts title="schema.ts"
 import { schema, table, t } from "okmodel/pg";
@@ -134,7 +142,7 @@ A server below 18 with no `uuidv7()` function is `Column notes.id has a uuidv7()
 
 ### floor
 
-`minPostgres: 18` asks for 18 or newer. A server below that major is refused. Any integer 15 or later is valid. PostgreSQL 15 and later; tested on 15 to 19.
+`minPostgres: 18` asks for 18 or newer. A server below that major is refused. Any integer 15 or later is valid. <SupportPhrase />.
 
 ```ts title="schema.ts"
 import { schema, table, t } from "okmodel/pg";
@@ -218,3 +226,40 @@ A value below 15 or not an integer is `minPostgres: 15 or later.` Passing both k
 | Next | You use it for |
 | --- | --- |
 | [Keys](/docs/schema/keys-and-identity#keys) | The primary key, the id default, and a generator. |
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM1020](/docs/reference/errors#okm1020)
+- [OKM1023](/docs/reference/errors#okm1023)
+- [OKM1060](/docs/reference/errors#okm1060)
+- [OKM1803](/docs/reference/errors#okm1803)
+- [OKM1812](/docs/reference/errors#okm1812)
+- [OKM1802](/docs/reference/errors#okm1802)
+
+## Version [feature="schema.core"]
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

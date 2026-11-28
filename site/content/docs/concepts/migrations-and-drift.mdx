@@ -1,7 +1,11 @@
 ---
 title: "Drift"
 description: "A migration is the SQL between two catalogs. okm check reports a live difference, and only against a reachable target."
+summary: "The catalog hash is how a database is compared with the schema."
+since: "0.10"
+status: stable
 ---
+## What it does
 
 A migration is the SQL from the previous catalog snapshot to the catalog `schema()` just built. Drift is a database that is not that catalog. `okm check` reports a live difference, as OKM1520, and only when it can reach one target. It does not run by itself.
 
@@ -38,3 +42,36 @@ A pooler URL is refused for a connecting check unless you allow it. The rule is 
 | [Startup check](/docs/operate/startup-check) | The hash `connect` compares. |
 | [Lint](/docs/migrations/checks-and-lint) | Replaying history in a scratch schema. |
 | [Type change](/docs/reference/type-change) | A change that is not a single safe step. |
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+This page does not emit a migration step.
+
+## Errors
+
+- [OKM1520](/docs/reference/errors#okm1520)
+- [OKM1510](/docs/reference/errors#okm1510)
+
+## Version
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

@@ -1,10 +1,11 @@
 ---
 title: Composite types
 description: A Postgres composite is one value with named fields. Writes use jsonb so a later field does not break them.
+summary: "A composite is one value with named fields, written as jsonb."
+since: "0.10"
+status: stable
+feature: type.composite
 ---
-
-A composite is a named row type. Declare it next to `t.enum` and `t.domain`, and use it as a column. An unused composite is not in the catalog. A column, or a field of a composite that a column uses, is what records it.
-
 ```ts
 import { table, t } from "okmodel/pg";
 
@@ -22,11 +23,17 @@ table("people", {
 })
 ```
 
+## What it does
+
+A composite is a named row type. Declare it next to `t.enum` and `t.domain`, and use it as a column. An unused composite is not in the catalog. A column, or a field of a composite that a column uses, is what records it.
+
+
+
 The TypeScript value is the field object. `zip` is `string | null`. A column is not null unless you call `.nullable()`. PostgreSQL has no NOT NULL inside a composite, so each column gets a CHECK. A nullable column allows a SQL NULL row: the check is `column IS NOT DISTINCT FROM NULL OR (fields)`. A composite whose fields are all null is an object, not null.
 
 `where: { work: null }` is `IS NOT DISTINCT FROM NULL`. `not(null)` is `IS DISTINCT FROM NULL`.
 
-## Writes
+## Writes [feature="type.composite"]
 
 Each field is encoded with its own codec. An unknown key is refused, and a number is refused for a text field. The bound value is `jsonb_populate_record(null::address, $1::jsonb)`. A null column is SQL NULL, never a JSON null.
 
@@ -91,6 +98,44 @@ Changing a field's type is `ALTER ATTRIBUTE ... TYPE` when nothing uses the type
 
 Declared field order is not a migration. `okm pull` prints catalog order. `DROP TYPE` runs only after the columns that use the type. Nested types are created before the composite that contains them.
 
-`comment` on the type, and `.comment()` on a field, are `COMMENT ON TYPE` and `COMMENT ON COLUMN type.field`. `grants: { app: "read" }` is `USAGE`, the same role keys as a table. `read` on a type is usage. Renaming a field updates the name inside existing checks. The check text is rewritten when the sorted field names change order.
+### Comment [feature="comment.composite"]
+
+`comment` on the type, and `.comment()` on a field, are `COMMENT ON TYPE` and `COMMENT ON COLUMN type.field`.
+
+### Grants [feature="grants.type"]
+
+`grants: { app: "read" }` is `USAGE`, the same role keys as a table. `read` on a type is usage. Renaming a field updates the name inside existing checks. The check text is rewritten when the sorted field names change order.
 
 A typed table (`CREATE TABLE ... OF`), inheritance, and a virtual generated column of a composite type are out. PostgreSQL refuses the virtual column (0A000).
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+This page does not add an error code.
+
+## Version [feature="type.composite"]
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

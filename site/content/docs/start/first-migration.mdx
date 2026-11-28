@@ -1,7 +1,22 @@
 ---
 title: "First migration"
 description: "Add a migrations directory, generate the first file, and apply one change."
+summary: "Generate the first SQL file, then apply one change."
+since: "0.10"
+status: stable
 ---
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  migrations: "./migrations",
+  database: process.env.DATABASE_URL!,
+});
+```
+
+## What it does
+
 Push applies the schema directly. It writes no SQL file. It is for a database you can recreate. Migrations are reviewed SQL files in git. They plan, lint, and apply per target. The default target is the one named `default` — a single `database` field in `defineConfig`, or the `default` entry under `targets`.
 
 You have the files from [Installation](/docs/start/installation) and [First schema](/docs/start/first-schema). That page ran [`okm push`](/docs/reference/cli/migrate#push). Start from an empty database before you begin this page.
@@ -34,15 +49,7 @@ Fix the step and run apply again. Finished steps are not repeated.
 
 The config from the first schema names `schema` and `database`. Add `migrations`.
 
-```ts title="okmodel.config.ts"
-import { defineConfig } from "okmodel/migrate";
 
-export default defineConfig({
-  schema: "./schema.ts",
-  migrations: "./migrations",
-  database: process.env.DATABASE_URL!,
-});
-```
 
 </Step>
 
@@ -279,3 +286,36 @@ default	0002_add-body	⟨catalog hash⟩	current	false
 | [Existing database](/docs/migrations/adopt-existing-database) | Pull, generate, then baseline without replaying DDL. |
 | [Config](/docs/reference/config) | Targets, paths, timeouts, and roles. |
 | [CLI](/docs/reference/cli) | generate, plan, apply, check, and status. |
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM1510](/docs/reference/errors#okm1510)
+- [OKM1525](/docs/reference/errors#okm1525)
+
+## Version
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

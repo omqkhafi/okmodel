@@ -1,17 +1,10 @@
 ---
 title: "Triggers"
 description: "Triggers. Identity is the table plus the name."
+summary: "A trigger is named on one table and calls a function."
+since: "0.10"
+status: stable
 ---
-`triggers` is a list of `trigger()` from `okmodel/fn`. Identity is the table plus the name. The function it calls has to be in [functions](/docs/schema/functions). The catalog record is built when the catalog is first read.
-
-`on`, `timing`, `events`, `level`, and `calls` are required. `timing` is `"before"`, `"after"`, or `"instead"`. `"instead"` is written `instead of`. `events` is `"insert"`, `"update"`, `"delete"`, or `"truncate"`, stored in that order. `level` is `"row"` or `"statement"`.
-
-`NEW` of a virtual generated column is null in a `BEFORE` row trigger and in an `AFTER` row trigger. `NEW` of a stored generated column is null only in `BEFORE`. A `BEFORE` trigger `when` that names a generated column is OKM1920.
-
-### call
-
-One before-update row trigger. `calls` is a function in this schema.
-
 ```ts title="call.ts"
 import { fn, trigger, triggerType } from "okmodel/fn";
 import { schema, sql, table, t } from "okmodel/pg";
@@ -43,6 +36,20 @@ export default schema({
   ],
 });
 ```
+
+## What it does
+
+`triggers` is a list of `trigger()` from `okmodel/fn`. Identity is the table plus the name. The function it calls has to be in [functions](/docs/schema/functions). The catalog record is built when the catalog is first read.
+
+`on`, `timing`, `events`, `level`, and `calls` are required. `timing` is `"before"`, `"after"`, or `"instead"`. `"instead"` is written `instead of`. `events` is `"insert"`, `"update"`, `"delete"`, or `"truncate"`, stored in that order. `level` is `"row"` or `"statement"`.
+
+`NEW` of a virtual generated column is null in a `BEFORE` row trigger and in an `AFTER` row trigger. `NEW` of a stored generated column is null only in `BEFORE`. A `BEFORE` trigger `when` that names a generated column is OKM1920.
+
+### call
+
+One before-update row trigger. `calls` is a function in this schema.
+
+
 
 <Callout type="error" title="OKM1020">
 A function that is not in the catalog is `Trigger notes_touch calls touch_notes, which is not in the catalog.` No event is `Trigger notes_touch needs an event.` Another timing is `Trigger notes_touch timing deferrable is not supported.` Another level is `Trigger notes_touch level each is not supported.`
@@ -248,3 +255,37 @@ export default schema({
 <Callout type="error" title="OKM1020">
 A column the table does not have is `Trigger notes_touch names column missing, which notes does not have.`
 </Callout>
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM1920](/docs/reference/errors#okm1920)
+- [OKM1020](/docs/reference/errors#okm1020)
+- [OKM1023](/docs/reference/errors#okm1023)
+
+## Version
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

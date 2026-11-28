@@ -1,7 +1,11 @@
 ---
 title: "Catalog"
 description: "schema() is the catalog that generate, plan, check, and the client types read."
+summary: "The schema is the catalog, and the database is checked against it."
+since: "0.10"
+status: stable
 ---
+## What it does
 
 The object `schema()` returns is the catalog. Generate, plan, and check diff that document. The client types are the tables on the same object, not a second description of the database.
 
@@ -34,3 +38,35 @@ A catalog hash match is not a row-by-row proof. The live comparison and the star
 | [plan](/docs/reference/cli/migrate#migrate-plan) | The diff, without writing. |
 | [check](/docs/reference/cli/check#check) | The live comparison, when a target is reachable. |
 | [Config](/docs/reference/config) | `defineConfig`, targets, and roles. |
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+This page does not emit a migration step.
+
+## Errors
+
+This page does not add an error code.
+
+## Version
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

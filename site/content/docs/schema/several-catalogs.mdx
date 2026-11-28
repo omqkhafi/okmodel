@@ -1,7 +1,22 @@
 ---
 title: "Catalogs"
 description: "Two catalogs on one database. external() keeps a table the other catalog owns."
+summary: "Two catalogs can share one database, and external() keeps a table the other catalog owns."
+since: "0.10"
+status: stable
 ---
+```ts title="identity/schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+export const users = table("users", {
+  id: t.uuid().primaryKey(),
+  email: t.text(),
+});
+
+export default schema({ tables: [users] });
+```
+
+## What it does
 
 `schema()` compiles `public`. The Postgres schema comes from `defineConfig({ namespace })`. Each catalog has its own namespace, its own ownership, and its own `okm_meta`.
 
@@ -13,16 +28,7 @@ description: "Two catalogs on one database. external() keeps a table the other c
 
 ### owning catalog
 
-```ts title="identity/schema.ts"
-import { schema, table, t } from "okmodel/pg";
 
-export const users = table("users", {
-  id: t.uuid().primaryKey(),
-  email: t.text(),
-});
-
-export default schema({ tables: [users] });
-```
 
 ```ts title="identity/okmodel.config.ts"
 import { defineConfig } from "okmodel/migrate";
@@ -81,3 +87,37 @@ The file has `catalogHash` and, separately, `logical` (`namespace`, `name`, `for
 <Callout type="error" title="OKM1842">
 `A foreign key references identity in database <name>. This database is <other>.` Keep the foreign key inside one database.
 </Callout>
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM1842](/docs/reference/errors#okm1842)
+- [OKM1841](/docs/reference/errors#okm1841)
+- [OKM1520](/docs/reference/errors#okm1520)
+
+## Version
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

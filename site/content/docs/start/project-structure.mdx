@@ -1,7 +1,34 @@
 ---
 title: "Project structure"
 description: "The files the tutorial writes, and the files okm init writes."
+summary: "A project is the schema, the client, the config, and the files okm init writes."
+since: "0.10"
+status: stable
 ---
+```ts
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const users = table("users", {
+  id: t.id(),
+  email: t.text(),
+  createdAt: t.timestamptz(),
+});
+const app = schema({ minPostgres: 15, tables: [users] });
+
+const url = process.env.DATABASE_URL;
+if (url === undefined || url.length === 0) {
+  throw new Error("DATABASE_URL is not set");
+}
+
+export const db = connect(url, {
+  schema: app,
+  limits: { find: 100, include: 20, page: 50, groupBy: 500, max: 1000 },
+});
+```
+
+## What it does
+
 See the files in the project and what each one is for.
 
 You have followed [Installation](/docs/start/installation) and [First schema](/docs/start/first-schema), or you have a directory with `package.json` and a Bun lockfile.
@@ -61,27 +88,7 @@ bunx okm init
 
 `db/client.ts` passes this `limits` object. `find` 100 covers `find`, `descendants`, and `ancestors`. `include` 20 is a to-many include. `page` 50 is `page()`. `groupBy` 500 is a grouped aggregate. `max` 1000 is the ceiling. `.all(reason)` reads past them. A `limit` on the call wins.
 
-```ts
-import { connect } from "okmodel/pg/postgresjs";
-import { schema, table, t } from "okmodel/pg";
 
-const users = table("users", {
-  id: t.id(),
-  email: t.text(),
-  createdAt: t.timestamptz(),
-});
-const app = schema({ minPostgres: 15, tables: [users] });
-
-const url = process.env.DATABASE_URL;
-if (url === undefined || url.length === 0) {
-  throw new Error("DATABASE_URL is not set");
-}
-
-export const db = connect(url, {
-  schema: app,
-  limits: { find: 100, include: 20, page: 50, groupBy: 500, max: 1000 },
-});
-```
 
 The command ends with the next three commands.
 
@@ -103,3 +110,36 @@ bun run --bun okm migrate apply
 | [Queries](/docs/queries) | The rest of the calls on a table. |
 | [Config](/docs/reference/config) | Targets, paths, timeouts, and roles. |
 | [Safe use](/docs/operate/using-okmodel-safely) | Pin the lockfile, wait before updating, and read provenance. |
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+This page does not emit a migration step.
+
+## Errors
+
+- [OKM1101](/docs/reference/errors#okm1101)
+- [OKM1102](/docs/reference/errors#okm1102)
+
+## Version
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

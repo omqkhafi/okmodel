@@ -1,9 +1,11 @@
 ---
 title: "Tables"
 description: "Declare a table with columns, a key, and options. Push it, and Postgres gets the SQL below."
+summary: "A table declares columns, a key, and options, and push writes the SQL."
+since: "0.10"
+status: stable
+feature: schema.core
 ---
-A `table()` call is one relation: columns, a [key](/docs/schema/keys-and-identity#keys) (the primary key), and optional indexes and other options. Here is a complete `notes` table, then the SQL `okm generate init` writes for it.
-
 ```ts title="notes.ts"
 import { index, table, t } from "okmodel/pg";
 
@@ -18,6 +20,12 @@ export const notes = table(
 );
 ```
 
+## What it does
+
+A `table()` call is one relation: columns, a [key](/docs/schema/keys-and-identity#keys) (the primary key), and optional indexes and other options. Here is a complete `notes` table, then the SQL `okm generate init` writes for it.
+
+
+
 `t` is the column [builder](/docs/schema/columns): one helper per Postgres type. Import a single builder when a file uses only that type. Wrap the table in [`schema()`](/docs/schema/the-schema) and run `bunx okm generate init`. The migration opens with:
 
 ```sql title="0001_init.sql"
@@ -31,7 +39,7 @@ create table "public"."notes" (
 create index "notes_title_idx" on "public"."notes" ("title");
 ```
 
-## Anatomy
+## Anatomy [feature="schema.core"]
 
 The call has three slots: the SQL name, the columns object, and the options object.
 
@@ -77,3 +85,35 @@ A [trait](/docs/schema/traits#on-one-table) is a reusable bundle of columns (tim
 | 15 | [Visibility](/docs/schema/visibility) | Hidden, sensitive, and guarded. |
 | 16 | [Checks](/docs/schema/checks) | SQL the row must pass. |
 | 17 | [Required rows](/docs/schema/required-rows) | Rows the application expects, inserted when the key is missing. |
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+This page does not add an error code.
+
+## Version [feature="schema.core"]
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

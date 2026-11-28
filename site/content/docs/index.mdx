@@ -1,8 +1,12 @@
 ---
 title: "Documentation"
-description: "okmodel is a TypeScript ORM for PostgreSQL 15 and later; tested on 15 to 19 with no runtime dependencies."
+description: "Typed queries and reviewed migrations from one schema."
+summary: "Start with one query, then the schema, then the production check."
+since: "0.10"
+status: stable
 ---
-okmodel is a TypeScript ORM for PostgreSQL 15 and later; tested on 15 to 19 with no runtime dependencies. One `schema()` gives typed queries and reviewed migrations, and a read with no `limit` or a write with no `where` is refused.
+
+<Tagline /> One `schema()` gives typed queries and reviewed migrations, and a read with no `limit` or a write with no `where` is refused.
 
 ```ts title="schema.ts"
 import { schema, table, t } from "okmodel/pg";
@@ -26,16 +30,17 @@ export async function sample(url: string) {
 }
 ```
 
-```text title="find.out"
-[
-  {
-    id: "1",
-    title: "Hello",
-  }
-]
-```
+## Learning path
 
-Without `limits` on `connect`, omitting `limit` is [OKM1101](/docs/reference/errors#okm1101): `find() needs a limit.` [Query limits](/docs/operate/query-limits) is the opt-in default.
+Three steps. Each one is short. The rest of the handbook is there when a step needs it.
+
+| Step | Open |
+| --- | --- |
+| 1. First query | [First query](/docs/start/first-query) |
+| 2. Schema and first migration | [First schema](/docs/start/first-schema), then [First migration](/docs/start/first-migration) |
+| 3. Production check | [Production check](/docs/start/production) |
+
+[I want to…](/docs/start/i-want-to) is the list of jobs. [Cheat sheet](/docs/start/cheat-sheet) is the six daily calls.
 
 ## Pick a path
 

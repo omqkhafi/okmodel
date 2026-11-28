@@ -1,25 +1,10 @@
 ---
 title: "Relations"
 description: "relations names edges. schema() resolves the foreign key."
+summary: "A relation names how a query loads a row in another table."
+since: "0.10"
+status: stable
 ---
-<Callout type="info" title="Where this fits">
-The foreign key is the column. This page is the edge you include: one row, many rows, a join table, or one relation across several tables.
-</Callout>
-
-The key in `relations` is the name you pass to `include` and to `where`. `schema()` finds the foreign key. A value that is not `one()`, `many()`, `manyThrough()`, `morph()`, or `morphMany()` is OKM1061.
-
-<Callout type="error" title="OKM1020">
-A missing table is refused. The message names it and lists the accepted names. For a join, that includes the join table.
-</Callout>
-
-### To-one
-
-`one(table, field)` is one related row. Include returns that row, or null when it is missing. `true` loads the row. `select`, `where`, and `orderBy` narrow it.
-
-#### table
-
-The argument is the related table name. The foreign key is a column on this table that points there.
-
 ```ts title="to-one.ts"
 import { connect } from "okmodel/pg/postgresjs";
 import { one, schema, table, t } from "okmodel/pg";
@@ -45,6 +30,28 @@ export async function authorName(url: string) {
   return rows[0]?.author?.name;
 }
 ```
+
+## What it does
+
+<Callout type="info" title="Where this fits">
+The foreign key is the column. This page is the edge you include: one row, many rows, a join table, or one relation across several tables.
+</Callout>
+
+The key in `relations` is the name you pass to `include` and to `where`. `schema()` finds the foreign key. A value that is not `one()`, `many()`, `manyThrough()`, `morph()`, or `morphMany()` is OKM1061.
+
+<Callout type="error" title="OKM1020">
+A missing table is refused. The message names it and lists the accepted names. For a join, that includes the join table.
+</Callout>
+
+### To-one
+
+`one(table, field)` is one related row. Include returns that row, or null when it is missing. `true` loads the row. `select`, `where`, and `orderBy` narrow it.
+
+#### table
+
+The argument is the related table name. The foreign key is a column on this table that points there.
+
+
 
 #### field
 
@@ -379,3 +386,42 @@ export async function attach(url: string, taskId: string) {
   return rows[0]?.commentable;
 }
 ```
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM1061](/docs/reference/errors#okm1061)
+- [OKM1020](/docs/reference/errors#okm1020)
+- [OKM1021](/docs/reference/errors#okm1021)
+- [OKM1105](/docs/reference/errors#okm1105)
+- [OKM1120](/docs/reference/errors#okm1120)
+- [OKM1023](/docs/reference/errors#okm1023)
+- [OKM1022](/docs/reference/errors#okm1022)
+- [OKM1121](/docs/reference/errors#okm1121)
+
+## Version
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

@@ -1,7 +1,30 @@
 ---
 title: "Checks"
 description: "A check is named SQL."
+summary: "A check is named SQL."
+since: "0.10"
+status: stable
+feature: check.notEnforced
 ---
+```ts title="name.ts"
+import { sql, table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+  },
+  {
+    checks: {
+      title_present: (columns) => sql`${columns.title} <> ''`, // [!code focus]
+    },
+  },
+);
+```
+
+## What it does
+
 <Callout type="info" title="Where this fits">
 An [index](/docs/schema/indexes) does not reject a row. A check does. A [picklist](/docs/schema/enums-arrays-picklists) already adds its own check.
 </Callout>
@@ -20,22 +43,7 @@ The key is not the constraint name. The constraint is `{table}_{key}_check`. Sna
 
 The key below is `title_present`, so the constraint is `notes_title_present_check`.
 
-```ts title="name.ts"
-import { sql, table, t } from "okmodel/pg";
 
-export const notes = table(
-  "notes",
-  {
-    id: t.identity(),
-    title: t.text(),
-  },
-  {
-    checks: {
-      title_present: (columns) => sql`${columns.title} <> ''`, // [!code focus]
-    },
-  },
-);
-```
 
 #### rename
 
@@ -58,7 +66,9 @@ export const tasks = table(
 );
 ```
 
-A new table adds the check with `alter table`. A table that already exists adds it `not valid`, then validates it. A check is enforced. `enforced: false` stores `NOT ENFORCED` and is never validated.
+### Not enforced [feature="check.notEnforced"]
+
+A new table adds the check with `alter table`. A table that already exists adds it `not valid`, then validates it. A check is enforced. `enforced: false` stores `NOT ENFORCED` and is never validated. The chip on this heading is the floor.
 
 ```ts title="not-enforced.ts"
 import { sql, table, t } from "okmodel/pg";
@@ -246,3 +256,40 @@ export const app = schema({
   casing: "snake", // [!code focus]
 });
 ```
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM1060](/docs/reference/errors#okm1060)
+- [OKM1812](/docs/reference/errors#okm1812)
+- [OKM1802](/docs/reference/errors#okm1802)
+- [OKM1020](/docs/reference/errors#okm1020)
+- [OKM1023](/docs/reference/errors#okm1023)
+- [OKM1122](/docs/reference/errors#okm1122)
+
+## Version [feature="check.notEnforced"]
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

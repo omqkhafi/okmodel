@@ -1,17 +1,10 @@
 ---
 title: "Functions"
 description: "Routines the catalog stores."
+summary: "Routines the catalog stores."
+since: "0.10"
+status: stable
 ---
-`functions` is a list of `fn()` from `okmodel/fn`. The catalog record is built when the catalog is first read. `schema()` does not run the body. Overloads differ by argument types. The same name with the same argument types is one function.
-
-`returns`, `language`, and `body` are required. `language` is `"sql"` or `"plpgsql"`. Volatility defaults to `"volatile"`. Security defaults to `"invoker"`. The install schema defaults to `public`. A procedure is the same builder with `kind: "procedure"`. See [Procedures](/docs/schema/procedures).
-
-The value `fn()` returns is callable. `slugify(ident("title"))` is a `where` operand. `slugify(ident("title")).as("slug")` is a `select` entry. A numeric return is a number. A boolean return is read as text, as is any other non-numeric return. A string, number, boolean, or null is a parameter. `ident` names a field. `orderBy` does not accept the call.
-
-### sql
-
-`"sql"` stores the body as written. `dependsOn` is optional.
-
 ```ts title="sql.ts"
 import { fn } from "okmodel/fn";
 import { schema, sql, table, t } from "okmodel/pg";
@@ -32,6 +25,20 @@ export default schema({
   functions: [answer], // [!code focus]
 });
 ```
+
+## What it does
+
+`functions` is a list of `fn()` from `okmodel/fn`. The catalog record is built when the catalog is first read. `schema()` does not run the body. Overloads differ by argument types. The same name with the same argument types is one function.
+
+`returns`, `language`, and `body` are required. `language` is `"sql"` or `"plpgsql"`. Volatility defaults to `"volatile"`. Security defaults to `"invoker"`. The install schema defaults to `public`. A procedure is the same builder with `kind: "procedure"`. See [Procedures](/docs/schema/procedures).
+
+The value `fn()` returns is callable. `slugify(ident("title"))` is a `where` operand. `slugify(ident("title")).as("slug")` is a `select` entry. A numeric return is a number. A boolean return is read as text, as is any other non-numeric return. A string, number, boolean, or null is a parameter. `ident` names a field. `orderBy` does not accept the call.
+
+### sql
+
+`"sql"` stores the body as written. `dependsOn` is optional.
+
+
 
 #### atomic
 
@@ -339,3 +346,38 @@ export default schema({
 <Callout type="error" title="OKM1823">
 Definer with no `searchPath` is `Function touch_notes is security definer and has no search_path.`
 </Callout>
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM1824](/docs/reference/errors#okm1824)
+- [OKM1020](/docs/reference/errors#okm1020)
+- [OKM1023](/docs/reference/errors#okm1023)
+- [OKM1823](/docs/reference/errors#okm1823)
+
+## Version
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

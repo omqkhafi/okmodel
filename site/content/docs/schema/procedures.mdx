@@ -1,18 +1,11 @@
 ---
 title: "Procedures"
 description: "CALL, OUT arguments, and procedures that commit."
+summary: "CALL, OUT arguments, and procedures that commit."
+since: "0.10"
+status: stable
+feature: fn.procedure
 ---
-
-A procedure is `fn()` with `kind: "procedure"`. It is not a second builder. PostgREST and Supabase expose functions only (`POST /rpc/<name>`). They do not expose `CALL`. Use a function when an HTTP API has to run the routine. Use a procedure when the app calls it, when it has `OUT` arguments, or when it commits.
-
-`returns` and `volatility` are not procedure options. The identity is the name plus the `IN` and `INOUT` types. `OUT` is not part of the identity. Two routines with the same name and the same `IN` and `INOUT` types are OKM1023, whether they are functions, procedures, or one of each. Changing the kind is drop plus create.
-
-Argument types are column builders. `t.text()`, `t.integer()`, `t.bigint()`. A string such as `"text"` is not accepted.
-
-### Typed body
-
-`(args, query) => [statements]` compiles to `LANGUAGE sql` and `BEGIN ATOMIC`. The callback runs when the catalog is built, not when the module loads. Every parameter is printed as `"procedure"."argument"`. An unqualified parameter that matches a column name is the column, and the argument is silently ignored. The last statement is a query. Its columns are assigned to the `OUT` parameters, in order.
-
 ```ts title="close-one.ts"
 import { fn } from "okmodel/fn";
 import { schema, table, t } from "okmodel/pg";
@@ -40,6 +33,20 @@ const closeOne = fn("close_one", {
 export default schema({ tables: [accounts], functions: [closeOne] });
 ```
 
+## What it does
+
+A procedure is `fn()` with `kind: "procedure"`. It is not a second builder. PostgREST and Supabase expose functions only (`POST /rpc/<name>`). They do not expose `CALL`. Use a function when an HTTP API has to run the routine. Use a procedure when the app calls it, when it has `OUT` arguments, or when it commits.
+
+`returns` and `volatility` are not procedure options. The identity is the name plus the `IN` and `INOUT` types. `OUT` is not part of the identity. Two routines with the same name and the same `IN` and `INOUT` types are OKM1023, whether they are functions, procedures, or one of each. Changing the kind is drop plus create.
+
+Argument types are column builders. `t.text()`, `t.integer()`, `t.bigint()`. A string such as `"text"` is not accepted.
+
+### Typed body
+
+`(args, query) => [statements]` compiles to `LANGUAGE sql` and `BEGIN ATOMIC`. The callback runs when the catalog is built, not when the module loads. Every parameter is printed as `"procedure"."argument"`. An unqualified parameter that matches a column name is the column, and the argument is silently ignored. The last statement is a query. Its columns are assigned to the `OUT` parameters, in order.
+
+
+
 `query.accounts.find`, `aggregate`, `insert`, `update`, and `delete` print SQL. They do not connect. `query.sql` is a statement the printer cannot express.
 
 ### Handle body
@@ -50,7 +57,7 @@ export default schema({ tables: [accounts], functions: [closeOne] });
 
 A string or `sql\`...\`` is stored as written. `okm pull` writes this form. A language other than `sql` and `plpgsql` is not pulled yet.
 
-### run
+### run [feature="fn.run"]
 
 `procedure.run(db, args, options?)` sends `CALL` in named notation. Each `IN` and `INOUT` value is `$n::type`. Every `OUT` parameter is `NULL::type`, which PostgreSQL requires. The result is an object of `OUT` and `INOUT` values, or `undefined` when there are none. `options` is `timeout`, `signal`, and `onNotice`.
 
@@ -62,7 +69,7 @@ const closed = await closeOne.run(db, { account: "a" });
 
 Missing a required argument is OKM1120.
 
-### commits
+### commits [feature="fn.procedure.commits"]
 
 `commits: true` means the body commits. It is refused, before any SQL is sent, when `run` is inside a transaction (PostgreSQL 2D000, reported as OKM1551). It is also refused with `security: "definer"`, with `searchPath`, with a `BEGIN ATOMIC` body, and when the flag disagrees with `COMMIT` or `ROLLBACK` in the body. `COMMIT` or `ROLLBACK` inside an `EXCEPTION` block is warning OKM2126. The language defaults to `plpgsql` when `commits` is set.
 
@@ -107,7 +114,7 @@ A procedure without `commits` joins the caller's transaction. `db.tx(() => proce
 
 Dropping a table that a `BEGIN ATOMIC` body uses is PostgreSQL 2BP01 while the procedure exists. The plan drops the procedure first.
 
-### Security
+### Security [feature="fn.definerRevoke"]
 
 Every `security: "definer"` routine, procedure or function, is created with `REVOKE EXECUTE ... FROM PUBLIC` in the same transaction, then the grants you declared. The revoke is applied again after every recreate. `search_path` is still required (OKM1823). A definer procedure that touches a tenant table is OKM2125: the owner bypasses row security. OKM2112 still applies when a definer names a forced-RLS table.
 
@@ -125,9 +132,15 @@ fn("close_as_owner", {
 });
 ```
 
-`grants` and `comment` use the same options as a function. The SQL is `GRANT ... ON PROCEDURE` and `COMMENT ON PROCEDURE`. `okm access` lists a procedure as `procedure <name>`.
+### Grants [feature="grants.procedure"]
 
-### raises
+`grants` uses the same options as a function. The SQL is `GRANT ... ON PROCEDURE`. `okm access` lists a procedure as `procedure <name>`.
+
+### Comment [feature="comment.procedure"]
+
+`comment` uses the same option as a function. The SQL is `COMMENT ON PROCEDURE`.
+
+### raises [feature="fn.raises"]
 
 `raises` names a SQLSTATE the body throws. `run` puts that name on `error.raised`. `error.code` stays the OKM code. `error.sqlstate`, `error.detail`, `error.hint`, and `error.constraint` come from PostgreSQL. An undeclared custom errcode, or a standard-class code, is warning OKM2127.
 
@@ -166,3 +179,42 @@ select cron.schedule('close-month', '0 3 * * *', $$call close_one('a', null)$$);
 ### Change
 
 The same argument modes and types are `CREATE OR REPLACE`. A different mode, a different type, or a change between function and procedure is `DROP` plus `CREATE` in one migration. Grants and the comment are applied again. Replacing a routine does not leave the old overload behind.
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM1023](/docs/reference/errors#okm1023)
+- [OKM1120](/docs/reference/errors#okm1120)
+- [OKM1551](/docs/reference/errors#okm1551)
+- [OKM2126](/docs/reference/errors#okm2126)
+- [OKM1823](/docs/reference/errors#okm1823)
+- [OKM2125](/docs/reference/errors#okm2125)
+- [OKM2112](/docs/reference/errors#okm2112)
+- [OKM2127](/docs/reference/errors#okm2127)
+
+## Version [feature="fn.procedure"]
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

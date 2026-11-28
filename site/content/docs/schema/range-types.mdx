@@ -1,21 +1,11 @@
 ---
 title: Range types
-description: Built-in and custom range columns, exclusion constraints, and PostgreSQL 18 temporal keys.
+description: Built-in and custom range columns, exclusion constraints, and temporal keys.
 summary: "Range columns, exclusion constraints, and temporal keys each have a PostgreSQL floor."
 since: "0.10"
 status: stable
+feature: type.range
 ---
-
-A range column reads as `{ empty, lower, upper, lowerInclusive, upperInclusive }`. `{ empty: true }` has no bounds. A write, and a filter, accepts that object or a `[lower, upper)` tuple. A null bound is unbounded. The default bounds of a tuple are `[)`.
-
-Built-in columns are `t.int4range()`, `t.int8range()`, `t.numrange()`, `t.daterange()`, and `t.tstzrange()`. There is no `t.tsrange()`. Each has a multirange builder: `t.int4multirange()`, `t.int8multirange()`, `t.nummultirange()`, `t.datemultirange()`, and `t.tstzmultirange()`. An array of a range is `.array()`, and a read of that array goes through `to_jsonb`.
-
-The bound types are the same as the scalar columns. A `tstzrange` bound is a `Temporal.Instant`. Postgres may print an hour offset such as `+03`. That text decodes to an instant.
-
-## A custom range
-
-`t.range` sits next to `t.enum` and `t.composite`. An unused range is not a catalog object. A column declares it. The subtype diff of a built-in subtype is filled in. There is no `canonical` option.
-
 ```ts
 import { table, t } from "okmodel/pg";
 
@@ -32,9 +22,29 @@ table("marks", {
 });
 ```
 
-`grants: { app: "read" }` is `USAGE` on the type. `comment` is `COMMENT ON TYPE`. `okm access` lists the grant. A rename moves the range and its multirange together (`renamedFrom`). A change of subtype, diff, or collation builds a new type and swaps each plain column with `USING col::text::new` after `DROP DEFAULT`, behind `confirmTypeChanges`. An array or a function that uses the type is refused. The five constructors Postgres creates for the range stay out of `okm pull` and `okm check`.
+## What it does
 
-## Filters
+A range column reads as `{ empty, lower, upper, lowerInclusive, upperInclusive }`. `{ empty: true }` has no bounds. A write, and a filter, accepts that object or a `[lower, upper)` tuple. A null bound is unbounded. The default bounds of a tuple are `[)`.
+
+Built-in columns are `t.int4range()`, `t.int8range()`, `t.numrange()`, `t.daterange()`, and `t.tstzrange()`. There is no `t.tsrange()`. Each has a multirange builder: `t.int4multirange()`, `t.int8multirange()`, `t.nummultirange()`, `t.datemultirange()`, and `t.tstzmultirange()`. An array of a range is `.array()`, and a read of that array goes through `to_jsonb`.
+
+The bound types are the same as the scalar columns. A `tstzrange` bound is a `Temporal.Instant`. Postgres may print an hour offset such as `+03`. That text decodes to an instant.
+
+## A custom range [feature="type.range"]
+
+`t.range` sits next to `t.enum` and `t.composite`. An unused range is not a catalog object. A column declares it. The subtype diff of a built-in subtype is filled in. There is no `canonical` option.
+
+
+
+### Comment [feature="comment.range"]
+
+`comment` is `COMMENT ON TYPE`.
+
+### Grants [feature="grants.range"]
+
+`grants: { app: "read" }` is `USAGE` on the type. `okm access` lists the grant. A rename moves the range and its multirange together (`renamedFrom`). A change of subtype, diff, or collation builds a new type and swaps each plain column with `USING col::text::new` after `DROP DEFAULT`, behind `confirmTypeChanges`. An array or a function that uses the type is refused. The five constructors Postgres creates for the range stay out of `okm pull` and `okm check`.
+
+## Filters [feature="range.operators"]
 
 `contains` takes one element or a whole range. The element is cast to the subtype. `adjacent`, `before`, `after`, and `isEmpty` are the other range operators. They load with the operator compiler, when a query uses them.
 
@@ -141,3 +151,35 @@ table(
 `rooms` is the table the foreign key names.
 
 The foreign key target has to be a primary key or a unique constraint. PostgreSQL 19.0 has no `FOR PORTION OF`. There is no API for it.
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM2128](/docs/reference/errors#okm2128)
+
+## Version [feature="type.range"]
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

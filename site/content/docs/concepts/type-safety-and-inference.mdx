@@ -1,7 +1,11 @@
 ---
 title: "Types"
 description: "The client is typed by the schema passed to connect. Row, Insert, and Update read Register when no schema is passed."
+summary: "The client infers rows from the schema and refuses a key the table does not have."
+since: "0.10"
+status: stable
 ---
+## What it does
 
 The client is typed by the schema you pass to `connect`. `Row`, `Insert`, and `Update` use that schema when you pass it, and they read `Register` when you do not.
 
@@ -41,3 +45,35 @@ Typed raw SQL is as precise as the lock or the class. It is not a substitute for
 | [Codecs](/docs/schema/codecs-and-row-types#codecs) | The TypeScript value of `bigint`, `numeric`, and timestamps. |
 | [Connect](/docs/operate/connect) | The `schema` option. |
 | [Queries](/docs/queries) | The calls those types describe. |
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+This page does not emit a migration step.
+
+## Errors
+
+- [OKM1601](/docs/reference/errors#okm1601)
+
+## Version
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

@@ -88,9 +88,15 @@ test("the README blocks match the generator", () => {
 
 test("the exemption list only shrinks and the pilots are not on it", () => {
   expect(FRONTMATTER_EXEMPT.length).toBeLessThanOrEqual(FRONTMATTER_EXEMPT_CEILING);
-  expect(FRONTMATTER_EXEMPT.length).toBe(115);
+  expect(FRONTMATTER_EXEMPT.length).toBe(70);
+  expect(FRONTMATTER_EXEMPT).not.toContain("index.mdx");
   expect(FRONTMATTER_EXEMPT).not.toContain("schema/defaults.mdx");
   expect(FRONTMATTER_EXEMPT).not.toContain("schema/range-types.mdx");
+  for (const path of FRONTMATTER_EXEMPT) {
+    expect(path.startsWith("start/"), path).toBe(false);
+    expect(path.startsWith("concepts/"), path).toBe(false);
+    expect(path.startsWith("schema/"), path).toBe(false);
+  }
   expect(handbookProblems(root)).toEqual([]);
 });
 
@@ -144,5 +150,28 @@ test("unmapped registry keys are a list and the pilot keys are mapped", () => {
   expect(unmapped).not.toContain("watch.liveRead");
   expect(unmapped).not.toContain("watch.signal");
   expect(unmapped).not.toContain("watch.until");
-  expect(unmapped.length).toBe(Object.keys(POSTGRES_FEATURES).length - 10);
+  const mapped = new Set<string>([
+    ...schemaFeatureKeys(root),
+    "migrate.fleet",
+    "migrate.fleet.canary",
+    "migrate.fleet.ensureHead",
+    "watch.wake",
+    "watch.liveRead",
+    "watch.signal",
+    "watch.until",
+  ]);
+  for (const key of mapped) expect(unmapped, key).not.toContain(key);
+  expect(unmapped.length).toBe(Object.keys(POSTGRES_FEATURES).length - mapped.size);
 });
+
+/**
+ * Registry keys the schema map names.
+ *
+ * Read as text so the root typecheck does not load the site package.
+ *
+ * @param root - Repository root
+ */
+function schemaFeatureKeys(root: string): readonly string[] {
+  const text = readFileSync(join(root, "site/lib/schema-features.ts"), "utf8");
+  return [...text.matchAll(/"([^"]+)": "[^"]+"/g)].map((match) => match[1] ?? "");
+}

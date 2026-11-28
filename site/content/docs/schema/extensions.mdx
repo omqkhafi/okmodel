@@ -1,15 +1,11 @@
 ---
 title: "Extensions"
 description: "Extension definitions. schema() does not install them."
+summary: "An extension is declared on the schema, and schema() does not install it by hand."
+since: "0.10"
+status: stable
+feature: ext.pgvector
 ---
-`extensions` is a list. Each value contributes its catalog record when the catalog is first read. `schema()` does not install the extension. Migrate writes `create extension` before the table that needs it. An omitted list, an empty list, and a value that is not a list add no extension record.
-
-`citext()`, `pgTrgm()`, and `extension("name")` take the same options.
-
-### citext
-
-`citext()` from `okmodel/pg/citext` declares `citext`. A [citext](/docs/schema/text-columns#citext) column needs that name.
-
 ```ts title="citext.ts"
 import { citext } from "okmodel/pg/citext";
 import { schema, table, t } from "okmodel/pg";
@@ -24,6 +20,18 @@ export default schema({
   extensions: [citext()], // [!code focus]
 });
 ```
+
+## What it does
+
+`extensions` is a list. Each value contributes its catalog record when the catalog is first read. `schema()` does not install the extension. Migrate writes `create extension` before the table that needs it. An omitted list, an empty list, and a value that is not a list add no extension record.
+
+`citext()`, `pgTrgm()`, and `extension("name")` take the same options.
+
+### citext
+
+`citext()` from `okmodel/pg/citext` declares `citext`. A [citext](/docs/schema/text-columns#citext) column needs that name.
+
+
 
 ### trigram
 
@@ -84,7 +92,24 @@ export default schema({
 });
 ```
 
-### pgvector
+### pgvector [feature="ext.pgvector"]
+
+#### Vector [feature="type.vector"]
+
+`vector(n)` stores `number[]`.
+
+#### Halfvec [feature="type.halfvec"]
+
+`halfvec(n)` stores `number[]`.
+
+#### HNSW [feature="index.hnsw"]
+
+`hnsw` takes a metric. There is no default.
+
+#### IVFFlat [feature="index.ivfflat"]
+
+`ivfflat` takes a metric. There is no default.
+
 
 `pgvector()` from `okmodel/pg/pgvector` declares the `vector` extension. `vector(n)` and `halfvec(n)` store `number[]`. The wire text is `[1,2,3]`. An empty array, a non-finite number, or the wrong length is refused before SQL (OKM1210). `vector(n)` and `halfvec(n)` stop at 16000 dimensions (OKM1930).
 
@@ -541,3 +566,42 @@ export default schema({
 <Callout type="error" title="OKM1814">
 A later move of that extension is `Extension hstore is not relocatable, so it cannot move to public.`
 </Callout>
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM1210](/docs/reference/errors#okm1210)
+- [OKM1930](/docs/reference/errors#okm1930)
+- [OKM1125](/docs/reference/errors#okm1125)
+- [OKM1812](/docs/reference/errors#okm1812)
+- [OKM1020](/docs/reference/errors#okm1020)
+- [OKM1810](/docs/reference/errors#okm1810)
+- [OKM1813](/docs/reference/errors#okm1813)
+- [OKM1811](/docs/reference/errors#okm1811)
+
+## Version [feature="ext.pgvector"]
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

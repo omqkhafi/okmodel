@@ -1,10 +1,19 @@
 ---
 title: "Installation"
 description: "Install a driver, set DATABASE_URL, connect, and finish the startup check."
+summary: "Install a driver, point DATABASE_URL at Postgres, and open a client."
+since: "0.10"
+status: stable
 ---
+```ts title="driver.ts"
+import { connect } from "okmodel/pg/postgresjs";
+```
+
+## What it does
+
 Install OKModel, point it at Postgres, and open a client.
 
-You need Bun 1.4+ (the examples use Bun commands) or Node.js 22.18+, and a Postgres 15 or newer server. OKModel itself runs on both runtimes. `Bun.sql` works only on Bun. `okm` is the CLI bin shipped with the package (`bunx okm …`).
+You need Bun 1.4+ (the examples use Bun commands) or Node.js 22.18+. <FloorPhrase />. OKModel itself runs on both runtimes. `Bun.sql` works only on Bun. `okm` is the CLI bin shipped with the package (`bunx okm …`).
 
 ## Files this page writes
 
@@ -53,9 +62,7 @@ The default on Node and Bun. It connects to a Postgres server.
 bun add okmodel postgres
 ```
 
-```ts title="driver.ts"
-import { connect } from "okmodel/pg/postgresjs";
-```
+
 
 </Tab>
 
@@ -192,3 +199,35 @@ On an empty database the promise resolved, and the script printed `connected`.
 | --- | --- |
 | [First schema](/docs/start/first-schema) | Define the table, push it, then insert and read a row. |
 | [Project structure](/docs/start/project-structure) | The files that project has. |
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+This page does not emit a migration step.
+
+## Errors
+
+This page does not add an error code.
+
+## Version
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

@@ -1,17 +1,11 @@
 ---
 title: "Views"
 description: "Views and materialized views built with the query API."
+summary: "Views and materialized views built with the query API."
+since: "0.10"
+status: stable
+feature: view.typed
 ---
-`views` is one list of `view()` and `materializedView()` from `okmodel/view`. The body is the query API. `q` has only the tables and views named in `tables`. Reading any other name is a type error, and a cycle in that list is OKM1900.
-
-`db.views` is the read handle for both kinds. The client name is the camelCase of the view name, so `open_notes` is `openNotes`. A plain view has `find`, `one`, `count`, and `exists`. A materialized view also has `refresh()`. There is no insert or update.
-
-Column type and nullability come from the expression or the column builder. PostgreSQL stores neither for a view. A column left non-null throws OKM1901 when a row comes back NULL. `okm pull` writes `q.sql` and `.nullable()` on every column for that reason.
-
-Every view is `security_invoker` unless you pass `{ definer: "reason" }`. A definer view also sets `security_barrier`. The reason is not stored. `checkOption` is `local` or `cascaded` and is enforced by the database. `orderBy` without `limit` is OKM1120.
-
-### view
-
 ```ts title="view.ts"
 import { not, schema, table, t } from "okmodel/pg";
 import { view } from "okmodel/view";
@@ -34,6 +28,24 @@ export default schema({
 });
 ```
 
+## What it does
+
+`views` is one list of `view()` and `materializedView()` from `okmodel/view`. The body is the query API. `q` has only the tables and views named in `tables`. Reading any other name is a type error, and a cycle in that list is OKM1900.
+
+`db.views` is the read handle for both kinds. The client name is the camelCase of the view name, so `open_notes` is `openNotes`. A plain view has `find`, `one`, `count`, and `exists`. A materialized view also has `refresh()`. There is no insert or update.
+
+Column type and nullability come from the expression or the column builder. PostgreSQL stores neither for a view. A column left non-null throws OKM1901 when a row comes back NULL. `okm pull` writes `q.sql` and `.nullable()` on every column for that reason.
+
+Every view is `security_invoker` unless you pass `{ definer: "reason" }`. A definer view also sets `security_barrier`. The reason is not stored.
+
+#### Check option [feature="view.checkOption"]
+
+`checkOption` is `local` or `cascaded` and is enforced by the database. `orderBy` without `limit` is OKM1120.
+
+### view [feature="view.typed"]
+
+
+
 `q.sql` is the fallback for a union, a CTE, `LATERAL`, or a recursive view.
 
 ```ts title="sql-view.ts"
@@ -55,9 +67,11 @@ const titled = view("titled", { tables: [notes] }, (q) =>
 export default schema({ tables: [notes], views: [titled] });
 ```
 
-### materialized
+### materialized [feature="view.materialized"]
 
-`materializedView()` is created `with no data`. `populate: "now"` (the default) refreshes it in the plan. `populate: "later"` does not. `refresh: "concurrently"` needs a unique index on plain columns: no expression and no predicate, or the declaration is OKM1822. `indexes` is the same `index()` call a table uses. `using`, `with`, and `tablespace` are stored when they are not the database default.
+#### Refresh [feature="matview.refresh"]
+
+`refresh()` reloads a materialized view. `materializedView()` is created `with no data`. `populate: "now"` (the default) refreshes it in the plan. `populate: "later"` does not. `refresh: "concurrently"` needs a unique index on plain columns: no expression and no predicate, or the declaration is OKM1822. `indexes` is the same `index()` call a table uses. `using`, `with`, and `tablespace` are stored when they are not the database default.
 
 ```ts title="materialized.ts"
 import { connect } from "okmodel/pg/postgresjs";
@@ -87,7 +101,7 @@ export async function reload(url: string) {
 
 Postgres does not store `refresh` or `populate`. Introspection leaves them unset, and a later plan does not recreate the view only because they were declared.
 
-### security
+### security [feature="view.security"]
 
 The default is `with (security_invoker = true)`, including under column tenancy. `{ definer: "reason" }` omits the invoker option and sets `security_barrier`. `okm doctor` warns OKM1902 when the session role cannot select a base table of a security-invoker view.
 
@@ -121,7 +135,7 @@ export default schema({
 A tenant view that hides the key is `View open_notes reads a tenant table and does not expose tenantId.`
 </Callout>
 
-### planning
+### planning [feature="view.dependencyOrder"]
 
 `CREATE OR REPLACE` is used only when the new columns are the old columns plus appended ones, and the statement restates every option. A replace resets an option that was not restated. A pure column rename is `ALTER VIEW RENAME COLUMN`. Anything else drops and recreates dependents in dependency order. A base column type change drops dependent views and materialized views, alters the column, and recreates them.
 
@@ -134,3 +148,40 @@ These three are not emitted. Each needs a proof on the server you run before it 
 **Scheduled refresh.** `refresh: { mode: "concurrently", every: "*/5 * * * *" }` is OKM1120. On a server that has the pg_cron pack, schedule `refresh materialized view concurrently` as the database owner. Jobs show up in `cron.job` and `cron.job_run_details`. The view still needs a plain unique index.
 
 **INSTEAD OF.** A trigger with `timing: "instead"` prints `INSTEAD OF`, and it belongs on a view. `trigger({ on })` takes a table today. Declare the trigger in SQL with `q.sql` left unused, or add the view to `on` in a later change once a real server has run an `INSTEAD OF` row trigger against that view.
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM1900](/docs/reference/errors#okm1900)
+- [OKM1901](/docs/reference/errors#okm1901)
+- [OKM1120](/docs/reference/errors#okm1120)
+- [OKM1822](/docs/reference/errors#okm1822)
+- [OKM1902](/docs/reference/errors#okm1902)
+- [OKM1820](/docs/reference/errors#okm1820)
+
+## Version [feature="view.typed"]
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.
