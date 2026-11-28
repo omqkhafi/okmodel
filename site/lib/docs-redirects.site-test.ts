@@ -7,7 +7,7 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { DOCS_REDIRECTS } from "./docs-redirects";
+import { DOCS_REDIRECTS, resolveRedirect, withRedirectDestinations } from "./docs-redirects";
 import { docsPageExists } from "./handbook-pages";
 import { markdownNegotiation, markdownTwinPath } from "./markdown-negotiate";
 import { siteRoot } from "./repo";
@@ -67,6 +67,22 @@ test("retired handbook URLs map to the tracked destinations before the define ca
 test("claim documentation lives on write-rows (fragment kept by the browser on search-and-trees)", () => {
   expect(docsUrlResolves("/docs/queries/write-rows#claim")).toBe(true);
   expect(docsUrlResolves("/docs/queries/search-and-trees#text-search")).toBe(true);
+});
+
+test("a listed redirect resolves and an empty table does not", () => {
+  expect(resolveRedirect("/docs/start/basic-usage")).toBe("/docs/start/first-schema");
+  expect(resolveRedirect("/docs/define/table/extra")).toBe("/docs");
+  expect(resolveRedirect("/docs/start/first-schema")).toBeUndefined();
+  expect(resolveRedirect("/docs/start/basic-usage", [])).toBeUndefined();
+  const urls = withRedirectDestinations(
+    ["https://okm.omqkhafi.dev/docs"],
+    [{ source: "/old", destination: "/docs/start", permanent: true }],
+    "https://okm.omqkhafi.dev",
+  );
+  expect(urls).toContain("https://okm.omqkhafi.dev/docs/start");
+  expect(withRedirectDestinations(["https://okm.omqkhafi.dev/docs"], [], "https://okm.omqkhafi.dev")).toEqual([
+    "https://okm.omqkhafi.dev/docs",
+  ]);
 });
 
 test("next.config mounts the docs redirect list", () => {
