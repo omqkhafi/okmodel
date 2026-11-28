@@ -9,7 +9,20 @@ import { OkmError } from "../../contracts/error.js";
 import { tagOutcome } from "../cli/outcome.js";
 import { estimateMs } from "./weight-rate.js";
 import type { StepWeight } from "./classify.js";
-import type { StoredMigration } from "./files.js";
+
+/**
+ * Migration fields the scheduler reads.
+ *
+ * Structural on purpose. Importing the file loader would pull the planner,
+ * and the site typecheck follows this module.
+ */
+type FleetFile = {
+  readonly id: string;
+  readonly steps: readonly {
+    readonly class: string;
+    readonly weight?: string;
+  }[];
+};
 
 /** Default targets run together after the canary. */
 export const FLEET_PARALLEL = 4;
@@ -251,7 +264,7 @@ export function positiveInt(value: number | undefined, fallback: number, label: 
  * @returns That file and the file before it, or `undefined` when every step is expand
  */
 export function contractBoundary(
-  migrations: readonly StoredMigration[],
+  migrations: readonly FleetFile[],
 ): { readonly migrationId: string; readonly previousId: string | undefined } | undefined {
   for (let index = 0; index < migrations.length; index += 1) {
     const migration = migrations[index];
@@ -283,7 +296,7 @@ export type GateReading = {
  * @param allowProtected - The invocation passed `--allow-protected`
  */
 export function assertContractGate(
-  migrations: readonly StoredMigration[],
+  migrations: readonly FleetFile[],
   readings: readonly GateReading[],
   allowProtected: boolean,
 ): void {
@@ -339,7 +352,7 @@ export function assertFleetHead(
  * @returns `true` when the cap applies
  */
 export function heavyPending(
-  migrations: readonly StoredMigration[],
+  migrations: readonly FleetFile[],
   pending: readonly string[],
 ): boolean {
   if (pending.length === 0) return false;
