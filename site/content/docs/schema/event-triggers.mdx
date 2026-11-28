@@ -80,7 +80,7 @@ When `okm apply` fails because an event trigger raised, the message names the en
 
 ### Transition tables
 
-`referencing` names transition tables for one statement-level `after` trigger. One event. No `updateOf`. `insert` names `new`. `delete` names `old`. `update` names either. `truncate` names neither. A partitioned parent may have them. PostgreSQL 17 accepts a statement-level `after` trigger with `referencing` on the parent, and on a partition child and an inheritance child. A row-level trigger on the partitioned parent is 0A000. Row-level transition tables are not SQL. Partition children and inheritance children are statement-level when PostgreSQL allows the trigger at all. This schema has no child-table declaration, so a child is not detected here.
+`referencing` names transition tables for one statement-level `after` trigger. One event. No `updateOf`. `insert` names `new`. `delete` names `old`. `update` names either. `truncate` names neither. A partitioned parent may have them. PostgreSQL 15, 17, and 19 accept a statement-level `after` trigger with `referencing` on the parent. A row-level trigger on that parent is 0A000. Row-level transition tables are not SQL. Partition children and inheritance children are statement-level when PostgreSQL allows the trigger at all. This schema has no child-table declaration, so a child is not detected here.
 
 ```ts title="referencing.ts"
 import { fn, trigger, triggerType } from "okmodel/fn";
