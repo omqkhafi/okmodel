@@ -18,6 +18,7 @@ import { deterministicName } from "../../contracts/catalog/identifier.js";
 import { catalog } from "../../contracts/catalog/build.js";
 import { renderCatalog } from "../../dialects/pg/ddl.js";
 import { isWatchFunctionName, isWatchTriggerName } from "../../dialects/pg/watch-ddl.js";
+import { isManagedFeedTable, keepFromComment } from "../../dialects/pg/watch-feed-ddl.js";
 import { suggestEvery } from "../../dialects/pg/partition-compile.js";
 import type {
   Catalog,
@@ -196,6 +197,7 @@ export function emitPull(
   const byParent = groupByParent(source);
   const tables = source.objects
     .filter((object): object is TableObject => object.kind === "table")
+    .filter((object) => !isManagedFeedTable(object.identity.name))
     .sort((left, right) => compare(left.identity.name, right.identity.name));
   const files: PullFile[] = [];
   const imports: { readonly name: string; readonly file: string }[] = [];
@@ -236,7 +238,7 @@ export function emitPull(
       casing,
       renames,
       sequences,
-      watched.has(table.identity.name),
+      watchOption(source, table.identity.name),
     );
     if (planned === undefined) continue;
     if (planned.identitySequence !== undefined) identitySequences.add(planned.identitySequence);
@@ -256,6 +258,7 @@ export function emitPull(
     const parent = object.dependencies.find((edge) => edge.target.kind === "table");
     const parentName =
       parent !== undefined && parent.target.kind === "table" ? parent.target.name : "";
+    if (isManagedFeedTable(parentName)) continue;
     const kept =
       parentName.length > 0 &&
       tables.some(
@@ -476,7 +479,7 @@ function planTable(
   casing: Casing | undefined,
   renames: string[],
   sequences: ReadonlyMap<string, SequenceObject>,
-  watch: boolean,
+  watchLine: string | undefined,
 ): PlannedTable | undefined {
   const bag = byParent.get(table.identity.name) ?? {
     columns: [],
@@ -815,7 +818,7 @@ function planTable(
     options.push(...policyLines);
     needsSql = true;
   }
-  if (watch) options.push("    watch: true,");
+  if (watchLine !== undefined) options.push(watchLine);
 
   for (const sequence of bag.sequences) {
     const owned =
@@ -2102,6 +2105,30 @@ function boundOption(bound: PartitionBound): string {
  * @param source - Introspected catalog
  * @returns SQL table names
  */
+function watchOption(source: Catalog, tableName: string): string | undefined {
+  let functionName: string | undefined;
+  for (const object of source.objects) {
+    if (object.kind !== "trigger" || object.identity.parent.name !== tableName) continue;
+    if (!isWatchTriggerName(object.identity.name)) continue;
+    if (!isWatchFunctionName(object.definition.calls.name)) continue;
+    functionName = object.definition.calls.name;
+  }
+  if (functionName === undefined) return undefined;
+  const fn = source.objects.find(
+    (object) => object.kind === "function" && object.identity.name === functionName,
+  );
+  if (fn === undefined || fn.kind !== "function") return "    watch: true,";
+  const feed = fn.definition.body.includes("okm_changes");
+  if (!feed) return "    watch: true,";
+  const keep = keepFromComment(fn.comment);
+  if (keep === undefined) return "    watch: true,";
+  const push = fn.definition.body.includes("pg_notify");
+  const option = push
+    ? `{ feed: { keep: ${JSON.stringify(keep)} } }`
+    : `{ push: false, feed: { keep: ${JSON.stringify(keep)} } }`;
+  return `    watch: ${option},`;
+}
+
 function watchTables(source: Catalog): Set<string> {
   const names = new Set<string>();
   for (const object of source.objects) {

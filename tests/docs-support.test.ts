@@ -199,6 +199,7 @@ test("unmapped registry keys are a list and the pilot keys are mapped", () => {
   expect(unmapped).not.toContain("watch.liveRead");
   expect(unmapped).not.toContain("watch.signal");
   expect(unmapped).not.toContain("watch.until");
+  expect(unmapped).not.toContain("watch.feed");
   const mapped = new Set<string>([
     ...schemaFeatureKeys(root),
     "migrate.fleet",
@@ -208,6 +209,7 @@ test("unmapped registry keys are a list and the pilot keys are mapped", () => {
     "watch.liveRead",
     "watch.signal",
     "watch.until",
+    "watch.feed",
   ]);
   for (const key of mapped) expect(unmapped, key).not.toContain(key);
   expect(unmapped.length).toBe(Object.keys(POSTGRES_FEATURES).length - mapped.size);

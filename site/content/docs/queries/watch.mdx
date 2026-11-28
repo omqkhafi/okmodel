@@ -43,6 +43,91 @@ export async function seen(url: string): Promise<number> {
 
 The handler runs one at a time. Wakes that arrive while it is running become one more run after it finishes, unless `stop()` already marked the watch stopped. A thrown handler goes to `onError` and the process stays up. The next run tries again while the watch is still open.
 
+## Feed [feature="watch.feed"]
+
+`watch: { feed: { keep: "7d" } }` keeps a row per changed key. `db.products.watch({ feed: "search" }, handler)` is one consumer. The name is unique per table. One process holds it. A second process with the same name waits, and takes over if the holder disconnects. Two names on one table each receive every change.
+
+The handler gets keys, in commit order, at least once. It does not get the old or new row. Read the table for the rows you still want, and drop the keys that were deleted.
+
+```ts title="feed.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { inList, schema, table, t } from "okmodel/pg";
+
+const products = table(
+  "products",
+  { id: t.integer().primaryKey(), name: t.text() },
+  { watch: { feed: { keep: "7d" } } },
+);
+
+export const app = schema({ casing: "snake", tables: [products] });
+
+export async function indexed(url: string): Promise<number> {
+  await using db = connect(url, { schema: app });
+  const index = new Map<number, string>();
+  await using updates = db.products.watch({ feed: "search", every: "30s" }, async (changes) => {
+    const ids = changes.flatMap((change) => {
+      if (change.op === "delete" || change.op === "truncate") return [];
+      const id = change.key.id;
+      return typeof id === "number" ? [id] : [];
+    });
+    if (ids.length > 0) {
+      const rows = await db.products.find({ where: { id: inList(ids) }, limit: 100 });
+      for (const row of rows) index.set(row.id, row.name);
+    }
+    for (const change of changes) {
+      if (change.op !== "delete") continue;
+      const id = change.key.id;
+      if (typeof id === "number") index.delete(id);
+    }
+    if (changes.some((change) => change.op === "truncate")) index.clear();
+  });
+  await updates.run();
+  await db.products.insert({ id: 1, name: "Lamp" });
+  await updates.run();
+  return index.size;
+}
+```
+
+A search index follows the same shape: upsert the ids that are still in the table, remove the ids that were deleted, and clear the index when the change is `truncate`. Truncate stores one row for the whole table, with an empty key, because the statement has no transition rows. The cursor moves past that row.
+
+The second argument is the handler's transaction. The cursor advances in that transaction, so a throw puts the same changes back on the next run.
+
+```ts title="feed-tx.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const products = table(
+  "products",
+  { id: t.integer().primaryKey(), name: t.text() },
+  { watch: { feed: { keep: "7d" } } },
+);
+const audit = table("audit", { id: t.identity(), note: t.text() });
+export const app = schema({ casing: "snake", tables: [products, audit] });
+
+export async function noted(url: string): Promise<number> {
+  await using db = connect(url, { schema: app });
+  await using updates = db.products.watch({ feed: "search", every: "30s" }, async (changes, { tx }) => {
+    await tx.audit.insert({ note: String(changes.length) });
+  });
+  await updates.run();
+  await db.products.insert({ id: 1, name: "Lamp" });
+  await updates.run();
+  return (await db.audit.find({ limit: 10 })).length;
+}
+```
+
+That transaction needs a direct connection or a session pooler. A URL whose host, port, or `pgbouncer=true` parameter says it is a transaction pooler rejects the second argument with [OKM1936](/docs/reference/errors#okm1936). The feed itself still runs there: leave the second argument off and the handler uses the pool.
+
+`keep` is how long the active consumer retains rows in `okm_changes`. It prunes on its own pass. A cursor older than the oldest retained change does not skip ahead. `onResync` runs so you can rebuild from the table. Without it, the run throws [OKM1935](/docs/reference/errors#okm1935) and the next pass tries again. After `onResync` returns, the consumer continues from the newest change that was safe to read.
+
+A change is safe to read when its transaction id is below `pg_snapshot_xmin(pg_current_snapshot())`. A transaction that is still open holds that horizon back, including one that committed a later key first. `okm doctor` names the oldest open transaction that holds it: the pid, the state, and the age. It also prints each consumer's cursor, the head, and the lag, and it says when a cursor is behind the retention floor. Close the transaction, or the feed waits.
+
+The stored tenant is the tenant key of the statement. A scoped watcher reads its own key and the truncate row. That filter is not a security boundary. Policies on the table still decide which rows a later `find` returns.
+
+`{ push: false, feed: { keep: "7d" } }` stores the feed and does not notify. `every` still bounds the lag. `stop()`, `signal`, `await using`, `onError`, `state`, `stats`, and `run()` follow the same rules as a wake. `stop()` from inside the handler drops the lease and returns. `stop()` from outside waits for the handler, then drops the lease.
+
+On one local PostgreSQL 17, 500 single-row inserts took 73 ms with no trigger, 78 ms with the notify trigger, and 95 ms with the feed trigger. The sample is indicative. It is not a gate.
+
 ## Live read [feature="watch.liveRead"]
 
 Pass the same object you would pass to `find()`. The library runs that read on the client you called, hashes the rows, and calls you at start and whenever the hash differs from the last one your handler finished. A handler that throws is retried on the next run. Each wake is followed by a read that started after that wake. Two watches share a query only when they are the same table, options, and scope and no wake has arrived since that read started. A different scope does not share. The rows are whatever that client is allowed to read.

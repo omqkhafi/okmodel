@@ -12,7 +12,12 @@ type Has<T, K extends string> = K extends keyof T ? true : false;
 
 const orders = table("orders", { id: t.integer().primaryKey(), status: t.text() }, { watch: true });
 const notes = table("notes", { id: t.integer().primaryKey() });
-const app = schema({ casing: "snake", tables: [orders, notes] });
+const products = table(
+  "products",
+  { id: t.integer().primaryKey() },
+  { watch: { feed: { keep: "7d" } } },
+);
+const app = schema({ casing: "snake", tables: [orders, notes, products] });
 
 type Db = Connected<typeof app>;
 
@@ -27,3 +32,10 @@ type Tx = TxClient<typeof app>;
 expectTypeOf<Has<Tx, "notify">>().toEqualTypeOf<true>();
 expectTypeOf<Has<Tx, "watch">>().toEqualTypeOf<true>();
 expectTypeOf<Has<Tx["orders"], "watch">>().toEqualTypeOf<true>();
+
+declare const db: Db;
+db.products.watch({ feed: "search" }, (changes) => {
+  expectTypeOf(changes[0]?.op).toEqualTypeOf<
+    "insert" | "update" | "delete" | "truncate" | undefined
+  >();
+});

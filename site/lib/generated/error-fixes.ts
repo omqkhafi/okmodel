@@ -118,6 +118,8 @@ export const ERROR_FIXES: readonly ErrorFix[] = [
   { code: "OKM1932", fix: "Keep the method and the key. Include every key column in the primary key. Drop inbound foreign keys and views before converting a plain table." },
   { code: "OKM1933", fix: "Write the fleet plan again with okm migrate plan --fleet --out, then apply that file." },
   { code: "OKM1934", fix: "Use a direct URL, or connect({ listenUrl }) when the application URL is pooled. Omit push: required to poll." },
+  { code: "OKM1935", fix: "Pass onResync and rebuild from the table, or raise keep so the cursor is still inside the retained window." },
+  { code: "OKM1936", fix: "Use a direct or session connection for the handler transaction, or omit the second handler argument." },
   { code: "OKM1928", fix: "Pass --fill table.column=<expression> for that column." },
   { code: "OKM1926", fix: "Count as a role that is exempt from row-level security, or use the select policy rlsTenancy adds for a full-table count. A backfill under force needs an exempt role." },
   { code: "OKM1923", fix: "Grant the login role membership in the session role, with SET TRUE on PostgreSQL 16 and later." },

@@ -301,7 +301,12 @@ export type TableModel = {
    * table asked for the timer only. `tenant` is the tenant field names, in
    * key order, when a scoped watcher should ignore other tenants.
    */
-  readonly watch?: { readonly push: boolean; readonly tenant?: readonly string[] };
+  readonly watch?: {
+    readonly push: boolean;
+    readonly tenant?: readonly string[];
+    /** Retention of `okm_changes`, in milliseconds. Absent when the table has no feed. */
+    readonly feed?: { readonly keepMs: number };
+  };
   /**
    * Validation for this table.
    *

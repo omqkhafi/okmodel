@@ -479,6 +479,7 @@ test("refusal:watch.wake", () => refuse("watch.wake"));
 test("refusal:watch.liveRead", () => refuse("watch.liveRead"));
 test("refusal:watch.signal", () => refuse("watch.signal"));
 test("refusal:watch.until", () => refuse("watch.until"));
+test("refusal:watch.feed", () => refuse("watch.feed"));
 
 test("closed profile keeps the most restrictive observer costs", () => {
   const closed = closedRegistry();

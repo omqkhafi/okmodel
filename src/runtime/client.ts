@@ -114,6 +114,13 @@ export type Session = {
    */
   readonly listenUrl?: string;
   /**
+   * URL the pool was opened with, when `connect` received a string.
+   *
+   * `listenUrl` can name a different socket. The feed uses this URL to see
+   * whether handler transactions run on a pooler.
+   */
+  readonly targetUrl?: string;
+  /**
    * Shared close. `for()` and `unscoped()` reuse the same promise.
    *
    * `early` is set when `close()` runs before `connected` settles (QA-M5).
@@ -181,6 +188,7 @@ export function createClient<
     readonly generators?: IdGenerators | undefined;
     readonly session?: C | undefined;
     readonly listenUrl?: string | undefined;
+    readonly targetUrl?: string | undefined;
   },
   ownsPool?: boolean,
 ): Connected<S, C> {
@@ -235,6 +243,7 @@ export function createClient<
         : [...(schema.hooks ?? []), options.session.hook],
     ...(options.session?.role !== undefined ? { role: options.session.role } : {}),
     ...(options.listenUrl !== undefined ? { listenUrl: options.listenUrl } : {}),
+    ...(options.targetUrl !== undefined ? { targetUrl: options.targetUrl } : {}),
     closing,
   };
   return openClient(session) as unknown as Connected<S, C>;
@@ -582,9 +591,14 @@ export function runRead(session: Session, table: string, options: object): Promi
  * @param target - URL, pool, or topology
  * @returns Options that name the listen URL when one is known
  */
-export function withListenUrl<T extends { listenUrl?: string }>(options: T, target: unknown): T {
-  if (options.listenUrl !== undefined || typeof target !== "string") return options;
-  return { ...options, listenUrl: target };
+export function withListenUrl<T extends { listenUrl?: string; targetUrl?: string }>(
+  options: T,
+  target: unknown,
+): T {
+  if (typeof target !== "string") return options;
+  const next = { ...options, targetUrl: target };
+  if (options.listenUrl !== undefined) return next;
+  return { ...next, listenUrl: target };
 }
 
 /** A notification from the dedicated listen connection. */

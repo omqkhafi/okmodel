@@ -818,6 +818,22 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     since: "0.11",
   },
   {
+    code: "OKM1935",
+    title: "Watch feed resync",
+    summary:
+      "A watch feed cursor is behind the oldest retained change. The consumer did not skip ahead. The subscription stays open and the next pass tries again.",
+    fix: "Pass onResync and rebuild from the table, or raise keep so the cursor is still inside the retained window.",
+    since: "0.11",
+  },
+  {
+    code: "OKM1936",
+    title: "Watch feed pooler",
+    summary:
+      "A watch feed handler asked for its transaction on a URL the pooler signal calls pooled. The cursor was not moved. A feed without that transaction still delivers changes.",
+    fix: "Use a direct or session connection for the handler transaction, or omit the second handler argument.",
+    since: "0.11",
+  },
+  {
     code: "OKM1928",
     title: "Virtual column fill",
     summary:

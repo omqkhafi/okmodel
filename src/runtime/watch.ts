@@ -27,7 +27,14 @@ import { PUSH_DRIVER } from "../adapters/capabilities.js";
 import { watchChannel } from "../dialects/pg/watch-channel.js";
 import { openRegisteredListen, runRead, type ListenSocket, type Session } from "./client.js";
 import type { CallScope } from "./plan.js";
-import type { WatchOptions, WatchState, WatchStats, WatchSubscription } from "./types.js";
+import type {
+  FeedChange,
+  FeedResync,
+  WatchOptions,
+  WatchState,
+  WatchStats,
+  WatchSubscription,
+} from "./types.js";
 
 /** How long a delivery self-test waits for its private ping. */
 const SELF_TEST_MS = 800;
@@ -72,8 +79,16 @@ type Wake = {
 type Parsed = {
   readonly live: Live | undefined;
   readonly wake: Wake | undefined;
+  readonly feed: FeedCall | undefined;
   readonly channel: string | undefined;
   readonly options: WatchOptions;
+};
+
+type FeedCall = {
+  readonly name: string;
+  readonly handler: (changes: readonly FeedChange[], ctx: { readonly tx: unknown }) => unknown;
+  readonly transactional: boolean;
+  readonly onResync: ((info: FeedResync) => unknown) | undefined;
 };
 
 type Counts = { runs: number; errors: number; wakes: number; queries: number };
@@ -179,6 +194,7 @@ export function tableUntil(
         },
       },
       wake: undefined,
+      feed: undefined,
       channel: undefined,
       options: {
         every: EVERY_MIN_MS,
@@ -339,6 +355,22 @@ function openSubscription(
           done = hash;
           return;
         }
+        if (parsed.feed !== undefined && table !== undefined) {
+          counts.queries += 1;
+          const { deliverFeed } = await import("./watch-feed.js");
+          await deliverFeed({
+            session,
+            table,
+            name: parsed.feed.name,
+            handler: parsed.feed.handler,
+            transactional: parsed.feed.transactional,
+            onResync: parsed.feed.onResync,
+            owner: own,
+            token,
+            stopped: () => stopped,
+          });
+          return;
+        }
         await parsed.wake?.handler();
       } catch (error) {
         counts.errors += 1;
@@ -396,6 +428,13 @@ function openSubscription(
     return chain;
   };
 
+  const releaseLease = (): Promise<void> => {
+    if (parsed.feed === undefined || table === undefined) return Promise.resolve();
+    return import("./watch-feed.js").then((mod) =>
+      mod.releaseFeed(session, table, parsed.feed?.name ?? "", own),
+    );
+  };
+
   const stop = async (): Promise<void> => {
     const inside = watchLocal?.getStore() === own;
     if (!watchLocalKnown) void ensureWatchLocal();
@@ -412,8 +451,13 @@ function openSubscription(
       }
     }
     // The running handler is the chain. Waiting for it here never returns.
-    if (inside) return;
+    // The feed lock is dropped now so a standby can take the name.
+    if (inside) {
+      await releaseLease();
+      return;
+    }
     await chain;
+    await releaseLease();
   };
 
   if (hub !== undefined && channel !== undefined) {
@@ -768,6 +812,7 @@ function parseArgs(table: string | undefined, args: readonly unknown[]): Parsed 
     return {
       live: undefined,
       wake: { handler: handler as () => unknown },
+      feed: undefined,
       channel,
       options: readOptions(args[2]),
     };
@@ -779,6 +824,7 @@ function parseArgs(table: string | undefined, args: readonly unknown[]): Parsed 
     return {
       live: undefined,
       wake: { handler: first as () => unknown },
+      feed: undefined,
       channel: undefined,
       options: readOptions(second),
     };
@@ -792,15 +838,35 @@ function parseArgs(table: string | undefined, args: readonly unknown[]): Parsed 
     return {
       live: { query: first, handler: third as (rows: unknown) => unknown },
       wake: undefined,
+      feed: undefined,
       channel: undefined,
       options: readOptions(second),
     };
   }
   if (typeof second !== "function") fail("OKM1121", "watch() needs a function.");
+  if (typeof first.feed === "string") {
+    const onResync = first.onResync;
+    if (onResync !== undefined && typeof onResync !== "function") {
+      fail("OKM1121", "watch() onResync must be a function.");
+    }
+    return {
+      live: undefined,
+      wake: undefined,
+      feed: {
+        name: feedName(first.feed),
+        handler: second as FeedCall["handler"],
+        transactional: second.length >= 2,
+        onResync: onResync as FeedCall["onResync"],
+      },
+      channel: undefined,
+      options: readOptions(first, true),
+    };
+  }
   if (isQuery(first)) {
     return {
       live: { query: first, handler: second as (rows: unknown) => unknown },
       wake: undefined,
+      feed: undefined,
       channel: undefined,
       options: {},
     };
@@ -808,6 +874,7 @@ function parseArgs(table: string | undefined, args: readonly unknown[]): Parsed 
   return {
     live: undefined,
     wake: { handler: second as () => unknown },
+    feed: undefined,
     channel: undefined,
     options: readOptions(first),
   };
@@ -817,13 +884,19 @@ function isQuery(value: Record<string, unknown>): boolean {
   const keys = Object.keys(value);
   const find = keys.some((key) => FIND_KEYS.has(key));
   const watch = keys.some(
-    (key) => key === "every" || key === "throttle" || key === "onError" || key === "push",
+    (key) =>
+      key === "every" ||
+      key === "throttle" ||
+      key === "onError" ||
+      key === "push" ||
+      key === "feed" ||
+      key === "onResync",
   );
   if (find && watch) fail("OKM1121", "Pass watch options as the argument before the function.");
   return find;
 }
 
-function readOptions(value: unknown): WatchOptions {
+function readOptions(value: unknown, feed = false): WatchOptions {
   if (value === undefined) return {};
   if (!isRecord(value)) fail("OKM1121", "watch() options must be an object.");
   for (const key of Object.keys(value)) {
@@ -832,7 +905,8 @@ function readOptions(value: unknown): WatchOptions {
       key !== "throttle" &&
       key !== "signal" &&
       key !== "onError" &&
-      key !== "push"
+      key !== "push" &&
+      !(feed && (key === "feed" || key === "onResync"))
     ) {
       fail("OKM1121", `watch() does not accept ${key}.`);
     }
@@ -841,6 +915,13 @@ function readOptions(value: unknown): WatchOptions {
     fail("OKM1121", 'watch() push accepts "required".');
   }
   return value as WatchOptions;
+}
+
+function feedName(value: string): string {
+  if (value.length === 0 || value.includes("\u0000") || utf8Size(value) > 63) {
+    fail("OKM1121", "watch feed name must be 1 to 63 bytes.");
+  }
+  return value;
 }
 
 function assertChannel(channel: string): void {

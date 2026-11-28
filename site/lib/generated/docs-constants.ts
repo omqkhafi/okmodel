@@ -15,7 +15,7 @@ export const TESTED_MAJORS = [15,16,17,18,19] as const;
 export const TESTED_COUNT = 5;
 
 /** Keys in `POSTGRES_FEATURES`. */
-export const FEATURE_COUNT = 153;
+export const FEATURE_COUNT = 154;
 
 /** Floor claim, without the tested range. */
 export const FLOOR_PHRASE = "PostgreSQL 15 and later";

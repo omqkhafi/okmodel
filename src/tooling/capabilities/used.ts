@@ -200,7 +200,10 @@ function note(used: Set<string>, object: CatalogObject): void {
       if (definition.raises !== undefined && definition.raises.length > 0) used.add("fn.raises");
     }
     if (definition.security === "definer") used.add("fn.definerRevoke");
-    if (object.identity.name.startsWith("okm_watch_")) used.add("watch.wake");
+    if (object.identity.name.startsWith("okm_watch_")) {
+      if (definition.body.includes("pg_notify")) used.add("watch.wake");
+      if (definition.body.includes("okm_changes")) used.add("watch.feed");
+    }
   }
   if (
     (object.kind === "view" || object.kind === "materializedView" || object.kind === "sequence") &&

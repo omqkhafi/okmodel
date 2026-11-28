@@ -4010,6 +4010,46 @@ export const FEATURE_RULES: Readonly<Record<string, EngineRule>> = {
       },
     ],
   },
+  "watch.feed": {
+    engine: "postgres",
+    kind: "any",
+    label: "any",
+    line: "PostgreSQL any, tested 15 to 19",
+    docsOnly: false,
+    tested: [18],
+    versions: [
+      {
+        version: 15,
+        available: true,
+        tested: false,
+        note: "",
+      },
+      {
+        version: 16,
+        available: true,
+        tested: false,
+        note: "",
+      },
+      {
+        version: 17,
+        available: true,
+        tested: false,
+        note: "",
+      },
+      {
+        version: 18,
+        available: true,
+        tested: true,
+        note: "",
+      },
+      {
+        version: 19,
+        available: true,
+        tested: false,
+        note: "",
+      },
+    ],
+  },
   "steps.resumable": {
     engine: "postgres",
     kind: "any",

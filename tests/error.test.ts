@@ -124,6 +124,8 @@ const SPEC_CODES = [
   "OKM1932",
   "OKM1933",
   "OKM1934",
+  "OKM1935",
+  "OKM1936",
   "OKM1928",
   "OKM1926",
   "OKM1923",
