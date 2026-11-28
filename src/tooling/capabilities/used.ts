@@ -138,6 +138,21 @@ function note(used: Set<string>, object: CatalogObject): void {
   ) {
     used.add(object.kind === "view" ? "comment.view" : "comment.matview");
   }
+  if (object.kind === "eventTrigger") {
+    used.add("trigger.event");
+    const preset = object.provenance.name;
+    if (
+      preset === "guardDdl" ||
+      preset === "enableRls" ||
+      preset === "auditDdl" ||
+      preset === "notifyDdl"
+    ) {
+      used.add(`trigger.${preset}`);
+    }
+  }
+  if (object.kind === "trigger" && object.definition.referencing !== undefined) {
+    used.add("trigger.referencing");
+  }
   if (object.kind === "extension") {
     used.add("extension");
     if (object.identity.name === "vector") used.add("ext.pgvector");
@@ -243,6 +258,7 @@ function noteComment(used: Set<string>, object: CatalogObject): void {
             kind === "view" ||
             kind === "function" ||
             kind === "trigger" ||
+            kind === "eventTrigger" ||
             kind === "sequence" ||
             kind === "type" ||
             kind === "policy"

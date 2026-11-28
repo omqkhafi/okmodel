@@ -359,6 +359,7 @@ function isUnmanagedKind(object: CatalogObject): boolean {
     case "materializedView":
     case "function":
     case "trigger":
+    case "eventTrigger":
     case "extension":
     case "type":
     case "sequence":

@@ -20,6 +20,7 @@ import { resolvedLevel } from "../../runtime/warnings/level.js";
 import { fieldsOf } from "../../runtime/presets.js";
 import { attachCliDetail } from "../errors/shape.js";
 import type { FilterUse } from "./filter-scan.js";
+import { tagFiresFor } from "../../dialects/pg/event/tags.js";
 
 /** What the rules read from a built schema. */
 export type SchemaAdviceInput = {
@@ -112,6 +113,7 @@ export function schemaAdvice(
     ...procedureFindings(input.catalog, input.tenancy),
     ...seriesFindings(input.catalog),
     ...exclusionBounds(input.catalog),
+    ...eventTagFindings(input.catalog),
   ].sort(compareFound);
   const ignore = config.ignore ?? [];
   const used = new Set<WarningIgnore>();
@@ -177,6 +179,25 @@ export function formatAdvice(advice: readonly SchemaAdvice[]): string {
     (item) => `${item.level} ${item.code} ${item.target}: ${item.reason} -- fix: ${item.fix}`,
   );
   return `${lines.join("\n")}\n`;
+}
+
+function eventTagFindings(catalog: Catalog): Found[] {
+  const rule = warningRule("event-tag");
+  if (rule === undefined) return [];
+  const found: Found[] = [];
+  for (const object of catalog.objects) {
+    if (object.kind !== "eventTrigger" || object.definition.tags === undefined) continue;
+    for (const tag of object.definition.tags) {
+      if (tagFiresFor(object.definition.event, tag)) continue;
+      found.push({
+        rule,
+        table: object.identity.name,
+        target: object.identity.name,
+        reason: `Event trigger ${object.identity.name} on ${object.definition.event} lists ${tag}, which that event does not see.`,
+      });
+    }
+  }
+  return found;
 }
 
 function exclusionBounds(source: Catalog): Found[] {

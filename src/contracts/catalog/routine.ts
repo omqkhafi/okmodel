@@ -39,6 +39,7 @@ export type FunctionInput = {
   readonly volatility?: FunctionVolatility;
   readonly security?: FunctionSecurity;
   readonly searchPath?: string;
+  readonly ownedBy?: string;
   readonly body: string;
   readonly atomic?: boolean;
   readonly routine?: "procedure";
@@ -61,6 +62,7 @@ export type TriggerInput = {
   readonly calls: TriggerCall;
   readonly updateOf?: readonly string[];
   readonly when?: string;
+  readonly referencing?: { readonly old?: string; readonly new?: string };
   readonly owner?: Owner;
   readonly provenance: Provenance;
   readonly dependencies?: readonly ObjectIdentity[];
@@ -121,6 +123,7 @@ export function functionObject(input: FunctionInput): FunctionObject {
     security,
     body: input.body,
     ...(input.searchPath !== undefined ? { searchPath: input.searchPath } : {}),
+    ...(input.ownedBy !== undefined ? { ownedBy: input.ownedBy } : {}),
     ...(atomic ? { atomic: true } : {}),
     ...(procedure ? { routine: "procedure" } : {}),
     ...(input.commits === true ? { commits: true } : {}),
@@ -185,6 +188,7 @@ export function triggerObject(input: TriggerInput): TriggerObject {
   for (const typeName of input.calls.argTypes) assertTypeName(typeName, `trigger ${input.name}`);
   const whenColumns = whenColumnNames(input.when);
   for (const column of whenColumns) assertIdentifier(column, "trigger when column");
+  const referencing = readReferencing(input.name, input.referencing);
   const edges: ObjectIdentity[] = [
     { kind: "table", namespace: input.parent.namespace, name: input.parent.name },
     {
@@ -216,6 +220,7 @@ export function triggerObject(input: TriggerInput): TriggerObject {
     },
     ...(updateOf !== undefined && updateOf.length > 0 ? { updateOf } : {}),
     ...(input.when !== undefined && input.when.length > 0 ? { when: input.when } : {}),
+    ...(referencing !== undefined ? { referencing } : {}),
   };
   return {
     kind: "trigger",
@@ -225,6 +230,31 @@ export function triggerObject(input: TriggerInput): TriggerObject {
     dependencies: normaliseEdges(edges),
     provenance: input.provenance,
     ...(input.comment !== undefined ? { comment: input.comment } : {}),
+  };
+}
+
+/**
+ * Stores transition-table names when the trigger declares them.
+ *
+ * Both names are identifiers. An empty object is omitted.
+ *
+ * @param name - Trigger name, for the error
+ * @param referencing - Author names, when the trigger has the clause
+ * @returns The stored clause, or `undefined`
+ */
+function readReferencing(
+  name: string,
+  referencing: { readonly old?: string; readonly new?: string } | undefined,
+): { readonly old?: string; readonly new?: string } | undefined {
+  if (referencing === undefined) return undefined;
+  const old = referencing.old;
+  const next = referencing.new;
+  if (old === undefined && next === undefined) return undefined;
+  if (old !== undefined) assertIdentifier(old, `trigger ${name} old table`);
+  if (next !== undefined) assertIdentifier(next, `trigger ${name} new table`);
+  return {
+    ...(old !== undefined ? { old } : {}),
+    ...(next !== undefined ? { new: next } : {}),
   };
 }
 

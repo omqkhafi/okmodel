@@ -22,6 +22,7 @@ import type {
   TypeDefinition,
 } from "../../contracts/catalog/types.js";
 import { OkmError } from "../../contracts/error.js";
+import { checkEventTriggers } from "./event-check.js";
 import { canonicalTypeName } from "./type-name.js";
 import { classOf, strictestClass, type MigrationClass } from "./classify.js";
 import type { MigrateConfig } from "./config.js";
@@ -110,6 +111,7 @@ export async function checkMigrations(
   const target = selectTarget(opened.config, flags.target);
   const allowPooler = flags.allowPooler || opened.config.allowPooler === true;
   assertDirectConnection(target.url, allowPooler);
+  const eventLine = await checkEventTriggers(target.url, opened.built.catalog);
   if (target.protected) {
     throw new OkmError(
       "OKM1850",
@@ -147,7 +149,7 @@ export async function checkMigrations(
   if (failures.length > 0) throwFailure(failures, reprintWarnings);
   const summary = `ok ${String(history.length)} migrations\n${CHECK_REPLAY_LIMIT}\n`;
   const skipped = replayed.skips.length === 0 ? "" : `${replayed.skips.join("\n")}\n`;
-  return `${summary}${skipped}${formatFindings(reprintWarnings)}`;
+  return `${summary}${eventLine}${skipped}${formatFindings(reprintWarnings)}`;
 }
 
 /**

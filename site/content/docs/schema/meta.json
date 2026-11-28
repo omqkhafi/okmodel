@@ -36,6 +36,7 @@
     "functions",
     "procedures",
     "triggers",
+    "event-triggers",
     "extensions",
     "several-catalogs"
   ]

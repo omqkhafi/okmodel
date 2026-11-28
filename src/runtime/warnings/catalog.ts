@@ -521,6 +521,20 @@ export const WARNING_RULES: readonly WarningRule[] = [
     safeAlternatives: [alt("OKM2128", "Check start < end, or use one range column.")],
     escapeHatches: [hatch("OKM2128")],
   },
+  {
+    code: "OKM2129",
+    rule: "event-tag",
+    title: "Command tag cannot fire",
+    summary:
+      "An event trigger lists a command tag that its event never sees. sql_drop does not see a create. table_rewrite sees ALTER TABLE only.",
+    fix: "Remove the tag, or move the trigger to ddl_command_end.",
+    defaultLevel: "warn",
+    severity: "low",
+    phase: "check",
+    evidence: "static",
+    safeAlternatives: [alt("OKM2129", "Use a tag the event can see.")],
+    escapeHatches: [hatch("OKM2129")],
+  },
 ];
 
 /**

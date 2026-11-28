@@ -422,6 +422,7 @@ function rewriteIdentity(identity: ObjectIdentity, selected: ReadonlySet<string>
       };
     case "role":
     case "extension":
+    case "eventTrigger":
       return identity;
   }
 }
@@ -457,6 +458,7 @@ function schemaOf(identity: ObjectIdentity): string | undefined {
         : undefined;
     case "role":
     case "extension":
+    case "eventTrigger":
       return undefined;
   }
 }
@@ -477,7 +479,6 @@ const UNEXPRESSED = `
     (select count(*)::int from pg_proc p
       join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = $1 and p.prokind = 'a') as aggregates,
-    (select count(*)::int from pg_event_trigger) as event_triggers,
     (select count(*)::int from pg_rewrite r
       join pg_class c on c.oid = r.ev_class
       join pg_namespace n on n.oid = c.relnamespace
@@ -489,22 +490,15 @@ async function countUnexpressed(
   schemas: readonly string[],
 ): Promise<readonly PullCount[]> {
   let aggregates = 0;
-  let eventTriggers = 0;
   let rules = 0;
   for (const name of schemas) {
     const rows = await query.query(UNEXPRESSED, [name]);
     const row = rows[0];
     aggregates += countCell(row?.aggregates);
-    eventTriggers = countCell(row?.event_triggers);
     rules += countCell(row?.rules);
   }
   return [
     { kind: "aggregate", count: aggregates, reason: "the catalog has no aggregate kind" },
-    {
-      kind: "eventTrigger",
-      count: eventTriggers,
-      reason: "the catalog has no event trigger kind",
-    },
     { kind: "rule", count: rules, reason: "the catalog has no rule kind" },
   ];
 }

@@ -24,6 +24,7 @@ import type {
   CatalogObject,
   ColumnObject,
   ConstraintObject,
+  EventTriggerObject,
   FunctionObject,
   IndexElement,
   IndexObject,
@@ -191,6 +192,8 @@ export function dropObjectSql(object: CatalogObject, schema: string): string | u
       return `drop ${object.definition.routine === "procedure" ? "procedure" : "function"} ${qualify(schema, object.identity.name)}(${object.identity.argTypes.join(", ")})`;
     case "trigger":
       return `drop trigger ${quoteIdent(object.identity.name)} on ${qualify(schema, object.identity.parent.name)}`;
+    case "eventTrigger":
+      return `drop event trigger ${quoteIdent(object.identity.name)}`;
     case "view":
       return `drop view ${qualify(schema, object.identity.name)}`;
     case "materializedView":
@@ -225,6 +228,8 @@ export function createObjectSql(object: CatalogObject, schema: string): string |
       return functionSql(object, schema, false);
     case "trigger":
       return triggerSql(object, schema);
+    case "eventTrigger":
+      return eventTriggerSql(object);
     case "view":
       return viewSql(object, schema, false);
     case "materializedView":
@@ -523,9 +528,81 @@ function triggerSql(object: TriggerObject, schema: string): string {
     })
     .join(" or ");
   const when = definition.when === undefined ? "" : ` when (${definition.when})`;
+  const referencing = transitionSql(definition.referencing);
   const args = definition.calls.argTypes.join(", ");
   const fn = `${qualify(schema, definition.calls.name)}(${args})`;
-  return `create trigger ${quoteIdent(object.identity.name)} ${timing} ${events} on ${qualify(schema, object.identity.parent.name)} for each ${definition.level}${when} execute function ${fn}`;
+  return `create trigger ${quoteIdent(object.identity.name)} ${timing} ${events} on ${qualify(schema, object.identity.parent.name)}${referencing} for each ${definition.level}${when} execute function ${fn}`;
+}
+
+function transitionSql(
+  referencing: { readonly old?: string; readonly new?: string } | undefined,
+): string {
+  if (referencing === undefined) return "";
+  const parts: string[] = [];
+  if (referencing.old !== undefined) parts.push(`old table as ${quoteIdent(referencing.old)}`);
+  if (referencing.new !== undefined) parts.push(`new table as ${quoteIdent(referencing.new)}`);
+  return parts.length === 0 ? "" : ` referencing ${parts.join(" ")}`;
+}
+
+function eventTriggerSql(object: EventTriggerObject): string {
+  const definition = object.definition;
+  const fnSchema =
+    definition.calls.namespace.form === "static" ? definition.calls.namespace.name : "public";
+  const tags =
+    definition.tags === undefined || definition.tags.length === 0
+      ? ""
+      : ` when tag in (${definition.tags.map((tag) => quoteLiteral(tag)).join(", ")})`;
+  return `create event trigger ${quoteIdent(object.identity.name)} on ${definition.event}${tags} execute function ${qualify(fnSchema, definition.calls.name)}()`;
+}
+
+/**
+ * `ALTER EVENT TRIGGER` for the enabled mode.
+ *
+ * `origin` is `ENABLE` with no suffix.
+ *
+ * @param name - Event trigger name
+ * @param enabled - Stored mode
+ * @returns The statement
+ */
+export function alterEventTriggerSql(
+  name: string,
+  enabled: "origin" | "disabled" | "replica" | "always",
+): string {
+  const mode =
+    enabled === "disabled"
+      ? "disable"
+      : enabled === "replica"
+        ? "enable replica"
+        : enabled === "always"
+          ? "enable always"
+          : "enable";
+  return `alter event trigger ${quoteIdent(name)} ${mode}`;
+}
+
+/**
+ * `ALTER EVENT TRIGGER ... RENAME TO`.
+ *
+ * @param from - Current name
+ * @param to - New name
+ * @returns The statement
+ */
+export function renameEventTriggerSql(from: string, to: string): string {
+  return `alter event trigger ${quoteIdent(from)} rename to ${quoteIdent(to)}`;
+}
+
+/**
+ * `ALTER ... OWNER TO` for a function or an event trigger.
+ *
+ * @param sql - The object the statement names, already qualified
+ * @param owner - Role name
+ * @returns The statement
+ */
+export function ownerSql(
+  kind: "function" | "event trigger" | "table",
+  sql: string,
+  owner: string,
+): string {
+  return `alter ${kind} ${sql} owner to ${quoteIdent(owner)}`;
 }
 
 function dollarQuote(body: string): string {

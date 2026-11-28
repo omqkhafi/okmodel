@@ -73,7 +73,7 @@ export async function rolesCli(
   const url = migrationUrl(config, target);
   if (id === "access") {
     const report = await accessReport(config, url, parsed.operands[0] ?? "");
-    const text = `${report.grants.map((grant) => `${grant.object} ${grant.privilege} ${grant.role} grantor ${grant.grantor}`).join("\n")}\n`;
+    const text = `${report.grants.map((grant) => `${grant.object} ${grant.privilege} ${grant.role} grantor ${grant.grantor}`).join("\n")}\n${report.eventTriggers}\n`;
     human(text);
     return { text, data: report, warnings: [], outFile: null };
   }

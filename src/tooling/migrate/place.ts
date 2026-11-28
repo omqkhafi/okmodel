@@ -54,6 +54,10 @@ function tableHomes(
     if (object.kind !== "table" && object.kind !== "view" && object.kind !== "materializedView") {
       continue;
     }
+    if (object.provenance.name === "auditDdl" && object.identity.namespace.form === "static") {
+      homes.set(object.identity.name, object.identity.namespace.name);
+      continue;
+    }
     const home =
       object.owner === "external"
         ? (externalNamespaces.get(object.identity.name) ?? namespace)
@@ -68,7 +72,17 @@ function relocateObject(
   homes: ReadonlyMap<string, string>,
   namespace: string,
 ): CatalogObject {
+  if (object.provenance.name === "auditDdl") return object;
   const dependencies = relocateEdges(object.dependencies, homes, namespace);
+  if (object.kind === "eventTrigger") {
+    const calls = relocateCalls(object.definition.calls, namespace);
+    if (dependencies === object.dependencies && calls === object.definition.calls) return object;
+    return {
+      ...object,
+      definition: { ...object.definition, calls },
+      dependencies,
+    };
+  }
   if (object.kind === "extension") {
     if (object.definition.schema === "public" && namespace !== "public") {
       return { ...object, definition: { ...object.definition, schema: namespace }, dependencies };
@@ -182,7 +196,13 @@ function relocateIdentity(
   homes: ReadonlyMap<string, string>,
   namespace: string,
 ): ObjectIdentity {
-  if (identity.kind === "role" || identity.kind === "extension") return identity;
+  if (
+    identity.kind === "role" ||
+    identity.kind === "extension" ||
+    identity.kind === "eventTrigger"
+  ) {
+    return identity;
+  }
   if (
     identity.kind === "column" ||
     identity.kind === "index" ||
