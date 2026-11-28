@@ -137,5 +137,8 @@ test("unmapped registry keys are a list and the pilot keys are mapped", () => {
   expect(unmapped).not.toContain("column.generated");
   expect(unmapped).not.toContain("constraint.exclusion");
   expect(unmapped).not.toContain("temporal.keys");
-  expect(unmapped.length).toBe(Object.keys(POSTGRES_FEATURES).length - 3);
+  expect(unmapped).not.toContain("migrate.fleet");
+  expect(unmapped).not.toContain("migrate.fleet.canary");
+  expect(unmapped).not.toContain("migrate.fleet.ensureHead");
+  expect(unmapped.length).toBe(Object.keys(POSTGRES_FEATURES).length - 6);
 });

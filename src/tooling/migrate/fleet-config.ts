@@ -7,7 +7,7 @@
 
 import { OkmError } from "../../contracts/error.js";
 import { tagOutcome } from "../cli/outcome.js";
-import { estimateMs } from "./weight.js";
+import { estimateMs } from "./weight-rate.js";
 import type { StepWeight } from "./classify.js";
 import type { StoredMigration } from "./files.js";
 

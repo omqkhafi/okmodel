@@ -205,6 +205,8 @@ const PATH_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/docs/migrations/failures": CircleX,
   "/docs/migrations/waiting-for-locks": Hourglass,
   "/docs/migrations/environments": Server,
+  "/docs/migrations/fleet": Network,
+  "/docs/migrations/database-per-tenant": Building2,
   "/docs/reference/okid": Hash,
   "/docs/reference/environment-variables": Variable,
   "/docs/ai/skills": Sparkles,

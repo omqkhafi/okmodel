@@ -14,15 +14,12 @@ import { aboutRows, ESTIMATE_SQL, type RowEstimate } from "./estimate.js";
 import { probeConnection, probeTarget, type ProbeCount } from "./data-probe.js";
 import type { PlanStep } from "./plan.js";
 import type { StepWeight } from "./classify.js";
+import { MS_PER_MILLION } from "./weight-rate.js";
+
+export { estimateMs, MS_PER_MILLION } from "./weight-rate.js";
 
 /** Estimated rows above which apply needs `--allow-blocking`. */
 export const BLOCKING_ROWS = 100_000;
-
-/** Milliseconds per million rows. Measured on real servers, order of magnitude only. */
-export const MS_PER_MILLION: Readonly<Record<StepWeight, number>> = {
-  blocking: 45_000,
-  rewrite: 1_300,
-};
 
 /** Rows in one table: a number, or `least` when the count stopped at the limit. */
 export type TableRows = { readonly rows: number; readonly least: boolean };
@@ -51,17 +48,6 @@ export type Weighted = {
  */
 export function stepTables(step: PlanStep): readonly string[] {
   return step.tables ?? touchedTables(step.sql, step.lock, undefined);
-}
-
-/**
- * Estimated duration.
- *
- * @param weight - Step weight
- * @param rows - Rows in the table
- * @returns Milliseconds, rounded
- */
-export function estimateMs(weight: StepWeight, rows: number): number {
-  return Math.round((rows / 1_000_000) * MS_PER_MILLION[weight]);
 }
 
 /**
