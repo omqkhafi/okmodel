@@ -1,112 +1,51 @@
 # OKModel repository rules
 
-This file is the single source of rules for this repository. `CLAUDE.md` imports it.
+Operational rules for an agent in this repository. The rules in force are [docs/rules.md](docs/rules.md). Decisions are one file each under `docs/decisions/`. Start at [docs/decisions/INDEX.md](docs/decisions/INDEX.md). `CLAUDE.md` imports this file.
 
-## Toolchain
+## Commands
 
-- Use Bun only (`bun`, `bunx`). Do not use npm, pnpm, yarn, or another package manager.
-- TypeScript 7 is the compiler for typecheck and declaration emit (`tsc`). TypeScript 7.0 has no stable programmatic API and ships no language server, so nothing in `src/`, the typecheck, or the repository checks imports it. `bun run editor-check` spawns TypeScript 6 (`typescript-editor`, dev-only) over stdio for hover, completions, and diagnostics. That package is never imported and never bundled.
-- Type correctness uses `expect-type` (`expectTypeOf`) in `*.test-d.ts` files compiled by that typecheck (D114).
-- `bun run type-cost` reads `tsc --extendedDiagnostics` and prints the table. It does not fail on a number. Check time is reported.
-- Core hashing is pure-TypeScript SHA-256 in `contracts`. No `Bun` or Node crypto globals, and no `node:*` imports, in that layer.
-- `@ark/attest` may run only in its own CI job, on `@typescript/typescript6` (`tsc6`). It is not part of `bun run check`.
+Use Bun only. The version is `.bun-version`.
 
-## Package layout
+- `bun test tests/<name>.test.ts` runs one file.
+- `bun run verify:fast` once, then push once. It checks format, lint, typecheck, layers, purity, docs, and the readme, then runs `bun test --changed` against the merge-base with `origin/main`.
+- `bun run db:up` and `bun run db:down` start and stop the Postgres topology. `POSTGRES_VERSION` selects a major (default 17). Tested majors are 15, 16, 17, 18, and 19. Leave `OKM_PRIMARY_PORT=55432`, `OKM_REPLICA_A_PORT=55433`, and `OKM_REPLICA_B_PORT=55434` set when those ports are already in use. The primary URL is `postgres://okm:okm@127.0.0.1:55432/okm`.
+- A Postgres test is `REQUIRE_DOCKER=1 bun test tests/<name>-pg.test.ts` with the topology up. Run the parent test for a worker. The parent spawns `bun tests/<name>.worker.ts`.
+- `bun run decision -- D###` prints one decision. `bun run decision:next` prints the next free number. `bun run decisions:index` rewrites the index.
+- When a rebase brings `docs/okmodel-decisions.md` back, check out main's copy, run `bun run decisions:split`, and delete the old file.
 
-- The published package is `okmodel` at the repository root: ESM only, Apache-2.0, `sideEffects: false`.
-- Other packages live under `packages/*` as Bun workspaces. Their dependencies never go into the root `package.json`.
-- Normative docs are draft 26 (`docs/okmodel-api-design.md`) and decisions D1–D354. The repository implements that spec through the 0.10.2 release. The M0 spike implementations are on the `m0-spikes` tag. `packages/spikes` keeps the row-type and operator fixtures the type report measures. Findings stay in `docs/m0-findings.md`.
+Do not run `bun run check` to finish a pull request. `gate / check` is the required status. Do not poll CI unless the prompt says to wait. Do not merge `main` unless the push is rejected for a real conflict. Do not push an empty commit.
 
-## Errors
+## Merge flow
 
-- The error class is `OkmError`. Error codes are `OKM1xxx`.
+Agents never merge and never tag. Never publish, and never run `bun run bump release` or `bun run bump next --publish`, unless the prompt says so. Do not call the auto-merge API.
 
-## Layers
+A pull request has no issue, no milestone, and no `Closes #N` line. One `type:` label and at least one `area:` label. Do not add `needs: postgres` unless a Postgres test is touched. That label does not start the suite. A pull request runs Postgres 18 when the diff touches `src/dialects`, `src/runtime`, or `src/tooling/migrate`.
 
-Contracts is the lowest layer, tooling the highest. Imports only go down.
+Do not edit `changelog.md` or bump the version on a pull request.
 
-- contracts
-- dialects
-- adapters
-- runtime
-- tooling
+## Workflow files
 
-A layer may import layers below it. It must not import a layer above it. Adapters import contracts or other adapter files, not dialects. The order is the rank map in `scripts/layers.ts`. `bun run layers-check` enforces it.
+Edit a workflow only when the prompt allows it, or when a workflow bug blocks CI. That fix is the smallest change, its own commit, and named in the first line of the report.
 
-## Scripts
+## Quality
 
-- `bun run check` runs format, lint, typecheck, `editor-check`, `type-cost`, `layers-check`, `core-purity`, `docs:check`, `readme:check`, the compiler-API scan, `bundle-purity`, build, tests, publint, arethetypeswrong, and the size report. It does not run `@ark/attest`. A pull request runs `gate / check`. After merge is manual (`workflow_dispatch` on `after-merge.yml`, D331). There is no push-to-main suite and no nightly run. The required status is `gate / check`.
-- `bun run verify:fast` once, then push once, then stop. It checks format, lint, typecheck, layers, purity, docs, and the readme, then runs `bun test --changed` against the merge-base with `origin/main`. Agents never merge and never tag. Do not poll CI unless the prompt says to wait for the run. Do not merge `main` into the branch unless the push is rejected for a real conflict. Do not push an empty commit.
-- `bun run build` writes JavaScript with `bun build --target node` and declarations with `tsc` (`emitDeclarationOnly`).
-- `bun run typecheck` runs `scripts/ts-range.ts`, then `tsc --noEmit` on the raw fixtures.
-- `bun run lint` uses oxlint with type-aware rules. `bun run format:check` uses oxfmt. `bun run format` rewrites formatting.
-- `bun run layers-check` fails when an import goes upward.
-- `bun run core-purity` fails on a `node:*` import below tooling and on runtime `dependencies`. The postgres.js adapter may import `node:net` to unref an idle pool socket. The node-postgres adapter may import it to cancel a query. `src/dialects/pg/catalog-require.js` may import `node:module` to load the catalog compiler on the first `.catalog` read. The loader is JavaScript so a consumer typecheck with `types: []` does not need Node types.
-- `bun run docs:pack` generates public package docs from the site and the error registry into `docs/`. `bun run docs:check` runs that generate step, then checks relative links, `§` references, decision numbers, site→pack mapping, and public-doc hygiene.
-- `bun run readme:check` fails when `README.md` contains a relative link or an image that is not an absolute `https://` URL.
-- `bun test` covers package exports, the bins, the check fixtures, PGlite, and the schema fixtures. Postgres tests run when the topology is up; they fail instead of skipping when `REQUIRE_DOCKER=1`. PGlite and the in-process wire server stay in that run.
-- `bun run bump` moves the version at publish time. `next --publish` sets `<next minor>-next.N` and does not touch the changelog. A pull request does not run it. `release` fills an empty `## Unreleased` from merged pull request titles, drops the suffix, and promotes that section. From a bare `X.Y.Z` it takes the next patch or minor by name (`release 0.10.4`). With an empty Unreleased and no reachable `vX.Y.Z` tag it stops before writing and says to run `git fetch --tags`. `patch`, `minor`, `major`, and `--set` still promote the changelog. It does not publish.
-- `bun run release-check -- --base <git-rev>` fails when a pull request changes `package.json`'s version (unless that change is `next --publish` or a release) or edits `changelog.md` outside a release. An unchanged version and changelog pass. A release that promotes Unreleased is allowed, including a cut from one bare version to the next when the new `## vX.Y.Z` section has the notes. Before `vX.Y.Z` is tagged, notes added under that heading are allowed and the version stays. CI runs it on pull requests. A pull request whose changed files are all under `.github/` is exempt and prints why; one file outside `.github/` is checked.
-- `bun run db:up` and `bun run db:down` start and stop the Postgres topology. `POSTGRES_VERSION` selects a major (default 17). 15, 16, 17, 18, and 19 are tested. Another integer major runs with a one-line note.
-- `bun run test:postgres` runs every test file against that topology. On CI the four suite shards (`--shard`) run only the files that need Postgres: those whose import closure reaches a module reading `REQUIRE_DOCKER` (the harness gate). Heavy files are pinned, `dist/` files go to `tx`, and every other file goes to the shard its path hash names, so adding or deleting a file moves only that file. Every file still runs in a `test / <group>` job. `POSTGRES_EXCLUSIONS` in `scripts/postgres-suite.ts` is the only list of files left out, and each entry has a reason. `bun run test:tarball` packs the tarball and runs the README and the quickstart on the topology.
-- `bun run verify` runs that suite in Docker on this machine. One version by default (`POSTGRES_VERSION`, or 17). `--all` runs every supported major. CI stays the authority for a release. A pull request runs Postgres 18 when the diff touches `src/dialects`, `src/runtime`, or `src/tooling/migrate`. The `needs: postgres` label does not start that suite. After merge is manual and covers tested majors 15 through 19 for the suite and the tarball. Support is PostgreSQL 15 and later. A newer major is untested until it is added to the tested list.
-- `bun run type-cost` writes TypeScript 7 extended diagnostics as JSON and prints the table. A number does not fail the run.
-- `bun run bundle-purity` fails when a runtime bundle contains an npm package, or when `src/` imports the `@okmodel/harness` barrel.
-- Size and type cost are reports. `scripts/size-report.ts` writes the pull-request job summary: startup, each connect graph, the runtime entry, adapters, the CLI chunk sum, tarball size, the type-cost table, and a cold-import median of 10. Deltas are against `tests/fixtures/size-report.json`, updated by hand at release prep. There is no byte ceiling, no cold-import gate, and no type-cost ceiling. `layers-check`, `core-purity`, and `bundle-purity` stay structural guards. `bun run size` still fails when an export keeps an unrelated module.
-- `bun run attest` measures a trivial type with `@ark/attest` on TypeScript 6, outside `bun run check`.
-- `bun run bench` writes a JSON timing for the 200-table fixture. Baselines live in `packages/bench/baselines` and are not enforced.
-- `bun run catalog-bench` times hash, canonical form, and topological order on the 200-table fixture. It prints the sample and does not enforce a ceiling.
-
-## Docs
-
-Edit the handbook under `site/content/docs`. Public package pages under `docs/*.md` (and `docs/errors/OKM####.md`) are generated by `bun run docs:pack` from those site pages and from the error registry; a short hand-kept stop-line list (`guide.md`, `quickstart.md`) stays in git because no single site page expresses those executable fixtures. README fence fixtures live in `tests/fixtures/readme-examples.md`. Normative internal notes (`docs/okmodel-api-design.md`, `docs/okmodel-decisions.md`, and the other `INTERNAL_DOCS`) stay hand-written in `docs/`. The spec is draft 26. Decisions run D1–D354. GitHub organization is [docs/github.md](docs/github.md) (D206). A pull request has no `Closes #N` line and no milestone. Agents do not open issues. A pull request runs the Frameworks examples job when the diff touches `examples/`, `src/runtime/`, `src/dialects/`, or Frameworks pages.
-
-Do not read `docs/okmodel-decisions.md`, `docs/okmodel-api-design.md`, or `docs/guide.md` in full. Grep by decision number or heading.
-
-## Engineering standards
-
-D129. Built for performance, speed, lightness, and cold start, not only to pass tests.
-
-- Nothing enters the runtime entry (`src/contracts/index.ts`) without need. Tooling stays out of it. No module-level computation. Lazy work. `sideEffects: false`.
-- No duplicated logic: one helper, one place.
-- Small, obvious public API. Clear names. Precise types. Actionable errors.
-- No avoidable allocation or repeated work on hot paths.
-- Every report states runtime entry size (minified and gzip), cold import, and any type-cost change. Those numbers are a report. They are not a merge gate.
-- No compatibility between OKModel versions. Extend a type. Do not add a second shape that means the same thing.
-- TypeScript first. Raw `sql` is the fallback when the typed API cannot say it.
-- Every step ends with a quality pass: one place for each rule, and the dead path from that step removed.
-- Agents never merge and never tag. Workflow files are edited only when the prompt allows it, or when a workflow bug blocks CI. That fix is the smallest change, its own commit, and named in the first line of the report.
-- A pull request has no issue, no milestone, and no `Closes #N` line.
-- Every prompt ends with a self-review against these rules before the report.
+Every change ends with a quality pass on what you touched and its direct neighbors: one place for each rule, and the dead path from that step removed. Self-review against `docs/rules.md` before the report.
 
 ## Cursor Cloud
 
-The Cloud Agent image has the Bun version from `.bun-version` on `/usr/local/bin`. `site/` is not a workspace and has its own lockfile; install it with `bun install --cwd site --frozen-lockfile`.
+The image installs the Bun version from `.bun-version`. `site/` is not a workspace. Install it with `bun install --cwd site --frozen-lockfile`.
 
-Boot starts Docker, then `bun run db:up` with `OKM_PRIMARY_PORT=55432`, `OKM_REPLICA_A_PORT=55433`, and `OKM_REPLICA_B_PORT=55434`. Leave those set on a rerun so the topology stays on those ports. The primary URL is `postgres://okm:okm@127.0.0.1:55432/okm`. The docs site listens on port 3333. If `docker info` fails, run `sudo service docker start`.
+Boot starts Docker, then `bun run db:up` with the ports in Commands. The docs site listens on port 3333. If `docker info` fails, run `sudo service docker start`.
 
 ## Claude Code Cloud
 
-- Each session runs in its own isolated VM with its own clone, checked out on a `claude/<random>` session branch. Parallel sessions do not share a checkout, so no worktree is needed. The remote is shared, so each session pushes its own branch name.
-- `gh` reaches GitHub through a proxy that serves the REST API for this repository only. GraphQL is refused, so `gh pr list`, `gh issue list`, and `gh project` fail, and the Projects board is out of reach. Use `gh api repos/omqkhafi/okmodel/...` or the GitHub MCP tools.
-- Agents never merge and never tag. Do not call the auto-merge API.
-- Docker: `sudo service docker start` does not start the daemon here. Run `sudo dockerd` as a background command, wait for `docker info`, then run `bun run db:up` with the ports in the Cursor Cloud section.
-- A foreground command moves to the background after 2 minutes. Run long commands in the background and read their output once.
-- Do not wait for or poll CI unless the prompt says to wait for the run.
-
-## Hygiene
-
-D115: after the M0 gate, P09A removes spike leftovers, dedupes helpers, stabilises flaky tests, and syncs docs. Every later gate (P17, P30, P44, P55, P66, P86, P99, P110, P119) ends with a lighter hygiene step — dead code, duplicated helpers, flaky tests, doc sync, a dependency audit, and the size report read — before `bun run bump release`. Post-0.10 patch trains do the same before their release.
-
-## Changelog
-
-Do not edit `changelog.md` or bump the version on a pull request. A release runs `bun run bump release`, which fills an empty `## Unreleased` from merged pull request titles and promotes it into `## vX.Y.Z — <date>`. `bun run bump next --publish` is only for publishing a prerelease, and it does not touch the changelog. Never append under a shipped `## v…` section.
-
-Area headings inside a large generated group are `contracts`, `dialects`, `adapters`, `runtime`, `tooling`, and `docs`.
+- `gh` reaches GitHub through a proxy for this repository's REST API. GraphQL is refused, so `gh pr list`, `gh issue list`, and `gh project` fail. Use `gh api repos/omqkhafi/okmodel/...`.
+- `sudo service docker start` does not start the daemon. Run `sudo dockerd` in the background, wait for `docker info`, then `bun run db:up` with the ports in Commands.
+- A foreground command moves to the background after 2 minutes.
 
 ## Commits
 
-Every commit message ends with exactly these two trailers and nothing else. No tool attribution line.
+Every commit message ends with exactly these two trailers and nothing else.
 
 ```
 Signed-off-by: Omq Khafi <omqkhafi@gmail.com>
