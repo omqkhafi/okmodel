@@ -1,6 +1,7 @@
 import { Anatomy, AnatomyLine, AnatomyPart } from "@/components/anatomy";
 import { Callout } from "@/components/callout";
 import { featureHeading } from "@/components/feature-heading";
+import { FloorPhrase, SupportPhrase, Tagline } from "@/components/support-phrase";
 import { TerminalSnippet } from "@/components/terminal-snippet";
 import { installDriverForFence, translatePackageScript } from "@/lib/package-managers";
 import { CodeBlock, Pre } from "@fumadocs/base-ui/components/codeblock";
@@ -40,6 +41,9 @@ export function getMDXComponents(components?: MDXComponents): MDXComponents {
     Tab,
     Tabs,
     Callout,
+    SupportPhrase,
+    FloorPhrase,
+    Tagline,
     Anatomy,
     AnatomyLine,
     AnatomyPart,

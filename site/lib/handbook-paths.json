@@ -114,9 +114,13 @@
   "/docs/schema/views",
   "/docs/schema/visibility",
   "/docs/start",
+  "/docs/start/cheat-sheet",
   "/docs/start/first-migration",
+  "/docs/start/first-query",
   "/docs/start/first-schema",
+  "/docs/start/i-want-to",
   "/docs/start/installation",
+  "/docs/start/production",
   "/docs/start/project-structure",
   "/docs/start/why-okmodel"
 ]

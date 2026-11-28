@@ -1,0 +1,97 @@
+---
+title: "First query"
+description: "Define one table, push it, insert a row, and read it back."
+summary: "One table, one insert, and one find are enough for a first query."
+since: "0.10"
+status: stable
+---
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity().primaryKey(),
+  title: t.text(),
+});
+
+export default schema({ tables: [notes] });
+```
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+});
+```
+
+```ts title="query.ts"
+import { connect } from "okmodel/pg/postgresjs";
+
+import schema from "./schema.ts";
+
+const url = process.env.DATABASE_URL;
+if (url === undefined || url.length === 0) throw new Error("DATABASE_URL is not set");
+
+const db = connect(url, { schema });
+const inserted = await db.notes.insert({ title: "Hello" });
+const found = await db.notes.find({ where: { id: inserted.id }, limit: 1 });
+console.log(found[0]?.title);
+await db.close();
+```
+
+```text title="query.out"
+Hello
+```
+
+```sh
+okm push
+```
+
+```text title="push.out"
+target default
+applied push-1
+```
+
+## What it does
+
+`schema.ts` is the table. `okm push` creates it. `query.ts` inserts one row and reads that row back. `id` is omitted on insert. Postgres fills it. `find` asks for that id and returns a list, so the row is `[0]`.
+
+## When to use it
+
+Use this when you want a query running before you learn the rest of the project.
+
+## When not to
+
+Use [First migration](/docs/start/first-migration) when the database must keep a reviewed SQL file. Push writes no SQL file. It is for a database you can recreate.
+
+## Options
+
+| Call | What you pass | What comes back |
+| --- | --- | --- |
+| `insert` | The columns you set. `id` stays omitted. | The stored row. |
+| `find` | `where` and `limit`. | A list. `[0]` is the row, or `undefined` when nothing matched. |
+
+## What the plan shows
+
+Push applies the schema in one step. It does not print a migration file. A later [plan](/docs/start/first-migration#plan) prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+Without `limits` on `connect`, a `find` that omits `limit` is [OKM1101](/docs/reference/errors#okm1101). The message is `find() needs a limit.`
+
+## Version
+
+<SupportPhrase />.
+
+## Gotchas
+
+Run `query.ts` after push. Before push, the table is not there. Point `DATABASE_URL` at a database you can recreate.
+
+## Related
+
+| Next | You use it for |
+| --- | --- |
+| [First schema](/docs/start/first-schema) | The same calls, one at a time. |
+| [First migration](/docs/start/first-migration) | A SQL file instead of push. |

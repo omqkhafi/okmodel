@@ -1,20 +1,11 @@
 ---
 title: "Comments"
 description: "comment is stored and written as COMMENT ON."
+summary: "comment is stored and written as COMMENT ON."
+since: "0.10"
+status: stable
+feature: comment.table
 ---
-
-A comment is catalog text. `okm` writes `COMMENT ON ... IS '...'` after the object exists, in the same transaction. After a drop-and-create of a view or a function, the comment is written again. A rename keeps the comment Postgres already stored on that object.
-
-The declared comment is the text OKM writes. Omitting `comment` means the comment is unmanaged. OKM does not remove it. OKM writes `IS NULL` only when an earlier migration snapshot shows that OKM wrote the comment and the schema no longer declares it. When that snapshot is missing, OKM leaves the database comment alone. `okm check` reports that comment as information (OKM2107). `okm pull` writes it into the schema.
-
-Anyone who can read the catalog can read the comment. PostgREST, pg_graphql, and Supabase publish catalog comments as API docs. Do not put a secret in a comment.
-
-A comment that already exists in the schema is written on the first plan after this version. Newline, tab, and carriage return are stored as written. Other control characters are OKM1122. The text is not trimmed.
-
-### Table and column
-
-`table` takes `comment`. A column takes `.comment()`. An identity sequence takes the comment on `t.identity({ comment })` or `t.integerIdentity({ comment })`. That comment is on the sequence, not the column.
-
 ```ts title="table-comment.ts"
 import { table, t } from "okmodel/pg";
 
@@ -28,7 +19,31 @@ export const notes = table(
 );
 ```
 
-### Index
+## What it does
+
+A comment is catalog text. `okm` writes `COMMENT ON ... IS '...'` after the object exists, in the same transaction. After a drop-and-create of a view or a function, the comment is written again. A rename keeps the comment Postgres already stored on that object.
+
+The declared comment is the text OKM writes. Omitting `comment` means the comment is unmanaged. OKM does not remove it. OKM writes `IS NULL` only when an earlier migration snapshot shows that OKM wrote the comment and the schema no longer declares it. When that snapshot is missing, OKM leaves the database comment alone. `okm check` reports that comment as information (OKM2107). `okm pull` writes it into the schema.
+
+Anyone who can read the catalog can read the comment. PostgREST, pg_graphql, and Supabase publish catalog comments as API docs. Do not put a secret in a comment.
+
+A comment that already exists in the schema is written on the first plan after this version. Newline, tab, and carriage return are stored as written. Other control characters are OKM1122. The text is not trimmed.
+
+### Table [feature="comment.table"]
+
+`table` takes `comment`.
+
+### Column [feature="comment.column"]
+
+A column takes `.comment()`.
+
+### Sequence [feature="comment.sequence"]
+
+An identity sequence takes the comment on `t.identity({ comment })` or `t.integerIdentity({ comment })`. That comment is on the sequence, not the column.
+
+
+
+### Index [feature="comment.index"]
 
 `.comment()` is on the index chain, after the columns and the options.
 
@@ -42,8 +57,61 @@ export const users = table(
 );
 ```
 
-### Other objects
+### View [feature="comment.view"]
 
-A view or materialized view takes `comment` on the options, and `comments` for output columns by name. A function and a trigger take `comment` on their options. An enum takes the comment on `t.enum(name, values, comment)`. A domain takes it on `t.domain(name, base, check, comment)`. A check and a foreign key take `comment` on the object form.
+A view takes `comment` on the options, and `comments` for output columns by name.
+
+### Materialized view [feature="comment.matview"]
+
+A materialized view takes the same `comment` and `comments`.
+
+### Function [feature="comment.function"]
+
+A function takes `comment` on its options.
+
+### Trigger [feature="comment.trigger"]
+
+A trigger takes `comment` on its options.
+
+### Type [feature="comment.type"]
+
+An enum takes the comment on `t.enum(name, values, comment)`. A domain takes it on `t.domain(name, base, check, comment)`.
+
+### Constraint [feature="comment.constraint"]
+
+A check and a foreign key take `comment` on the object form.
 
 Unique constraints, primary keys, extensions, roles, and schemas do not take a comment.
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM2107](/docs/reference/errors#okm2107)
+- [OKM1122](/docs/reference/errors#okm1122)
+
+## Version [feature="comment.table"]
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

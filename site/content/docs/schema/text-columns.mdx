@@ -1,7 +1,20 @@
 ---
 title: "Text"
 description: "Text, varchar, char, and citext."
+summary: "Text, varchar, char, and citext."
+since: "0.10"
+status: stable
 ---
+```ts title="unbounded.ts"
+import { table, t } from "okmodel/pg";
+
+export const people = table("people", {
+  id: t.identity(),
+  name: t.text(), // [!code focus]
+});
+```
+
+## What it does
 
 A string column is text, varchar, char, or citext.
 
@@ -13,14 +26,7 @@ Postgres stores `text`, `varchar`, and `char` with the same representation. The 
 
 `t.text()` is `text`. The TypeScript value is a string. A title, a body, or a name uses it.
 
-```ts title="unbounded.ts"
-import { table, t } from "okmodel/pg";
 
-export const people = table("people", {
-  id: t.identity(),
-  name: t.text(), // [!code focus]
-});
-```
 
 ### Varchar
 
@@ -92,3 +98,38 @@ export default schema({
 </Callout>
 
 Next: [Columns](/docs/schema/columns).
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM1060](/docs/reference/errors#okm1060)
+- [OKM1210](/docs/reference/errors#okm1210)
+- [OKM1020](/docs/reference/errors#okm1020)
+- [OKM1810](/docs/reference/errors#okm1810)
+
+## Version
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

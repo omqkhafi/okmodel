@@ -1,22 +1,11 @@
 ---
 title: "Tenancy"
 description: "A tenant key on every table, for() to scope reads and writes, and the SQL that follows."
+summary: "A tenant key on every table, for() to scope reads and writes, and the SQL that follows."
+since: "0.10"
+status: stable
+feature: tenancy.column
 ---
-Tenancy keeps each tenant's rows apart inside one database. You declare it once on the schema. Every table then stores a tenant key, and every read and write through a scoped client is filtered to one tenant without you writing the filter.
-
-Four terms are used on this page:
-
-- **Tenant key**: the column that says which tenant owns a row. Here it is `tenantId`, a `uuid`.
-- **Guarded**: input cannot set the column. The tenant key is a guarded uuid: an insert takes it from the scope, and a `where` or `set` that names it is refused. [Visibility](/docs/schema/visibility) covers guarded columns in general.
-- **Scope**: the client that `db.for({ tenantId })` returns. Every call on it reads and writes that tenant's rows only.
-- **Tenant filter**: the SQL condition the scope adds, such as `t."tenantId" = $1`.
-
-The tenancy code lives in `okmodel/tenancy` and loads only when you import it.
-
-## The model
-
-The program below declares column tenancy, inserts a note as one tenant, reads it back as that tenant and as another, and prints the SQL. `plans` is a global table, shared by every tenant.
-
 ```ts title="tenancy-model.ts"
 import { connect } from "okmodel/pg/postgresjs";
 import { schema, table, t } from "okmodel/pg";
@@ -73,6 +62,25 @@ plans sql: select t."id", t."code" from "plans" t limit $1
 plans rule: {"rule":"tenancy","contribution":"global plans are shared","provenance":"catalog","source":"tenancy-model.ts:6"}
 ```
 
+## What it does
+
+Tenancy keeps each tenant's rows apart inside one database. You declare it once on the schema. Every table then stores a tenant key, and every read and write through a scoped client is filtered to one tenant without you writing the filter.
+
+Four terms are used on this page:
+
+- **Tenant key**: the column that says which tenant owns a row. Here it is `tenantId`, a `uuid`.
+- **Guarded**: input cannot set the column. The tenant key is a guarded uuid: an insert takes it from the scope, and a `where` or `set` that names it is refused. [Visibility](/docs/schema/visibility) covers guarded columns in general.
+- **Scope**: the client that `db.for({ tenantId })` returns. Every call on it reads and writes that tenant's rows only.
+- **Tenant filter**: the SQL condition the scope adds, such as `t."tenantId" = $1`.
+
+The tenancy code lives in `okmodel/tenancy` and loads only when you import it.
+
+## The model
+
+The program below declares column tenancy, inserts a note as one tenant, reads it back as that tenant and as another, and prints the SQL. `plans` is a global table, shared by every tenant.
+
+
+
 - The insert names only `title`. The scope set `tenantId`, and the row comes back with it.
 - The read added `t."tenantId" = $1` before your `where`. `inspect()` lists that as the `tenancy` rule.
 - The same id read as `globex` returns no row.
@@ -108,6 +116,10 @@ create table "public"."plans" (
 
 `for()` takes a uuid string. `unscoped()` needs a reason, which `inspect()` records. Use it for a support tool or a migration script, not for request handling.
 
+### Column [feature="tenancy.column"]
+
+`columnTenancy` adds one key and filters every call.
+
 ## Choose a tenancy mode
 
 `tenancy` on `schema()` is one of three functions from `okmodel/tenancy`. Omit it and no table gains a key, `for()` is not on the client, and a table that sets `tenancy` is refused.
@@ -117,6 +129,8 @@ create table "public"."plans" (
 | `columnTenancy({ key, type: "uuid" })` | One column. | The tenant filter on every call. |
 | `compositeTenancy({ key: [...], type: "uuid" })` | Several columns, in order. `for()` takes every one. | The tenant filter on every call. |
 | `rlsTenancy({ key, type: "uuid" })` | One column. | The tenant filter, plus row-level security (RLS) policies in Postgres. |
+
+### Key types [feature="tenancy.keyTypes"]
 
 `type` is `"uuid"` in every mode.
 
@@ -150,7 +164,7 @@ export async function add(url: string, organizationId: string, workspaceId: stri
 
 A unique index includes every key, so `index(c.title).unique()` stores `(organizationId, workspaceId, title)`. An ordinary index is prefixed with the first key only.
 
-### Row-level security
+### Row-level security [feature="tenancy.rls"]
 
 Row-level security (RLS) is a Postgres feature: a policy on a table decides which rows a role can see or change. `rlsTenancy()` keeps the tenant filter and adds policies, so a query that bypasses okmodel is still limited to one tenant.
 
@@ -342,3 +356,42 @@ These are thrown by `schema()`, before any connection.
 | [Multi-tenant guide](/docs/guides/multi-tenant) | A full program that isolates two tenants and checks it with `isolation()`. |
 | [Tenant isolation](/docs/concepts/tenant-isolation) | Where the filter applies and its limits. |
 | [Enums and picklists](/docs/schema/enums-arrays-picklists) | One value, a list, or a Postgres enum. |
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM1707](/docs/reference/errors#okm1707)
+- [OKM1708](/docs/reference/errors#okm1708)
+- [OKM1706](/docs/reference/errors#okm1706)
+- [OKM1023](/docs/reference/errors#okm1023)
+- [OKM1060](/docs/reference/errors#okm1060)
+- [OKM1012](/docs/reference/errors#okm1012)
+- [OKM1705](/docs/reference/errors#okm1705)
+- [OKM1701](/docs/reference/errors#okm1701)
+
+## Version [feature="tenancy.column"]
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

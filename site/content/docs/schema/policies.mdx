@@ -1,10 +1,11 @@
 ---
 title: "Policies"
 description: "Keyed row-level security policies, session values, and the role a statement runs as."
+summary: "Keyed row-level security policies, session values, and the role a statement runs as."
+since: "0.10"
+status: stable
+feature: policies.table
 ---
-
-A policy is a keyed object on `table()`. The key is the stored name. Import `okmodel/policy` in the file that calls `schema()` before `schema()` runs when a table sets `policies` or `rls`. `okm pull` writes `import "okmodel/policy"` for the same reason. Session values still come from `okmodel/session`.
-
 ```ts
 import { schema, table, t } from "okmodel/pg";
 import "okmodel/policy";
@@ -26,7 +27,23 @@ const notes = table(
 );
 ```
 
-`for` is `select`, `insert`, `update`, `delete`, or `all`. The default is `all`. One policy is one command. Compose several policies with ordinary functions. `as` is `permissive` (the default) or `restrictive`. Permissive policies OR. Restrictive policies AND.
+## What it does
+
+## Policy [feature="policies.table"]
+
+A policy is a keyed object on `table()`. The key is the stored name. Import `okmodel/policy` in the file that calls `schema()` before `schema()` runs when a table sets `policies` or `rls`. `okm pull` writes `import "okmodel/policy"` for the same reason. Session values still come from `okmodel/session`.
+
+
+
+`for` is `select`, `insert`, `update`, `delete`, or `all`. The default is `all`. One policy is one command. Compose several policies with ordinary functions. `as` is `permissive` (the default) or `restrictive`.
+
+### Permissive [feature="policies.permissive"]
+
+Permissive policies OR.
+
+### Restrictive [feature="policies.restrictive"]
+
+Restrictive policies AND.
 
 `to` is a role key from the roles config, a role name, or a list. The default is `app`. It is never `PUBLIC`. Write `to: "public"` when the policy is for PUBLIC. Creating that policy, or widening an existing policy to PUBLIC, is a protected step (`--allow-protected`), the same as a grant to PUBLIC. `using` and `check` take a `where` object, an expression, `true`, `false`, or `sql`.
 
@@ -57,3 +74,42 @@ An undeclared policy on a managed table is drift. OKM does not drop it unless th
 Policies are not inherited by partitions. A grant on a partition bypasses the parent policies. `TRUNCATE` ignores row security.
 
 A count or a backfill under `FORCE`, or under `rlsTenancy`, does not report zero when the role cannot see the rows. A table with the unscoped select policy is counted with `app.unscoped`. Anything else is OKM1926. A backfill under `FORCE` needs a migration role with `BYPASSRLS` or a superuser. An RDS master user was not verified.
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM2115](/docs/reference/errors#okm2115)
+- [OKM2116](/docs/reference/errors#okm2116)
+- [OKM1923](/docs/reference/errors#okm1923)
+- [OKM1823](/docs/reference/errors#okm1823)
+- [OKM2112](/docs/reference/errors#okm2112)
+- [OKM1925](/docs/reference/errors#okm1925)
+- [OKM2110](/docs/reference/errors#okm2110)
+- [OKM2111](/docs/reference/errors#okm2111)
+
+## Version [feature="policies.table"]
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

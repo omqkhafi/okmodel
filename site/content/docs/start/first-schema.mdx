@@ -1,7 +1,23 @@
 ---
 title: "First schema"
 description: "Define the table, push it, then insert, find, one, count, exists, update, and delete."
+summary: "Define the table, push it, then insert and read a row."
+since: "0.10"
+status: stable
 ---
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity().primaryKey(),
+  title: t.text(),
+});
+
+export default schema({ tables: [notes] });
+```
+
+## What it does
+
 Define a table, push it, and read a row back.
 
 You need [Installation](/docs/start/installation). That page wrote `schema.ts` and `db.ts`. `DATABASE_URL` points at a Postgres database you can drop. The outputs below are from an empty database. The first identity value is the string `"1"`. Run each script with `bun run <file>`. Re-running insert changes ids: the next identity value is `"2"`, then `"3"`, and so on.
@@ -19,16 +35,7 @@ You need [Installation](/docs/start/installation). That page wrote `schema.ts` a
 
 [Installation](/docs/start/installation) saved `schema.ts`. `table()` stores the columns of `notes`. `id` is `t.identity().primaryKey()`. That makes `id` the primary key. `t.identity()` is a `bigint`, generated always. Insert omits `id`. The default codec is a string. A key of more than one column is the `primaryKey` option. [Keys](/docs/schema/keys-and-identity#keys).
 
-```ts title="schema.ts"
-import { schema, table, t } from "okmodel/pg";
 
-export const notes = table("notes", {
-  id: t.identity().primaryKey(),
-  title: t.text(),
-});
-
-export default schema({ tables: [notes] });
-```
 
 </Step>
 
@@ -294,3 +301,37 @@ The insert wrote the row. `find` and `one` read it back. You're now ready to use
 | [First migration](/docs/start/first-migration) | Generate the first SQL file, then apply one change. |
 | [Queries](/docs/queries) | The rest of the calls on a table. |
 | [Safe use](/docs/operate/using-okmodel-safely) | Pin the lockfile, wait before updating, and read provenance. |
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM1850](/docs/reference/errors#okm1850)
+- [OKM1101](/docs/reference/errors#okm1101)
+- [OKM1102](/docs/reference/errors#okm1102)
+
+## Version
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

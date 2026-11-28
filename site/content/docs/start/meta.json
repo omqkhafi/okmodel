@@ -1,4 +1,15 @@
 {
   "title": "Get started",
-  "pages": ["index", "why-okmodel", "installation", "first-schema", "project-structure", "first-migration"]
+  "pages": [
+    "index",
+    "why-okmodel",
+    "installation",
+    "first-query",
+    "first-schema",
+    "project-structure",
+    "first-migration",
+    "production",
+    "cheat-sheet",
+    "i-want-to"
+  ]
 }

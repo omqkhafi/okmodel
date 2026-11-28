@@ -1,7 +1,26 @@
 ---
 title: "Indexes"
 description: "indexes receives column handles and returns an array of index calls."
+summary: "indexes receives column handles and returns an array of index calls."
+since: "0.10"
+status: stable
+feature: index.partial
 ---
+```ts title="one-column.ts"
+import { index, table, t } from "okmodel/pg";
+
+export const notes = table(
+  "notes",
+  {
+    id: t.identity(),
+    title: t.text(),
+  },
+  { indexes: (columns) => [index(columns.title)] }, // [!code focus]
+);
+```
+
+## What it does
+
 <Callout type="info" title="Where this fits">
 The columns exist. This page adds an index the planner can use. A unique constraint stays on [Keys](/docs/schema/keys-and-identity#keys). A rule the row must pass is a [check](/docs/schema/checks).
 </Callout>
@@ -20,7 +39,29 @@ An empty call is `Index on notes needs a column.` A value that is not a handle i
 
 `index(...)` takes column handles, in index order. One argument may instead be an expression from `okmodel/expr`, or `sql` when the expression has no typed form. Each column argument is `columns.field`. The first argument is the first key of the index. The index is named `{table}_{columns}_idx`, using the SQL column names joined by `_`. `.name("lookup_title")` stores that SQL name instead. A name longer than 63 bytes is OKM1122 when the plan is built. `okm pull` writes `.name()` when the database name is not the generated one.
 
-`.where()` is a partial index. The argument is a where object, an expression, or `sql`. `.using("gin" | "gist" | "brin" | "hash" | "spgist")` sets the access method. btree is the default and is not stored. `.include(columns.id)` adds covering columns. `columns.email.desc()`, `.nullsFirst()`, `.nullsLast()`, and `.ops("text_pattern_ops")` set order and the operator class. `.unique({ nullsNotDistinct: true })` is the Postgres 15 form. `.with({ fillfactor: 90 })` sets storage parameters. The keys are typed for btree, gin, gist, and brin. An extension method such as hnsw accepts a record. `.comment("...")` is the index comment.
+#### Partial [feature="index.partial"]
+
+`.where()` is a partial index. The argument is a where object, an expression, or `sql`.
+
+#### Expression [feature="index.expression"]
+
+One argument may be an expression from `okmodel/expr`, or `sql` when the expression has no typed form.
+
+#### Covering [feature="index.covering"]
+
+`.include(columns.id)` adds covering columns.
+
+#### Ordering [feature="index.ordering"]
+
+`columns.email.desc()`, `.nullsFirst()`, `.nullsLast()`, and `.ops("text_pattern_ops")` set order and the operator class.
+
+#### Nulls not distinct [feature="index.nullsNotDistinct"]
+
+`.unique({ nullsNotDistinct: true })` stores nulls as not distinct. The chip on this heading is the floor.
+
+#### Storage [feature="index.storage"]
+
+`.with({ fillfactor: 90 })` sets storage parameters. `.using("gin" | "gist" | "brin" | "hash" | "spgist")` sets the access method. btree is the default and is not stored. The keys are typed for btree, gin, gist, and brin. An extension method such as hnsw accepts a record. `.comment("...")` is the index comment.
 
 The planner owns `CONCURRENTLY`. There is no `.concurrently()` on the chain. A new table adds the index with `create index`. A table that already exists adds it with `create index concurrently`. A storage-parameter change rebuilds the index: create a new one concurrently under a temporary name, drop the old one, and rename. `ALTER INDEX ... SET` changes reloptions only and does not rebuild.
 
@@ -30,18 +71,7 @@ The planner owns `CONCURRENTLY`. There is no `.concurrently()` on the chain. A n
 
 One column is one index. This one is `notes_title_idx`.
 
-```ts title="one-column.ts"
-import { index, table, t } from "okmodel/pg";
 
-export const notes = table(
-  "notes",
-  {
-    id: t.identity(),
-    title: t.text(),
-  },
-  { indexes: (columns) => [index(columns.title)] }, // [!code focus]
-);
-```
 
 #### order
 
@@ -204,3 +234,42 @@ A unique constraint and a unique index are different objects. A constraint belon
 ### Tenant tables
 
 On a tenant table an ordinary index leads with the tenant key, unless this index calls `.global("reason")` or the table sets `tenantIndexes: false`. `.scoped()` puts the key first on that ordinary index. A unique index is then unique inside one tenant: two tenants may store the same value. A `using` index is not prefixed. The default and `.scoped()` both throw OKM1706 when the columns do not already lead with the tenant key: `Index on notes starts with title. A using tail is not prefixed.` `.global("reason")` is the call that works. Putting the tenant key first in the declaration does not prefix a `using` tail. An index that already leads with the key is left as written. See [tenancy](/docs/schema/tenancy#on-the-schema).
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM1060](/docs/reference/errors#okm1060)
+- [OKM1122](/docs/reference/errors#okm1122)
+- [OKM1848](/docs/reference/errors#okm1848)
+- [OKM1903](/docs/reference/errors#okm1903)
+- [OKM2101](/docs/reference/errors#okm2101)
+- [OKM2103](/docs/reference/errors#okm2103)
+- [OKM2104](/docs/reference/errors#okm2104)
+- [OKM2105](/docs/reference/errors#okm2105)
+
+## Version [feature="index.partial"]
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

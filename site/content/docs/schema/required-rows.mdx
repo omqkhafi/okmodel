@@ -1,27 +1,10 @@
 ---
 title: "Required rows"
 description: "Rows the application expects to find, inserted when the key is missing."
+summary: "Rows the application expects to find, inserted when the key is missing."
+since: "0.10"
+status: stable
 ---
-<Callout type="info" title="Not a foreign key">
-[References](/docs/schema/references) is `.references()`. This page is the table option `reference`: rows the application expects to find already stored.
-</Callout>
-
-A status, a role, or a plan is a row other code assumes is there. You list those rows next to the table. `okm migrate apply` inserts one when its key is not stored yet. A row that is already stored is left as it is. A row you take off the list is not deleted.
-
-A migration file changes the catalog. An `insert` in that file is OKM1542: it changes rows outside `backfill()`. These rows are not a migration step, so that check does not see them. They are not copied into the catalog, and they do not change the catalog hash. Adding a key needs no new DDL file. The next apply inserts it.
-
-An empty database gets them when apply installs the head snapshot. A database that already has history gets them after the pending migrations. `provision()` does the same inserts on an empty target and records `provisioned@` plus the migration id.
-
-### Key
-
-`key` is the field that identifies a row, or several fields. The order is the order of the primary key, the unique constraint, or a unique index that has no predicate. `key` uses the field name. Snake casing and `sqlName` are what the insert and the constraint use.
-
-An empty key is `invalid`: `Table statuses reference key is empty.` A key that does not match is `invalid`: `Reference key label on statuses is not a primary key or a unique constraint.` A table that is not in the head snapshot yet is `invalid`: `Table statuses declares reference rows and is not in the head snapshot.` Generate first, so the snapshot includes the table.
-
-#### one
-
-`code` is the primary key. `open` and `done` are the rows the application looks up.
-
 ```ts title="one.ts"
 import { table, t } from "okmodel/pg";
 
@@ -42,6 +25,30 @@ export const statuses = table(
   },
 );
 ```
+
+## What it does
+
+<Callout type="info" title="Not a foreign key">
+[References](/docs/schema/references) is `.references()`. This page is the table option `reference`: rows the application expects to find already stored.
+</Callout>
+
+A status, a role, or a plan is a row other code assumes is there. You list those rows next to the table. `okm migrate apply` inserts one when its key is not stored yet. A row that is already stored is left as it is. A row you take off the list is not deleted.
+
+A migration file changes the catalog. An `insert` in that file is OKM1542: it changes rows outside `backfill()`. These rows are not a migration step, so that check does not see them. They are not copied into the catalog, and they do not change the catalog hash. Adding a key needs no new DDL file. The next apply inserts it.
+
+An empty database gets them when apply installs the head snapshot. A database that already has history gets them after the pending migrations. `provision()` does the same inserts on an empty target and records `provisioned@` plus the migration id.
+
+### Key
+
+`key` is the field that identifies a row, or several fields. The order is the order of the primary key, the unique constraint, or a unique index that has no predicate. `key` uses the field name. Snake casing and `sqlName` are what the insert and the constraint use.
+
+An empty key is `invalid`: `Table statuses reference key is empty.` A key that does not match is `invalid`: `Reference key label on statuses is not a primary key or a unique constraint.` A table that is not in the head snapshot yet is `invalid`: `Table statuses declares reference rows and is not in the head snapshot.` Generate first, so the snapshot includes the table.
+
+#### one
+
+`code` is the primary key. `open` and `done` are the rows the application looks up.
+
+
 
 #### several
 
@@ -161,3 +168,35 @@ export const codes = table(
   },
 );
 ```
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM1542](/docs/reference/errors#okm1542)
+
+## Version
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

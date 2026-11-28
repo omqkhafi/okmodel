@@ -1,7 +1,11 @@
 ---
 title: "Tenant isolation"
 description: "Tenancy keeps one tenant's rows out of another tenant's queries."
+summary: "A tenant filter keeps one tenant's rows out of another tenant's queries."
+since: "0.10"
+status: stable
 ---
+## What it does
 
 Tenancy keeps one tenant's rows out of another tenant's queries. You declare it on the schema. A table is isolated unless you mark it shared or send it along a relation. The key, the indexes, and the examples are [Tenancy](/docs/schema/tenancy).
 
@@ -39,3 +43,40 @@ Index prefixes, composite keys, path length, and every example stay on the schem
 | [References](/docs/schema/references) | A foreign key under a tenant table. |
 | [Typed raw SQL](/docs/queries/typed-raw-sql) | `trusted` and OKM1702. |
 | [Safety](/docs/concepts/the-safety-model) | The other refusals, beside the tenant key. |
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+This page does not emit a migration step.
+
+## Errors
+
+- [OKM1701](/docs/reference/errors#okm1701)
+- [OKM1190](/docs/reference/errors#okm1190)
+- [OKM1704](/docs/reference/errors#okm1704)
+- [OKM1705](/docs/reference/errors#okm1705)
+- [OKM1702](/docs/reference/errors#okm1702)
+- [OKM1060](/docs/reference/errors#okm1060)
+
+## Version
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

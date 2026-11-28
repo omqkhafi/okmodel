@@ -1,7 +1,22 @@
 ---
 title: "Binary and JSON"
 description: "Boolean, bytes, JSON, UUID, and OKID."
+summary: "Boolean, bytes, JSON, UUID, and OKID."
+since: "0.10"
+status: stable
+feature: type.uuid
 ---
+```ts title="files.ts"
+import { table, t } from "okmodel/pg";
+
+export const files = table("files", {
+  id: t.identity(),
+  published: t.boolean().default(false), // [!code focus]
+  body: t.bytea(), // [!code focus]
+});
+```
+
+## What it does
 
 These columns store a boolean, bytes, a document, or an id.
 
@@ -14,17 +29,9 @@ These columns store a boolean, bytes, a document, or an id.
 
 `t.boolean()` is true or false. The wire text may be `true`, `false`, `t`, `f`, `1`, or `0`. `t.bytea()` is raw bytes. Up to 126 bytes, the header is 1 byte. A longer value uses a 4-byte header. The wire text is `\x` plus lowercase hex.
 
-```ts title="files.ts"
-import { table, t } from "okmodel/pg";
 
-export const files = table("files", {
-  id: t.identity(),
-  published: t.boolean().default(false), // [!code focus]
-  body: t.bytea(), // [!code focus]
-});
-```
 
-## JSON
+## JSON [feature="type.jsonb"]
 
 | Builder | SQL | TypeScript | Bytes | Postgres |
 | --- | --- | --- | --- | --- |
@@ -43,7 +50,7 @@ export const notes = table("notes", {
 });
 ```
 
-## UUID
+## UUID [feature="type.uuid"]
 
 | Builder | SQL | TypeScript | Bytes | Postgres |
 | --- | --- | --- | --- | --- |
@@ -89,3 +96,35 @@ export const users = table("users", {
 ```
 
 Next: [Columns](/docs/schema/columns).
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+This page does not add an error code.
+
+## Version [feature="type.uuid"]
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

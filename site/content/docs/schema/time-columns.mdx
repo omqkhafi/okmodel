@@ -1,7 +1,17 @@
 ---
 title: "Date and time"
 description: "Instants, dates, clock times, and spans, as strings, Dates, or Temporal values."
+summary: "Instants, dates, clock times, and spans, as strings, Dates, or Temporal values."
+since: "0.10"
+status: stable
 ---
+```ts title="polyfill.ts"
+import { Temporal } from "temporal-polyfill";
+
+globalThis.Temporal = Temporal;
+```
+
+## What it does
 
 A time column is an instant, a calendar value, or a span. A mode sets its TypeScript value. The mode is client only: the SQL type, the catalog, its hash, and migrations are the same in every mode.
 
@@ -19,11 +29,7 @@ A time column is an instant, a calendar value, or a span. A mode sets its TypeSc
 
 `"temporal"` is a Temporal value. Native `Temporal` is in Node 26+ and Bun 1.4+. Node 22, Node 24, and Cloudflare Workers have none: assign a polyfill to `globalThis.Temporal` before `connect()`. okmodel does not ship one. `connect()` refuses a `temporal` column at once when the global is missing (OKM1210), and the message names the runtime and the `"iso"` alternative.
 
-```ts title="polyfill.ts"
-import { Temporal } from "temporal-polyfill";
 
-globalThis.Temporal = Temporal;
-```
 
 `interval` and `timetz` have no `Date`. In `"iso"` and `"date"` mode they are the text Postgres sends, such as `1 day 02:00:00` and `09:00:53.5+05:30`. That text is not an ISO-8601 duration. Use `"temporal"` for a duration object.
 
@@ -155,3 +161,36 @@ A precision outside 0 to 6 is refused.
 A [`bucket()`](/docs/queries/shape-results#grouped) key and a `min` or `max` follow the mode of their column. A day, week, month, quarter, or year bucket is the period's first day: `YYYY-MM-DD` text, a `Date` at midnight UTC, or a `Temporal.PlainDate`. A second, minute, or hour bucket is the column's own value.
 
 Next: [Columns](/docs/schema/columns).
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM1210](/docs/reference/errors#okm1210)
+- [OKM1060](/docs/reference/errors#okm1060)
+
+## Version
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

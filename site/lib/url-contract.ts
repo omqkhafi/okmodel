@@ -68,7 +68,7 @@ function pageOrAnchorExists(path: string, hash: string | undefined): boolean {
   if (body.includes(`{#${needle}}`) || body.includes(`{#${hash}}`)) return true;
   // Fumadocs slugifies headings; accept an H2/H3 whose slug matches.
   for (const match of body.matchAll(/^#{2,3}\s+(.+)$/gm)) {
-    const title = match[1]?.replace(/\s*\{#[^}]+\}\s*$/, "").trim() ?? "";
+    const title = headingTitle(match[1] ?? "");
     if (slugify(title) === needle) return true;
   }
   return false;
@@ -84,6 +84,20 @@ function handbookFile(path: string): string | undefined {
   const base = rest.length === 0 ? DOCS_CONTENT_DIR : join(DOCS_CONTENT_DIR, rest);
   const candidates = [`${base}.mdx`, `${base}.md`, join(base, "index.mdx"), join(base, "index.md")];
   return candidates.find((candidate) => existsSync(candidate));
+}
+
+/**
+ * Heading text the chip suffix is not part of.
+ *
+ * The remark plugin strips `[feature="…"]` before the slug is assigned.
+ *
+ * @param title - Raw heading line after the hashes
+ */
+function headingTitle(title: string): string {
+  return title
+    .replace(/\s*\{#[^}]+\}\s*$/, "")
+    .replace(/\s+(?:\[[^\]]*\]|\{[^}]*\})\s*$/, "")
+    .trim();
 }
 
 /**

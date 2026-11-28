@@ -1,21 +1,10 @@
 ---
 title: "Visibility"
 description: "Three flags. They do not change the SQL type."
+summary: "Hidden, sensitive, and guarded columns stay out of the calls you do not name."
+since: "0.10"
+status: stable
 ---
-<Callout type="info" title="Where this fits">
-The SQL type stays. Hidden, sensitive, and guarded change the row the client sees and the fields a write may set. [Validation](/docs/schema/validation#on-a-table) rejects a value the type still accepts.
-</Callout>
-
-None of the three flags is stored in the catalog, so none of them changes a migration.
-
-### Hidden
-
-`.hidden()` takes one option, `filterable`. Omit it and the column is off the row. `true` opens `where` and `orderBy` in the type and at runtime. The column stays off the row either way. Insert and update can still set it. A value bound for the column is `[redacted]` in `inspect()` and `explain()`, on reads and writes.
-
-#### .hidden()
-
-`select` takes keys of the row, so a typed call cannot name the field there. At runtime `where` and `orderBy` refuse it. The type refuses that key on `find`, `one`, and `page` too, including beside a valid key, inside `or()`, and in an include's `where` or `orderBy`. `page` also refuses an unknown option. A root `select` list that names it returns it. An include drops it silently, including when that list names it. `filters()` refuses it in `allow`, `sort`, and `relations`. `groupBy`, `bucket`, `sum`, `avg`, `min`, and `max` refuse it. Search refuses it and says to call `hidden({ filterable: true })`.
-
 ```ts title="users.ts"
 import { connect } from "okmodel/pg/postgresjs";
 import { schema, table, t } from "okmodel/pg";
@@ -33,6 +22,24 @@ export async function register(url: string, email: string, passwordHash: string)
   return row.email;
 }
 ```
+
+## What it does
+
+<Callout type="info" title="Where this fits">
+The SQL type stays. Hidden, sensitive, and guarded change the row the client sees and the fields a write may set. [Validation](/docs/schema/validation#on-a-table) rejects a value the type still accepts.
+</Callout>
+
+None of the three flags is stored in the catalog, so none of them changes a migration.
+
+### Hidden
+
+`.hidden()` takes one option, `filterable`. Omit it and the column is off the row. `true` opens `where` and `orderBy` in the type and at runtime. The column stays off the row either way. Insert and update can still set it. A value bound for the column is `[redacted]` in `inspect()` and `explain()`, on reads and writes.
+
+#### .hidden()
+
+`select` takes keys of the row, so a typed call cannot name the field there. At runtime `where` and `orderBy` refuse it. The type refuses that key on `find`, `one`, and `page` too, including beside a valid key, inside `or()`, and in an include's `where` or `orderBy`. `page` also refuses an unknown option. A root `select` list that names it returns it. An include drops it silently, including when that list names it. `filters()` refuses it in `allow`, `sort`, and `relations`. `groupBy`, `bucket`, `sum`, `avg`, `min`, and `max` refuse it. Search refuses it and says to call `hidden({ filterable: true })`.
+
+
 
 <Callout type="error" title="OKM1120">
 `where` and `orderBy` refuse the column. The fix says to call `hidden({ filterable: true })`. `groupBy`, `bucket`, `sum`, `avg`, `min`, `max`, and search refuse it too.
@@ -145,3 +152,38 @@ A sealed trait field stays OKM1190. The message says the trait sets it. Insert o
 <Callout type="info" title="Filled elsewhere">
 [`timestamps()`](/docs/schema/traits#on-one-table) and [`archivable()`](/docs/schema/traits#on-one-table) mark their columns guarded and sealed. Input cannot set those columns.
 </Callout>
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM1120](/docs/reference/errors#okm1120)
+- [OKM1123](/docs/reference/errors#okm1123)
+- [OKM1190](/docs/reference/errors#okm1190)
+- [OKM1704](/docs/reference/errors#okm1704)
+
+## Version
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

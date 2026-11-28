@@ -1,7 +1,23 @@
 ---
 title: "Row types"
 description: "The TypeScript value of a column, and how row types are produced."
+summary: "The TypeScript value of a column, and how row types are produced."
+since: "0.10"
+status: stable
 ---
+```ts title="bigint-string.ts"
+import { schema, table, t } from "okmodel/pg";
+
+const payments = table("payments", {
+  id: t.identity(),
+  cents: t.bigint(), // [!code focus]
+});
+
+export default schema({ tables: [payments] });
+```
+
+## What it does
+
 Codecs choose the TypeScript value of a column, and the SQL type stays. Row types are the interfaces schema() emits for each table, or the types the checker keeps. One schema can set both.
 
 ## Codecs
@@ -23,16 +39,7 @@ The column `as` is what types the value. While the schema codec is `"string"`, a
 
 Omitted and `"string"` are a decimal string. The SQL value stays exact past a safe integer.
 
-```ts title="bigint-string.ts"
-import { schema, table, t } from "okmodel/pg";
 
-const payments = table("payments", {
-  id: t.identity(),
-  cents: t.bigint(), // [!code focus]
-});
-
-export default schema({ tables: [payments] });
-```
 
 #### number
 
@@ -246,3 +253,36 @@ Any other value is `schema() types local must be emitted or inferred.` The type 
 | Next | You use it for |
 | --- | --- |
 | [Required rows](/docs/schema/required-rows) | Rows inserted when the key is missing. |
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM1210](/docs/reference/errors#okm1210)
+- [OKM1060](/docs/reference/errors#okm1060)
+
+## Version
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

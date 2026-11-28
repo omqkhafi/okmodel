@@ -298,7 +298,7 @@ export function docsSupportProblems(root: string = repoRoot()): readonly string[
   const constants = docsConstants(root);
   for (const rel of PHRASE_FILES) {
     const text = readFileSync(join(root, rel), "utf8");
-    if (!text.includes(constants.supportPhrase)) {
+    if (!quotesSupport(text, constants.supportPhrase)) {
       problems.push(`docs-support: ${rel} does not quote ${constants.supportPhrase}`);
     }
     if (rel === "package.json" && !text.includes(constants.tagline)) {
@@ -306,6 +306,18 @@ export function docsSupportProblems(root: string = repoRoot()): readonly string[
     }
   }
   return problems;
+}
+
+/**
+ * Whether a file quotes the support sentence or the component that renders it.
+ *
+ * @param text - File contents
+ * @param phrase - Generated support sentence
+ */
+function quotesSupport(text: string, phrase: string): boolean {
+  return (
+    text.includes(phrase) || text.includes("<SupportPhrase />") || text.includes("<Tagline />")
+  );
 }
 
 /**

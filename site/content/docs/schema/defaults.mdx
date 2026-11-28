@@ -4,7 +4,19 @@ description: "Omitted, the column is required and not null."
 summary: "A missing value is filled from nullable through a generated expression."
 since: "0.10"
 status: stable
+feature: column.generated
 ---
+```ts title="nullable.ts"
+import { table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity(),
+  publishedAt: t.timestamptz().nullable(), // [!code focus]
+});
+```
+
+## What it does
+
 <Callout type="info" title="Where this fits">
 A column with no default is required and not null. This page is how a missing value is filled, from nullable through a generated expression. [Shape](/docs/schema/enums-arrays-picklists) is next, when one column holds more than one value.
 </Callout>
@@ -15,14 +27,7 @@ Insert requires the field unless the column is nullable, has a default, or is le
 
 `.nullable()` allows SQL NULL. Omit the field, or pass `null`. The catalog stores no default.
 
-```ts title="nullable.ts"
-import { table, t } from "okmodel/pg";
 
-export const notes = table("notes", {
-  id: t.identity(),
-  publishedAt: t.timestamptz().nullable(), // [!code focus]
-});
-```
 
 ### Literal
 
@@ -164,7 +169,13 @@ export const notes = table("notes", {
 
 ### Generated [feature="column.generated"]
 
-`.generated((columns) => expression)` is `generated always as (expression) stored`. The callback receives column handles. Insert and update omit the column. A read returns the value. `{ stored: false }` emits `VIRTUAL` and needs PostgreSQL 18.
+#### Expression [feature="column.generatedExpression"]
+
+`.generated((columns) => expression)` is `generated always as (expression) stored`. The callback receives column handles. Insert and update omit the column. A read returns the value.
+
+#### Virtual [feature="column.generatedVirtual"]
+
+`{ stored: false }` emits `VIRTUAL`. The chip on this heading is the floor.
 
 In a row trigger, `NEW` of a virtual column is null in `BEFORE` and `AFTER`. `NEW` of a stored column is null only in `BEFORE`. A `BEFORE` trigger `when` that names a generated column is OKM1920: PostgreSQL refuses it. A nullable `VIRTUAL` column of `varchar(n)`, `numeric(p,s)`, or `smallint` is OKM1060. Use `STORED`, drop `.nullable()`, or a wider type.
 
@@ -182,3 +193,36 @@ export const notes = table("notes", {
   search: t.tsvector().generated((c) => sql`to_tsvector('simple', ${c.title})`), // [!code focus]
 });
 ```
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM1060](/docs/reference/errors#okm1060)
+- [OKM1920](/docs/reference/errors#okm1920)
+
+## Version [feature="column.generated"]
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

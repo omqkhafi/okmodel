@@ -1,0 +1,88 @@
+---
+title: "Production check"
+description: "Apply on a real target, keep the pooler off that command, and run doctor."
+summary: "Apply on a direct URL, then doctor, before the app serves that target."
+since: "0.10"
+status: stable
+---
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity().primaryKey(),
+  title: t.text(),
+});
+
+export default schema({ tables: [notes] });
+```
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  migrations: "./migrations",
+  database: process.env.DATABASE_URL!,
+});
+```
+
+```sh
+okm generate init
+okm migrate apply
+okm check
+```
+
+```text title="check.out"
+ok
+```
+
+## What it does
+
+This is the third step. The schema is in git. Apply runs on the target you named. `okm check` then prints `ok` when the lint and the target agree.
+
+Four checks belong with that apply:
+
+1. Apply on the real target, with `--target` when the config has more than one. The command is [migrate apply](/docs/reference/cli/migrate#migrate-apply).
+2. Point apply, seed, and a connecting check at a direct URL. A pooler host is refused. The patterns are on [Pooler](/docs/reference/config#pooler). The session side is [Session and pool](/docs/operate/session-and-pool).
+3. Turn on [tenancy](/docs/schema/tenancy) or [policies](/docs/schema/policies) only when the table needs them. A role that bypasses row security sees every row.
+4. Run `okm doctor --production` and clear every failing finding. The list is the [production checklist](/docs/operate/production-checklist).
+
+## When to use it
+
+Use this after the first migration, on the database the app will serve.
+
+## When not to
+
+Use [push](/docs/start/first-schema#push) on a database you can drop. Push is not the production path.
+
+## Options
+
+| Piece | Where it is set |
+| --- | --- |
+| Target URL | `database` or `targets` in `okmodel.config.ts`. |
+| Migrations directory | `migrations`. |
+| Row security | The table's tenancy or `policies`. |
+
+## What the plan shows
+
+Apply runs the steps the plan already printed: class, kind, action, and lock. A blocking or rewrite step also has a weight. A weight of `blocking` or `rewrite` on a large table stops apply until you allow it. That rule is on [Waiting for locks](/docs/migrations/waiting-for-locks).
+
+## Errors
+
+A pooler URL on apply is refused. The code is on [Database](/docs/reference/config-database). A missing catalog when the client requires it is [OKM1520](/docs/reference/errors#okm1520).
+
+## Version
+
+<SupportPhrase />.
+
+## Gotchas
+
+`okm check` with one target connects. With several targets and no `--target`, it does not connect. Doctor reads the target. It does not change it.
+
+## Related
+
+| Next | You use it for |
+| --- | --- |
+| [Production checklist](/docs/operate/production-checklist) | The full list, including `protected` and `requireMeta`. |
+| [Connect](/docs/operate/connect) | The client the app keeps. |

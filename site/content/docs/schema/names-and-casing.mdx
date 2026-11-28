@@ -1,7 +1,28 @@
 ---
 title: "Naming"
 description: "The field name is the TypeScript name. Casing or a name option sets the SQL name."
+summary: "A field name and a SQL name can differ, and casing is chosen once."
+since: "0.10"
+status: stable
 ---
+```ts title="column.ts"
+import { connect } from "okmodel/pg/postgresjs";
+import { schema, table, t } from "okmodel/pg";
+
+const notes = table("notes", {
+  id: t.identity(),
+  title: t.text().sqlName("headline"), // [!code focus]
+});
+const app = schema({ tables: [notes] });
+
+export async function add(url: string, title: string) {
+  await using db = connect(url, { schema: app });
+  return await db.notes.insert({ title });
+}
+```
+
+## What it does
+
 Names are the SQL spelling PostgreSQL stores, and casing rewrites a name you did not set. The names section sets a SQL name, a previous name, or a comment. The casing section chooses snake case or camel case.
 
 ## Names
@@ -25,21 +46,7 @@ The SQL name is the field name, unless you replace it. [Casing](/docs/schema/nam
 
 `.sqlName()` replaces one column. Insert still uses the field name.
 
-```ts title="column.ts"
-import { connect } from "okmodel/pg/postgresjs";
-import { schema, table, t } from "okmodel/pg";
 
-const notes = table("notes", {
-  id: t.identity(),
-  title: t.text().sqlName("headline"), // [!code focus]
-});
-const app = schema({ tables: [notes] });
-
-export async function add(url: string, title: string) {
-  await using db = connect(url, { schema: app });
-  return await db.notes.insert({ title });
-}
-```
 
 #### table
 
@@ -259,3 +266,39 @@ Any value other than `"snake"` or `"camel"` is OKM1060: `schema() casing <value>
 | Next | You use it for |
 | --- | --- |
 | [Traits](/docs/schema/traits#on-one-table) | Columns added to one table or to every table. |
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM1060](/docs/reference/errors#okm1060)
+- [OKM1122](/docs/reference/errors#okm1122)
+- [OKM1023](/docs/reference/errors#okm1023)
+- [OKM1530](/docs/reference/errors#okm1530)
+- [OKM1020](/docs/reference/errors#okm1020)
+
+## Version
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

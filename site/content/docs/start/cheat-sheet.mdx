@@ -1,0 +1,121 @@
+---
+title: "Cheat sheet"
+description: "The commands and the six calls you use every day."
+summary: "Six calls and the commands around them cover an ordinary day."
+since: "0.10"
+status: stable
+---
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+export const notes = table("notes", {
+  id: t.identity().primaryKey(),
+  title: t.text(),
+});
+
+export default schema({ tables: [notes] });
+```
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.DATABASE_URL!,
+});
+```
+
+```ts title="calls.ts"
+import { connect } from "okmodel/pg/postgresjs";
+
+import schema from "./schema.ts";
+
+const url = process.env.DATABASE_URL;
+if (url === undefined || url.length === 0) throw new Error("DATABASE_URL is not set");
+
+const db = connect(url, { schema });
+const inserted = await db.notes.insert({ title: "Hello" });
+console.log(inserted.title);
+const found = await db.notes.find({ where: { id: inserted.id }, limit: 1 });
+console.log(found[0]?.title);
+const row = await db.notes.one({ where: { id: inserted.id } });
+console.log(row?.title);
+const total = await db.notes.count();
+console.log(total);
+const updated = await db.notes.update({
+  where: { id: inserted.id },
+  set: { title: "Next" },
+});
+console.log(updated.count);
+const deleted = await db.notes.delete({ where: { id: inserted.id } });
+console.log(deleted.count);
+await db.close();
+```
+
+```text title="calls.out"
+Hello
+Hello
+Hello
+1
+1
+1
+```
+
+## What it does
+
+These are the calls from an ordinary day, on the table from [First query](/docs/start/first-query). Push the schema, then run the script.
+
+## When to use it
+
+Use this when you remember the job and want the call, not the whole page.
+
+## When not to
+
+Use the page for that object when the call has options this sheet does not show. A transaction, a filter from a request, and a raw statement are not on this sheet.
+
+## Options
+
+| Call | You pass | You get |
+| --- | --- | --- |
+| `insert` | The columns you set. | The stored row. |
+| `find` | `where` and `limit`. | A list. |
+| `one` | `where`. | The row, or `null`. |
+| `count` | Nothing, or a `where`. | How many rows match. |
+| `update` | `where` and `set`. | `{ count }`. |
+| `delete` | `where`. | `{ count }`. |
+
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| `okm push` | Applies the schema. Writes no SQL file. |
+| `okm migrate plan <name>` | Prints the SQL. Writes nothing. |
+| `okm generate <name>` | Writes the next SQL file. |
+| `okm migrate apply` | Applies pending files on the target. |
+| `okm check` | Lints the project and compares the target. |
+| `okm doctor` | Reports what is unsafe on the target. |
+| `okm migrate status` | Lists what is applied. |
+
+## What the plan shows
+
+`okm migrate plan` prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight. Push does not print that plan.
+
+## Errors
+
+A `find` with no `limit`, and no default on `connect`, is [OKM1101](/docs/reference/errors#okm1101). An `update` or `delete` with no `where` is [OKM1102](/docs/reference/errors#okm1102).
+
+## Version
+
+<SupportPhrase />.
+
+## Gotchas
+
+`one` throws when more than one row matches. `find` returns a list even when you asked for one row. `exists` is the same shape as `count` when you only need a boolean. It is on [First schema](/docs/start/first-schema#exists).
+
+## Related
+
+| Next | You use it for |
+| --- | --- |
+| [I want to…](/docs/start/i-want-to) | The page for a job that is not one of these calls. |
+| [First migration](/docs/start/first-migration) | The plan, the file, and apply. |

@@ -1,14 +1,11 @@
 ---
 title: "Event triggers"
 description: "Database-wide DDL triggers. Import okmodel/event before schema()."
+summary: "An event trigger fires for DDL in the whole database."
+since: "0.10"
+status: stable
+feature: trigger.event
 ---
-
-An event trigger fires for DDL in the whole database, not for one table. Declare it with `trigger()` from `okmodel/fn` and set `event`. Import `okmodel/event` in the same file before `schema()`. There is no `eventTrigger()` builder.
-
-`event` is `ddl_command_start`, `ddl_command_end`, `sql_drop`, or `table_rewrite`. `login` is refused (OKM1931). A mistake in a login trigger locks every session out, including the session that would drop it, and PostgreSQL BUG #19488 skips login triggers on a standby.
-
-The function is plpgsql, has no arguments, and returns `eventTriggerType` (or the string `"event_trigger"`). Anything else is OKM1931. PostgreSQL reports 42P13 for arguments and 42P17 for the return type.
-
 ```ts title="log-ddl.ts"
 import { fn, trigger, eventTriggerType } from "okmodel/fn";
 import { schema, sql } from "okmodel/pg";
@@ -32,6 +29,18 @@ const logDdl = trigger("log_ddl_end", {
 export const db = schema({ tables: [], functions: [logIt], triggers: [logDdl] });
 ```
 
+## What it does
+
+## Event [feature="trigger.event"]
+
+An event trigger fires for DDL in the whole database, not for one table. Declare it with `trigger()` from `okmodel/fn` and set `event`. Import `okmodel/event` in the same file before `schema()`. There is no `eventTrigger()` builder.
+
+`event` is `ddl_command_start`, `ddl_command_end`, `sql_drop`, or `table_rewrite`. `login` is refused (OKM1931). A mistake in a login trigger locks every session out, including the session that would drop it, and PostgreSQL BUG #19488 skips login triggers on a standby.
+
+The function is plpgsql, has no arguments, and returns `eventTriggerType` (or the string `"event_trigger"`). Anything else is OKM1931. PostgreSQL reports 42P13 for arguments and 42P17 for the return type.
+
+
+
 `tags` are command tags. Lower case is stored as upper case. A tag that can never fire for the event, such as `sql_drop` with `CREATE TABLE`, is warning OKM2129. A tag on a role, a database, or a tablespace is OKM1931. PostgreSQL reports 42601 for a tag it does not know and 0A000 for a shared object. `okm check` tries the tags in a transaction and rolls that transaction back.
 
 `enabled` is `true` (the default, catalog `O`), `false` (`D`), `"replica"` (`R`), or `"always"` (`A`). `true` is `ENABLE`. `false` is `DISABLE`. The other two are `ENABLE REPLICA` and `ENABLE ALWAYS`.
@@ -44,13 +53,19 @@ Names are unique in the database. PostgreSQL fires event triggers in alphabetica
 
 The presets live in `okmodel/event`. They are not a second list. Put them in `schema({ triggers })`.
 
+#### Guard [feature="trigger.guardDdl"]
+
 `guardDdl({ block: "manual", allow: ["migration"] })` is the boundary. A session whose `session_user` is not a member of an `allow` role cannot run DDL. Membership is `pg_has_role(session_user, role, 'usage')` or `'set'` on PostgreSQL 16 and later, and `'member'` on 15. `SET ROLE` does not bypass it, because the check reads `session_user`. A superuser passes. `schemas` limits the end-of-command form to those schemas. The start form cannot see the schema, so it still refuses every non-member.
 
 `guardDdl({ block: ["drops", "rewrites"] })` is a belt, not a boundary. It refuses `DROP` and `table_rewrite` unless `okm.allow_drop` or `okm.allow_rewrite` is `'true'`. Any session can set those values. Real protection is `manual` plus privileges. `okm apply` sets the value for one step, with `set_config(..., true)`, only after `--allow-protected` for a drop or `--allow-blocking` for a rewrite. A step that cannot run inside a transaction, such as `CREATE INDEX CONCURRENTLY`, uses the session form only when the URL is a proven direct connection, then resets it and checks the reset. A pooler is refused (OKM1931): the next client on that server connection would inherit the setting.
 
 `DROP EVENT TRIGGER` is never blocked. If a guard is wrong, that statement still removes it.
 
+#### Enable row security [feature="trigger.enableRls"]
+
 `enableRls({ schemas: ["public"] })` runs at `ddl_command_end` for `CREATE TABLE`, `CREATE TABLE AS`, and `SELECT INTO`. It runs `ENABLE ROW LEVEL SECURITY` and does not force it. Extension objects and temporary tables are skipped. Tables in those schemas default `rls` to true. `rls: false` there is OKM1931.
+
+#### Audit [feature="trigger.auditDdl"]
 
 `auditDdl()` creates `audit.ddl_tx` and `audit.ddl_command` when you pass `transactions` and `commands` to `schema({ tables })`. The migration role owns them. A security definer function writes them. Its `search_path` is pinned, and `EXECUTE` is revoked from `PUBLIC`. No other role gets a write grant. `reporting` gets `SELECT` when `roles.reporting` is configured. The function records successful commands only. A refused command rolls back, so it writes no row. Temporary tables and extension objects are skipped. Original drops are recorded, and a cascade is flagged. Columns are the transaction id, the time, the command tag, the object type and identity, the schema, `session_user`, `application_name`, the client address, and `current_query()`. `okm.application_user`, when set, is stored too. The client supplies that value. It is not proof of who ran the command.
 
@@ -59,6 +74,8 @@ There is no `keep` option. Nothing in this package schedules deletion. A retenti
 ```sql
 select cron.schedule('okm-audit-keep', '0 3 * * *', $$delete from audit.ddl_command where txid in (select txid from audit.ddl_tx where at < now() - interval '180 days')$$);
 ```
+
+#### Notify [feature="trigger.notifyDdl"]
 
 `notifyDdl({ channel: "schema_changed", tags: ["ALTER TABLE"] })` calls `pg_notify` after DDL. The payload is JSON with `tag` and `object`, cut at 8000 bytes. A listener has to use a direct connection. `LISTEN` does not work through a transaction pooler.
 
@@ -76,9 +93,13 @@ When `okm apply` fails because an event trigger raised, the message names the en
 
 `okm doctor` and `okm access` list every event trigger. One that the schema does not declare is labelled `unmanaged`, with the tags it watches. The commands do not drop it.
 
-`okm pull` writes `trigger({ event })` and the function as `sql`. It does not recognize a preset. The next plan compares the generated text. A round trip that changes nothing is zero steps. Comments on event triggers use the same `comment` option as other objects.
+`okm pull` writes `trigger({ event })` and the function as `sql`. It does not recognize a preset. The next plan compares the generated text. A round trip that changes nothing is zero steps.
 
-### Transition tables
+#### Comment [feature="comment.eventTrigger"]
+
+Comments on event triggers use the same `comment` option as other objects.
+
+### Transition tables [feature="trigger.referencing"]
 
 `referencing` names transition tables for one statement-level `after` trigger. One event. No `updateOf`. `insert` names `new`. `delete` names `old`. `update` names either. `truncate` names neither. A partitioned parent may have them. PostgreSQL 15, 17, and 19 accept a statement-level `after` trigger with `referencing` on the parent. A row-level trigger on that parent is 0A000. Row-level transition tables are not SQL. Partition children and inheritance children are statement-level when PostgreSQL allows the trigger at all. This schema has no child-table declaration, so a child is not detected here.
 
@@ -129,3 +150,37 @@ Then drop or replace the guard. `DROP EVENT TRIGGER` stays available when event 
 ### Outbox privileges
 
 A trigger that inserts into an outbox table needs `INSERT` on that table when it is `security invoker`. A `security definer` function does not: it runs as its owner. If that owner is not a superuser and the outbox table uses `FORCE ROW LEVEL SECURITY`, the owner still needs an `INSERT` policy. The audit function is a definer and the audit tables do not force row security, so the owner can write.
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM1931](/docs/reference/errors#okm1931)
+- [OKM2129](/docs/reference/errors#okm2129)
+- [OKM2209](/docs/reference/errors#okm2209)
+
+## Version [feature="trigger.event"]
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

@@ -1,7 +1,21 @@
 ---
 title: "Postgres types"
 description: "Ranges, network, geometry, search, named types, and other Postgres types."
+summary: "These builders are the Postgres types that are not in the earlier families."
+since: "0.10"
+status: stable
 ---
+```ts title="plans.ts"
+import { table, t } from "okmodel/pg";
+
+export const plans = table("plans", {
+  id: t.identity(),
+  scores: t.int4range(), // [!code focus]
+  active: t.tstzrange(), // [!code focus]
+});
+```
+
+## What it does
 
 These types are specific to Postgres.
 
@@ -19,15 +33,7 @@ A range is empty, or a pair of bounds. A null bound is unbounded. `lowerInclusiv
 
 There is no `tsrange` builder. An instant range is `t.tstzrange()`. Range bounds are Temporal values whatever [`defaults.time`](/docs/schema/time-columns#modes) says, so a range column needs a `Temporal` global.
 
-```ts title="plans.ts"
-import { table, t } from "okmodel/pg";
 
-export const plans = table("plans", {
-  id: t.identity(),
-  scores: t.int4range(), // [!code focus]
-  active: t.tstzrange(), // [!code focus]
-});
-```
 
 A read returns `{ empty: false, lower, upper, lowerInclusive, upperInclusive }`. `{ empty: true }` is the empty range. A write also accepts a `[lower, upper)` tuple, and a null bound is unbounded. Custom ranges, exclusion constraints, and the range operators are on [Range types](/docs/schema/range-types).
 
@@ -158,3 +164,35 @@ Postgres has these types. This dialect has no builder under that name. The Postg
 | multirange | variable | `t.custom()` with that SQL type | yes |
 
 Next: [Columns](/docs/schema/columns).
+
+## When to use it
+
+Use this page when the job is the one in the summary.
+
+## When not to
+
+Use the next page in the group when the object you want is named there.
+
+## Options
+
+The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+
+## What the plan shows
+
+The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+
+## Errors
+
+- [OKM1020](/docs/reference/errors#okm1020)
+
+## Version
+
+<SupportPhrase />.
+
+## Gotchas
+
+The refused shapes and the limits are in the sections above.
+
+## Related
+
+The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.
