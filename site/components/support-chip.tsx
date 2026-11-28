@@ -7,7 +7,6 @@
  * and the minimum (`15+`, `18+`, `any`). The tooltip is the version table.
  */
 
-import { Database } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
 
 import { ENGINES } from "@/lib/generated/docs-constants";
@@ -22,6 +21,29 @@ import { tooltipEvent, tooltipOpen, type TooltipEvent, type TooltipState } from 
  */
 function engineName(id: string): string {
   return id === ENGINES.postgres.id ? ENGINES.postgres.name : id;
+}
+
+/**
+ * Neutral database glyph. The paths are the 24×24 outline, drawn here so the
+ * client shell does not import an icon package.
+ */
+function DatabaseGlyph(): ReactNode {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="size-3.5 shrink-0"
+      aria-hidden="true"
+    >
+      <ellipse cx="12" cy="5" rx="9" ry="3" />
+      <path d="M3 5V19A9 3 0 0 0 21 19V5" />
+      <path d="M3 12A9 3 0 0 0 21 12" />
+    </svg>
+  );
 }
 
 const CLOSED: TooltipState = { hover: false, focus: false, sticky: false };
@@ -74,7 +96,7 @@ export function SupportChipView({
         onBlur={send("blur")}
         onClick={send("tap")}
       >
-        <Database className="size-3.5 shrink-0" aria-hidden="true" />
+        <DatabaseGlyph />
         <span>{`${name} ${rule.label}`}</span>
       </button>
       {open ? (
