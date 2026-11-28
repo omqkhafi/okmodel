@@ -75,7 +75,16 @@ type ZoneApi = {
 };
 
 function zones(): ZoneApi {
-  return Temporal as unknown as ZoneApi;
+  // The shipped Temporal names are a namespace of empty interfaces. Reading
+  // the value through that name is TS2708 when a consumer typechecks this file.
+  const host = globalThis as unknown as { readonly Temporal?: ZoneApi };
+  const temporal = host.Temporal;
+  if (temporal === undefined) {
+    throw new OkmError("OKM1932", "A timestamptz partition needs Temporal.", {
+      fix: { summary: "Run on a runtime that provides Temporal." },
+    });
+  }
+  return temporal;
 }
 
 /** A column the compiler can see. Names are the field and the SQL name. */
