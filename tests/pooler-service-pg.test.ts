@@ -115,7 +115,7 @@ if (POOLER_URL === undefined || POOLER_URL.length === 0) {
         expect((failed as OkmError).code).toBe("OKM1551");
         expect((failed as OkmError).message).toContain("2D000");
         const rows = await direct.unsafe(`select n from ${tableName}`);
-        expect(rows).toEqual([]);
+        expect(rows.length).toBe(0);
       } finally {
         await pooled.close();
       }
