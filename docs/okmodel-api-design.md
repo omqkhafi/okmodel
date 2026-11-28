@@ -10,7 +10,7 @@ Toolchain: **TypeScript 7** (the native compiler, still invoked as `tsc`) for ty
 
 ## 1. Decisions log
 
-Moved to `okmodel-decisions.md`. Decisions run D1–D300. This file is the normative spec; every section states a rule, an example and the guard that enforces it.
+Decisions are one file each under `decisions/`. The index is [decisions/INDEX.md](decisions/INDEX.md). This file is the normative spec; every section states a rule, an example and the guard that enforces it.
 
 ## 2. Design rules and the internal goal
 
