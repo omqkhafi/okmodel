@@ -1,0 +1,50 @@
+---
+title: Database per tenant
+description: Sign up a tenant by bringing an empty database to the head. Expand, then contract, across the fleet.
+summary: "A new tenant database is brought to the head with ensureHead, and later migrations expand before they contract."
+since: "0.11"
+feature: migrate.fleet.ensureHead
+status: stable
+---
+
+Each tenant is a database. The fleet runner does not route queries. It applies the migrations you already reviewed.
+
+## Signup [feature="migrate.fleet.ensureHead"]
+
+Create the empty database in your own admin connection, then bring it to the head. An empty database installs the head snapshot and `reference` rows. A database that already has history replays only what is pending.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+export const app = schema({
+  tables: [table("notes", { id: t.integer().primaryKey(), title: t.text() })],
+});
+```
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+export default defineConfig({
+  schema: "./schema.ts",
+  database: process.env.TENANT_URL,
+});
+```
+
+```ts title="signup.ts"
+import { ensureHead } from "okmodel/migrate";
+
+const url = process.env.TENANT_URL;
+if (url === undefined || url.length === 0) throw new Error("TENANT_URL is not set");
+
+await ensureHead(url);
+```
+
+Call `ensureHead` from the signup request. The same call is safe on the tenant's first connection: history that is already recorded is skipped.
+
+## Expand, then contract [feature="migrate.fleet"]
+
+Ship the expand migration to every database first. A later migration that drops or renames is a contract. The fleet refuses that contract while any database is missing the expand, and an unreachable database counts as missing. Apply the expand, then run the contract. `--allow-protected` is the explicit override for that one run.
+
+## What this does not include
+
+The fleet does not create a schema per tenant inside one database. It does not choose a connection for a request (`dbFor` is a later unit). It does not keep a hosted list of tenants. Your config's `targets` function reads whatever table you already have. `onResult` can write the outcome back to that table.

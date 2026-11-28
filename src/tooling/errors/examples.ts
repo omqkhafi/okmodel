@@ -29,6 +29,8 @@ import { decodeBigintNumber } from "../../dialects/pg/integer.js";
 import { mapPostgresError } from "../../dialects/pg/errors.js";
 import { readOnlyReprint } from "../../dialects/pg/introspect.js";
 import { assertIndexRules } from "../migrate/index-rules.js";
+import { assertContractGate, assertFleetHead } from "../migrate/fleet-config.js";
+import type { StoredMigration } from "../migrate/files.js";
 import { schemaDeclarations } from "../../dialects/pg/declarations.js";
 import { enumColumn } from "../../dialects/pg/enum.js";
 import { range } from "../../dialects/pg/expr/index.js";
@@ -3694,6 +3696,38 @@ thrown(
   () => {
     refuseHnswMemory("53100", 'create index "docs_id_idx" using btree ("id")');
   },
+);
+
+const fleetFiles = [
+  { id: "0001_expand", catalogHash: "a", steps: [{ class: "expand" }] },
+  { id: "0002_contract", catalogHash: "b", steps: [{ class: "contract" }] },
+] as unknown as StoredMigration[];
+
+thrown(
+  "OKM2211",
+  () =>
+    assertContractGate(
+      fleetFiles,
+      [{ name: "acme", state: "behind", pending: ["0001_expand:0"] }],
+      false,
+    ),
+  () => assertContractGate(fleetFiles, [{ name: "acme", state: "current", pending: [] }], false),
+);
+
+thrown(
+  "OKM1933",
+  () =>
+    assertFleetHead(
+      "acme",
+      { migrationId: "0001_init", catalogHash: "a" },
+      { migrationId: "0002_next", catalogHash: "b" },
+    ),
+  () =>
+    assertFleetHead(
+      "acme",
+      { migrationId: "0001_init", catalogHash: "a" },
+      { migrationId: "0001_init", catalogHash: "a" },
+    ),
 );
 
 function withColumn(

@@ -118,6 +118,22 @@ export type ParsedCli = {
   readonly generate: boolean;
   /** `okm roles --env-file`. */
   readonly envFile: string | undefined;
+  /** `okm migrate --fleet`. */
+  readonly fleet: boolean;
+  /** `okm migrate status --fleet --drift`. */
+  readonly drift: boolean;
+  /** `okm migrate apply --fleet --plan`. */
+  readonly planFile: string | undefined;
+  /** `okm migrate apply --fleet --group`. */
+  readonly group: string | undefined;
+  /** `okm migrate apply --fleet --only`, repeated. */
+  readonly only: readonly string[];
+  /** `okm migrate apply --fleet --parallel`. */
+  readonly parallel: number | undefined;
+  /** `okm migrate apply --fleet --max-failures`, still a string (`2%`, `all`). */
+  readonly maxFailures: string | undefined;
+  /** `okm migrate apply --fleet --report`. */
+  readonly report: string | undefined;
   /** Positionals after the command words. */
   readonly operands: readonly string[];
 };
@@ -240,8 +256,10 @@ export function parseCli(argv: readonly string[]): ParsedCli {
   const help = values.help === true;
   const version = values.version === true;
   const operands = spec === undefined ? words : words.slice(spec.words.length);
+  const fleet = values.fleet === true;
   if (!help && !version && spec !== undefined) {
-    if (operands.length < spec.minOperands) {
+    const minOperands = spec.id === "migrate plan" && fleet ? 0 : spec.minOperands;
+    if (operands.length < minOperands) {
       throw usage(spec.missing ?? `okm ${spec.id} needs an argument.`, `Pass ${spec.usage}.`);
     }
     if (operands.length > spec.maxOperands) {
@@ -266,6 +284,7 @@ export function parseCli(argv: readonly string[]): ParsedCli {
     throw usage("--out needs --json for this command.", "Pass --json --out <file>, or drop --out.");
   }
   if (!help && !version) refuseDoctorMix(spec, values, operands);
+  if (!help && !version) refuseFleetMix(spec, values, fleet, target, operands);
   const renames = stringList(values.rename);
   const fills = stringList(values.fill);
   if (!help && !version) {
@@ -343,6 +362,14 @@ export function parseCli(argv: readonly string[]): ParsedCli {
     acceptWeakPassword: values["accept-weak-password"] === true,
     generate: values.generate === true,
     envFile: stringValue(values["env-file"]),
+    fleet,
+    drift: values.drift === true,
+    planFile: stringValue(values.plan),
+    group: stringValue(values.group),
+    only: stringList(values.only),
+    parallel: parallelOf(values.parallel),
+    maxFailures: stringValue(values["max-failures"]),
+    report: stringValue(values.report),
     operands,
   };
 }
@@ -450,8 +477,55 @@ function blank(flags: { readonly help: boolean; readonly json: boolean }): Parse
     acceptWeakPassword: false,
     generate: false,
     envFile: undefined,
+    fleet: false,
+    drift: false,
+    planFile: undefined,
+    group: undefined,
+    only: [],
+    parallel: undefined,
+    maxFailures: undefined,
+    report: undefined,
     operands: [],
   };
+}
+
+function refuseFleetMix(
+  spec: CommandSpec | undefined,
+  values: Record<string, unknown>,
+  fleet: boolean,
+  target: string | undefined,
+  operands: readonly string[],
+): void {
+  const fleetOnly =
+    values.drift === true ||
+    values.plan !== undefined ||
+    values.group !== undefined ||
+    values.only !== undefined ||
+    values.parallel !== undefined ||
+    values["max-failures"] !== undefined ||
+    values.report !== undefined;
+  if (!fleet && fleetOnly) {
+    throw usage("That flag needs --fleet.", "Pass --fleet, or drop the flag.");
+  }
+  if (!fleet) return;
+  if (target !== undefined) {
+    throw usage("--fleet does not take --target.", "Use --only <name> to limit the run.");
+  }
+  if (spec?.id === "migrate plan" && operands.length > 0) {
+    throw usage("okm migrate plan --fleet does not take a name.", "Drop the plan name.");
+  }
+  if (values.drift === true && spec?.id !== "migrate status") {
+    throw usage("--drift is for okm migrate status --fleet.", "Drop --drift on this command.");
+  }
+}
+
+function parallelOf(value: unknown): number | undefined {
+  const text = stringValue(value);
+  if (text === undefined) return undefined;
+  if (!/^[1-9]\d*$/.test(text)) {
+    throw usage("--parallel needs an integer of 1 or more.", "Pass --parallel 4.");
+  }
+  return Number(text);
 }
 
 function parseConfig(argv: readonly string[], spec: CommandSpec | undefined): ParseArgsConfig {

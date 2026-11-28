@@ -138,7 +138,7 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
     ];
     if (!parsed.json) return;
     const placed = place(produced, parsed, cwd);
-    const target = await selectedTarget(parsed, cwd);
+    const target = parsed.fleet ? undefined : await selectedTarget(parsed, cwd);
     stdout(
       serializeEnvelope(
         envelope({
@@ -155,7 +155,9 @@ export async function run(argv: readonly string[], io?: CommandIo): Promise<void
   } catch (error) {
     if (error instanceof CommandFinished) throw error;
     const partial = readPartial(error);
-    const target = partial?.target ?? (await selectedTarget(parsed, cwd));
+    const target = parsed.fleet
+      ? undefined
+      : (partial?.target ?? (await selectedTarget(parsed, cwd)));
     finish(error, parsed.json, parsed.command, stdout, {
       ...(partial ?? { data: {}, warnings: [], outFile: null }),
       ...(target === undefined ? {} : { target }),
@@ -254,7 +256,7 @@ async function dispatch(
     stdout(text);
   };
   try {
-    const produced = await route(spec.id, project, parsed, cwd, human, reportConfig);
+    const produced = await route(spec.id, project, parsed, cwd, human, reportConfig, stdout);
     if (reportConfig && announce && project.ambiguous === undefined) {
       writeErr(`config: ${project.configPath}\n`);
     }
@@ -279,6 +281,7 @@ async function route(
   cwd: string,
   human: (text: string) => void,
   terminal: boolean,
+  stdout: (text: string) => void,
 ): Promise<Produced> {
   if (id === "build") return build(project, human);
   if (id === "catalog export") return catalog(project, parsed, cwd, human);
@@ -308,9 +311,21 @@ async function route(
     return rolesCli(id, project, parsed, human, terminal);
   }
   if (id === "import drizzle") return drizzle(project, parsed, human);
-  if (id === "migrate plan") return planCommand(project, parsed, human);
-  if (id === "migrate apply") return applyCommand(project, parsed, human);
-  if (id === "migrate status") return statusCommand(project, parsed, human);
+  if (id === "migrate plan") {
+    return parsed.fleet
+      ? fleetCommand(project, parsed, cwd, human, stdout)
+      : planCommand(project, parsed, human);
+  }
+  if (id === "migrate apply") {
+    return parsed.fleet
+      ? fleetCommand(project, parsed, cwd, human, stdout)
+      : applyCommand(project, parsed, human);
+  }
+  if (id === "migrate status") {
+    return parsed.fleet
+      ? fleetCommand(project, parsed, cwd, human, stdout)
+      : statusCommand(project, parsed, human);
+  }
   if (id === "migrate resolve") return resolveCommand(project, parsed, human);
   if (id === "migrate check") return migrateCheck(project, parsed, human);
   if (id === "migrate baseline") return baselineCommand(project, parsed, human);
@@ -717,6 +732,188 @@ async function drizzle(
   return textData(text);
 }
 
+async function fleetCommand(
+  project: ProjectContext,
+  parsed: ParsedCli,
+  cwd: string,
+  human: (text: string) => void,
+  stdout: (text: string) => void,
+): Promise<Produced> {
+  const config = await loadConfig(project);
+  if (config.fleet === undefined) {
+    throw tagOutcome(
+      new OkmError("OKM1895", "No fleet is configured.", {
+        kind: "invalid",
+        fix: { summary: "Set fleet.targets in okmodel.config.ts." },
+      }),
+      "usage",
+    );
+  }
+  const { applyFleet, planFleet, statusFleet } = await import("./fleet-engine.js");
+  const { parseMaxFailures } = await import("./fleet-config.js");
+  const fleet = config.fleet;
+  const options = {
+    cwd: project.cwd,
+    config: project.configPath,
+    ...(parsed.parallel !== undefined ? { parallel: parsed.parallel } : {}),
+    ...(parsed.maxFailures !== undefined
+      ? { maxFailures: parseMaxFailures(parsed.maxFailures) }
+      : {}),
+    ...(parsed.group !== undefined ? { group: parsed.group } : {}),
+    ...(parsed.only.length > 0 ? { only: parsed.only } : {}),
+    ...(parsed.planFile !== undefined ? { planPath: parsed.planFile } : {}),
+    ...(parsed.out !== undefined && parsed.command === "migrate plan"
+      ? { planPath: parsed.out }
+      : {}),
+    allowProtected: parsed.allowProtected,
+    allowBlocking: parsed.allowBlocking,
+    allowPooler: parsed.allowPooler,
+    ...(parsed.lockWaitMs !== undefined ? { lockWaitMs: parsed.lockWaitMs } : {}),
+    ...(parsed.lockTimeoutMs !== undefined ? { lockTimeoutMs: parsed.lockTimeoutMs } : {}),
+    ...(parsed.statementTimeoutMs !== undefined
+      ? { statementTimeoutMs: parsed.statementTimeoutMs }
+      : {}),
+    drift: parsed.drift,
+    onProgress: (line: string) => human(line),
+  };
+  const command = parsed.command ?? "migrate";
+  const emit = (data: Record<string, unknown>, exit: 0 | 1 | 4 | 5, errors: OkmError[]): void => {
+    if (!parsed.json) return;
+    stdout(
+      serializeEnvelope(
+        envelope({
+          command,
+          okmVersion: packageVersion(),
+          exit,
+          data,
+          errors: errors.map((error) => errorBody(error)),
+        }),
+      ),
+    );
+  };
+  if (parsed.command === "migrate status") {
+    const read = await statusFleet(fleet, options);
+    human(read.text);
+    for (const row of read.rows) emit(targetData(row), 0, []);
+    const data = summaryData({
+      event: "summary",
+      text: read.text,
+      targets: read.rows.length,
+      failures: read.rows.filter((row) => row.state === "failed").length,
+      unreachable: read.rows.filter((row) => row.state === "unreachable").length,
+      exit: 0,
+    });
+    return { text: read.text, data, warnings: [], outFile: null };
+  }
+  if (parsed.command === "migrate plan") {
+    const planned = await planFleet(fleet, options);
+    human(planned.text);
+    for (const row of planned.plan.targets) {
+      emit(
+        {
+          event: "target",
+          text: `${row.name}\t${row.state}`,
+          name: row.name,
+          state: row.state,
+          behind: row.behind,
+          bytes: row.bytes,
+        },
+        0,
+        [],
+      );
+    }
+    const data = summaryData({
+      event: "summary",
+      text: planned.text,
+      targets: planned.plan.targets.length,
+      failures: 0,
+      unreachable: planned.plan.targets.filter((row) => row.state === "unreachable").length,
+      exit: 0,
+    });
+    return { text: planned.text, data, warnings: [], outFile: null };
+  }
+  let summary: import("./fleet-config.js").FleetSummaryEvent | undefined;
+  for await (const event of applyFleet(fleet, options)) {
+    if (event.event === "target") {
+      const errors =
+        event.state === "failed" || event.state === "unreachable"
+          ? [
+              new OkmError(event.code ?? "invalid", event.summary ?? event.name, {
+                fix: { summary: event.fix ?? "Look at this target and run the fleet again." },
+              }),
+            ]
+          : [];
+      emit(targetData(event), 0, errors);
+      continue;
+    }
+    summary = event;
+  }
+  if (summary === undefined) {
+    throw new OkmError("invalid", "The fleet run produced no summary.", {
+      fix: { summary: "Run the command again." },
+    });
+  }
+  human(summary.text);
+  if (parsed.report !== undefined) {
+    const path = isAbsolute(parsed.report) ? parsed.report : join(cwd, parsed.report);
+    writeFileSync(path, `${JSON.stringify(summaryData(summary), null, 2)}\n`);
+  }
+  const data = summaryData(summary);
+  if (summary.exit !== 0) {
+    let code = "invalid";
+    if (summary.exit === 4) code = "OKM2211";
+    if (summary.exit === 5) code = "unavailable";
+    const error = new OkmError(code, summary.text.trim() || "The fleet run failed.", {
+      fix: { summary: "The failure table names each target." },
+    });
+    if (summary.exit === 4) tagOutcome(error, "guard");
+    if (summary.exit === 5) tagOutcome(error, "unreachable");
+    emit(data, summary.exit, [error]);
+    throw new CommandFinished(summary.exit, "");
+  }
+  return { text: summary.text, data, warnings: [], outFile: null };
+}
+
+function targetData(row: {
+  readonly name: string;
+  readonly state: string;
+  readonly behind: number;
+  readonly bytes: number;
+  readonly code?: string;
+  readonly summary?: string;
+  readonly fix?: string;
+}): Record<string, unknown> {
+  return {
+    event: "target",
+    text: `${row.name}\t${row.state}\t${String(row.behind)}`,
+    name: row.name,
+    state: row.state,
+    behind: row.behind,
+    bytes: row.bytes,
+    ...(row.code !== undefined ? { code: row.code } : {}),
+    ...(row.summary !== undefined ? { summary: row.summary } : {}),
+    ...(row.fix !== undefined ? { fix: row.fix } : {}),
+  };
+}
+
+function summaryData(summary: {
+  readonly event: "summary";
+  readonly text: string;
+  readonly targets: number;
+  readonly failures: number;
+  readonly unreachable: number;
+  readonly exit: number;
+}): Record<string, unknown> {
+  return {
+    event: summary.event,
+    text: summary.text,
+    targets: summary.targets,
+    failures: summary.failures,
+    unreachable: summary.unreachable,
+    exit: summary.exit,
+  };
+}
+
 async function planCommand(
   project: ProjectContext,
   parsed: ParsedCli,
@@ -997,6 +1194,9 @@ function place(
 ): { readonly data: unknown; readonly outFile: CliOutFile | null } {
   if (produced.outFile !== null) return { data: produced.data, outFile: produced.outFile };
   if (!parsed.json || parsed.out === undefined || parsed.spec?.ownOut) {
+    return { data: produced.data, outFile: null };
+  }
+  if (parsed.fleet && parsed.spec?.ownOutFlag === "fleet") {
     return { data: produced.data, outFile: null };
   }
   const payload = `${JSON.stringify(produced.data)}\n`;

@@ -245,30 +245,62 @@ export async function readTargetStatus(input: {
     ...(input.searchPath !== undefined ? { searchPath: input.searchPath } : {}),
   });
   try {
-    const present = await pool.execute(
-      "select (to_regclass('okm_meta') is not null), (to_regclass('okm_history') is not null)",
-    );
-    const meta = wireTrue(present.rows[0]?.[0] ?? null);
-    const history = wireTrue(present.rows[0]?.[1] ?? null);
-    const recorded = meta ? await readMeta(pool) : undefined;
-    const rows = history ? await readHistory(pool) : [];
-    const described = describeStatus(input.migrations, rows, recorded);
+    const inspected = await inspectTargetHistory(pool.execute.bind(pool), input.migrations);
     return {
       target: input.target,
-      version: described.version,
-      catalogHash: described.catalogHash,
-      state: described.state,
+      version: inspected.described.version,
+      catalogHash: inspected.described.catalogHash,
+      state: inspected.described.state,
       protected: input.protected,
-      backfills: await readBackfills(pool),
-      pending: described.pending,
-      steps: await readSteps(pool, input.migrations),
-      compatibility: compatibilityOf(described.state),
+      backfills: inspected.backfills,
+      pending: inspected.described.pending,
+      steps: inspected.steps,
+      compatibility: compatibilityOf(inspected.described.state),
     };
   } catch (error) {
     throw sessionFailure(error) ?? error;
   } finally {
     await finishQuiet(() => pool.close());
   }
+}
+
+/** Executor the fleet status pass and {@link readTargetStatus} share. */
+export type StatusExecute = (
+  text: string,
+  params?: readonly string[],
+) => Promise<{ readonly rows: readonly (readonly (string | null)[])[] }>;
+
+/**
+ * Reads `okm_meta`, `okm_history`, backfill, and step markers.
+ *
+ * The caller owns the connection and the search path. An absent ledger is
+ * an empty history, not an error.
+ *
+ * @param execute - One session
+ * @param migrations - Files in apply order
+ * @returns The same facts {@link readTargetStatus} prints
+ */
+export async function inspectTargetHistory(
+  execute: StatusExecute,
+  migrations: readonly StoredMigration[],
+): Promise<{
+  readonly described: ReturnType<typeof describeStatus>;
+  readonly backfills: readonly BackfillProgress[];
+  readonly steps: readonly StepProgress[];
+}> {
+  const pool = { execute };
+  const present = await execute(
+    "select (to_regclass('okm_meta') is not null), (to_regclass('okm_history') is not null)",
+  );
+  const meta = wireTrue(present.rows[0]?.[0] ?? null);
+  const history = wireTrue(present.rows[0]?.[1] ?? null);
+  const recorded = meta ? await readMeta(pool) : undefined;
+  const rows = history ? await readHistory(pool) : [];
+  return {
+    described: describeStatus(migrations, rows, recorded),
+    backfills: await readBackfills(pool),
+    steps: await readSteps(pool, migrations),
+  };
 }
 
 /**

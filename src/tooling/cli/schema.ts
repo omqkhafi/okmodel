@@ -10,6 +10,48 @@ import { HOLDER_KINDS } from "../migrate/lock-wait.js";
 import { UNTRUSTED_ORIGINS } from "../untrusted.js";
 import { COMMANDS } from "./spec.js";
 
+function fleetEventNode(): JsonSchemaNode {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["event", "text"],
+    properties: {
+      event: { enum: ["target", "summary"] },
+      text: { type: "string" },
+      name: { type: "string" },
+      state: {
+        enum: ["current", "behind", "ahead", "failed", "unreachable", "drifted", "skipped"],
+      },
+      behind: { type: "number" },
+      bytes: { type: "number" },
+      code: { type: "string" },
+      summary: { type: "string" },
+      fix: { type: "string" },
+      targets: { type: "number" },
+      failures: { type: "number" },
+      unreachable: { type: "number" },
+      exit: { type: "number" },
+    },
+  };
+}
+
+function fleetSchema(base: JsonSchema): JsonSchema {
+  return {
+    $schema: base.$schema,
+    $id: base.$id,
+    title: base.title,
+    oneOf: [
+      {
+        type: "object",
+        additionalProperties: false,
+        ...(base.required !== undefined ? { required: base.required } : {}),
+        ...(base.properties !== undefined ? { properties: base.properties } : {}),
+      },
+      fleetEventNode(),
+    ],
+  };
+}
+
 /** A JSON Schema document this module can check. */
 export type JsonSchema = {
   readonly $schema: string;
@@ -185,7 +227,7 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
     }),
   }),
   "import drizzle": textData(idOf("import drizzle"), "okm import drizzle data"),
-  "migrate plan": {
+  "migrate plan": fleetSchema({
     $schema: DRAFT,
     $id: idOf("migrate plan"),
     title: "okm migrate plan data",
@@ -261,30 +303,34 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
         },
       },
     },
-  },
-  "migrate apply": object("migrate apply", "okm migrate apply data", ["text"], {
-    text: { type: "string" },
-    attempts: { type: "number" },
-    waitedMs: { type: "number" },
   }),
-  "migrate status": object("migrate status", "okm migrate status data", ["text", "steps"], {
-    text: { type: "string" },
-    steps: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["id", "kind", "state", "attempt", "nextAction"],
-        properties: {
-          id: untrustedSchema(),
-          kind: untrustedSchema(),
-          state: untrustedSchema(),
-          attempt: { type: "number" },
-          nextAction: { type: "string" },
+  "migrate apply": fleetSchema(
+    object("migrate apply", "okm migrate apply data", ["text"], {
+      text: { type: "string" },
+      attempts: { type: "number" },
+      waitedMs: { type: "number" },
+    }),
+  ),
+  "migrate status": fleetSchema(
+    object("migrate status", "okm migrate status data", ["text", "steps"], {
+      text: { type: "string" },
+      steps: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["id", "kind", "state", "attempt", "nextAction"],
+          properties: {
+            id: untrustedSchema(),
+            kind: untrustedSchema(),
+            state: untrustedSchema(),
+            attempt: { type: "number" },
+            nextAction: { type: "string" },
+          },
         },
       },
-    },
-  }),
+    }),
+  ),
   "migrate resolve": object(
     "migrate resolve",
     "okm migrate resolve data",

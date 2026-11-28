@@ -1,0 +1,71 @@
+---
+title: Fleet
+description: Apply one migration history to many databases. Each database keeps its own ledger.
+summary: "One command plans and applies the same migrations to many databases, and each database keeps its own history."
+since: "0.11"
+feature: migrate.fleet
+status: stable
+---
+
+`fleet` on the config lists the databases. `okm migrate apply --fleet` plans that checkout and applies it. A database that is already current is skipped. Run the command again to retry the ones that are still behind.
+
+```ts title="schema.ts"
+import { schema, table, t } from "okmodel/pg";
+
+export const app = schema({
+  tables: [table("notes", { id: t.integer().primaryKey(), title: t.text() })],
+});
+```
+
+```ts title="okmodel.config.ts"
+import { defineConfig } from "okmodel/migrate";
+
+const url = process.env.TENANT_URL;
+if (url === undefined || url.length === 0) throw new Error("TENANT_URL is not set");
+
+export default defineConfig({
+  schema: "./schema.ts",
+  fleet: {
+    targets: [{ name: "acme", url }],
+  },
+});
+```
+
+`targets` may be that array, an async function, or `{ env: "TENANT_URLS" }`. An env value is a JSON array of `{ name, url }`, or one `name url` pair per line. A target may set `tags`.
+
+## Status, plan, apply [feature="migrate.fleet"]
+
+`okm migrate status --fleet` prints one row per database: `current`, `behind N`, `ahead`, `failed`, `unreachable`, or `drifted`. `--drift` compares a database with the catalog its own history names. Drift is off unless you pass it.
+
+`okm migrate plan --fleet --out fleet.plan.json` writes the steps and each database's head. The file has no URLs. `okm migrate apply --fleet --plan fleet.plan.json` refuses a database whose head changed since that file. Without `--plan`, apply plans and runs. The status table columns are the target name, the state, how many migrations are behind, the database size in bytes, and the recorded version. A fresh database has not recorded a version yet.
+
+## Canary and groups [feature="migrate.fleet.canary"]
+
+The first stage is one database: the smallest that is still behind. A failed canary stops the later stages. Set `canary` to a count or to `(target) => boolean` to choose them yourself. `groups` are ordered stages after the canary. The first matching group wins. Everyone else is `rest`.
+
+```ts title="groups.ts"
+import { defineConfig } from "okmodel/migrate";
+
+const url = process.env.TENANT_URL;
+if (url === undefined || url.length === 0) throw new Error("TENANT_URL is not set");
+
+export default defineConfig({
+  schema: "./schema.ts",
+  fleet: {
+    targets: [{ name: "acme", url, tags: { region: "eu" } }],
+    canary: 1,
+    parallel: 4,
+    perHost: 2,
+    maxFailures: 0,
+    groups: [{ name: "eu", match: (target) => target.tags?.region === "eu", parallel: 8 }],
+  },
+});
+```
+
+`okm migrate apply --fleet --group canary` runs the canary only. Look at it, then run `okm migrate apply --fleet`. `--only acme` limits the run to that name. `--parallel` and `--max-failures` override the config for one invocation. `0` stops at the first failure. A count, a percent such as `2%`, or `all` records failures and keeps going until that budget is spent. A database that does not accept a connection is `unreachable`. It is retried, then reported, and it does not spend the failure budget.
+
+A step marked blocking or rewrite runs one database at a time on each host. The plan prints that cap and a duration estimate.
+
+A migration that contracts the schema is refused until every database, including one this run could not reach, has the previous expand migration. `--allow-protected` lifts that fleet check. A target marked `protected: true` still stops on its own contract steps.
+
+`--json` prints one `okm.cli/1` line per database and a summary line. `--report fleet.json` writes the summary. The URL is not in either.

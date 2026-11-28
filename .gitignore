@@ -13,8 +13,10 @@ docs/api.md
 docs/backfill.md
 docs/capabilities.md
 docs/compatibility.md
+docs/database-per-tenant.md
 docs/environments.md
 docs/extension-compatibility.md
+docs/fleet.md
 docs/github-action.md
 docs/index.md
 docs/migrate-check.md

@@ -15,6 +15,7 @@ export type TargetInput =
 
 import type { RolesInput } from "../../dialects/pg/role/index.js";
 import type { WarningIgnore, WarningLevel } from "../../runtime/warnings/catalog.js";
+import type { FleetConfig } from "./fleet-config.js";
 
 /** Paths and targets `okm` reads. */
 export type MigrateConfig = {
@@ -106,6 +107,13 @@ export type MigrateConfig = {
     readonly levels?: Readonly<Record<string, WarningLevel>>;
     readonly ignore?: readonly WarningIgnore[];
   };
+  /**
+   * Database-per-tenant rollout (D366).
+   *
+   * Targets come from a list, a function, or an env var. Each database keeps
+   * its own history. There is no central registry.
+   */
+  readonly fleet?: FleetConfig;
 };
 
 /**
