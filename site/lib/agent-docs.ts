@@ -6,7 +6,7 @@
  * is not a full copy, so there is no dump and no shim.
  */
 
-import { ERROR_FIXES } from "./generated/error-fixes";
+import { renderErrorIndexMarkdown } from "./error-code-markdown";
 import { handbookPages, type HandbookPage } from "./handbook-corpus";
 import { absoluteDocsUrl, markdownPathForHref, markdownPathForSlugs } from "./markdown-url";
 import { readTagline, siteSameAs } from "./package-meta";
@@ -207,11 +207,13 @@ export function ensureFenceLanguages(markdown: string): string {
  */
 function pageDocuments(): Map<string, string> {
   if (pageCache !== undefined) return pageCache;
-  const fixes = errorFixAppendix();
   const map = new Map<string, string>();
   for (const page of handbookPages()) {
-    const extra = page.url === "/docs/reference/errors" ? fixes : "";
-    map.set(page.url, pageDocument(page, extra));
+    if (page.url === "/docs/reference/errors") {
+      map.set(page.url, renderErrorIndexMarkdown(oneLine(page.summary || page.description)));
+      continue;
+    }
+    map.set(page.url, pageDocument(page));
   }
   pageCache = map;
   return map;
@@ -434,29 +436,19 @@ function taskIndex(): string {
 }
 
 /**
- * Page markdown: source URL, title, summary, chip, body, then fixes.
+ * Page markdown: source URL, title, summary, chip, and body.
+ *
+ * The Errors page is an index of per-code twins. {@link pageDocuments} writes
+ * that index and does not call this function.
  *
  * @param page - Handbook page
- * @param extra - Appendix, used for registry fixes
  */
-function pageDocument(page: HandbookPage, extra: string): string {
+function pageDocument(page: HandbookPage): string {
   const summary = oneLine(page.summary || page.description);
   const parts = [`Source: ${absoluteDocsUrl(page.url)}`, "", `# ${page.title}`, "", `> ${summary}`, ""];
   if (page.chip.length > 0) parts.push(page.chip, "");
   parts.push(rewriteDocLinks(ensureFenceLanguages(page.body)).trim(), "");
-  if (extra.length > 0) parts.push(extra.trim(), "");
   return withMarkdownTwinIndex(parts.join("\n"));
-}
-
-/**
- * Fix text for every registry code. The errors page markdown carries this.
- */
-function errorFixAppendix(): string {
-  const lines = ["## Registry fixes", ""];
-  for (const doc of ERROR_FIXES) {
-    lines.push(`### ${doc.code}`, "", doc.fix, "");
-  }
-  return lines.join("\n");
 }
 
 /**

@@ -92,11 +92,12 @@ test("a page markdown twin equals the generator", async () => {
   expect(body).toContain("](https://okm.omqkhafi.dev/llms.mdx/docs/");
 }, 60_000);
 
-test("the errors page markdown carries the registry fix", () => {
+test("the errors page markdown is an index of per-code twins", () => {
   const body = renderPageMarkdown("/docs/reference/errors");
-  expect(body).toContain("## Registry fixes");
-  expect(body).toContain("### OKM1101");
-  expect(body).toContain("Pass a limit. A limit must not be above limits.max.");
+  expect(body).not.toContain("## Registry fixes");
+  expect(body).toContain("[`OKM1101`](https://okm.omqkhafi.dev/docs/reference/errors/OKM1101.md)");
+  expect(body.length).toBeLessThan(100_000);
+  console.log(`errors index chars ${String(body.length)}`);
 });
 
 test("core names the task index and the query essentials", () => {

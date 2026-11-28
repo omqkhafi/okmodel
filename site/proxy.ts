@@ -6,15 +6,19 @@
 import { isChromeInspectorProbe } from "@/lib/chrome-inspector";
 import { DISCOVERY_LINK, markdownAlternateLink } from "@/lib/discovery-links";
 import { isDocsRedirect } from "@/lib/docs-redirects";
+import { errorCodeBrowserRedirect, errorCodeRewrite } from "@/lib/error-code-path";
 import { docsPageExists } from "@/lib/handbook-pages";
 import { markdownNegotiation, markdownTwinPath } from "@/lib/markdown-negotiate";
 import { buildRobotsTxt } from "@/lib/robots-txt";
+import { isMarkdownPreferred } from "fumadocs-core/negotiation";
 import { type NextRequest, NextResponse } from "next/server";
 
 /**
  * When Accept prefers markdown, rewrite handbook URLs to their twins and 404
- * unknown paths with a markdown body. Always stamp `Vary: Accept` on those
- * responses so caches key the representation they selected.
+ * unknown paths with a markdown body. A browser request for one known error
+ * code redirects to that code's anchor on the Errors page. Always stamp
+ * `Vary: Accept` on those responses so caches key the representation they
+ * selected.
  *
  * Chrome / Cursor DevTools probe this origin as CDP (`GET /json/version`);
  * answer 204 so those probes never paint as handbook 404s.
@@ -33,6 +37,29 @@ export function proxy(request: NextRequest): NextResponse | Response {
         Link: DISCOVERY_LINK,
       },
     });
+  }
+
+  const markdown = isMarkdownPreferred(request);
+  const code = errorCodeRewrite(request.nextUrl.pathname, markdown);
+  if (code !== undefined) {
+    const url = request.nextUrl.clone();
+    // A query string on a proxy rewrite does not reach the route handler.
+    url.pathname = `/api/error-code/${code}`;
+    url.search = "";
+    const response = NextResponse.rewrite(url);
+    response.headers.set("Vary", "Accept");
+    return response;
+  }
+
+  if (!markdown) {
+    const anchor = errorCodeBrowserRedirect(request.nextUrl.pathname);
+    if (anchor !== undefined) {
+      const location = new URL(anchor, request.nextUrl.origin);
+      const response = new NextResponse(null, { status: 308 });
+      response.headers.set("Location", location.href);
+      response.headers.set("Vary", "Accept");
+      return response;
+    }
   }
 
   const action = markdownNegotiation(request);

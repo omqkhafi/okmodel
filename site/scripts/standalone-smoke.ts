@@ -39,6 +39,13 @@ const PROBES: readonly Probe[] = [
   { path: "/docs/start/basic-usage", expect: [308, 200] },
   { path: "/docs/start/from-drizzle", expect: [308, 200] },
   { path: "/api/search?query=table", expect: [200] },
+  { path: "/llms.mdx/docs/reference/errors.md", expect: [200] },
+  { path: "/docs/reference/errors", markdown: true, expect: [200] },
+  { path: "/docs/reference/errors/OKM1101.md", expect: [200] },
+  { path: "/docs/reference/errors/OKM1101", markdown: true, expect: [200] },
+  { path: "/docs/reference/errors/OKM1101", expect: [308, 200] },
+  { path: "/docs/reference/errors/OKM0000", expect: [404] },
+  { path: "/docs/reference/errors/OKM0000.md", expect: [404] },
 ];
 
 const problems = [...unlistedDynamicRoutes()];

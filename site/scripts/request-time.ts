@@ -19,6 +19,7 @@ export const SITE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const REQUEST_TIME_ENTRIES = [
   "proxy.ts",
   "app/api/search/route.ts",
+  "app/api/error-code/[code]/route.ts",
   "app/api/markdown-not-found/route.ts",
   "app/search/page.tsx",
   "app/missing/[[...path]]/route.ts",

@@ -15,9 +15,9 @@ test("search results are in the HTML without a script", () => {
   expect(html).not.toContain("<script");
   expect(html).toContain('action="/search"');
   expect(html).toContain('name="q"');
-  expect(html).toContain('href="/docs/reference/errors"');
-  expect(html).toContain("Errors");
-  expect(html).toContain("/llms.mdx/docs/reference/errors.md");
+  expect(html).toContain('href="/docs/reference/errors#okm1101"');
+  expect(html).toContain("OKM1101");
+  expect(html).toContain("https://okm.omqkhafi.dev/docs/reference/errors/OKM1101.md");
 });
 
 test("the HTML 404 lists nearby pages", () => {

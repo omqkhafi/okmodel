@@ -15,6 +15,8 @@ Pick one source. Prefer the installed package when the project pins a version. P
 
 `/llms.txt` lists every public handbook page in sidebar order: title, absolute markdown URL, and a one-line description. The Optional section lists every agent file. `llms-core` is Get started, Concepts, the query calls you use first, and the "I want to…" index. Each other file is one section. A file longer than 100,000 characters is split, and the parts are numbered. `/llms.json` is the same page set as JSON (`slug`, `title`, `description`, `html`, `markdown`) plus the `files` list. Each page line points at that page's markdown twin. Send `Accept: text/markdown` on a handbook HTML URL and the response is that twin (`Vary: Accept`). An unknown path is a 404, in HTML and in markdown, with the closest pages.
 
+The Errors page markdown is an index: one line per code. One code is `GET /docs/reference/errors/OKM1101.md`. The same body is `Accept: text/markdown` on `/docs/reference/errors/OKM1101`. A browser request to that extensionless URL redirects to `/docs/reference/errors#okm1101`. An unknown code is a 404 with the closest pages. There is no `llms-errors.txt`. The reference section file includes the index, and a second file would repeat it.
+
 ## Search
 
 `GET /api/search?query=` returns JSON:
@@ -24,10 +26,10 @@ Pick one source. Prefer the installed package when the project pins a version. P
   "query": "OKM1101",
   "results": [
     {
-      "title": "Errors",
+      "title": "OKM1101",
       "url": "/docs/reference/errors#okm1101",
-      "markdown": "https://okm.omqkhafi.dev/llms.mdx/docs/reference/errors.md#okm1101",
-      "summary": "OkmError carries a kind, a category, and a code.",
+      "markdown": "https://okm.omqkhafi.dev/docs/reference/errors/OKM1101.md",
+      "summary": "find, descendants, or ancestors was called without a limit, or a limit is above limits.max. connect({ limits }) can set a default for find, descendants, ancestors, page, and groupBy.",
       "section": "Reference",
       "chip": ""
     }
@@ -35,7 +37,7 @@ Pick one source. Prefer the installed package when the project pins a version. P
 }
 ```
 
-`title` is the page title. `url` is the HTML path. `markdown` is the absolute `.md` URL. `summary` is the page summary. `section` is the sidebar section. `chip` is the support line when the page names a feature, and empty otherwise. The same index answers [`/search`](/search) as HTML, without JavaScript.
+`title` is the page title, or the code when the query is one registry code. `url` is the HTML path, or `/docs/reference/errors#okm####` for that code. `markdown` is the absolute `.md` URL. `summary` is the page summary, or the registry summary for a code. `section` is the sidebar section. `chip` is the support line when the page names a feature, and empty otherwise. The same index answers [`/search`](/search) as HTML, without JavaScript.
 
 The packaged index is one line per public doc page in that release. Open one page from it. A failing `OKM` code has its own file at `node_modules/okmodel/docs/errors/⟨code⟩.md`. Do not fetch the website when the package already has the page for that version.
 

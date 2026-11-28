@@ -31,6 +31,8 @@ test("the generated fix list matches ERROR_DOCS", () => {
   for (const doc of ERROR_DOCS) {
     const row = ERROR_FIXES.find((item) => item.code === doc.code);
     expect(row?.fix, doc.code).toBe(doc.fix);
+    expect(row?.summary, doc.code).toBe(doc.summary);
+    expect(row?.kind, doc.code).toBe(errorCodeRows().find((item) => item.code === doc.code)?.kind);
   }
   const path = join(siteRoot(), "lib/generated/error-fixes.ts");
   expect(readFileSync(path, "utf8")).toBe(renderErrorFixesModule());

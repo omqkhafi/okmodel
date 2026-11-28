@@ -16,8 +16,9 @@
  * `stop()` from outside waits for the handler already running. `stop()` from
  * that handler or its `onError` only marks the watch stopped. The handler
  * finishes, and nothing from that watch runs after it. The distinction uses
- * `AsyncLocalStorage`, loaded on the first watch. A runtime without it keeps
- * the outside wait, including from inside the handler.
+ * `AsyncLocalStorage`, read from `process.getBuiltinModule` when a watch
+ * opens. A runtime without that method keeps the outside wait, including
+ * from inside the handler.
  */
 
 import type { DriverPool, ExecuteResult } from "../contracts/driver.js";
@@ -257,7 +258,7 @@ export function queueWarning(usage: number | undefined): string | undefined {
   return "OKM2212: pg_notification_queue_usage is at least half full.";
 }
 
-/** Async context for one subscription. Absent when `node:async_hooks` cannot load. */
+/** Async context for one subscription. Absent when the built-in cannot be read. */
 type WatchLocal = {
   run<R>(store: object, fn: () => R): R;
   getStore(): object | undefined;
@@ -265,27 +266,31 @@ type WatchLocal = {
 
 let watchLocal: WatchLocal | undefined;
 let watchLocalKnown = false;
-let watchLocalLoad: Promise<void> | undefined;
 
 /**
- * Loads `AsyncLocalStorage` on the first watch or the first `stop()`.
+ * Reads `AsyncLocalStorage` once, on the first watch.
  *
- * The import stays inside this function so a cold start does not load it.
- * Workerd without `nodejs_compat` rejects the import. `stop()` then cannot
- * tell a handler from its caller and keeps waiting.
+ * `process.getBuiltinModule` is synchronous where it exists (Node 22.3+, the
+ * package floor is 22.18, plus Bun, Deno, and workerd with `nodejs_compat`).
+ * There is no module specifier, so a browser bundle does not try to read
+ * `node:async_hooks`. A missing method leaves `stop()` waiting for the handler.
  */
-function ensureWatchLocal(): Promise<void> {
-  if (watchLocalKnown) return Promise.resolve();
-  watchLocalLoad ??= import("node:async_hooks")
-    .then((mod: { readonly AsyncLocalStorage?: new () => WatchLocal }) => {
-      const Ctor = mod.AsyncLocalStorage;
-      if (typeof Ctor === "function") watchLocal = new Ctor();
-      watchLocalKnown = true;
-    })
-    .catch(() => {
-      watchLocalKnown = true;
-    });
-  return watchLocalLoad;
+function ensureWatchLocal(): void {
+  if (watchLocalKnown) return;
+  watchLocalKnown = true;
+  try {
+    const loaded = (
+      globalThis as {
+        process?: {
+          getBuiltinModule?: (id: string) => { AsyncLocalStorage?: new () => WatchLocal };
+        };
+      }
+    ).process?.getBuiltinModule?.("node:async_hooks");
+    const Ctor = loaded?.AsyncLocalStorage;
+    if (typeof Ctor === "function") watchLocal = new Ctor();
+  } catch {
+    // A throw leaves the outside wait in place.
+  }
 }
 
 function openSubscription(
@@ -315,7 +320,7 @@ function openSubscription(
   let chain: Promise<void> = Promise.resolve();
   let registration: Registration | undefined;
   const own = {};
-  const readyLocal = ensureWatchLocal();
+  ensureWatchLocal();
   const channel =
     parsed.channel ??
     (table === undefined ? undefined : watchChannel(session.schema.model[table]?.sql ?? table));
@@ -323,7 +328,6 @@ function openSubscription(
   const hub = wantsPush ? hubFor(session) : undefined;
 
   const invoke = async (): Promise<void> => {
-    await readyLocal;
     const body = async (): Promise<void> => {
       counts.runs += 1;
       try {
@@ -398,7 +402,6 @@ function openSubscription(
 
   const stop = async (): Promise<void> => {
     const inside = watchLocal?.getStore() === own;
-    if (!watchLocalKnown) void ensureWatchLocal();
     if (!stopped) {
       stopped = true;
       if (waiting !== undefined) clearTimeout(waiting);

@@ -50,7 +50,7 @@ export function SearchResults({ query }: { readonly query: string }) {
 function SearchHit({ hit }: { readonly hit: SearchResult }) {
   return (
     <li>
-      <Link href={hit.url.split("#")[0] ?? hit.url} className="text-base underline-offset-4 hover:underline">
+      <Link href={hit.url} className="text-base underline-offset-4 hover:underline">
         {hit.title}
       </Link>
       <p className="text-xs text-fd-muted-foreground">

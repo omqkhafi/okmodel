@@ -5,6 +5,10 @@
  * Turbopack, Vite, and workerd are too slow for that job. After merge can
  * call `bun run proof:bundlers`. PR CI does not.
  *
+ * One extra row builds `okmodel/pg/pglite` for the browser with webpack
+ * `target: "web"` and Vite. That row does not open a database. Its result
+ * is `built`.
+ *
  *   DATABASE_URL=postgres://… bun run proof:bundlers
  *
  * Before the mapped-error checks, `okm generate` and `okm migrate apply`
@@ -267,6 +271,82 @@ function databaseUrl(base: string, name: string): string {
   return parsed.href;
 }
 
+/**
+ * One browser-target row: webpack `target: "web"` and a Vite library build
+ * of an app that imports `okmodel/pg/pglite`. Neither build opens a database.
+ * Success is `built`. The row is not part of `gate / check`.
+ */
+async function browserWebTarget(): Promise<void> {
+  await record("browser web", "pglite", async () => {
+    const dir = join(cache, "browser");
+    rmSync(dir, { recursive: true, force: true });
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ private: true, type: "module", dependencies: { okmodel: `file:${root}` } }),
+    );
+    writeFileSync(
+      join(dir, "app.mjs"),
+      `import { connect } from "okmodel/pg/pglite";\nexport { connect };\n`,
+    );
+    writeFileSync(
+      join(dir, "webpack.config.mjs"),
+      `import path from "node:path";
+import { fileURLToPath } from "node:url";
+const dir = path.dirname(fileURLToPath(import.meta.url));
+export default {
+  mode: "production",
+  target: "web",
+  context: dir,
+  entry: "./app.mjs",
+  output: { path: path.join(dir, "webpack-dist"), filename: "app.js" },
+  externals: ({ request }, callback) => {
+    if (typeof request === "string" && (request === "@electric-sql/pglite" || request.startsWith("@electric-sql/pglite/"))) {
+      callback(null, "pglite");
+      return;
+    }
+    callback();
+  },
+};
+`,
+    );
+    writeFileSync(
+      join(dir, "vite.config.mjs"),
+      `import { defineConfig } from "vite";
+import { fileURLToPath } from "node:url";
+export default defineConfig({
+  build: {
+    lib: {
+      entry: fileURLToPath(new URL("./app.mjs", import.meta.url)),
+      formats: ["es"],
+      fileName: "app",
+    },
+    target: "es2022",
+    outDir: "vite-dist",
+    emptyOutDir: true,
+    rollupOptions: {
+      external: (id) => id === "@electric-sql/pglite" || id.startsWith("@electric-sql/pglite/"),
+    },
+  },
+});
+`,
+    );
+    const linked = await run([bunBin(), "install"], dir);
+    if (linked.code !== 0) return linked.out.trim().slice(-400);
+    const webpack = await run(
+      [join(cache, "node_modules/.bin/webpack"), "--config", join(dir, "webpack.config.mjs")],
+      dir,
+    );
+    if (webpack.code !== 0) return `webpack: ${webpack.out.trim().slice(-400)}`;
+    const vite = await run(
+      [join(cache, "node_modules/.bin/vite"), "build", "--config", join(dir, "vite.config.mjs")],
+      dir,
+    );
+    if (vite.code !== 0) return `vite: ${vite.out.trim().slice(-400)}`;
+    return "built";
+  });
+}
+
 async function prepareDatabase(): Promise<void> {
   if (!/^[a-z0-9_]+$/.test(databaseName)) {
     throw new Error("refusing an unexpected database name");
@@ -376,6 +456,8 @@ writeFileSync(
     dependencies: {
       esbuild: "0.25.5",
       vite: "6.3.5",
+      webpack: "5.97.1",
+      "webpack-cli": "6.0.1",
       next: "15.5.4",
       react: "19.1.1",
       "react-dom": "19.1.1",
@@ -397,6 +479,7 @@ if (packageBuild.code !== 0) {
 }
 
 try {
+  await browserWebTarget();
   await prepareDatabase();
 
   await (async () => {
@@ -686,5 +769,5 @@ for (const row of rows) {
   process.stdout.write(`${row.bundler}\t${row.variant}\t${row.result}\t${row.seconds}\n`);
 }
 
-const failed = rows.some((row) => row.result !== "mapped");
+const failed = rows.some((row) => row.result !== "mapped" && row.result !== "built");
 if (failed) process.exit(1);

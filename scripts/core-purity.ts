@@ -16,9 +16,9 @@ import { moduleSpecifiers } from "./specifiers.js";
  * it to send a CancelRequest. `catalog-require.js` may import `node:module`
  * so `schema()` can load the catalog compiler without putting it on the
  * featureless startup graph. The loader is JavaScript so a consumer typecheck
- * with `types: []` does not need Node types. `watch.ts` may dynamically import
- * `node:async_hooks` when a watch opens, so `stop()` can tell its own handler
- * from a caller. The import is not at module scope.
+ * with `types: []` does not need Node types. `watch.ts` reads
+ * `AsyncLocalStorage` through `process.getBuiltinModule` and does not import
+ * `node:async_hooks`.
  */
 export function checkCorePurity(options: {
   readonly root: string;
@@ -47,7 +47,7 @@ function nodeImportProblems(root: string): readonly string[] {
     const text = readFileSync(file, "utf8");
     for (const specifier of moduleSpecifiers(text)) {
       if (nodeImportAllowed(root, file, specifier)) continue;
-      if (specifier.startsWith("node:") || NODE_BUILTINS.has(specifier)) {
+      if (isNodeSpecifier(specifier)) {
         problems.push(`${relative(root, file)} imports ${specifier}`);
       }
     }
@@ -129,14 +129,6 @@ const NODE_NET = new Set([
 const NODE_MODULE = new Set([join("dialects", "pg", "catalog-require.js")]);
 
 /**
- * Dynamic `node:async_hooks` for `stop()` inside a watch handler.
- *
- * The startup graph does not load `watch.ts`. A missing built-in is caught
- * at the call, and `stop()` keeps waiting on that runtime.
- */
-const NODE_ASYNC_HOOKS = new Set([join("runtime", "watch.ts")]);
-
-/**
  * The core imports of Node that a driver socket or the catalog loader needs.
  *
  * @param root - Repository or fixture root
@@ -147,12 +139,22 @@ const NODE_ASYNC_HOOKS = new Set([join("runtime", "watch.ts")]);
 function nodeImportAllowed(root: string, file: string, specifier: string): boolean {
   const path = relative(root, file);
   if (specifier === "node:net" && NODE_NET.has(path)) return true;
-  if (specifier === "node:async_hooks" && NODE_ASYNC_HOOKS.has(path)) return true;
   return specifier === "node:module" && NODE_MODULE.has(path);
 }
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Whether `specifier` is a Node built-in, with or without the `node:` prefix.
+ *
+ * `bundle-purity` uses the same set for the runtime graph.
+ *
+ * @param specifier - Import specifier
+ */
+export function isNodeSpecifier(specifier: string): boolean {
+  return specifier.startsWith("node:") || NODE_BUILTINS.has(specifier);
 }
 
 const NODE_BUILTINS: ReadonlySet<string> = new Set([
