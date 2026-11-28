@@ -534,9 +534,11 @@ postgresTest(
       const triggerParallel = await timedParallel(database.url, "push_cost", workers, each);
       const offParallel = await timedParallel(database.url, "quiet_cost", workers, each);
       expect(none).toBeGreaterThan(0);
-      expect(noneParallel).toBeGreaterThan(0);
-      expect(off).toBeGreaterThan(0);
       expect(trigger).toBeGreaterThan(0);
+      expect(off).toBeGreaterThan(0);
+      expect(noneParallel).toBeGreaterThan(0);
+      expect(triggerParallel).toBeGreaterThan(0);
+      expect(offParallel).toBeGreaterThan(0);
     } finally {
       await sql.end({ timeout: 5 });
       await database.close();
