@@ -1,5 +1,18 @@
+import { remarkFeatureMarks } from "./lib/feature-heading";
 import { defineConfig, defineDocs } from "fumadocs-mdx/config";
 import { metaSchema, pageSchema } from "fumadocs-core/source/schema";
+import { z } from "zod";
+
+/**
+ * Support fields. Optional here so pages on the exemption list still build.
+ * `scripts/docs-frontmatter.ts` requires them for every other page.
+ */
+const handbookPageSchema = pageSchema.extend({
+  summary: z.string().optional(),
+  since: z.string().optional(),
+  feature: z.string().optional(),
+  status: z.enum(["stable", "experimental", "deprecated"]).optional(),
+});
 
 /**
  * Docs collection. `content/docs` is the handbook: pages, frontmatter, and
@@ -8,7 +21,7 @@ import { metaSchema, pageSchema } from "fumadocs-core/source/schema";
 export const docs = defineDocs({
   dir: "content/docs",
   docs: {
-    schema: pageSchema,
+    schema: handbookPageSchema,
     postprocess: {
       includeProcessedMarkdown: true,
     },
@@ -19,5 +32,7 @@ export const docs = defineDocs({
 });
 
 export default defineConfig({
-  mdxOptions: {},
+  mdxOptions: {
+    remarkPlugins: (plugins) => [remarkFeatureMarks, ...plugins],
+  },
 });

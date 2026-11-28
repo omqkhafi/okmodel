@@ -1,6 +1,9 @@
 ---
 title: "Defaults"
 description: "Omitted, the column is required and not null."
+summary: "A missing value is filled from nullable through a generated expression."
+since: "0.10"
+status: stable
 ---
 <Callout type="info" title="Where this fits">
 A column with no default is required and not null. This page is how a missing value is filled, from nullable through a generated expression. [Shape](/docs/schema/enums-arrays-picklists) is next, when one column holds more than one value.
@@ -159,7 +162,7 @@ export const notes = table("notes", {
 `defaultSql` must be a non-empty SQL expression.
 </Callout>
 
-### Generated
+### Generated [feature="column.generated"]
 
 `.generated((columns) => expression)` is `generated always as (expression) stored`. The callback receives column handles. Insert and update omit the column. A read returns the value. `{ stored: false }` emits `VIRTUAL` and needs PostgreSQL 18.
 
