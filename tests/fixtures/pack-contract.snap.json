@@ -85,7 +85,8 @@
     },
     "./pg": {
       "import": "./dist/dialects/pg/index.js",
-      "types": "./dist/dialects/pg/index.d.ts"
+      "types": "./dist/dialects/pg/index.d.ts",
+      "workerd": "./dist/dialects/pg/index.workerd.js"
     },
     "./pg/btree_gin": {
       "import": "./dist/dialects/pg/ext/btree-gin.js",

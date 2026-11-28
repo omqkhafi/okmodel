@@ -5,6 +5,8 @@
  * or one that is not an integer, is refused when `schema()` runs.
  */
 
+import { OkmError } from "../../contracts/error.js";
+
 /** An integer major of {@link POSTGRES_FLOOR} or later. */
 export type PostgresMajor = number;
 
@@ -38,6 +40,20 @@ export const TEMPORAL_POSTGRES = 18 satisfies PostgresMajor;
  */
 export function temporalNeedsPostgres(): string {
   return `WITHOUT OVERLAPS and PERIOD need PostgreSQL ${String(TEMPORAL_POSTGRES)}. Use an exclusion constraint on an older server.`;
+}
+
+/**
+ * Refuses `WITHOUT OVERLAPS` and `PERIOD` when the declared floor is older than PostgreSQL 18.
+ *
+ * A floor that was not parsed is not this error. Connect reports that server later.
+ *
+ * @param requires - Declared floor, when the schema set one
+ */
+export function refuseTemporal(requires: { readonly postgres?: string } | undefined): void {
+  const declared = parsePostgresFloor(requires?.postgres);
+  if (!(declared > 0) || declared >= TEMPORAL_POSTGRES) return;
+  const sentence = temporalNeedsPostgres();
+  throw new OkmError("OKM1812", sentence, { fix: { summary: sentence } });
 }
 
 /**

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
 import { listTypeScriptFiles } from "./files.js";
@@ -13,7 +13,10 @@ import { moduleSpecifiers } from "./specifiers.js";
  * Bare Node built-in specifiers (`fs`, `path`, …) count as the same dependency.
  * The tooling layer may import Node. The postgres.js adapter may import
  * `node:net` to unref an idle socket. The node-postgres adapter may import
- * it to send a CancelRequest.
+ * it to send a CancelRequest. `catalog-require.js` may import `node:module`
+ * so `schema()` can load the catalog compiler without putting it on the
+ * featureless startup graph. The loader is JavaScript so a consumer typecheck
+ * with `types: []` does not need Node types.
  */
 export function checkCorePurity(options: {
   readonly root: string;
@@ -35,7 +38,7 @@ function nodeImportProblems(root: string): readonly string[] {
   } catch (error) {
     return [`core-purity: cannot read ${root}: ${messageOf(error)}`];
   }
-  for (const file of files) {
+  for (const file of [...files, ...javascriptFiles(root)]) {
     if (!isCoreFile(root, file)) {
       continue;
     }
@@ -48,6 +51,25 @@ function nodeImportProblems(root: string): readonly string[] {
     }
   }
   return problems;
+}
+
+function javascriptFiles(dir: string): string[] {
+  const found: string[] = [];
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return found;
+  }
+  for (const entry of entries) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      found.push(...javascriptFiles(path));
+      continue;
+    }
+    if (entry.name.endsWith(".js")) found.push(path);
+  }
+  return found;
 }
 
 function dependencyProblems(packageJsonPath: string): readonly string[] {
@@ -96,15 +118,26 @@ const NODE_NET = new Set([
 ]);
 
 /**
- * The core imports of Node that a driver socket needs.
+ * `createRequire` for the catalog compiler.
+ *
+ * A literal `require()` is inlined into the app bundle. This is the one
+ * dialects file allowed to import `node:module`. It is JavaScript so the
+ * type graph of `schema()` does not mention Node.
+ */
+const NODE_MODULE = new Set([join("dialects", "pg", "catalog-require.js")]);
+
+/**
+ * The core imports of Node that a driver socket or the catalog loader needs.
  *
  * @param root - Repository or fixture root
  * @param file - Source file
  * @param specifier - Import specifier
- * @returns Whether this import is an allowed driver socket
+ * @returns Whether this import is an allowed driver socket or the catalog loader
  */
 function nodeImportAllowed(root: string, file: string, specifier: string): boolean {
-  return specifier === "node:net" && NODE_NET.has(relative(root, file));
+  const path = relative(root, file);
+  if (specifier === "node:net" && NODE_NET.has(path)) return true;
+  return specifier === "node:module" && NODE_MODULE.has(path);
 }
 
 function messageOf(error: unknown): string {

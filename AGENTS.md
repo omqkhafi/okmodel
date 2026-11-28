@@ -41,7 +41,7 @@ A layer may import layers below it. It must not import a layer above it. Adapter
 - `bun run typecheck` runs `scripts/ts-range.ts`, then `tsc --noEmit` on the raw fixtures.
 - `bun run lint` uses oxlint with type-aware rules. `bun run format:check` uses oxfmt. `bun run format` rewrites formatting.
 - `bun run layers-check` fails when an import goes upward.
-- `bun run core-purity` fails on a `node:*` import below tooling and on runtime `dependencies`. The postgres.js adapter may import `node:net` to unref an idle pool socket. The node-postgres adapter may import it to cancel a query.
+- `bun run core-purity` fails on a `node:*` import below tooling and on runtime `dependencies`. The postgres.js adapter may import `node:net` to unref an idle pool socket. The node-postgres adapter may import it to cancel a query. `src/dialects/pg/catalog-require.js` may import `node:module` to load the catalog compiler on the first `.catalog` read. The loader is JavaScript so a consumer typecheck with `types: []` does not need Node types.
 - `bun run docs:pack` generates public package docs from the site and the error registry into `docs/`. `bun run docs:check` runs that generate step, then checks relative links, `§` references, decision numbers, site→pack mapping, and public-doc hygiene.
 - `bun run readme:check` fails when `README.md` contains a relative link or an image that is not an absolute `https://` URL.
 - `bun test` covers package exports, the bins, the check fixtures, PGlite, and the schema fixtures. Postgres tests run when the topology is up; they fail instead of skipping when `REQUIRE_DOCKER=1`. PGlite and the in-process wire server stay in that run.
