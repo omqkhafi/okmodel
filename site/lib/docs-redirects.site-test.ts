@@ -7,7 +7,7 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { DOCS_REDIRECTS, resolveRedirect, withRedirectDestinations } from "./docs-redirects";
+import { DOCS_REDIRECTS, isDocsRedirect, resolveRedirect, withRedirectDestinations } from "./docs-redirects";
 import { docsPageExists } from "./handbook-pages";
 import { markdownNegotiation, markdownTwinPath } from "./markdown-negotiate";
 import { siteRoot } from "./repo";
@@ -26,6 +26,8 @@ const BROKEN_BY_DAY = [
 
 test("every docs redirect is permanent (308) and its destination exists", () => {
   expect(DOCS_REDIRECTS.length).toBeGreaterThan(0);
+  expect(isDocsRedirect("/docs/define/table/validation")).toBe(true);
+  expect(isDocsRedirect("/docs/nope")).toBe(false);
   for (const entry of DOCS_REDIRECTS) {
     expect(entry.permanent).toBe(true);
     expect(docsPageExists(entry.destination), entry.destination).toBe(true);

@@ -107,6 +107,17 @@ export function withRedirectDestinations(
   return [...urls, ...extra];
 }
 
+/**
+ * Whether Next will redirect this path. The proxy must pass it through so
+ * the 308 still happens.
+ *
+ * @param pathname - Request pathname
+ */
+export function isDocsRedirect(pathname: string): boolean {
+  const path = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+  return DOCS_REDIRECTS.some((entry) => matchRedirect(path, entry) !== undefined);
+}
+
 function matchRedirect(pathname: string, entry: DocsRedirect): string | undefined {
   const star = entry.source.indexOf(":");
   if (star < 0) return pathname === entry.source ? entry.destination : undefined;

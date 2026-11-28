@@ -1,11 +1,10 @@
-import { buildLlmsCatalog } from "@/lib/llms-index";
+import { buildLlmsCatalog } from "@/lib/agent-docs";
 
+export const dynamic = "force-static";
 export const revalidate = false;
 
-export function GET() {
+export function GET(): Response {
   return Response.json(buildLlmsCatalog(), {
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-    },
+    headers: { "Content-Type": "application/json; charset=utf-8" },
   });
 }

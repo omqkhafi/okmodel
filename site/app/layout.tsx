@@ -4,8 +4,8 @@ import { Topbar } from "@/components/chrome/topbar";
 import { OkmFaviconCycle } from "@/components/okm-logo-icon";
 import { ScrollToTop } from "@/components/scroll-to-top";
 import { readTagline } from "@/lib/package-meta";
+import { visibleTree } from "@/lib/page-chrome";
 import { SITE_NAME, SITE_ORIGIN } from "@/lib/site-identity";
-import { source } from "@/lib/source";
 import { WEBMCP_GUARD } from "@/lib/webmcp-guard";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
@@ -66,10 +66,23 @@ export default function Layout({ children }: { children: ReactNode }) {
         <Provider>
           <OkmFaviconCycle />
           <ScrollToTop />
-          <Topbar tree={source.getPageTree()} />
+          <Topbar tree={visibleTree()} />
           <div id="content" className="flex flex-1 flex-col">
             {children}
           </div>
+          <footer className="border-t border-fd-border px-6 py-4 text-sm text-fd-muted-foreground">
+            <nav aria-label="Site" className="mx-auto flex max-w-5xl flex-wrap gap-x-4 gap-y-2">
+              <a href="/llms.txt" className="underline-offset-4 hover:underline">
+                For agents
+              </a>
+              <a href="/search" className="underline-offset-4 hover:underline">
+                Search
+              </a>
+              <a href="/docs" className="underline-offset-4 hover:underline">
+                Documentation
+              </a>
+            </nav>
+          </footer>
         </Provider>
         <script dangerouslySetInnerHTML={{ __html: WEBMCP_GUARD }} />
       </body>

@@ -1,5 +1,5 @@
 import { DocsSidebar } from "@/components/chrome/docs-sidebar";
-import { source } from "@/lib/source";
+import { visibleTree } from "@/lib/page-chrome";
 import { DocsLayout } from "@fumadocs/base-ui/layouts/docs";
 
 /**
@@ -9,7 +9,7 @@ import { DocsLayout } from "@fumadocs/base-ui/layouts/docs";
  * Fumadocs' grid columns.
  */
 export default function Layout({ children }: LayoutProps<"/docs">) {
-  const tree = source.getPageTree();
+  const tree = visibleTree();
 
   return (
     <>

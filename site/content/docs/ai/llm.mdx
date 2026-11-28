@@ -1,6 +1,6 @@
 ---
 title: "Docs for agents"
-description: "Where an agent finds one handbook page, the full set, or the version-matched package docs."
+description: "Where an agent finds one handbook page, a section file, or the version-matched package docs."
 ---
 Pick one source. Prefer the installed package when the project pins a version. Prefer the site when you need the public handbook as markdown.
 
@@ -8,13 +8,34 @@ Pick one source. Prefer the installed package when the project pins a version. P
 | --- | --- |
 | One handbook page | `/llms.mdx/docs/⟨slug⟩.md` (the introduction is `/llms.mdx/docs/index.md`) |
 | Find a page | [`/llms.txt`](/llms.txt) |
-| Everything on the site | [`/llms-full.txt`](/llms-full.txt) |
+| A section you can read in one fetch | The Optional section of [`/llms.txt`](/llms.txt) names `llms-core` and one file per section |
+| Search | [`/api/search?query=OKM1101`](/api/search?query=OKM1101) |
 | Version-matched offline reading | `node_modules/okmodel/docs/index.md` |
 | The well-known skills index | [`/.well-known/agent-skills/index.json`](/.well-known/agent-skills/index.json) |
 
-`/llms.txt` lists every public handbook page in sidebar order: title, absolute markdown URL, and description. `/llms.json` is the same set as JSON (`slug`, `title`, `description`, `html`, `markdown`). Each page line points at that page's markdown twin. Send `Accept: text/markdown` on a handbook HTML URL and the response is that twin (`Vary: Accept`). An unknown path with that header is a markdown 404 that links the handbook, `llms.txt`, and the sitemap.
+`/llms.txt` lists every public handbook page in sidebar order: title, absolute markdown URL, and a one-line description. The Optional section lists every agent file. `llms-core` is Get started, Concepts, the query calls you use first, and the "I want to…" index. Each other file is one section. A file longer than 100,000 characters is split, and the parts are numbered. `/llms.json` is the same page set as JSON (`slug`, `title`, `description`, `html`, `markdown`) plus the `files` list. Each page line points at that page's markdown twin. Send `Accept: text/markdown` on a handbook HTML URL and the response is that twin (`Vary: Accept`). An unknown path is a 404, in HTML and in markdown, with the closest pages.
 
-`/llms-full.txt` joins every handbook page into one file. Each block opens with the title and the HTML path. Use it when the agent must search across the whole handbook once.
+## Search
+
+`GET /api/search?query=` returns JSON:
+
+```json
+{
+  "query": "OKM1101",
+  "results": [
+    {
+      "title": "Errors",
+      "url": "/docs/reference/errors#okm1101",
+      "markdown": "https://okm.omqkhafi.dev/llms.mdx/docs/reference/errors.md#okm1101",
+      "summary": "OkmError carries a kind, a category, and a code.",
+      "section": "Reference",
+      "chip": ""
+    }
+  ]
+}
+```
+
+`title` is the page title. `url` is the HTML path. `markdown` is the absolute `.md` URL. `summary` is the page summary. `section` is the sidebar section. `chip` is the support line when the page names a feature, and empty otherwise. The same index answers [`/search`](/search) as HTML, without JavaScript.
 
 The packaged index is one line per public doc page in that release. Open one page from it. A failing `OKM` code has its own file at `node_modules/okmodel/docs/errors/⟨code⟩.md`. Do not fetch the website when the package already has the page for that version.
 

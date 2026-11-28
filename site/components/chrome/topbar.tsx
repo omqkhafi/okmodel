@@ -77,14 +77,17 @@ export function Topbar({ tree }: { tree: PageTree.Root }) {
             <Link href="/" aria-label={SITE_NAME} className="mr-auto flex items-center text-fd-foreground">
               <Wordmark />
             </Link>
-            <button
-              type="button"
+            <a
+              href="/search"
               aria-label="Search"
-              onClick={() => setOpenSearch(true)}
+              onClick={(event) => {
+                event.preventDefault();
+                setOpenSearch(true);
+              }}
               className="inline-flex size-8 items-center justify-center text-fd-muted-foreground transition-colors hover:text-fd-foreground"
             >
               <SearchIcon className="size-4" />
-            </button>
+            </a>
             <ThemeButton className="inline-flex size-8 items-center justify-center text-fd-muted-foreground" />
             <button
               type="button"

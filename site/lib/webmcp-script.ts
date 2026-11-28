@@ -25,11 +25,12 @@ export const WEBMCP_SCRIPT = `(() => {
       const url = "/api/search?query=" + encodeURIComponent(String(query ?? ""));
       const response = await fetch(url);
       const data = await response.json();
-      const hits = Array.isArray(data) ? data.slice(0, 8) : [];
+      const hits = Array.isArray(data.results) ? data.results.slice(0, 8) : [];
       const lines = hits.map((hit) => {
         const href = typeof hit.url === "string" ? hit.url : "";
-        const excerpt = typeof hit.content === "string" ? hit.content.replace(/<[^>]+>/g, "") : "";
-        return (href + " " + excerpt).trim();
+        const title = typeof hit.title === "string" ? hit.title : "";
+        const summary = typeof hit.summary === "string" ? hit.summary : "";
+        return (title + " " + href + " " + summary).trim();
       });
       return text(lines.length > 0 ? lines.join("\\n") : "No results");
     },

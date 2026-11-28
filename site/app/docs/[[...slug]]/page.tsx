@@ -1,6 +1,8 @@
 import { DatabaseSupport, databaseSupportFor } from "@/components/database-support";
 import { DocsPageActions } from "@/components/docs-page-actions";
 import { getMDXComponents } from "@/components/mdx";
+import { breadcrumbItems, pageNeighbours } from "@/lib/page-chrome";
+import { githubBlobUrl } from "@/lib/shared";
 import { getPageImageUrl, getPageMarkdownUrl, source } from "@/lib/source";
 import {
   DocsBody,
@@ -10,6 +12,7 @@ import {
 } from "@fumadocs/base-ui/layouts/docs/page";
 import { createRelativeLink } from "@fumadocs/base-ui/mdx";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 /**
@@ -27,9 +30,39 @@ export default async function Page(props: PageProps<"/docs/[[...slug]]">) {
   const MDX = page.data.body;
   const markdownUrl = getPageMarkdownUrl(page).url;
   const databases = databaseSupportFor(page.url);
+  const trail = breadcrumbItems(page.url);
+  const neighbours = pageNeighbours(page.url);
+  const editHref = githubBlobUrl(`site/content/docs/${page.path}`);
 
   return (
-    <DocsPage toc={page.data.toc} full={page.data.full} breadcrumb={{ enabled: true }}>
+    <DocsPage
+      toc={page.data.toc}
+      full={page.data.full}
+      breadcrumb={{ enabled: false }}
+      footer={{
+        enabled: true,
+        items: {
+          previous: neighbours.previous,
+          next: neighbours.next,
+        },
+      }}
+    >
+      {trail.length > 0 ? (
+        <nav aria-label="Breadcrumb" className="mb-4 flex flex-wrap items-center gap-1.5 text-sm text-fd-muted-foreground">
+          {trail.map((crumb, index) => (
+            <span key={`${crumb.name}-${String(index)}`} className="inline-flex items-center gap-1.5">
+              {index > 0 ? <span aria-hidden>/</span> : null}
+              {crumb.url !== undefined && index < trail.length - 1 ? (
+                <Link href={crumb.url} className="hover:text-fd-foreground">
+                  {crumb.name}
+                </Link>
+              ) : (
+                <span className={index === trail.length - 1 ? "text-fd-foreground" : undefined}>{crumb.name}</span>
+              )}
+            </span>
+          ))}
+        </nav>
+      ) : null}
       <header className="border-b border-fd-border pb-4">
         <DocsTitle className="flex flex-wrap items-center gap-x-3 gap-y-2">
           {page.data.title}
@@ -37,6 +70,9 @@ export default async function Page(props: PageProps<"/docs/[[...slug]]">) {
           <DocsPageActions markdownUrl={markdownUrl} className={databases ? undefined : "ms-auto"} />
         </DocsTitle>
         <DocsDescription className="mb-0">{page.data.description}</DocsDescription>
+        <a href={editHref} className="mt-3 inline-flex text-sm text-fd-muted-foreground underline-offset-4 hover:underline">
+          Edit on GitHub
+        </a>
       </header>
       <DocsBody>
         <MDX

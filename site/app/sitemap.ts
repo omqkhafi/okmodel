@@ -1,3 +1,4 @@
+import { agentFiles } from "@/lib/agent-docs";
 import { DOCS_REDIRECTS, withRedirectDestinations } from "@/lib/docs-redirects";
 import { SITE_ORIGIN } from "@/lib/site-identity";
 import { changelogSeriesPath, loadChangelogSeries } from "@/lib/changelog";
@@ -31,7 +32,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
     })),
     { url: `${SITE_ORIGIN}/llms.txt`, changeFrequency: "weekly", priority: 0.8 },
     { url: `${SITE_ORIGIN}/llms.json`, changeFrequency: "weekly", priority: 0.7 },
-    { url: `${SITE_ORIGIN}/llms-full.txt`, changeFrequency: "weekly", priority: 0.5 },
+    ...agentFiles().map((file) => ({
+      url: `${SITE_ORIGIN}/${file.name}`,
+      changeFrequency: "weekly" as const,
+      priority: 0.5,
+    })),
     {
       url: `${SITE_ORIGIN}/.well-known/agent-skills/index.json`,
       changeFrequency: "weekly",

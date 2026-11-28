@@ -44,14 +44,34 @@ export interface SearchHit {
  * @param data - `query.data` from `useDocsSearch`
  */
 export function searchHits(data: unknown): readonly SearchHit[] {
-  if (!Array.isArray(data)) return [];
+  const list = resultList(data);
   const hits: SearchHit[] = [];
-  for (const item of data) {
+  for (const item of list) {
     if (typeof item !== "object" || item === null) continue;
     const record = item as Record<string, unknown>;
-    if (typeof record.url !== "string" || typeof record.content !== "string") continue;
+    if (typeof record.url !== "string") continue;
+    const content =
+      typeof record.content === "string"
+        ? record.content
+        : typeof record.title === "string"
+          ? record.title
+          : "";
+    if (content.length === 0) continue;
     const id = typeof record.id === "string" ? record.id : record.url;
-    hits.push({ id, url: record.url, content: record.content });
+    hits.push({ id, url: record.url, content });
   }
   return hits;
+}
+
+/**
+ * Hits from the documented `{ results }` body, or from a bare list.
+ *
+ * @param data - JSON the dialog received
+ */
+function resultList(data: unknown): readonly unknown[] {
+  if (Array.isArray(data)) return data;
+  if (typeof data === "object" && data !== null && "results" in data && Array.isArray(data.results)) {
+    return data.results;
+  }
+  return [];
 }
