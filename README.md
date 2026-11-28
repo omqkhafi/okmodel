@@ -22,7 +22,21 @@
   <a href="https://www.npmjs.com/package/okmodel"><strong>npm</strong></a>
 </p>
 
-OKModel provides a typed data layer for PostgreSQL 15 and later; tested on 15 to 19 with no runtime dependencies. One schema drives your queries, migrations, and database checks.
+<!-- docs-constants -->
+
+okmodel 0.10.6. PostgreSQL 15 and later; tested on 15 to 19. 5 tested majors. 146 registry features.
+<!-- /docs-constants -->
+
+<!-- docs-support -->
+
+| Engine     | Minimum | Tested   |
+| ---------- | ------- | -------- |
+| PostgreSQL | 15+     | 15 to 19 |
+
+CI ran on 18, full matrix at release
+<!-- /docs-support -->
+
+One schema drives your queries, migrations, and database checks.
 
 ## Why OKModel
 

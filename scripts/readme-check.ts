@@ -8,8 +8,14 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { readmeConstantsBlock, readmeSupportTable } from "./docs-support.js";
 import { exitOnProblems } from "./report.js";
 import { repoRoot } from "./root.js";
+
+const CONSTANTS_OPEN = "<!-- docs-constants -->";
+const CONSTANTS_CLOSE = "<!-- /docs-constants -->";
+const SUPPORT_OPEN = "<!-- docs-support -->";
+const SUPPORT_CLOSE = "<!-- /docs-support -->";
 
 const IMAGE_INLINE = /!\[[^\]]*\]\(\s*<?([^)\s>]+)>?/g;
 const IMAGE_REF = /!\[[^\]]*\]\[([^\]]*)\]/g;
@@ -61,6 +67,44 @@ export function checkReadme(markdown: string, where = "README.md"): readonly str
   return problems;
 }
 
+/**
+ * Problems when the generated README blocks are missing or stale.
+ *
+ * Link and image checks stay in {@link checkReadme}. A snippet with no
+ * markers is a problem only here, so a link fixture does not need the blocks.
+ *
+ * @param markdown - README source
+ * @param where - Path printed in each problem
+ * @returns Problem lines. Empty when both blocks match the generator
+ */
+export function checkReadmeSupport(markdown: string, where = "README.md"): readonly string[] {
+  const problems: string[] = [];
+  const constants = blockBetween(markdown, CONSTANTS_OPEN, CONSTANTS_CLOSE);
+  const support = blockBetween(markdown, SUPPORT_OPEN, SUPPORT_CLOSE);
+  if (constants === undefined) problems.push(`${where} is missing the docs-constants block`);
+  else if (constants !== readmeConstantsBlock()) {
+    problems.push(
+      `${where} docs-constants block is stale. Run bun ./scripts/docs-support.ts --write`,
+    );
+  }
+  if (support === undefined) problems.push(`${where} is missing the docs-support block`);
+  else if (support !== readmeSupportTable()) {
+    problems.push(
+      `${where} docs-support block is stale. Run bun ./scripts/docs-support.ts --write`,
+    );
+  }
+  return problems;
+}
+
+function blockBetween(markdown: string, open: string, close: string): string | undefined {
+  const start = markdown.indexOf(open);
+  if (start < 0) return undefined;
+  const from = start + open.length;
+  const end = markdown.indexOf(close, from);
+  if (end < 0) return undefined;
+  return markdown.slice(from, end).trim();
+}
+
 function isAllowedLink(url: string): boolean {
   if (url.startsWith("#")) return true;
   return /^https?:\/\//i.test(url);
@@ -84,5 +128,6 @@ function blankInlineCode(source: string): string {
 }
 
 if (import.meta.main) {
-  exitOnProblems(checkReadme(readFileSync(join(repoRoot(), "README.md"), "utf8")));
+  const markdown = readFileSync(join(repoRoot(), "README.md"), "utf8");
+  exitOnProblems([...checkReadme(markdown), ...checkReadmeSupport(markdown)]);
 }
