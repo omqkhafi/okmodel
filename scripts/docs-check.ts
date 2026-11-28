@@ -1,6 +1,13 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 
+import {
+  decisionIdsIn,
+  indexProblems,
+  loadDecisionRecords,
+  rulesProblems,
+  structureProblems,
+} from "./decisions.js";
 import { hygieneProblems } from "./docs-hygiene.js";
 import { generatePackedDocs, generatedDocsProblems } from "./docs-pack.js";
 import { exitOnProblems } from "./report.js";
@@ -9,12 +16,11 @@ import { pageExample } from "../src/tooling/errors/examples.js";
 import { errorPageProblems } from "../src/tooling/errors/page.js";
 import { ERROR_DOCS } from "../src/tooling/errors/registry.js";
 
-const DECISIONS_FILE = "okmodel-decisions.md";
-
 /**
  * Checks relative links, `§` section references, and decision numbers under `docsDir`.
  *
- * Each `docs/errors/<code>.md` must match the registry. Section numbers are the
+ * Decision ids are the `D*.md` files in `<docsDir>/decisions/`. Each
+ * `docs/errors/<code>.md` must match the registry. Section numbers are the
  * heading numbers across the docs directory (`## 4.2 …` satisfies `§4.2`).
  */
 export function checkDocs(docsDir: string): readonly string[] {
@@ -24,12 +30,9 @@ export function checkDocs(docsDir: string): readonly string[] {
   }
   const problems: string[] = [];
   const sections = sectionNumbers(files);
-  const decisionsPath = join(docsDir, DECISIONS_FILE);
-  const defined = existsSync(decisionsPath)
-    ? definedDecisions(readFileSync(decisionsPath, "utf8"))
-    : undefined;
+  const defined = definedDecisions(docsDir);
   if (defined === undefined) {
-    problems.push(`docs:check: missing ${DECISIONS_FILE}`);
+    problems.push("docs:check: missing decisions directory");
   }
 
   for (const file of files) {
@@ -80,15 +83,8 @@ function sectionNumbers(files: readonly string[]): ReadonlySet<string> {
   return numbers;
 }
 
-function definedDecisions(text: string): ReadonlySet<string> {
-  const ids = new Set<string>();
-  for (const match of text.matchAll(/^\|\s*(D\d+[a-z]?)\s*\|/gm)) {
-    const id = match[1];
-    if (id !== undefined) {
-      ids.add(id);
-    }
-  }
-  return ids;
+function definedDecisions(docsDir: string): ReadonlySet<string> | undefined {
+  return decisionIdsIn(join(docsDir, "decisions"));
 }
 
 function linkProblems(docsDir: string, file: string, prose: string): readonly string[] {
@@ -150,7 +146,7 @@ function decisionProblems(
       continue;
     }
     seen.add(id);
-    problems.push(`${where} references ${id}, which is not in ${DECISIONS_FILE}`);
+    problems.push(`${where} references ${id}, which has no decision file`);
   }
   return problems;
 }
@@ -213,9 +209,14 @@ if (import.meta.main) {
   } else {
     const generated = generatePackedDocs(root);
     if (generated.length > 0) exitOnProblems(generated);
+    const loaded = loadDecisionRecords(root);
     exitOnProblems([
       ...generatedDocsProblems(root),
       ...checkDocs(join(root, "docs")),
+      ...loaded.problems,
+      ...structureProblems(loaded.records),
+      ...indexProblems(root, loaded.records),
+      ...rulesProblems(root, loaded.records),
       ...hygieneProblems(root, version),
     ]);
   }

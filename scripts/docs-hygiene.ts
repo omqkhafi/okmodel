@@ -381,6 +381,7 @@ function internalTarget(root: string, file: string, url: string): string | undef
 }
 
 function internalUrl(url: string): string | undefined {
+  if (url.includes("/decisions/") || url.endsWith("/decisions")) return "decisions/";
   for (const name of [
     "okmodel-decisions.md",
     "okmodel-execution-plan.md",
@@ -388,6 +389,7 @@ function internalUrl(url: string): string | undefined {
     "m0-findings.md",
     "github.md",
     "release.md",
+    "rules.md",
     "size.md",
     "postgresjs-kill-storm.md",
     "postgresjs-kill-storm.mjs",
