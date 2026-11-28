@@ -66,6 +66,7 @@ test("keep.then detach is the detach action, and another word is refused", () =>
             at: "UTC",
             from: "2026-01-01",
             ahead: 1,
+            // oxlint-disable-next-line unicorn/no-thenable -- keep.then names the action, not a thenable
             keep: { for: "13 months", then: "detach" },
           },
         },
@@ -91,6 +92,7 @@ test("keep.then detach is the detach action, and another word is refused", () =>
                 at: "UTC",
                 from: "2026-01-01",
                 ahead: 1,
+                // oxlint-disable-next-line unicorn/no-thenable -- keep.then names the action, not a thenable
                 keep: { for: "13 months", then: "archive" as "drop" },
               },
             },
