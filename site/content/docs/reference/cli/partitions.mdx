@@ -1,0 +1,23 @@
+---
+title: "Partitions"
+description: "okm partitions and okm partitions maintain."
+---
+## partitions
+
+`okm partitions <table>` reads one declared table. It prints bounds, estimated rows, size, gaps, overlaps, days left in the last partition, and rows in a default partition. `--json` prints the same report as `data`. The command does not create or detach a partition.
+
+```sh
+okm partitions events
+okm partitions events --json
+```
+
+## partitions maintain
+
+`okm partitions maintain <table>` creates partitions through `ahead` and applies `keep`. `then: "detach"` is the default. The detached table stays a normal table. `then: "drop"` needs `--allow-protected`. `--dry-run` prints the statements and does not run them.
+
+`DETACH PARTITION ... CONCURRENTLY` runs outside a transaction. Before a new detach, the command looks for `inhdetachpending` and runs `DETACH PARTITION ... FINALIZE`.
+
+```sh
+okm partitions maintain events --dry-run
+okm partitions maintain events
+```

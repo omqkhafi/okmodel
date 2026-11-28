@@ -22,6 +22,7 @@ import type {
   PolicyObject,
   PartitionChild,
   SequenceObject,
+  TablePartition,
   TableObject,
   TriggerObject,
   TypeObject,
@@ -869,4 +870,44 @@ export type DdlDialect = {
    * @returns `true` when one casing of either name is the other
    */
   sameCasing?(from: string, to: string): boolean;
+  /**
+   * What a partition declaration change means for an existing table.
+   *
+   * Absent when the dialect has no partitions. The planner then diffs the
+   * table as a plain table.
+   *
+   * @param before - Partition stored on the previous catalog, if any
+   * @param after - Partition stored on the next catalog, if any
+   * @returns Same, children to attach, or a plain-table conversion
+   */
+  partitionChange?(
+    before: TablePartition | undefined,
+    after: TablePartition | undefined,
+  ): PartitionPlan;
+  /**
+   * Names that still point at a table, so it cannot be converted.
+   *
+   * @param table - Table name
+   * @param catalog - Catalog that still holds the dependents
+   * @returns Blocker descriptions. Empty when the conversion can proceed
+   */
+  partitionBlockers?(table: string, catalog: Catalog): readonly string[];
+  /**
+   * Physical name of one partition child.
+   *
+   * @param table - Parent table name
+   * @param suffix - Child suffix, such as `2026_01` or `h0`
+   * @returns The child table name
+   */
+  partitionChildName?(table: string, suffix: string): string;
 };
+
+/** What a partition declaration change means. The planner does not import a dialect file to learn it. */
+export type PartitionPlan =
+  | { readonly kind: "same" }
+  | { readonly kind: "attach"; readonly missing: readonly PartitionChild[] }
+  | {
+      readonly kind: "convert";
+      readonly attach: PartitionChild;
+      readonly others: readonly PartitionChild[];
+    };

@@ -469,6 +469,39 @@ const SCHEMAS: Readonly<Record<string, JsonSchema>> = {
   "roles generate": object("roles generate", "okm roles generate data", ["text"], {
     text: { type: "string" },
   }),
+  partitions: object(
+    "partitions",
+    "okm partitions data",
+    ["table", "managed", "daysLeft", "defaultRows", "gaps", "overlaps", "children"],
+    {
+      table: { type: "string" },
+      managed: { type: "boolean" },
+      daysLeft: { type: ["number", "null"] },
+      defaultRows: { type: "number" },
+      gaps: { type: "array", items: { type: "string" } },
+      overlaps: { type: "array", items: { type: "string" } },
+      children: {
+        type: "array",
+        items: objectNode(["name", "suffix", "bound", "rows", "bytes"], {
+          name: { type: "string" },
+          suffix: { type: "string" },
+          bound: { type: "string" },
+          rows: { type: "number" },
+          bytes: { type: "number" },
+        }),
+      },
+    },
+  ),
+  "partitions maintain": object(
+    "partitions maintain",
+    "okm partitions maintain data",
+    ["table", "dryRun", "statements"],
+    {
+      table: { type: "string" },
+      dryRun: { type: "boolean" },
+      statements: { type: "array", items: { type: "string" } },
+    },
+  ),
   call: object("call", "okm call data", ["routine", "rolledBack", "result"], {
     routine: { type: "string" },
     rolledBack: { type: "boolean" },

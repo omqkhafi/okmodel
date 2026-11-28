@@ -10,6 +10,11 @@ import type { DdlDialect, DdlSupport } from "../../dialects/ddl.js";
 import { caseName } from "../../dialects/pg/casing.js";
 import { sealGenerated } from "../../dialects/pg/generated-print.js";
 import { lowerPostgres } from "../../dialects/pg/lower.js";
+import {
+  childName,
+  conversionBlockers,
+  partitionChange,
+} from "../../dialects/pg/partition-compile.js";
 import { assertSupported } from "../capabilities/check.js";
 import { POSTGRES_FEATURES, type PostgresFeature } from "../capabilities/postgres.js";
 import { featuresUsed } from "../capabilities/used.js";
@@ -52,4 +57,7 @@ export const postgresDialect: DdlDialect = {
       caseName("camel", to) === from
     );
   },
+  partitionChange,
+  partitionBlockers: conversionBlockers,
+  partitionChildName: childName,
 };

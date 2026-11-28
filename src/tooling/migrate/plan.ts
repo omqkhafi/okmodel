@@ -11,11 +11,6 @@
  */
 
 import { OkmError } from "../../contracts/error.js";
-import {
-  childName,
-  conversionBlockers,
-  partitionChange,
-} from "../../dialects/pg/partition-compile.js";
 import { prepareMigrationText } from "./text.js";
 import {
   creationOrder,
@@ -407,14 +402,19 @@ export function planMigration(
     const previous = beforeBy.get(item.key);
     if (previous === undefined || sameDefinition(previous, item.object, extensionSchemas)) continue;
     if (handsOff(item.object) || childOfHandsOff(item.object, afterBy)) continue;
-    if (parentIsConverting(item.object, request.before, request.after)) continue;
-    if (previous.kind === "table" && item.object.kind === "table") {
-      const change = partitionChange(
+    if (parentIsConverting(item.object, request.before, request.after, dialect)) continue;
+    if (
+      previous.kind === "table" &&
+      item.object.kind === "table" &&
+      dialect.partitionChange !== undefined
+    ) {
+      const change = dialect.partitionChange(
         previous.definition.partition,
         item.object.definition.partition,
       );
       if (change.kind === "convert") {
-        const blockers = conversionBlockers(item.object.identity.name, request.before);
+        const blockers =
+          dialect.partitionBlockers?.(item.object.identity.name, request.before) ?? [];
         if (blockers.length > 0) {
           throw new OkmError(
             "OKM1932",
@@ -857,7 +857,7 @@ export function planMigration(
     if (object.kind === "index") {
       const onExistingTable = !tableIsNew && parent !== undefined && hasTable(renamed, parent);
       const partitionChildren = onExistingTable
-        ? partitionChildNames(request.after, parent)
+        ? partitionChildNames(request.after, parent, dialect)
         : undefined;
       steps.push(
         ...take(
@@ -3357,14 +3357,20 @@ function sameSecurity(left: TableObject, right: TableObject): boolean {
   return before?.enable === after?.enable && before?.force === after?.force;
 }
 
-function parentIsConverting(object: CatalogObject, before: Catalog, after: Catalog): boolean {
+function parentIsConverting(
+  object: CatalogObject,
+  before: Catalog,
+  after: Catalog,
+  dialect: DdlDialect,
+): boolean {
   const table = parentTableName(object);
-  if (table === undefined) return false;
+  if (table === undefined || dialect.partitionChange === undefined) return false;
   const previous = findTable(before, table);
   const next = findTable(after, table);
   if (previous === undefined || next === undefined) return false;
   return (
-    partitionChange(previous.definition.partition, next.definition.partition).kind === "convert"
+    dialect.partitionChange(previous.definition.partition, next.definition.partition).kind ===
+    "convert"
   );
 }
 
@@ -3407,14 +3413,15 @@ function partitionKeyTypeChanged(
 function partitionChildNames(
   catalog: Catalog,
   table: string | undefined,
+  dialect: DdlDialect,
 ): readonly string[] | undefined {
-  if (table === undefined) return undefined;
+  if (table === undefined || dialect.partitionChildName === undefined) return undefined;
   const object = catalog.objects.find(
     (item): item is TableObject => item.kind === "table" && item.identity.name === table,
   );
   const partition = object?.definition.partition;
   if (partition === undefined || partition.ownership === "external") return undefined;
   const children = partition.children ?? [];
-  if (children.length === 0) return undefined;
-  return children.map((child) => childName(table, child.suffix));
+  if (children.length === 0 || dialect.partitionChildName === undefined) return undefined;
+  return children.map((child) => dialect.partitionChildName?.(table, child.suffix) ?? child.suffix);
 }

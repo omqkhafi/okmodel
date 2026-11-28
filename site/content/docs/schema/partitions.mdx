@@ -12,23 +12,31 @@ A table is OKM-managed or `children: "external"`. It is not both. Names are `{ta
 A time key uses `every`, `from`, `ahead`, and `at`. `at` is required when the key is `timestamptz`. Every bound is written with an explicit offset. OKM reads existing bounds with `SET TIME ZONE 'UTC'` and compares them as instants. The server prints bounds in the session time zone, so the text will not match.
 
 ```ts
-export const events = table("events", {
-  id: t.integer(),
-  occurredAt: t.timestamptz(),
-  tenantId: t.integer(),
-  body: t.text(),
-}, {
-  primaryKey: ["id", "occurredAt"],
-  partition: {
-    by: "range",
-    key: "occurredAt",
-    every: "month",
-    at: "Asia/Riyadh",
-    from: "2026-01-01",
-    ahead: 3,
-    keep: { for: "13 months", then: "detach" },
+import { schema, table, t } from "okmodel/pg";
+
+export const events = table(
+  "events",
+  {
+    id: t.integer(),
+    occurredAt: t.timestamptz(),
+    tenantId: t.integer(),
+    body: t.text(),
   },
-})
+  {
+    primaryKey: ["id", "occurredAt"],
+    partition: {
+      by: "range",
+      key: "occurredAt",
+      every: "month",
+      at: "Asia/Riyadh",
+      from: "2026-01-01",
+      ahead: 3,
+      keep: { for: "13 months", then: "detach" },
+    },
+  },
+);
+
+export const app = schema({ tables: [events] });
 ```
 
 `every` is `year`, `quarter`, `month`, `week`, or `day`. A numeric key uses a positive integer, such as `every: "100"`. `date` does not need `at`. `timestamp` without a time zone is refused.
@@ -40,10 +48,28 @@ Asia/Riyadh has no daylight saving. A key in `America/New_York` does. March 2026
 Hash when the key values grow. List when the set is closed. A default partition is allowed and linted. Hash has no default.
 
 ```ts
-partition: { by: "hash", key: "tenantId", count: 8 }
+import { schema, table, t } from "okmodel/pg";
 
-partition: { by: "list", key: "region" }
-partitions: { eu: { in: ["eu", "uk"] }, rest: { default: true } }
+export const tenants = table(
+  "tenants",
+  { id: t.integer(), tenantId: t.integer() },
+  {
+    primaryKey: ["id", "tenantId"],
+    partition: { by: "hash", key: "tenantId", count: 8 },
+  },
+);
+
+export const regions = table(
+  "regions",
+  { id: t.integer(), region: t.text() },
+  {
+    primaryKey: ["id", "region"],
+    partition: { by: "list", key: "region" },
+    partitions: { eu: { in: ["eu", "uk"] }, rest: { default: true } },
+  },
+);
+
+export const app = schema({ tables: [tenants, regions] });
 ```
 
 Rows that land in the default partition block a later partition for that value. PostgreSQL returns 23514. Move the rows and attach in one transaction.
@@ -79,7 +105,18 @@ Changing the hash `count`, the key, or the key's type is a refusal. The message 
 `okm doctor` warns when fewer than 7 days remain in the last partition, or when `ahead` is not satisfied. `okm check` fails when `partman.part_config` lists a table that also has an OKM rule. pg_partman stops pre-making after a partition someone else created. Use `children: "external"` when pg_partman owns the children.
 
 ```ts
-partition: { by: "range", key: "occurredAt", at: "UTC", children: "external" }
+import { schema, table, t } from "okmodel/pg";
+
+export const events = table(
+  "events",
+  { id: t.integer(), occurredAt: t.timestamptz() },
+  {
+    primaryKey: ["id", "occurredAt"],
+    partition: { by: "range", key: "occurredAt", at: "UTC", children: "external" },
+  },
+);
+
+export const app = schema({ tables: [events] });
 ```
 
 ### Converting a plain table

@@ -47,6 +47,7 @@ const STATE_CHANGING = [
   "driver test",
   "protect add",
   "protect remove",
+  "partitions maintain",
 ] as const;
 
 const FORBIDDEN = ["reset", "wipe", "destroy", "truncate", "nuke", "purge", "clean-db"] as const;

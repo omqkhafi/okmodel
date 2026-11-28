@@ -1199,6 +1199,15 @@
     "docs": "docs/errors/OKM1931.md"
   },
   {
+    "code": "OKM1932",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A partition declaration cannot be planned. The key, the bounds, a hash count, or a conversion blocker is outside what PostgreSQL can change in place. Nothing was planned.",
+    "fix": "Keep the method and the key. Include every key column in the primary key. Drop inbound foreign keys and views before converting a plain table.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1932.md"
+  },
+  {
     "code": "OKM1928",
     "kind": "invalid",
     "category": "input",
@@ -2391,6 +2400,28 @@
     ]
   },
   {
+    "code": "OKM2130",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A query on a partitioned table does not constrain the partition key, so Postgres scans every partition. A default partition is allowed and holds rows that match no other bound. A grant on a child bypasses policies on the parent.",
+    "fix": "A predicate on the partition key limits the scan. Rows leave the default partition before a tighter bound is added. Grants stay on the parent. okm partitions maintain creates the next partition when the last one is close to full.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Filter on the partition key, or rely on the tenant predicate.",
+        "docs": "docs/errors/OKM2130.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2130.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2130.md#escape"
+      }
+    ]
+  },
+  {
     "code": "OKM2121",
     "kind": "invalid",
     "category": "input",
@@ -2704,6 +2735,15 @@
     "fix": "Connect as that role for okm check and okm apply, or ask the provider which role can create an event trigger.",
     "retryable": false,
     "docs": "docs/errors/OKM2209.md"
+  },
+  {
+    "code": "OKM2210",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "partman.part_config lists a table that also has an OKM partition rule. pg_partman stops pre-making partitions after a partition OKM created. okm check fails.",
+    "fix": "Remove the partman row, or set children: \"external\" and let pg_partman own the children.",
+    "retryable": false,
+    "docs": "docs/errors/OKM2210.md"
   },
   {
     "code": "OKM2300",
