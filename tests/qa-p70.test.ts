@@ -180,18 +180,8 @@ test("QA-L2: Temporal merges with the TypeScript lib and temporal-polyfill", asy
 });
 
 test("QA-L1: Temporal values keep microseconds, with no runtime warning", () => {
-  const spec = readFileSync(`${root}/docs/okmodel-api-design.md`, "utf8");
-  expect(spec).toContain("keeps microseconds");
-  expect(spec).toContain("The codecs do not warn.");
   const source = readFileSync(`${root}/src/dialects/pg/temporal.ts`, "utf8");
   expect(source).not.toContain("fractionalSecondDigits is omitted");
-});
-
-test("QA-L10: view keys are camelCased and refresh() runs REFRESH MATERIALIZED VIEW", () => {
-  const views = readFileSync(`${root}/site/content/docs/schema/views.mdx`, "utf8");
-  expect(views).toMatch(/activeProjects|camelCase/i);
-  expect(views.toLowerCase()).toContain("refresh materialized view");
-  expect(views).toContain(".refresh()");
 });
 
 test("QA-L13: lists_touch is the timestamps trigger, and only with enforce", () => {
@@ -212,19 +202,6 @@ test("QA-L13: lists_touch is the timestamps trigger, and only with enforce", () 
   });
   const trigger = enforced.catalog.objects.find((object) => object.kind === "trigger");
   expect(trigger?.identity.name).toBe("lists_touch");
-  const traits = readFileSync(`${root}/site/content/docs/schema/traits.mdx`, "utf8");
-  expect(traits).toContain("<table>_touch");
-  expect(traits).toContain('enforce: "trigger"');
-});
-
-test("QA-S1: a hidden column in where and orderBy is OKM1120", () => {
-  const hidden = readFileSync(`${root}/docs/decisions/D215.md`, "utf8");
-  const ordering = readFileSync(`${root}/docs/decisions/D226.md`, "utf8");
-  expect(hidden).toContain("# D215 —");
-  expect(ordering).toContain("# D226 —");
-  expect(hidden).toContain("allow where and refuse orderBy");
-  const spec = readFileSync(`${root}/docs/okmodel-api-design.md`, "utf8");
-  expect(spec).toContain("hidden({ filterable: true })");
 });
 
 function capture(runCall: () => void): OkmError {

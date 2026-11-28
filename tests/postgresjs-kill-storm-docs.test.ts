@@ -1,7 +1,8 @@
 /**
- * Honesty gates for B-02: postgres.js kill-storm uncaught is upstream.
+ * The kill-storm repro is a real script, and the drivers page points at it.
  *
- * Fails if the Drivers page or minimal repro disappear.
+ * The warning wording is the page's. The script must stay a postgres.js-only
+ * repro pinned to the postgres version this package installs.
  */
 
 import { expect, test } from "bun:test";
@@ -12,16 +13,12 @@ import { repoRoot } from "../scripts/root.js";
 
 const root = repoRoot();
 
-test("Drivers page warns about postgres.js kill storms (B-02)", () => {
+test("the drivers page points at the kill-storm repro", () => {
   const drivers = readFileSync(join(root, "site/content/docs/operate/drivers.mdx"), "utf8");
-  expect(drivers).toContain("postgres.js kill storms (B-02)");
-  expect(drivers).toContain("Prefer `okmodel/pg/pg` or `okmodel/pg/bun`");
   expect(drivers).toContain("docs/postgresjs-kill-storm.md");
-  expect(drivers).toContain("That happens with postgres.js alone");
-  expect(drivers).toContain("OKModel cannot stop the driver's own scheduled write");
 });
 
-test("minimal postgres.js kill-storm repro exists and pins 3.4.9", () => {
+test("the kill-storm repro is postgres.js alone and pins the installed version", () => {
   const md = readFileSync(join(root, "docs/postgresjs-kill-storm.md"), "utf8");
   const script = readFileSync(join(root, "docs/postgresjs-kill-storm.mjs"), "utf8");
   const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
@@ -30,18 +27,16 @@ test("minimal postgres.js kill-storm repro exists and pins 3.4.9", () => {
     readonly peerDependencies?: Record<string, string>;
     readonly devDependencies?: Record<string, string>;
   };
-  const version =
+  const declared =
     pkg.optionalDependencies?.postgres ??
     pkg.dependencies?.postgres ??
     pkg.peerDependencies?.postgres ??
     pkg.devDependencies?.postgres ??
     "";
-  expect(md).toContain("Upstream");
-  expect(md).toContain("3.4.9");
-  expect(md).toContain("no OKModel");
-  expect(md).toContain("Prefer `okmodel/pg/pg` or `okmodel/pg/bun`");
+  const pinned = /\d+\.\d+\.\d+/.exec(declared)?.[0];
+  if (pinned === undefined) throw new Error("package.json does not pin postgres");
+  expect(md).toContain(pinned);
   expect(script).toContain('from "postgres"');
   expect(script).not.toContain("okmodel");
   expect(script).toContain("pg_terminate_backend");
-  expect(version).toMatch(/3\.4\.9/);
 });

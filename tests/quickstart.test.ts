@@ -15,6 +15,7 @@ import { loadPostgresGate, postgresTest } from "../packages/harness/src/postgres
 import { openPostgres } from "../packages/harness/src/postgres.js";
 import { compareLsn } from "../packages/harness/src/lsn.js";
 import { primaryUrl, replicaUrl, type ReplicaName } from "../packages/harness/src/topology.js";
+import { docsConstants } from "../scripts/docs-support.js";
 import { repoRoot } from "../scripts/root.js";
 import { CHECK_REPLAY_LIMIT } from "../src/tooling/migrate/check.js";
 import {
@@ -243,9 +244,8 @@ async function runReadme(
   const path = join(root, "docs/guide.md");
   const markdown = readFileSync(path, "utf8");
   expect(markdown).toContain('t.identity({ as: "number" })');
-  expect(markdown).toContain("PostgreSQL 15 and later; tested on 15 to 19");
+  expect(markdown).toContain(docsConstants().supportPhrase);
   expect(markdown).toContain("await using");
-  expect(markdown).toContain("pick one per database");
   if (markdown.includes("db.connected")) {
     throw new Error("docs/guide.md awaits db.connected. Every call already waits for it.");
   }

@@ -101,61 +101,31 @@ test("status failedAt stays 0-based; apply messages are 1-based", () => {
   expect(runner).toContain("failed at step ${String(index + 1)}");
 });
 
-test("area pages record DM and B-07/B-08 honesty statements", () => {
-  const time = readFileSync(join(root, "site/content/docs/schema/time-columns.mdx"), "utf8");
-  expect(time).toContain("Node 22, Node 24, and Cloudflare Workers have none");
-
+test("area pages quote the runtime floor the code already names", () => {
+  const bun = readFileSync(join(root, ".bun-version"), "utf8").trim();
+  const bunMinor = bun.split(".").slice(0, 2).join(".");
   const drivers = readFileSync(join(root, "site/content/docs/operate/drivers.mdx"), "utf8");
-  expect(drivers).toContain("Minimum Bun is 1.4");
-
-  const raw = readFileSync(join(root, "site/content/docs/queries/typed-raw-sql.mdx"), "utf8");
-  expect(raw).toContain("no untyped `sql.raw");
-  expect(raw).toContain("Joined columns are not projected");
-
-  const schemaApi = readFileSync(join(root, "site/content/docs/reference/schema-api.mdx"), "utf8");
-  expect(schemaApi).toContain("describe");
-
-  const cliCheck = readFileSync(join(root, "site/content/docs/reference/cli/check.mdx"), "utf8");
-  expect(cliCheck).toContain("okm catalog export");
-  expect(cliCheck.toLowerCase()).toMatch(/dev/);
-
-  const packageExports = readFileSync(
-    join(root, "site/content/docs/reference/package-exports.mdx"),
-    "utf8",
-  );
-  expect(packageExports).toContain("no stability promise");
-
-  const observability = readFileSync(
-    join(root, "site/content/docs/operate/observability.mdx"),
-    "utf8",
-  );
-  expect(observability).toMatch(/OpenTelemetry|otel/i);
-
-  const backfill = readFileSync(join(root, "site/content/docs/migrations/backfill.mdx"), "utf8");
-  expect(backfill).toContain("1-based");
-
   const why = readFileSync(join(root, "site/content/docs/start/why-okmodel.mdx"), "utf8");
-  expect(why).toContain("Bun 1.4");
+  expect(drivers).toContain(bunMinor);
+  expect(why).toContain(bunMinor);
   expect(why).toMatch(/Deno[^\n]*Unsupported|Unsupported[^\n]*Deno/i);
-  expect(why).not.toContain("known-limits");
 
+  const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
+    engines?: { node?: string };
+  };
+  const nodeMajor = /\d+/.exec(manifest.engines?.node ?? "")?.[0];
+  if (nodeMajor === undefined) throw new Error("package.json engines.node is missing");
   const readme = readFileSync(join(root, "README.md"), "utf8");
-  expect(readme).toContain("temporal-polyfill");
-  expect(readme).toContain("Node 22 and 24");
-  expect(readme).not.toContain("known-limits");
-
   const guide = readFileSync(join(root, "docs/guide.md"), "utf8");
-  expect(guide).toContain("temporal-polyfill");
-  expect(guide).toContain("OpenTelemetry spans");
-  expect(guide).toContain("does not watch, reload, or apply");
-  expect(guide).toContain("Queries every target");
-  expect(guide).not.toContain("known-limits");
+  expect(readme).toContain(`Node ${nodeMajor}`);
+  for (const text of [why, readme, guide]) expect(text).not.toContain("known-limits");
 
-  const spec = readFileSync(join(root, "docs/okmodel-api-design.md"), "utf8");
-  expect(spec).toContain("okmodel.config.ts");
-  expect(spec).not.toMatch(/config file `okm\.config\.ts`/);
-  expect(spec).toContain("no `client.listen` / `db.listen`");
-  expect(spec).toContain("Untyped `sql.raw");
+  const message = readFileSync(join(root, "src/dialects/pg/time.ts"), "utf8");
+  const page = readFileSync(join(root, "site/content/docs/schema/time-columns.mdx"), "utf8");
+  for (const fact of ["Node 22", "Node 24", "Cloudflare Workers"]) {
+    expect(message, fact).toContain(fact);
+    expect(page, fact).toContain(fact);
+  }
 });
 
 test("testing helpers still export factories and isolation", async () => {

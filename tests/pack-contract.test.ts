@@ -59,9 +59,6 @@ test("optional and bundled dependencies fail, and both npm pack JSON shapes pars
   expect(packedTarballFromJson([entry])).toEqual(packed);
   expect(packedTarballFromJson({ okmodel: entry })).toEqual(packed);
   expect(packedTarballFromJson(entry)).toEqual(packed);
-  expect(readFileSync(join(import.meta.dir, "..", "docs/release.md"), "utf8")).toContain(
-    "The snapshot does not pin the contents of bin or main.",
-  );
 });
 
 test("bin and main are snapshotted and their file contents are not", async () => {

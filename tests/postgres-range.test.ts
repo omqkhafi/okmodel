@@ -5,10 +5,12 @@
 
 import { expect, test } from "bun:test";
 
+import { POSTGRES_VERSIONS } from "../packages/harness/src/version.js";
 import type { DriverPool } from "../src/contracts/driver.js";
 import { OkmError } from "../src/contracts/error.js";
 import { EXT_PACKS } from "../src/dialects/pg/ext/versions.js";
 import { packVersion } from "../src/dialects/pg/ext/versions.js";
+import { POSTGRES_FLOOR } from "../src/dialects/pg/floor.js";
 import { schema, table, t } from "../src/dialects/pg/index.js";
 import { describe } from "../src/tooling/migrate/index.js";
 import { serverFinding } from "../src/tooling/migrate/doctor-production.js";
@@ -16,15 +18,29 @@ import { createClient } from "../src/runtime/client.js";
 
 const notes = table("notes", { id: t.identity(), name: t.text() });
 const sessions = table("sessions", { id: t.id({ default: "uuidv7" }), name: t.text() });
+const newest = Number(POSTGRES_VERSIONS[POSTGRES_VERSIONS.length - 1]);
+if (!Number.isInteger(newest)) throw new Error("tested majors are empty");
 
-test("connect refuses 14 and accepts 15, 19, 20, and 25", async () => {
+/**
+ * Server version integer Postgres reports, `major * 10000`.
+ *
+ * @param major - Major to report
+ * @returns The `server_version_num` text
+ */
+function serverVersion(major: number): string {
+  return `${String(major)}0000`;
+}
+
+test("connect refuses a major below the floor and accepts the floor and later majors", async () => {
   const refused = await settled(
-    createClient(schema({ tables: [notes] }), fakePool("140000"), { ownsPool: false }),
+    createClient(schema({ tables: [notes] }), fakePool(serverVersion(POSTGRES_FLOOR - 1)), {
+      ownsPool: false,
+    }),
   );
   expect(refused).toMatchObject({ code: "OKM1803" });
 
-  for (const version of ["150000", "190000", "200000", "250000"]) {
-    const client = createClient(schema({ tables: [notes] }), fakePool(version), {
+  for (const major of [POSTGRES_FLOOR, newest, newest + 1, newest + 6]) {
+    const client = createClient(schema({ tables: [notes] }), fakePool(serverVersion(major)), {
       ownsPool: false,
     });
     await client.connected;
@@ -39,32 +55,39 @@ test("minPostgres accepts 20 and 25, and 14 stays OKM1060", () => {
   });
   expect(schema({ minPostgres: 25, tables: [sessions] }).requires).toEqual({ postgres: ">=25" });
 
-  const low = capture(() => schema({ minPostgres: 14, tables: [notes] } as never));
+  const low = capture(() => schema({ minPostgres: POSTGRES_FLOOR - 1, tables: [notes] } as never));
   expect(low.code).toBe("OKM1060");
-  expect(low.message).toContain("15 or later");
+  expect(low.message).toContain(`${String(POSTGRES_FLOOR)} or later`);
   const fraction = capture(() => schema({ minPostgres: 17.2, tables: [notes] } as never));
   expect(fraction.code).toBe("OKM1060");
-  expect(fraction.message).toContain("15 or later");
+  expect(fraction.message).toContain(`${String(POSTGRES_FLOOR)} or later`);
 });
 
-test("describe accepts minPostgres 19, 20, and 25", () => {
+test("describe accepts the newest tested major and later majors", () => {
   const app = schema({ tables: [notes] });
-  expect(describe({ catalog: app.catalog, minPostgres: 19 }).minPostgres).toBe(19);
-  expect(describe({ catalog: app.catalog, minPostgres: 20 }).minPostgres).toBe(20);
-  expect(describe({ catalog: app.catalog, minPostgres: 25 }).minPostgres).toBe(25);
-  expect(() => describe({ catalog: app.catalog, minPostgres: 14 })).toThrow(/15 or later/);
+  expect(describe({ catalog: app.catalog, minPostgres: newest }).minPostgres).toBe(newest);
+  expect(describe({ catalog: app.catalog, minPostgres: newest + 1 }).minPostgres).toBe(newest + 1);
+  expect(describe({ catalog: app.catalog, minPostgres: newest + 6 }).minPostgres).toBe(newest + 6);
+  expect(() => describe({ catalog: app.catalog, minPostgres: POSTGRES_FLOOR - 1 })).toThrow(
+    new RegExp(`${String(POSTGRES_FLOOR)} or later`),
+  );
 });
 
-test("doctor on 20 and 25 is informational and not a warning", () => {
-  for (const major of [20, 25]) {
+test("doctor on a major past the tested list is informational and not a warning", () => {
+  for (const major of [newest + 1, newest + 6]) {
     const finding = serverFinding(major, undefined);
     expect(finding.severity).toBe("ok");
-    expect(finding.summary).toContain("newer than the tested range 15 to 19; accepted");
+    expect(finding.summary).toContain(
+      `newer than the tested range ${String(POSTGRES_FLOOR)} to ${String(newest)}; accepted`,
+    );
     expect(finding.summary).toContain(`PostgreSQL ${String(major)}`);
   }
-  expect(serverFinding(14, undefined)).toMatchObject({ severity: "fail", code: "OKM1803" });
-  expect(serverFinding(19, undefined).severity).toBe("ok");
-  expect(serverFinding(19, undefined).summary).not.toContain("newer than the tested range");
+  expect(serverFinding(POSTGRES_FLOOR - 1, undefined)).toMatchObject({
+    severity: "fail",
+    code: "OKM1803",
+  });
+  expect(serverFinding(newest, undefined).severity).toBe("ok");
+  expect(serverFinding(newest, undefined).summary).not.toContain("newer than the tested range");
 });
 
 test("an extension pack above the known majors uses the highest known version", () => {

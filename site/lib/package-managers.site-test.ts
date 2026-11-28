@@ -24,15 +24,10 @@ test("bunx lines become the local runner for each manager", () => {
   });
 });
 
-test("bun is the first package-manager tab, and each driver note says where it runs", () => {
+test("bun is the first package-manager tab, and every driver has a note", () => {
   expect(PACKAGE_MANAGERS[0]).toBe("bun");
-  const note = (id: string) => INSTALL_DRIVERS.find((driver) => driver.id === id)?.note ?? "";
-  expect(note("postgresjs")).toBe("Default on Node and Bun. Connects to a Postgres server.");
-  expect(note("pg")).toBe(
-    "On Node or Bun, when pg is already installed. pg ships no types, so @types/pg is a dev dependency.",
-  );
-  expect(note("pglite")).toBe("On Node or Bun. Postgres runs in the process, so there is no server to start.");
-  expect(note("bun")).toBe("On Bun. No extra package, and it does not run on Node.");
+  expect(INSTALL_DRIVERS.map((driver) => driver.id)).toEqual(["postgresjs", "pg", "pglite", "bun"]);
+  for (const driver of INSTALL_DRIVERS) expect(driver.note.length, driver.id).toBeGreaterThan(0);
 });
 
 test("an okmodel install names the driver package", () => {
