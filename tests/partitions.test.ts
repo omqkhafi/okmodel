@@ -51,6 +51,55 @@ test("a timestamptz month rule writes both daylight transitions as instants", ()
   expect(bound("2026_11")).toEqual({ kind: "range", from: november, to: december });
 });
 
+test("keep.then detach is the detach action, and another word is refused", () => {
+  const app = schema({
+    tables: [
+      table(
+        "events",
+        { id: t.integer(), occurredAt: t.timestamptz() },
+        {
+          primaryKey: ["id", "occurredAt"],
+          partition: {
+            by: "range",
+            key: "occurredAt",
+            every: "month",
+            at: "UTC",
+            from: "2026-01-01",
+            ahead: 1,
+            keep: { for: "13 months", then: "detach" },
+          },
+        },
+      ),
+    ],
+  });
+  const stored = app.catalog.objects.find((object) => object.kind === "table");
+  if (stored?.kind !== "table") throw new Error("missing table");
+  expect(stored.definition.partition?.rule?.keepThen).toBe("detach");
+  expect(
+    () =>
+      schema({
+        tables: [
+          table(
+            "events",
+            { id: t.integer(), occurredAt: t.timestamptz() },
+            {
+              primaryKey: ["id", "occurredAt"],
+              partition: {
+                by: "range",
+                key: "occurredAt",
+                every: "month",
+                at: "UTC",
+                from: "2026-01-01",
+                ahead: 1,
+                keep: { for: "13 months", then: "archive" as "drop" },
+              },
+            },
+          ),
+        ],
+      }).catalog,
+  ).toThrow(/keep\.then must be detach or drop/);
+});
+
 test("a timestamptz rule without at is refused", () => {
   expect(
     () =>
