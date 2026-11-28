@@ -37,6 +37,7 @@ import {
   parseMaxFailures,
   planStages,
   positiveInt,
+  type SizedTarget,
   redactSecrets,
   resolveFleetTargets,
   scheduleTargets,
@@ -111,6 +112,8 @@ export type FleetPlanFile = {
   readonly heavy: boolean;
   readonly parallel: number;
   readonly perHost: number;
+  /** Database this plan would run first. Absent on a file written before this field. */
+  readonly canary?: string | null;
   readonly targets: readonly {
     readonly name: string;
     readonly state: FleetState;
@@ -196,6 +199,7 @@ export async function planFleet(
     heavy,
     parallel: limits.parallel,
     perHost: heavy ? 1 : limits.perHost,
+    canary: plannedCanary(targets, readings, fleet, limits.parallel),
     targets: readings.map((row) => ({
       name: row.name,
       state: row.state,
@@ -220,9 +224,11 @@ export async function planFleet(
 /**
  * Applies the reviewed migrations to each database that is behind.
  *
- * A current target is skipped. An ahead target is not touched. A failed
- * canary stops later stages. Re-running retries the targets that are still
- * behind.
+ * A current target is skipped. An ahead target is not touched. A failed or
+ * unreachable canary stops later stages. A frozen plan names its canary. When
+ * that database is unreachable, apply uses the smallest reachable database
+ * that still needs work and says so. Re-running retries the targets that are
+ * still behind.
  *
  * @param fleet - Config object. `onResult` runs after each target
  * @param options - Limits, a frozen plan, and the flags passed to each apply
@@ -262,20 +268,10 @@ export async function* applyFleet(
     yield summaryOf([], text, { guarded: true, failures: 0, unreachable: 0 });
     return;
   }
-  const sized = targets.map((target) => {
-    const row = byName.get(target.name);
-    return {
-      ...target,
-      bytes: row?.bytes ?? Number.MAX_SAFE_INTEGER,
-      actionable: row?.state === "behind" || row?.state === "failed",
-    };
-  });
-  const stages = planStages(
-    sized,
-    fleet.canary ?? FLEET_CANARY,
-    fleet.groups ?? [],
-    limits.parallel,
-  );
+  const sized = sizedTargets(targets, readings);
+  const chosenCanary = applyCanary(fleet.canary ?? FLEET_CANARY, frozen?.canary, sized, byName);
+  if (chosenCanary.note !== undefined) options.onProgress?.(`${chosenCanary.note}\n`);
+  const stages = planStages(sized, chosenCanary.canary, fleet.groups ?? [], limits.parallel);
   const chosen =
     options.group === undefined ? stages : stages.filter((stage) => stage.name === options.group);
   if (options.group !== undefined && chosen.length === 0) {
@@ -317,9 +313,18 @@ export async function* applyFleet(
       },
     );
     for (const result of stageResults) yield result;
-    if (stage.name === "canary" && stageResults.some((result) => result.state === "failed")) {
-      stop = true;
-      options.onProgress?.("canary failed; later stages were not started\n");
+    if (stage.name === "canary") {
+      const blocked = stageResults.find(
+        (result) => result.state === "failed" || result.state === "unreachable",
+      );
+      if (blocked !== undefined) {
+        stop = true;
+        options.onProgress?.(
+          blocked.state === "unreachable"
+            ? "canary unreachable; later stages were not started\n"
+            : "canary failed; later stages were not started\n",
+        );
+      }
     }
   }
   for (const row of readings) {
@@ -330,7 +335,7 @@ export async function* applyFleet(
     await notify(fleet, event, urls);
     yield event;
   }
-  const text = `${formatStatus(produced)}${formatFailures(produced)}`;
+  const text = `${chosenCanary.note === undefined ? "" : `${chosenCanary.note}\n`}${formatStatus(produced)}${formatFailures(produced)}`;
   yield summaryOf(produced, redactSecrets(text, urls), {
     guarded: false,
     failures,
@@ -378,6 +383,61 @@ function eventOf(row: Reading): FleetTargetEvent {
     ...(row.summary !== undefined ? { summary: row.summary } : {}),
     ...(row.fix !== undefined ? { fix: row.fix } : {}),
   };
+}
+
+function sizedTargets(
+  targets: readonly FleetTarget[],
+  readings: readonly Reading[],
+): SizedTarget[] {
+  const byReading = new Map(readings.map((row) => [row.name, row]));
+  return targets.map((target) => {
+    const row = byReading.get(target.name);
+    return {
+      ...target,
+      bytes: row?.bytes ?? Number.MAX_SAFE_INTEGER,
+      actionable: row?.state === "behind" || row?.state === "failed",
+    };
+  });
+}
+
+function plannedCanary(
+  targets: readonly FleetTarget[],
+  readings: readonly Reading[],
+  fleet: FleetConfig,
+  parallel: number,
+): string | null {
+  const sized = sizedTargets(targets, readings);
+  const stage = planStages(sized, fleet.canary ?? FLEET_CANARY, fleet.groups ?? [], parallel).find(
+    (item) => item.name === "canary",
+  );
+  return stage?.targets[0]?.name ?? null;
+}
+
+function applyCanary(
+  configured: number | ((target: FleetTarget) => boolean),
+  planned: string | null | undefined,
+  sized: readonly SizedTarget[],
+  byName: Map<string, Reading>,
+): {
+  readonly canary: number | ((target: FleetTarget) => boolean);
+  readonly note?: string;
+} {
+  if (typeof planned !== "string" || planned.length === 0) return { canary: configured };
+  const reading = byName.get(planned);
+  if (reading?.state === "unreachable") {
+    const next = [...sized]
+      .filter((target) => target.actionable)
+      .sort((left, right) => left.bytes - right.bytes || left.name.localeCompare(right.name))[0];
+    if (next === undefined) return { canary: configured };
+    return {
+      canary: (target) => target.name === next.name,
+      note: `canary ${planned} was unreachable; used ${next.name} because ${planned} did not accept a connection`,
+    };
+  }
+  if (reading?.state === "behind" || reading?.state === "failed") {
+    return { canary: (target) => target.name === planned };
+  }
+  return { canary: configured };
 }
 
 async function runOne(
@@ -575,7 +635,15 @@ async function isDrifted(
 ): Promise<boolean> {
   const { assertAuthorDrift } = await import("./drift.js");
   try {
-    await assertAuthorDrift(url, catalog, roles, allowPooler);
+    await assertAuthorDrift(
+      url,
+      catalog,
+      roles,
+      allowPooler,
+      undefined,
+      undefined,
+      CONNECT_SECONDS,
+    );
     return false;
   } catch (error) {
     if (OkmError.from(error).code === "OKM1520") return true;

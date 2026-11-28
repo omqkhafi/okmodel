@@ -57,15 +57,19 @@ const NO_UNPULLED: ReadonlySet<string> = new Set();
  * @param roles - `defineConfig({ roles })`, when set
  * @param allowPooler - When true, a pooler URL is accepted
  * @param unpulled - Identity keys pull listed and did not write
+ * @param commentAuthority - Catalog whose comments are authoritative
+ * @param connectTimeoutSeconds - Seconds to wait for the first connection. Default 5
  */
 export async function assertAuthorDrift(
   url: string,
   author: Catalog,
   roles?: RolesInput,
   allowPooler = false,
-  unpulled: ReadonlySet<string> = NO_UNPULLED,
+  unpulled: ReadonlySet<string> | undefined = NO_UNPULLED,
   commentAuthority?: Catalog,
+  connectTimeoutSeconds = 5,
 ): Promise<readonly string[]> {
+  const skipped = unpulled ?? NO_UNPULLED;
   refusePooler(await resolvePooler(url, allowPooler), allowPooler);
   const schema = authorSchema(author);
   // pg_get_viewdef qualifies a table that is not on the search path, so a
@@ -75,7 +79,7 @@ export async function assertAuthorDrift(
     extensionSchemaPath(author, schema) ?? (schema !== "public" ? quoteIdent(schema) : undefined);
   const sql = postgres(driverUrl(url), {
     max: 1,
-    connect_timeout: 5,
+    connect_timeout: connectTimeoutSeconds,
     idle_timeout: 1,
     onnotice: () => {},
     ...(searchPath !== undefined ? { connection: { search_path: searchPath } } : {}),
@@ -84,7 +88,7 @@ export async function assertAuthorDrift(
     const runner = catalogQuery(sql);
     const introspectOptions: IntrospectOptions = {
       ...liveIntrospectOptions(roles, author),
-      ...(unpulled.size > 0 ? { omit: unpulled } : {}),
+      ...(skipped.size > 0 ? { omit: skipped } : {}),
       refuseReserved: true,
     };
     const present = await sql<{ reg: string | null }[]>`
@@ -106,7 +110,7 @@ export async function assertAuthorDrift(
     // and still drifts when they differ.
     const comments = unmanagedComments(live, authorOnServer, commentAuthority);
     const compared = {
-      before: withoutUnpulled(withoutUnmanagedPolicies(comments.catalog, authorOnServer), unpulled),
+      before: withoutUnpulled(withoutUnmanagedPolicies(comments.catalog, authorOnServer), skipped),
       after: authorOnServer,
       name: "check",
       schema,

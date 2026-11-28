@@ -688,3 +688,251 @@ postgresTest(
   },
   120_000,
 );
+
+postgresTest(
+  gate,
+  "an unreachable canary stops before any other database is migrated",
+  async () => {
+    const databases = await many(2);
+    const real = [
+      { name: "small", url: databases[0]?.url ?? "" },
+      { name: "big", url: databases[1]?.url ?? "" },
+    ];
+    let cwd = "";
+    const gateProxy = await connectionGate(
+      Number(new URL(real[0]?.url ?? primaryUrl()).port),
+      "close",
+    );
+    try {
+      cwd = await project(real);
+      await collect({ targets: real, canary: 0 }, { cwd, maxFailures: "all" });
+      const big = openPostgres(real[1]?.url ?? "");
+      await big.unsafe("create table bulk as select g from generate_series(1, 20000) g");
+      await big.end({ timeout: 5 });
+      addStep(cwd, "0002_extra", "expand", "alter table notes add column extra text");
+      const listed = [
+        { name: "small", url: gateProxy.url(real[0]?.url ?? "") },
+        { name: "big", url: real[1]?.url ?? "" },
+      ];
+      const events = await collect({ targets: listed, parallel: 1 }, { cwd });
+      expect(summaryOf(events).exit).toBe(5);
+      expect(summaryOf(events).text).toContain("unreachable");
+      expect(await historyIds(real[0]?.url ?? "")).not.toContain("0002_extra");
+      expect(await historyIds(real[1]?.url ?? "")).not.toContain("0002_extra");
+    } finally {
+      await gateProxy.close();
+      await closeAll(databases, cwd);
+    }
+  },
+  120_000,
+);
+
+postgresTest(
+  gate,
+  "a canary that connects on retry still applies",
+  async () => {
+    const databases = await many(2);
+    const real = [
+      { name: "small", url: databases[0]?.url ?? "" },
+      { name: "big", url: databases[1]?.url ?? "" },
+    ];
+    let cwd = "";
+    const gateProxy = await connectionGate(
+      Number(new URL(real[0]?.url ?? primaryUrl()).port),
+      "once",
+    );
+    try {
+      cwd = await project(real);
+      await collect({ targets: real, canary: 0 }, { cwd, maxFailures: "all" });
+      const big = openPostgres(real[1]?.url ?? "");
+      await big.unsafe("create table bulk as select g from generate_series(1, 20000) g");
+      await big.end({ timeout: 5 });
+      addStep(cwd, "0002_extra", "expand", "alter table notes add column extra text");
+      const listed = [
+        { name: "small", url: gateProxy.url(real[0]?.url ?? "") },
+        { name: "big", url: real[1]?.url ?? "" },
+      ];
+      const events = await collect({ targets: listed, parallel: 1 }, { cwd, maxFailures: "all" });
+      expect(summaryOf(events).failures).toBe(0);
+      expect(await historyIds(real[0]?.url ?? "")).toContain("0002_extra");
+      expect(await historyIds(real[1]?.url ?? "")).toContain("0002_extra");
+    } finally {
+      await gateProxy.close();
+      await closeAll(databases, cwd);
+    }
+  },
+  120_000,
+);
+
+postgresTest(
+  gate,
+  "a re-run uses the smallest reachable canary and keeps the plan name",
+  async () => {
+    const databases = await many(2);
+    const real = [
+      { name: "small", url: databases[0]?.url ?? "" },
+      { name: "big", url: databases[1]?.url ?? "" },
+    ];
+    let cwd = "";
+    try {
+      cwd = await project(real);
+      await collect({ targets: real, canary: 0 }, { cwd, maxFailures: "all" });
+      const big = openPostgres(real[1]?.url ?? "");
+      await big.unsafe("create table bulk as select g from generate_series(1, 20000) g");
+      await big.end({ timeout: 5 });
+      addStep(cwd, "0002_extra", "expand", "alter table notes add column extra text");
+      const planPath = join(cwd, "fleet.plan.json");
+      await planFleet({ targets: real }, { cwd, planPath });
+      const written = JSON.parse(readFileSync(planPath, "utf8")) as { canary?: string };
+      expect(written.canary).toBe("small");
+      const closed = new URL(real[0]?.url ?? "");
+      closed.port = "1";
+      const listed = [
+        { name: "small", url: closed.href.replace(/\/$/, "") },
+        { name: "big", url: real[1]?.url ?? "" },
+      ];
+      const events = await collect({ targets: listed, parallel: 1 }, { cwd, planPath });
+      const text = summaryOf(events).text;
+      expect(text).toContain("small");
+      expect(text).toContain("big");
+      expect(text).toContain("unreachable");
+      expect(await historyIds(real[1]?.url ?? "")).toContain("0002_extra");
+      expect(await historyIds(real[0]?.url ?? "")).not.toContain("0002_extra");
+      const kept = JSON.parse(readFileSync(planPath, "utf8")) as { canary?: string };
+      expect(kept.canary).toBe("small");
+    } finally {
+      await closeAll(databases, cwd);
+    }
+  },
+  120_000,
+);
+
+postgresTest(
+  gate,
+  "fleet drift connect uses the 30s fleet timeout",
+  async () => {
+    const database = await createIsolatedDatabase();
+    let cwd = "";
+    const upstream = Number(new URL(database.url).port);
+    const delayed = await delayGate(upstream, 6_000);
+    try {
+      const real = [{ name: "acme", url: database.url }];
+      cwd = await project(real);
+      await collect({ targets: real, canary: 0 }, { cwd, maxFailures: "all" });
+      const listed = [{ name: "acme", url: delayed.url(database.url) }];
+      const read = await statusFleet(
+        { targets: listed, canary: 0 },
+        { cwd, drift: true, allowPooler: true },
+      );
+      expect(read.rows[0]?.state).toBe("current");
+    } finally {
+      await delayed.close();
+      await closeAll([database], cwd);
+    }
+  },
+  90_000,
+);
+
+async function historyIds(url: string): Promise<readonly string[]> {
+  const sql = openPostgres(url);
+  try {
+    const present = await sql.unsafe(
+      "select to_regclass('public.okm_history') is not null as present",
+    );
+    if (present[0]?.present !== true) return [];
+    const rows = await sql.unsafe("select migration_id from okm_history order by migration_id");
+    return rows.map((row) => String(row.migration_id));
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
+/**
+ * A TCP gate in front of Postgres.
+ *
+ * `close` forwards connections until the first one ends, then stops listening
+ * so a later connect is refused.
+ * `once` refuses the second connection and forwards every other one.
+ */
+function connectionGate(
+  upstreamPort: number,
+  mode: "close" | "once",
+): Promise<{ url(base: string): string; close(): Promise<void> }> {
+  let opened = 0;
+  let sealed = false;
+  const server = createServer((socket) => {
+    opened += 1;
+    const index = opened;
+    const refuse = mode === "close" ? sealed : index === 2;
+    if (refuse) {
+      socket.on("error", () => undefined);
+      socket.destroy();
+      return;
+    }
+    const upstream = connectTcp(upstreamPort, "127.0.0.1");
+    if (mode === "close") {
+      socket.on("close", () => {
+        sealed = true;
+        server.close();
+      });
+    }
+    socket.pipe(upstream);
+    upstream.pipe(socket);
+    socket.on("error", () => upstream.destroy());
+    upstream.on("error", () => socket.destroy());
+  });
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("no port");
+      resolve({
+        url(base: string) {
+          const parsed = new URL(base);
+          parsed.port = String(address.port);
+          return parsed.href.replace(/\/$/, "");
+        },
+        close: () =>
+          new Promise((done) => {
+            if (!server.listening) {
+              done();
+              return;
+            }
+            server.close(() => done());
+          }),
+      });
+    });
+  });
+}
+
+function delayGate(
+  upstreamPort: number,
+  delayMs: number,
+): Promise<{ url(base: string): string; close(): Promise<void> }> {
+  const server = createServer((socket) => {
+    const timer = setTimeout(() => {
+      const upstream = connectTcp(upstreamPort, "127.0.0.1");
+      socket.pipe(upstream);
+      upstream.pipe(socket);
+      socket.on("error", () => upstream.destroy());
+      upstream.on("error", () => socket.destroy());
+    }, delayMs);
+    socket.on("close", () => clearTimeout(timer));
+  });
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("no port");
+      resolve({
+        url(base: string) {
+          const parsed = new URL(base);
+          parsed.port = String(address.port);
+          return parsed.href.replace(/\/$/, "");
+        },
+        close: () =>
+          new Promise((done) => {
+            server.close(() => done());
+          }),
+      });
+    });
+  });
+}
