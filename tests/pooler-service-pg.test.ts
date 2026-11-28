@@ -37,6 +37,7 @@ import { planMigration, type PlanStep } from "../src/tooling/migrate/plan.js";
 import { ensureMigrationTables } from "../src/tooling/migrate/apply.js";
 import { runTarget, type RunnableUnit } from "../src/tooling/migrate/runner.js";
 import { connect } from "../src/runtime/pg/postgresjs.js";
+import { maintainPartitions } from "../src/tooling/migrate/partition-maintain.js";
 import { sessionSettings } from "../src/runtime/session/index.js";
 
 /** How long the first transaction holds the only server connection. */
@@ -125,6 +126,47 @@ if (POOLER_URL === undefined || POOLER_URL.length === 0) {
       await direct.end();
     }
   }, 20_000);
+
+  test("partitions maintain is OKM1854 on the pooler, including dry-run", async () => {
+    const app = schema({
+      tables: [
+        table(
+          "events",
+          { id: t.integer(), occurredAt: t.timestamptz(), body: t.text() },
+          {
+            primaryKey: ["id", "occurredAt"],
+            partition: {
+              by: "range",
+              key: "occurredAt",
+              every: "month",
+              at: "UTC",
+              from: "2026-01-01",
+              ahead: 1,
+            },
+          },
+        ),
+      ],
+    });
+    const stored = app.catalog.objects.find((object) => object.kind === "table");
+    if (stored?.kind !== "table") throw new Error("missing table");
+    let failed: unknown;
+    try {
+      await maintainPartitions({
+        url,
+        schema: "public",
+        catalog: app.catalog,
+        table: stored,
+        dryRun: true,
+        allowProtected: false,
+        lockTimeoutMs: 1_000,
+        lockWaitMs: 0,
+      });
+    } catch (error) {
+      failed = error;
+    }
+    expect(failed).toBeInstanceOf(OkmError);
+    expect((failed as OkmError).code).toBe("OKM1854");
+  }, 30_000);
 
   test("a committing procedure keeps finished batches through transaction pooling", async () => {
     const stamp = Math.random().toString(36).slice(2, 10);

@@ -98,7 +98,7 @@ Changing the hash `count`, the key, or the key's type is a refusal. The message 
 
 `okm partitions maintain <table>` creates partitions through `ahead` and applies `keep`. `then: "detach"` is the default. The detached table stays a normal table. `then: "drop"` needs `--allow-protected`.
 
-`DETACH PARTITION ... CONCURRENTLY` runs outside a transaction. Inside a transaction, a function, or a procedure it fails with 25001. Before a new detach, maintain looks for `inhdetachpending` and runs `DETACH PARTITION ... FINALIZE`. A retry that skips that step fails with 55000.
+`DETACH PARTITION ... CONCURRENTLY` runs outside a transaction. Inside a transaction, a function, or a procedure it fails with 25001. Before a new detach, maintain looks for `inhdetachpending` and runs `DETACH PARTITION ... FINALIZE`. A retry that skips that step fails with 55000. A pooled URL is refused with OKM1854, including `--dry-run`, because those two statements cannot run through a transaction-mode pooler. There is no `--allow-pooler` on this command.
 
 `okm apply` creates the window. It does not detach. Scheduling is a recipe: pg_cron runs the creation part only. There is no schedule API.
 

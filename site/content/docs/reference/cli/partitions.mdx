@@ -15,7 +15,7 @@ okm partitions events --json
 
 `okm partitions maintain <table>` creates partitions through `ahead` and applies `keep`. `then: "detach"` is the default. The detached table stays a normal table. `then: "drop"` needs `--allow-protected`. `--dry-run` prints the statements and does not run them.
 
-`DETACH PARTITION ... CONCURRENTLY` runs outside a transaction. Before a new detach, the command looks for `inhdetachpending` and runs `DETACH PARTITION ... FINALIZE`.
+`DETACH PARTITION ... CONCURRENTLY` runs outside a transaction. Before a new detach, the command looks for `inhdetachpending` and runs `DETACH PARTITION ... FINALIZE`. A pooled URL is refused with OKM1854, including `--dry-run`. There is no `--allow-pooler` on this command.
 
 ```sh
 okm partitions maintain events --dry-run

@@ -51,6 +51,24 @@ test("a timestamptz month rule writes both daylight transitions as instants", ()
   expect(bound("2026_11")).toEqual({ kind: "range", from: november, to: december });
 });
 
+test("a timestamptz rule without at is refused", () => {
+  expect(
+    () =>
+      schema({
+        tables: [
+          table(
+            "events",
+            { id: t.integer(), at: t.timestamptz() },
+            {
+              primaryKey: ["id", "at"],
+              partition: { by: "range", key: "at", every: "month", from: "2026-01-01", ahead: 1 },
+            },
+          ),
+        ],
+      }).catalog,
+  ).toThrow(/partition\.at/);
+});
+
 test("a hash count, a list default, and an external parent compile", () => {
   const app = schema({
     tables: [
