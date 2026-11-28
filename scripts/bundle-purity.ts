@@ -8,12 +8,25 @@
  * The barrel re-exports drivers. A router that imports `@okmodel/harness`
  * pulls those packages into the runtime bundle. Deep imports of one harness
  * file are not the barrel.
+ *
+ * A `node:` specifier, static or dynamic, in the graph reached from the
+ * published runtime entries fails. The exceptions are listed on
+ * {@link NODE_SPECIFIER_EXCEPTIONS}.
  */
 
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 
+import { isNodeSpecifier } from "./core-purity.js";
 import { listTypeScriptFiles } from "./files.js";
 import { exitOnProblems } from "./report.js";
 import { repoRoot } from "./root.js";
@@ -40,6 +53,162 @@ const BARREL_SPECIFIERS = new Set([
   "@okmodel/harness/index.js",
   "@okmodel/harness/index.ts",
 ]);
+
+/**
+ * Reached modules that may name a Node built-in, and the specifiers they may name.
+ *
+ * Anything else in the runtime graph fails. `runtime/watch.ts` is not here:
+ * it calls `process.getBuiltinModule` and does not import `node:async_hooks`.
+ *
+ * - `adapters/pg/postgresjs.ts` `node:net` — unref an idle socket. postgres.js
+ *   does not hand the socket back.
+ * - `adapters/pg/nodepostgres.ts` `node:net` — CancelRequest on a side socket,
+ *   then unref it.
+ * - `dialects/pg/catalog-require.js` `node:module` — `createRequire`, so
+ *   `schema()` can load the catalog compiler. A literal `require()` is inlined
+ *   into the app bundle. The call stays inside `requireSibling`, and the
+ *   Workers entry never calls it. The file is JavaScript so the type graph of
+ *   `schema()` does not mention Node.
+ */
+export const NODE_SPECIFIER_EXCEPTIONS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ["adapters/pg/postgresjs.ts", new Set(["node:net"])],
+  ["adapters/pg/nodepostgres.ts", new Set(["node:net"])],
+  ["dialects/pg/catalog-require.js", new Set(["node:module"])],
+]);
+
+/** Published exports that are not part of the runtime graph. */
+const TOOLING_EXPORTS = new Set(["./migrate", "./testing"]);
+
+/**
+ * Reports `node:` and bare Node built-in specifiers in the runtime graph.
+ *
+ * The graph is the published runtime entries, including dynamic `import()`
+ * of relative modules. Tooling exports are not entries. A reached file under
+ * `src/runtime`, `src/contracts`, `src/adapters`, or anywhere else the walk
+ * goes, fails unless {@link NODE_SPECIFIER_EXCEPTIONS} names that specifier.
+ *
+ * @param root - Repository root
+ * @returns Problem lines
+ */
+export function nodeSpecifierProblems(root: string): readonly string[] {
+  const listed = runtimeSourceEntries(root);
+  return [...listed.problems, ...nodeSpecifiersInGraph(root, listed.entries)];
+}
+
+/**
+ * Reports Node specifiers reached from `entries`.
+ *
+ * @param root - Directory that contains the entry paths
+ * @param entries - Paths relative to `root`, such as `src/runtime/pg/pglite.ts`
+ * @returns Problem lines
+ */
+export function nodeSpecifiersInGraph(root: string, entries: readonly string[]): readonly string[] {
+  const problems: string[] = [];
+  const seen = new Set<string>();
+  const queue = [...entries];
+  for (const entry of entries) {
+    if (!existsSync(join(root, entry))) {
+      problems.push(`bundle-purity: runtime entry is missing: ${entry}`);
+    }
+  }
+  while (queue.length > 0) {
+    const rel = queue.pop();
+    if (rel === undefined || seen.has(rel)) continue;
+    seen.add(rel);
+    const abs = join(root, rel);
+    if (!existsSync(abs) || !statSync(abs).isFile()) continue;
+    let specifiers: readonly string[];
+    try {
+      specifiers = moduleSpecifiers(readFileSync(abs, "utf8"), abs);
+    } catch (error) {
+      problems.push(`bundle-purity: cannot parse ${rel}: ${messageOf(error)}`);
+      continue;
+    }
+    for (const specifier of specifiers) {
+      if (isNodeSpecifier(specifier) && !nodeSpecifierAllowed(rel, specifier)) {
+        problems.push(`bundle-purity: ${rel} imports ${specifier}`);
+      }
+      if (!specifier.startsWith(".")) continue;
+      const next = resolveRelative(abs, specifier);
+      if (next === undefined) continue;
+      const nextRel = relative(root, next).split(sep).join("/");
+      if (!nextRel.startsWith("src/")) continue;
+      queue.push(nextRel);
+    }
+  }
+  return problems;
+}
+
+/**
+ * Source files for published runtime exports, including the `workerd` condition.
+ *
+ * @param root - Repository root
+ */
+function runtimeSourceEntries(root: string): {
+  readonly entries: readonly string[];
+  readonly problems: readonly string[];
+} {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  } catch (error) {
+    return {
+      entries: [],
+      problems: [`bundle-purity: cannot read package.json: ${messageOf(error)}`],
+    };
+  }
+  if (!isRecord(parsed) || !isRecord(parsed.exports)) {
+    return { entries: [], problems: ["bundle-purity: package.json has no exports object"] };
+  }
+  const found = new Set<string>();
+  for (const [key, value] of Object.entries(parsed.exports)) {
+    if (TOOLING_EXPORTS.has(key) || !isRecord(value)) continue;
+    for (const target of Object.values(value)) {
+      if (typeof target !== "string" || !target.startsWith("./dist/") || !target.endsWith(".js")) {
+        continue;
+      }
+      const source = `src/${target.slice("./dist/".length, -".js".length)}`;
+      if (existsSync(join(root, `${source}.ts`))) found.add(`${source}.ts`);
+      else if (existsSync(join(root, `${source}.js`))) found.add(`${source}.js`);
+      else found.add(`${source}.ts`);
+    }
+  }
+  return { entries: [...found], problems: [] };
+}
+
+/**
+ * Whether this reached file may import this Node specifier.
+ *
+ * @param rel - Path relative to the repository root
+ * @param specifier - Import specifier
+ */
+function nodeSpecifierAllowed(rel: string, specifier: string): boolean {
+  const key = rel.startsWith("src/") ? rel.slice("src/".length) : rel;
+  return NODE_SPECIFIER_EXCEPTIONS.get(key)?.has(specifier) === true;
+}
+
+/**
+ * Resolves a relative specifier to a source file.
+ *
+ * `.js` specifiers try the TypeScript sibling first. This matches the
+ * published layout, where `import "./watch.js"` is `watch.ts`.
+ *
+ * @param fromFile - File that contains the import
+ * @param specifier - Relative specifier
+ */
+function resolveRelative(fromFile: string, specifier: string): string | undefined {
+  const base = resolve(dirname(fromFile), specifier);
+  const candidates = [base];
+  if (base.endsWith(".js")) {
+    const withoutJs = base.slice(0, -3);
+    candidates.push(`${withoutJs}.ts`, `${withoutJs}.tsx`, join(withoutJs, "index.ts"));
+  }
+  candidates.push(`${base}.ts`, `${base}.tsx`, join(base, "index.ts"), join(base, "index.tsx"));
+  for (const candidate of candidates) {
+    if (existsSync(candidate) && statSync(candidate).isFile()) return candidate;
+  }
+  return undefined;
+}
 
 /**
  * Reports `src/` files that import the harness barrel.
@@ -108,7 +277,7 @@ export function npmPackageProblems(metafile: unknown, label: string): readonly s
  * @returns Problem lines
  */
 export function checkBundlePurity(root: string): readonly string[] {
-  const problems: string[] = [...harnessBarrelProblems(root)];
+  const problems: string[] = [...harnessBarrelProblems(root), ...nodeSpecifierProblems(root)];
   problems.push(...bundleRuntimeEntries(root));
   problems.push(...bundleAdapterEntries(root));
   problems.push(...bundleHarnessProbe(root));
