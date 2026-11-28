@@ -113,33 +113,17 @@ bun run --bun okm migrate apply
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when you want the files a project keeps: the schema, the client, the config, and what `okm init` adds.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
-
-## What the plan shows
-
-This page does not emit a migration step.
+Use [Installation](/docs/start/installation) when those files are not on disk yet.
 
 ## Errors
 
-- [OKM1101](/docs/reference/errors#okm1101)
-- [OKM1102](/docs/reference/errors#okm1102)
+- [OKM1101](/docs/reference/errors#okm1101): The generated client throws OKM1101 for a read with no limit.
+- [OKM1102](/docs/reference/errors#okm1102): The generated client throws OKM1102 for a write with no filter.
 
 ## Version
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

@@ -162,34 +162,22 @@ The same enum name with a different label list is refused. The message names bot
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when a column is an array, a TypeScript picklist, or a Postgres enum.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+Use [Checks](/docs/schema/checks) when the allowed set is an arbitrary SQL expression, and [Composite types](/docs/schema/composite-types) when the value has named fields.
 
 ## What the plan shows
 
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+Creating an enum is step kind `create-enum`, class expand, lock ACCESS EXCLUSIVE. Adding a label is `add-enum-value` with the same lock.
 
 ## Errors
 
-- [OKM1060](/docs/reference/errors#okm1060)
-- [OKM1210](/docs/reference/errors#okm1210)
-- [OKM1020](/docs/reference/errors#okm1020)
+- [OKM1060](/docs/reference/errors#okm1060): An array rank outside 1 to 6, or an empty or repeated picklist or enum, is OKM1060.
+- [OKM1210](/docs/reference/errors#okm1210): A value that is not an array, or a null array element, is OKM1210.
+- [OKM1020](/docs/reference/errors#okm1020): The same enum name with a different label list is OKM1020.
 
 ## Version [feature="type.enum"]
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

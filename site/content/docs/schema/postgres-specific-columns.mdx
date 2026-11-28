@@ -90,7 +90,7 @@ export const places = table("places", {
 | `t.tsvector()` | `tsvector` | `string` | variable | yes |
 | `t.ltree()` | `ltree` | `string` | variable | extension |
 
-`t.tsvector()` stores the vector text. A generated vector is [`.generated()`](/docs/schema/defaults). `t.ltree()` is labels separated by dots, such as `top.science`. Each label is letters, digits, or underscores. The schema lists `extension("ltree")` from `okmodel/ext`. See [extensions](/docs/schema/extensions). There is no `tsquery` builder.
+`t.tsvector()` stores the vector text. A generated vector is [`.generated()`](/docs/schema/defaults). `t.ltree()` is labels separated by dots, such as `top.science`. Each label is letters, digits, or underscores. The schema lists `extension("ltree")` from `okmodel/ext`. The `ltree` type on this page is declared on [extensions](/docs/schema/extensions). There is no `tsquery` builder.
 
 ```ts title="notes.ts"
 import { extension } from "okmodel/ext";
@@ -167,32 +167,16 @@ Next: [Columns](/docs/schema/columns).
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when the type is a Postgres built-in that the text, number, time, and JSON pages do not list.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
-
-## What the plan shows
-
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+Use [Extensions](/docs/schema/extensions) when the type comes from pgvector or citext, and [Range types](/docs/schema/range-types) for a range you declare.
 
 ## Errors
 
-- [OKM1020](/docs/reference/errors#okm1020)
+- [OKM1020](/docs/reference/errors#okm1020): One of these builders whose required type or extension is missing from the schema is OKM1020.
 
 ## Version
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

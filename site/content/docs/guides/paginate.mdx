@@ -11,7 +11,7 @@ Detail lives on [Read rows](/docs/queries/read-rows#page), [Query limits](/docs/
 
 You need a Postgres database, a `notes` table, and a client.
 
-The table comes from the schema in the program (`app`). The test that runs this page renders the catalog (`app.catalog`) to DDL, the SQL that creates tables, and executes each statement against an empty database. In your own project, create it with `bunx okm push` on a database you can recreate, or `okm generate init` then `okm migrate apply` for reviewed migrations ([First migration](/docs/start/first-migration)). For this schema the DDL is:
+The table on this pagination page comes from the schema in the program (`app`). The test that runs this page renders the catalog (`app.catalog`) to DDL, the SQL that creates tables, and executes each statement against an empty database. In your own project, create it with `bunx okm push` on a database you can recreate, or `okm generate init` then `okm migrate apply` for reviewed migrations ([First migration](/docs/start/first-migration)). For this schema the DDL is:
 
 ```sql
 create table "public"."notes" (
@@ -21,7 +21,7 @@ create table "public"."notes" (
 );
 ```
 
-The client, called `db` throughout, comes from `connect(url, { schema })`. An app keeps one in a module:
+The client on this pagination page, called `db` throughout, comes from `connect(url, { schema })`. An app keeps one in a module:
 
 ```ts
 import { connect } from "okmodel/pg/postgresjs";

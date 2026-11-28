@@ -304,34 +304,22 @@ The insert wrote the row. `find` and `one` read it back. You're now ready to use
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when you have a table in TypeScript and want `okm push` to create it on an empty database you can drop.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+Use [First migration](/docs/start/first-migration) when that database must keep a committed SQL file.
 
 ## What the plan shows
 
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+Push of a new table is step kind `create-table`, class expand, lock ACCESS EXCLUSIVE.
 
 ## Errors
 
-- [OKM1850](/docs/reference/errors#okm1850)
-- [OKM1101](/docs/reference/errors#okm1101)
-- [OKM1102](/docs/reference/errors#okm1102)
+- [OKM1850](/docs/reference/errors#okm1850): Push against a protected target is OKM1850.
+- [OKM1101](/docs/reference/errors#okm1101): Without `limits` on `connect`, a `find` that omits `limit` is OKM1101.
+- [OKM1102](/docs/reference/errors#okm1102): A write with no `where` is OKM1102.
 
 ## Version
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

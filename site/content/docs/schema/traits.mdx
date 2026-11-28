@@ -610,37 +610,21 @@ A column the table already declares is `Trait stamped adds notes.label, and note
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when the same columns, such as timestamps or a soft-delete pair, should be added to many tables from one definition.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
-
-## What the plan shows
-
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+Use [Tables](/docs/schema/tables) when the columns exist on only one table, and [Defaults](/docs/schema/defaults) for a single generated column.
 
 ## Errors
 
-- [OKM1060](/docs/reference/errors#okm1060)
-- [OKM1040](/docs/reference/errors#okm1040)
-- [OKM1061](/docs/reference/errors#okm1061)
-- [OKM1012](/docs/reference/errors#okm1012)
-- [OKM1052](/docs/reference/errors#okm1052)
-- [OKM1120](/docs/reference/errors#okm1120)
+- [OKM1060](/docs/reference/errors#okm1060): A trait without a `fields` object is OKM1060.
+- [OKM1040](/docs/reference/errors#okm1040): A preset name that is a client method or a reserved name is OKM1040.
+- [OKM1061](/docs/reference/errors#okm1061): Trait options `methods` and `requires` are OKM1061 because they are not available yet.
+- [OKM1012](/docs/reference/errors#okm1012): A trait column the table already declares is OKM1012.
+- [OKM1052](/docs/reference/errors#okm1052): `archive` and `restore` on a table that is not archivable are OKM1052.
+- [OKM1120](/docs/reference/errors#okm1120): Leaving `version` out of a versioned update is OKM1120 at runtime when the types are bypassed.
 
 ## Version
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

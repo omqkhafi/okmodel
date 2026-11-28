@@ -13,6 +13,7 @@ import { POSTGRES_FEATURES } from "../src/tooling/capabilities/postgres.js";
 import { FRONTMATTER_EXEMPT, FRONTMATTER_EXEMPT_CEILING } from "../scripts/frontmatter-exempt.js";
 import {
   frontmatterFieldProblems,
+  sinceWithinNextMinor,
   handbookProblems,
   isOneSentence,
   unmappedFeatures,
@@ -56,7 +57,11 @@ test("the generated modules equal the registry", () => {
 test("a since and a max are a range, and a refusal is none", () => {
   const engine = engines().postgres;
   if (engine === undefined) throw new Error("postgres missing");
-  const range = engineRule(engine, { support: "native", since: "16", max: "18" });
+  const range = engineRule(engine, {
+    support: "native",
+    since: "16",
+    max: "18",
+  });
   expect(range.kind).toBe("range");
   expect(range.label).toBe("16–18");
   expect(range.versions.length).toBeGreaterThan(0);
@@ -118,7 +123,12 @@ test("a page off the exemption list fails a broken summary or an unknown key", (
   );
   expect(valid).toEqual([]);
   const broken = frontmatterFieldProblems(
-    { title: "Defaults", summary: "Not one sentence. Really.", since: "soon", status: "nope" },
+    {
+      title: "Defaults",
+      summary: "Not one sentence. Really.",
+      since: "soon",
+      status: "nope",
+    },
     "new.mdx",
     keys,
   );
@@ -135,6 +145,45 @@ test("a page off the exemption list fails a broken summary or an unknown key", (
     keys,
   );
   expect(unknown).toContain("new.mdx: feature no.such is not a registry key");
+  const nextMinor = frontmatterFieldProblems(
+    {
+      title: "Defaults",
+      summary: "A missing value is filled from nullable through a generated expression.",
+      since: "0.11",
+      status: "stable",
+    },
+    "schema/defaults.mdx",
+    keys,
+    "0.10.6",
+  );
+  expect(nextMinor).toEqual([]);
+  expect(sinceWithinNextMinor("0.11", "0.10.6")).toBe(true);
+  expect(sinceWithinNextMinor("0.10.6", "0.10.6")).toBe(true);
+  expect(sinceWithinNextMinor("0.12", "0.10.6")).toBe(false);
+  const malformed = frontmatterFieldProblems(
+    {
+      title: "Defaults",
+      summary: "A missing value is filled from nullable through a generated expression.",
+      since: "soon",
+      status: "stable",
+    },
+    "schema/defaults.mdx",
+    keys,
+    "0.10.6",
+  );
+  expect(malformed).toContain("schema/defaults.mdx: since must be an okmodel version");
+  const ahead = frontmatterFieldProblems(
+    {
+      title: "Defaults",
+      summary: "A missing value is filled from nullable through a generated expression.",
+      since: "0.12",
+      status: "stable",
+    },
+    "schema/defaults.mdx",
+    keys,
+    "0.10.6",
+  );
+  expect(ahead).toContain("schema/defaults.mdx: since must be this minor or the next one");
 });
 
 test("unmapped registry keys are a list and the pilot keys are mapped", () => {

@@ -237,39 +237,29 @@ On a tenant table an ordinary index leads with the tenant key, unless this index
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when a query needs a secondary index: partial, expression, covering, ordered, or with storage options.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+Use [Keys and identity](/docs/schema/keys-and-identity) for the primary key and unique constraints, and [Checks](/docs/schema/checks) for a predicate that rejects a row.
 
 ## What the plan shows
 
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+On a new table the step is `create-index`, class expand, lock SHARE. On a table that already exists the same kind runs concurrently, lock SHARE UPDATE EXCLUSIVE, and it is not in the DDL transaction.
 
 ## Errors
 
-- [OKM1060](/docs/reference/errors#okm1060)
-- [OKM1122](/docs/reference/errors#okm1122)
-- [OKM1848](/docs/reference/errors#okm1848)
-- [OKM1903](/docs/reference/errors#okm1903)
-- [OKM2101](/docs/reference/errors#okm2101)
-- [OKM2103](/docs/reference/errors#okm2103)
-- [OKM2104](/docs/reference/errors#okm2104)
-- [OKM2105](/docs/reference/errors#okm2105)
+- [OKM1060](/docs/reference/errors#okm1060): `indexes` that does not return an array is OKM1060.
+- [OKM1122](/docs/reference/errors#okm1122): An index name longer than 63 bytes is OKM1122 when the plan is built.
+- [OKM1848](/docs/reference/errors#okm1848): `okm check` refuses a non-immutable predicate or expression, including `now()` and `random()`, as OKM1848.
+- [OKM1903](/docs/reference/errors#okm1903): An index method this page does not allow is OKM1903.
+- [OKM2101](/docs/reference/errors#okm2101): A partial index does not satisfy a foreign key, and that is OKM2101.
+- [OKM2103](/docs/reference/errors#okm2103): A filter column is covered only when a preset's `where()` includes the predicate, or the finding is OKM2103.
+- [OKM2104](/docs/reference/errors#okm2104): A duplicate index is OKM2104.
+- [OKM2105](/docs/reference/errors#okm2105): A shorter plain index that is a prefix of another is OKM2105.
+- [OKM2106](/docs/reference/errors#okm2106): A partial-index predicate column that is also a `filters()` or preset field warns OKM2106, because those filters are bound parameters.
+- [OKM1706](/docs/reference/errors#okm1706): On a tenant table, an index that does not already lead with the tenant key is OKM1706.
 
 ## Version [feature="index.partial"]
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

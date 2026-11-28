@@ -99,32 +99,12 @@ Next: [Columns](/docs/schema/columns).
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when the column is a boolean, bytea, jsonb, uuid, or OKID, and the earlier numeric and text pages do not name it.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
-
-## What the plan shows
-
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
-
-## Errors
-
-This page does not add an error code.
+Use [Text columns](/docs/schema/text-columns) for varchar and citext, and [Keys and identity](/docs/schema/keys-and-identity) when the uuid is the primary key.
 
 ## Version [feature="type.uuid"]
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

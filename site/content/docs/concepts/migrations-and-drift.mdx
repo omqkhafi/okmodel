@@ -45,33 +45,21 @@ A pooler URL is refused for a connecting check unless you allow it. The rule is 
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when a database you can reach disagrees with the schema and you need the hash `okm check` compares.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+Use [First migration](/docs/start/first-migration) when you are writing the first SQL file, not comparing a live target.
 
 ## What the plan shows
 
-This page does not emit a migration step.
+Drift is not a new DDL step. `okm check` reports OKM1520 when the stored hash and the schema hash differ, and it does not take a lock to rewrite the table.
 
 ## Errors
 
-- [OKM1520](/docs/reference/errors#okm1520)
-- [OKM1510](/docs/reference/errors#okm1510)
+- [OKM1520](/docs/reference/errors#okm1520): `okm check` reports a live difference as OKM1520 only when it can reach one target.
+- [OKM1510](/docs/reference/errors#okm1510): An error finding from that check is OKM1510.
 
 ## Version
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

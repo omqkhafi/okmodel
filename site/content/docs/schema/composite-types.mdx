@@ -2,7 +2,7 @@
 title: Composite types
 description: A Postgres composite is one value with named fields. Writes use jsonb so a later field does not break them.
 summary: "A composite is one value with named fields, written as jsonb."
-since: "0.10"
+since: "0.11"
 status: stable
 feature: type.composite
 ---
@@ -110,32 +110,16 @@ A typed table (`CREATE TABLE ... OF`), inheritance, and a virtual generated colu
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when one column should hold named fields as a Postgres composite, stored as jsonb at the driver.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+Use [Enums, arrays, and picklists](/docs/schema/enums-arrays-picklists) for a list of scalars, and [Range types](/docs/schema/range-types) for a start and an end.
 
 ## What the plan shows
 
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
-
-## Errors
-
-This page does not add an error code.
+Creating the type is step kind `create-composite`, class expand, lock ACCESS EXCLUSIVE. A field comment on it is kind `comment` with lock SHARE UPDATE EXCLUSIVE.
 
 ## Version [feature="type.composite"]
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

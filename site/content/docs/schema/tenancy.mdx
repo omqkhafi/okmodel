@@ -359,39 +359,26 @@ These are thrown by `schema()`, before any connection.
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when every table should carry a tenant key, `for()` scopes the client, and indexes must lead with that key.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
-
-## What the plan shows
-
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+Use [Policies](/docs/schema/policies) for row security that is not the tenancy predicate, and [Tenant isolation](/docs/concepts/tenant-isolation) for what an unscoped call refuses.
 
 ## Errors
 
-- [OKM1707](/docs/reference/errors#okm1707)
-- [OKM1708](/docs/reference/errors#okm1708)
-- [OKM1706](/docs/reference/errors#okm1706)
-- [OKM1023](/docs/reference/errors#okm1023)
-- [OKM1060](/docs/reference/errors#okm1060)
-- [OKM1012](/docs/reference/errors#okm1012)
-- [OKM1705](/docs/reference/errors#okm1705)
-- [OKM1701](/docs/reference/errors#okm1701)
+- [OKM1707](/docs/reference/errors#okm1707): On connect, a role that owns the tables, is a superuser, or has `BYPASSRLS` is OKM1707.
+- [OKM1708](/docs/reference/errors#okm1708): On connect, a table that does not force RLS with the expected policies is OKM1708.
+- [OKM1706](/docs/reference/errors#okm1706): An index on a tenant table that does not start with the tenant key is OKM1706.
+- [OKM1023](/docs/reference/errors#okm1023): Two indexes that become the same columns after the tenant key is prefixed are OKM1023.
+- [OKM1060](/docs/reference/errors#okm1060): A table that sets `tenancy` when the schema does not is OKM1060.
+- [OKM1012](/docs/reference/errors#okm1012): A trait or tenancy key the table already declares is OKM1012.
+- [OKM1705](/docs/reference/errors#okm1705): A global table that references a tenant table is OKM1705.
+- [OKM1701](/docs/reference/errors#okm1701): An insert on a tenant table without `for()` is OKM1701.
+- [OKM1210](/docs/reference/errors#okm1210): `for()` with a string that is not a uuid, when the key is a uuid, is OKM1210.
+- [OKM1190](/docs/reference/errors#okm1190): An insert that names the tenant key is OKM1190.
+- [OKM1704](/docs/reference/errors#okm1704): An update or a `where` that names the tenant key is OKM1704.
 
 ## Version [feature="tenancy.column"]
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

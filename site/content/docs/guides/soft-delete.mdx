@@ -11,7 +11,7 @@ Detail lives on [Traits](/docs/schema/traits#archive) and [Write rows](/docs/que
 
 Three things must exist before the program runs: a Postgres database, the `notes` table, and a client.
 
-The table comes from the schema in the program (`app`). The test that runs this page applies it by rendering the catalog (`app.catalog`) to DDL, the SQL that creates tables, and executing each statement against an empty database. In your own project, create the table with `bunx okm push` on a database you can recreate, or with `okm generate init` then `okm migrate apply` for reviewed migrations ([First migration](/docs/start/first-migration)). For this schema the DDL is:
+The table on this soft-delete page comes from the schema in the program (`app`). The test that runs this page applies it by rendering the catalog (`app.catalog`) to DDL, the SQL that creates tables, and executing each statement against an empty database. In your own project, create the table with `bunx okm push` on a database you can recreate, or with `okm generate init` then `okm migrate apply` for reviewed migrations ([First migration](/docs/start/first-migration)). For this schema the DDL is:
 
 ```sql title="notes.sql"
 create table "public"."notes" (
@@ -25,7 +25,7 @@ create table "public"."notes" (
 create unique index "notes_title_idx" on "public"."notes" ("title") where ("archivedAt" IS NULL);
 ```
 
-The client, called `db` throughout, comes from `connect(url, { schema })`. An app keeps one in a module and imports it where it needs it:
+The client on this soft-delete page, called `db` throughout, comes from `connect(url, { schema })`. An app keeps one in a module and imports it where it needs it:
 
 ```ts
 import { connect } from "okmodel/pg/postgresjs";

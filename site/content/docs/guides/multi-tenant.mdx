@@ -11,7 +11,7 @@ Detail lives on [Tenancy](/docs/schema/tenancy), [Tenant isolation](/docs/concep
 
 You need a Postgres database, the `notes` table with its tenant column, and a client.
 
-The table comes from the schema in the program (`app`). The test that runs this page renders the catalog (`app.catalog`) to DDL, the SQL that creates tables, and executes each statement against an empty database. In your own project, create it with `bunx okm push` on a database you can recreate, or `okm generate init` then `okm migrate apply` for reviewed migrations ([First migration](/docs/start/first-migration)). For this schema the DDL is:
+The table on this tenancy page comes from the schema in the program (`app`). The test that runs this page renders the catalog (`app.catalog`) to DDL, the SQL that creates tables, and executes each statement against an empty database. In your own project, create it with `bunx okm push` on a database you can recreate, or `okm generate init` then `okm migrate apply` for reviewed migrations ([First migration](/docs/start/first-migration)). For this schema the DDL is:
 
 ```sql
 create table "public"."notes" (
@@ -27,7 +27,7 @@ alter table "public"."notes" add constraint "notes_tenantId_title_key" unique ("
 
 `columnTenancy` added `tenantId` to the table and put it in the primary key and in every unique. That makes `title` unique per tenant, not across tenants.
 
-The client, called `db` throughout, comes from `connect(url, { schema })`. An app keeps one in a module:
+The client on this tenancy page, called `db` throughout, comes from `connect(url, { schema })`. An app keeps one in a module:
 
 ```ts
 import { connect } from "okmodel/pg/postgresjs";

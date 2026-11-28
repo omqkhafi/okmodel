@@ -2,7 +2,7 @@
 title: "Comments"
 description: "comment is stored and written as COMMENT ON."
 summary: "comment is stored and written as COMMENT ON."
-since: "0.10"
+since: "0.11"
 status: stable
 feature: comment.table
 ---
@@ -85,33 +85,21 @@ Unique constraints, primary keys, extensions, roles, and schemas do not take a c
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when a table, column, sequence, index, view, routine, or type should store `COMMENT ON` text.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+Use [Names and casing](/docs/schema/names-and-casing) when you are changing the identifier, not the comment.
 
 ## What the plan shows
 
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+A comment change is step kind `comment`, class expand, lock SHARE UPDATE EXCLUSIVE.
 
 ## Errors
 
-- [OKM2107](/docs/reference/errors#okm2107)
-- [OKM1122](/docs/reference/errors#okm1122)
+- [OKM2107](/docs/reference/errors#okm2107): `okm check` reports a comment that differs as information OKM2107.
+- [OKM1122](/docs/reference/errors#okm1122): A comment identifier with a control character is OKM1122.
 
 ## Version [feature="comment.table"]
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

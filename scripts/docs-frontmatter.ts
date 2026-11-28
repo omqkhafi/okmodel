@@ -52,12 +52,15 @@ export function isOneSentence(summary: string): boolean {
  * @param fields - Parsed frontmatter
  * @param where - Path printed in each problem
  * @param keys - Registry keys. A `feature` value must be one of these
+ * @param packageVersion - Current package version. When set, `since` may be
+ * this minor or the next one, and a malformed value still fails
  * @returns Problem lines. Empty when the page matches the schema
  */
 export function frontmatterFieldProblems(
   fields: HandbookFrontmatter,
   where: string,
   keys: ReadonlySet<string>,
+  packageVersion?: string,
 ): readonly string[] {
   const problems: string[] = [];
   if (fields.title === undefined || fields.title.length === 0) {
@@ -68,6 +71,8 @@ export function frontmatterFieldProblems(
   }
   if (fields.since === undefined || !SINCE.test(fields.since)) {
     problems.push(`${where}: since must be an okmodel version`);
+  } else if (packageVersion !== undefined && !sinceWithinNextMinor(fields.since, packageVersion)) {
+    problems.push(`${where}: since must be this minor or the next one`);
   }
   if (
     fields.status === undefined ||
@@ -131,10 +136,11 @@ export function handbookProblems(root: string = repoRoot()): readonly string[] {
     if (!seen.has(path)) problems.push(`docs-frontmatter: exemption lists missing ${path}`);
   }
   const keys = registryKeys();
+  const version = readPackageVersion(root);
   for (const file of files) {
     if (exempt.has(file.path)) continue;
     const fields = readHandbookFrontmatter(file.text);
-    for (const problem of frontmatterFieldProblems(fields, file.path, keys)) {
+    for (const problem of frontmatterFieldProblems(fields, file.path, keys, version)) {
       problems.push(`docs-frontmatter: ${problem}`);
     }
   }
@@ -167,6 +173,36 @@ export function unmappedFeatures(root: string = repoRoot()): readonly string[] {
   const files = handbookFiles(join(root, "site/content/docs"));
   const mapped = featureReferences(files, keys).mapped;
   return [...keys].filter((key) => !mapped.has(key));
+}
+
+/**
+ * Whether `since` is the package minor or the next minor, or an older one.
+ *
+ * `0.11` is accepted while the package is `0.10.6`. `soon` never reaches
+ * this function. `0.12` is past the next minor and is rejected.
+ *
+ * @param since - Handbook `since`, already matched as a version
+ * @param packageVersion - `package.json` version
+ * @returns True when the minor is not past the next release
+ */
+export function sinceWithinNextMinor(since: string, packageVersion: string): boolean {
+  const pkg = /^(\d+)\.(\d+)/.exec(packageVersion);
+  const got = /^(\d+)\.(\d+)/.exec(since);
+  if (pkg === null || got === null) return false;
+  const pkgMajor = Number(pkg[1]);
+  const pkgMinor = Number(pkg[2]);
+  const gotMajor = Number(got[1]);
+  const gotMinor = Number(got[2]);
+  if (gotMajor < pkgMajor) return true;
+  if (gotMajor > pkgMajor) return false;
+  return gotMinor <= pkgMinor + 1;
+}
+
+function readPackageVersion(root: string): string | undefined {
+  const parsed: unknown = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  if (typeof parsed !== "object" || parsed === null || !("version" in parsed)) return undefined;
+  const version = (parsed as { version?: unknown }).version;
+  return typeof version === "string" ? version : undefined;
 }
 
 function registryKeys(): ReadonlySet<string> {

@@ -171,32 +171,16 @@ export const codes = table(
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when the application expects rows to exist and the migration should insert them when the key is missing.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
-
-## What the plan shows
-
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+Use [Defaults](/docs/schema/defaults) when one column is filled on insert, not a whole row.
 
 ## Errors
 
-- [OKM1542](/docs/reference/errors#okm1542)
+- [OKM1542](/docs/reference/errors#okm1542): An `insert` in the seed file outside `backfill()` is OKM1542.
 
 ## Version
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

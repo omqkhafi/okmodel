@@ -14,9 +14,9 @@ You get a small Express server with a read route, a write route, and a clean shu
 
 CI boots the example with Bun only. The [Hono](/docs/frameworks/hono) example shows a bundled Node.js entry, if you want the build step.
 
-`armCatalog()` is not required, including a single-file Node or Lambda bundle of this server. Queries and mapped constraint errors do not call it. Call `armCatalog()` from `okmodel/pg/catalog` only before a direct `schema().catalog` read in a bundle that has no compiler file.
+`armCatalog()` is not required, including a single-file Node or Lambda bundle of this server. Queries and mapped constraint errors do not call it. On the Express page, call `armCatalog()` from `okmodel/pg/catalog` only before a direct `schema().catalog` read in a bundle that has no compiler file.
 
-A single-file bundle of this server carries the catalog compiler. `connect` imports it when the database has `okm_meta` and the process has no catalog artifact, and the bundler inlines that import. Pass `catalog` on `connect`, or leave `.okm/catalog.hash` and `catalog.json` from `okm build` where the process can read them, to skip running the compiler. The compiler stays in the file.
+A single-file bundle of this Express server carries the catalog compiler. On Express, `connect` imports it when the database has `okm_meta` and the process has no catalog artifact, and the bundler inlines that import. On Express, pass `catalog` on `connect`, or leave `.okm/catalog.hash` and `catalog.json` from `okm build` where the process can read them, to skip running the compiler. The compiler stays in the file.
 
 ## Install
 
@@ -27,7 +27,7 @@ bun add -D @types/express @types/node
 
 ## `db` module and lifecycle
 
-There is one client per process, opened at module level in `src/db.ts`, and every request shares its pool. It throws at import when `DATABASE_URL` is missing, because `connect` does not read the environment. `closeDb()` ends the pool.
+There is one client per process, opened at module level in `src/db.ts`, and every request shares its pool. The Express client throws at import when `DATABASE_URL` is missing, because `connect` does not read the environment. `closeDb()` ends the pool.
 
 ```ts title="src/db.ts" no-check="imports ./schema.js, which re-exports a file outside the example root (shown below)"
 /**
@@ -88,7 +88,7 @@ create table example_notes (
 `;
 ```
 
-In your own app, define the table in `src/schema.ts` directly. The table is named `example_notes`, so the client property is `db.example_notes`.
+In your own app, define the table in `src/schema.ts` directly. On the Express example the table is named `example_notes`, so the client property is `db.example_notes`.
 
 ## Connection config
 
@@ -164,14 +164,14 @@ process.on("SIGTERM", () => void shutdown());
 
 ## Dev and test
 
-Start Postgres, point `DATABASE_URL` at it, create the table, then run the server. In this repository, `bun run db:up` starts a local Postgres whose primary URL is below.
+Start Postgres, point `DATABASE_URL` at it, create the table, then run the server. In this repository, `bun run db:up` starts a local Postgres for the Express example, and the primary URL is below.
 
 ```sh
 bun run db:up
 export DATABASE_URL=postgres://okm:okm@127.0.0.1:55432/okm
 ```
 
-The example has no `okmodel.config.ts`. In your app, add one next to `package.json`:
+The example has no `okmodel.config.ts`. In your Express app, add one next to `package.json`:
 
 ```ts title="okmodel.config.ts"
 import { defineConfig } from "okmodel/migrate";
@@ -182,7 +182,7 @@ export default defineConfig({
 });
 ```
 
-Create the table on a fresh database with `okm push`, which writes no SQL file and suits a database you can drop:
+Create the Express table on a fresh database with `okm push`, which writes no SQL file and suits a database you can drop:
 
 ```sh
 bunx okm push
@@ -193,7 +193,7 @@ target default
 applied push-1
 ```
 
-For a database you will deploy, write the first migration and apply it, then commit `migrations/`. After a later schema change, run `bunx okm push` again on a dev database, or `bunx okm generate <name>` then `bunx okm migrate apply`.
+For a Express database you will deploy, write the first migration and apply it, then commit `migrations/`. After a later change to the Express schema, run `bunx okm push` again on a dev database, or `bunx okm generate <name>` then `bunx okm migrate apply`.
 
 ```sh
 bunx okm generate init
@@ -215,7 +215,7 @@ curl -i -X POST http://localhost:3101/notes -H 'content-type: application/json' 
 curl -i http://localhost:3101/notes
 ```
 
-These responses come from a run on a fresh database. `id` is a string, because the default codec for `t.identity()` is a string.
+These responses come from a run on a fresh database. On Express, `id` is a string, because the default codec for `t.identity()` is a string.
 
 | Request | Status | Body |
 | --- | --- | --- |
@@ -225,7 +225,7 @@ These responses come from a run on a fresh database. `id` is a string, because t
 | `POST /notes` with `{}` | 400 | `{"error":"title is required"}` |
 | `POST /notes` with `nope` as the body | 400 | Express's HTML error page: `SyntaxError: JSON Parse error: Unrecognized token 'n'` and, outside production, the stack |
 
-The example's own test does not run `okm`: it creates an isolated database and applies `NOTES_DDL` through `examples/shared/support.ts`, which is faster. To run it from a clone:
+The Express example's own test does not run `okm`: it creates an isolated database and applies `NOTES_DDL` through `examples/shared/support.ts`, which is faster. To run it from a clone:
 
 ```sh
 bun run build
@@ -238,19 +238,19 @@ cd examples/express && REQUIRE_DOCKER=1 bun test ./express.test.ts
 
 Run `src/server.ts` under Bun, or a compiled copy under Node.js, behind your process manager, with `DATABASE_URL` set. Send `SIGTERM` to stop it so `closeDb()` runs.
 
-Apply migrations before the new version takes traffic. Run this in your release job, with `DATABASE_URL` pointing at a direct connection to the primary, not a pooler:
+Apply the Express migrations before the new version takes traffic. Run this Express release job with `DATABASE_URL` pointing at a direct connection to the primary, not a pooler:
 
 ```sh
 bunx okm migrate apply
 ```
 
-A migration that only adds things lets the old version keep running while the release rolls out ([Migrations in CI](/docs/guides/migrations-in-ci), [Environments](/docs/migrations/environments)).
+For this Express app, a migration that only adds things lets the old version keep running while the release rolls out ([Migrations in CI](/docs/guides/migrations-in-ci), [Environments](/docs/migrations/environments)).
 
 ## Limits and gotchas
 
 - Do not create a client per request. Import the one in `src/db.ts`.
 - Only `SIGINT` and `SIGTERM` close the pool. A process killed with `SIGKILL` leaves its connections for Postgres to reap.
-- The route returns at most 50 rows. To read past them, page through the rest ([Read rows](/docs/queries/read-rows)).
+- The route returns at most 50 rows. On this Express route, to read past them, page through the rest ([Read rows](/docs/queries/read-rows)).
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
@@ -271,4 +271,4 @@ A migration that only adds things lets the old version keep running while the re
 | Manual | By hand | `okm push` and the `curl` calls above, including both 400s. With the table missing, the `POST` returned a 500 HTML page. The process exited after `SIGTERM`. |
 | Not covered | | The example on Node.js, `okm migrate apply` against this example, and any hosted deployment. |
 
-The frameworks job runs on pull requests that touch `examples/`, the runtime, the dialects, or the Frameworks pages, and after each merge.
+The frameworks job, which includes this Express example, runs on pull requests that touch `examples/`, the runtime, the dialects, or the Frameworks pages, and after each merge.

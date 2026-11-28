@@ -164,33 +164,17 @@ Next: [Columns](/docs/schema/columns).
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when the column is an instant, a date, a clock time, or a span, and you are choosing iso, Date, or Temporal.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
-
-## What the plan shows
-
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+Use [Codecs and row types](/docs/schema/codecs-and-row-types) for bigint and numeric codecs, and [Defaults](/docs/schema/defaults) for `defaultNow()`.
 
 ## Errors
 
-- [OKM1210](/docs/reference/errors#okm1210)
-- [OKM1060](/docs/reference/errors#okm1060)
+- [OKM1210](/docs/reference/errors#okm1210): Malformed time text is OKM1210 before the database sees it.
+- [OKM1060](/docs/reference/errors#okm1060): A mode other than `iso`, `date`, or `temporal` is OKM1060 when the column or the schema is built.
 
 ## Version
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

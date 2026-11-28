@@ -56,7 +56,7 @@ const notes = table("notes", {
 const answer = fn("answer", {
   returns: t.integer(),
   language: "sql",
-  body: sql`begin atomic select 1`, // [!code focus]
+  body: sql`begin atomic select 1; end`, // [!code focus]
 });
 
 export default schema({
@@ -191,6 +191,8 @@ export default schema({
 Definer with no `searchPath`, or one that is only spaces, is `Function answer is security definer and has no search_path.`
 </Callout>
 
+A security definer's plan also runs `revoke execute ... from public`. Push refuses that statement as [OKM1850](/docs/reference/errors#okm1850) unless you pass `--allow-protected`.
+
 <Callout type="error" title="OKM1020">
 An empty `searchPath` on an invoker is `Function answer search_path is empty.` Another security value is `Function answer security owner is not supported.`
 </Callout>
@@ -223,7 +225,7 @@ export default schema({
 
 ### together
 
-A definer, arguments, a column dependency, and a [trigger](/docs/schema/triggers) that calls it. [Casing](/docs/schema/names-and-casing#casing) `"snake"` makes the column `updated_at`.
+A definer, a column dependency, and a [trigger](/docs/schema/triggers) that calls it. A trigger function cannot take arguments. [Casing](/docs/schema/names-and-casing#casing) `"snake"` makes the column `updated_at`.
 
 ```ts title="together.ts"
 import { fn, trigger, triggerType } from "okmodel/fn";
@@ -236,7 +238,6 @@ const notes = table("notes", {
 });
 
 const touch = fn("touch_notes", {
-  arguments: [{ name: "extra", type: t.text() }],
   returns: triggerType,
   language: "plpgsql",
   security: "definer",
@@ -349,35 +350,24 @@ Definer with no `searchPath` is `Function touch_notes is security definer and ha
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when the catalog should store a function: SQL or plpgsql, arguments, volatility, and a search path.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+Use [Procedures](/docs/schema/procedures) when the routine is `CALL` and may commit, and [Triggers](/docs/schema/triggers) when a table calls the function.
 
 ## What the plan shows
 
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+Creating a function is step kind `create-function`, class expand, lock ACCESS EXCLUSIVE. Replacing the body is `replace-function` with the same lock.
 
 ## Errors
 
-- [OKM1824](/docs/reference/errors#okm1824)
-- [OKM1020](/docs/reference/errors#okm1020)
-- [OKM1023](/docs/reference/errors#okm1023)
-- [OKM1823](/docs/reference/errors#okm1823)
+- [OKM1824](/docs/reference/errors#okm1824): A plpgsql function with no `dependsOn` is OKM1824.
+- [OKM1020](/docs/reference/errors#okm1020): `dependsOn` names a column the table does not have, and that is OKM1020.
+- [OKM1023](/docs/reference/errors#okm1023): The same function name and the same argument types twice is OKM1023.
+- [OKM1823](/docs/reference/errors#okm1823): A security definer function with no `searchPath` is OKM1823.
+- [OKM1850](/docs/reference/errors#okm1850): Push refuses the definer's `revoke execute ... from public` as OKM1850 unless you pass `--allow-protected`.
 
 ## Version
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

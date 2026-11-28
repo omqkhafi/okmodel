@@ -5,7 +5,7 @@ description: Driver, error, and transaction results for postgres.js, node-postgr
 
 The same suite runs against postgres.js, node-postgres, Bun.sql, and PGlite. `pass` means the case ran and matched. `skip` means the adapter does not offer that behaviour. `fail` means it ran and did not match. `not-run` means the suite did not reach it. The command is [`okm driver test`](/docs/reference/cli/check#driver-test). The cells below are generated from `tests/driver-suite.test.ts` and `tests/error-suite.test.ts`. The floor is [Minimum Postgres](/docs/schema/the-schema#minimum-postgres).
 
-PostgreSQL 15 and later; tested on 15 to 19. The floor is 15: Postgres 13 is past end of life, 14 ends in November 2026, and 15 gives us features we can use later. `connect()` refuses an older server with OKM1803. `minPostgres` is any integer 15 or higher. `requires: { postgres: ">=17" }` is the same floor and is deprecated. A newer major is accepted and is untested until it appears in the tested list. Identity columns need Postgres 10. A bare `t.id()` stores `gen_random_uuid()`, which is built in from Postgres 13. An explicit `uuidv7()` needs Postgres 18. A pull request runs Postgres 18 when the diff touches dialects, migrate, or runtime. `bun run verify` runs the suite on this machine. After merge is manual and covers each tested major. A release does the same. A failure on an older major in this list stays in the run.
+The compatibility list is PostgreSQL 15 and later; tested on 15 to 19. The floor is 15: Postgres 13 is past end of life, 14 ends in November 2026, and 15 gives us features we can use later. `connect()` refuses an older server with OKM1803. `minPostgres` is any integer 15 or higher. `requires: { postgres: ">=17" }` is the same floor and is deprecated. A newer major is accepted and is untested until it appears in the tested list. Identity columns need Postgres 10. A bare `t.id()` stores `gen_random_uuid()`, which is built in from Postgres 13. An explicit `uuidv7()` needs Postgres 18. A pull request runs Postgres 18 when the diff touches dialects, migrate, or runtime. `bun run verify` runs the suite on this machine. After merge is manual and covers each tested major. A release does the same. A failure on an older major in this list stays in the run.
 
 Postgres: native. Since 18. Proof passes (`proof:type.uuidv7`). A check with `enforced: false` is `NOT ENFORCED`, native since 18 (`proof:check.notEnforced`). `ALTER CONSTRAINT` enforcement needs 19; 18 drops the check and adds it again.
 
@@ -63,5 +63,5 @@ The public type surface (`scripts/api-surface.ts`) and the consumer fixtures (`*
 | Next | You use it for |
 | --- | --- |
 | [Drivers](/docs/operate/drivers) | Pick a driver and a `prepared` mode. |
-| [Minimum Postgres](/docs/schema/the-schema#minimum-postgres) | PostgreSQL 15 and later; tested on 15 to 19. |
+| [Minimum Postgres](/docs/schema/the-schema#minimum-postgres) | The compatibility list is PostgreSQL 15 and later; tested on 15 to 19. |
 | [driver test](/docs/reference/cli/check#driver-test) | Run the suite that fills this table. |

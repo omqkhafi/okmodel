@@ -9,6 +9,7 @@ import {
   structureProblems,
 } from "./decisions.js";
 import { handbookProblems } from "./docs-frontmatter.js";
+import { handbookSentenceProblems } from "./docs-sentences.js";
 import { hygieneProblems } from "./docs-hygiene.js";
 import { docsSupportProblems } from "./docs-support.js";
 import { generatePackedDocs, generatedDocsProblems } from "./docs-pack.js";
@@ -222,6 +223,7 @@ if (import.meta.main) {
       ...hygieneProblems(root, version),
       ...docsSupportProblems(root),
       ...handbookProblems(root),
+      ...handbookSentenceProblems(root),
     ]);
   }
 }

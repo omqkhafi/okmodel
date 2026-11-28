@@ -289,33 +289,21 @@ default	0002_add-body	⟨catalog hash⟩	current	false
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when the database should keep a SQL file: generate the first migration, then apply that one change.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+Use [First schema](/docs/start/first-schema) when `okm push` on a database you can drop is enough and you do not want a file yet.
 
 ## What the plan shows
 
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+The generated file's new table is step kind `create-table`, class expand, lock ACCESS EXCLUSIVE. A later required column with no default is not that expand step.
 
 ## Errors
 
-- [OKM1510](/docs/reference/errors#okm1510)
-- [OKM1525](/docs/reference/errors#okm1525)
+- [OKM1510](/docs/reference/errors#okm1510): Generate prints OKM1510 on stderr when the plan has an error finding.
+- [OKM1525](/docs/reference/errors#okm1525): Adding a required column with no default is the OKM1525 finding on this page.
 
 ## Version
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

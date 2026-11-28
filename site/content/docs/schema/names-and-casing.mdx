@@ -269,36 +269,24 @@ Any value other than `"snake"` or `"camel"` is OKM1060: `schema() casing <value>
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when a field name and the SQL identifier differ, or the project picks snake or camel once.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+Use [The schema](/docs/schema/the-schema) for the rest of `schema()`, and [Comments](/docs/schema/comments) for `COMMENT ON` text.
 
 ## What the plan shows
 
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+Renaming a table or a column is `rename-table` or `rename-column`, class contract, lock ACCESS EXCLUSIVE. Renaming an index is `rename-index`, lock SHARE UPDATE EXCLUSIVE.
 
 ## Errors
 
-- [OKM1060](/docs/reference/errors#okm1060)
-- [OKM1122](/docs/reference/errors#okm1122)
-- [OKM1023](/docs/reference/errors#okm1023)
-- [OKM1530](/docs/reference/errors#okm1530)
-- [OKM1020](/docs/reference/errors#okm1020)
+- [OKM1060](/docs/reference/errors#okm1060): An empty column or table `sqlName` is OKM1060.
+- [OKM1122](/docs/reference/errors#okm1122): A reserved word, a control character, or a name longer than 63 bytes is OKM1122.
+- [OKM1023](/docs/reference/errors#okm1023): Two tables that store the same SQL name are OKM1023.
+- [OKM1530](/docs/reference/errors#okm1530): A rename without the flags this page names is OKM1530 and exits 3.
+- [OKM1020](/docs/reference/errors#okm1020): `renamedFrom` that is not in the previous snapshot is OKM1020.
 
 ## Version
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

@@ -77,39 +77,30 @@ A count or a backfill under `FORCE`, or under `rlsTenancy`, does not report zero
 
 ## When to use it
 
-Use this page when the job is the one in the summary.
+Read this when row visibility is a Postgres policy and a role, not a tenant key the client adds to `where`.
 
 ## When not to
 
-Use the next page in the group when the object you want is named there.
-
-## Options
-
-The sections above name the calls and the fields. A call that is not in those sections is not on this page.
+Use [Tenancy](/docs/schema/tenancy) when every table carries a tenant column, and [Tenant isolation](/docs/concepts/tenant-isolation) for the `for()` rule.
 
 ## What the plan shows
 
-The plan prints the step class, kind, action, and lock. A blocking or rewrite step also prints its weight.
+A policy step is `create-policy` or `alter-policy`, class expand, lock ACCESS EXCLUSIVE. Enabling row security is `enable-rls` with that lock.
 
 ## Errors
 
-- [OKM2115](/docs/reference/errors#okm2115)
-- [OKM2116](/docs/reference/errors#okm2116)
-- [OKM1923](/docs/reference/errors#okm1923)
-- [OKM1823](/docs/reference/errors#okm1823)
-- [OKM2112](/docs/reference/errors#okm2112)
-- [OKM1925](/docs/reference/errors#okm1925)
-- [OKM2110](/docs/reference/errors#okm2110)
-- [OKM2111](/docs/reference/errors#okm2111)
+- [OKM2115](/docs/reference/errors#okm2115): Policies while row security is off are OKM2115 in `okm check`.
+- [OKM2116](/docs/reference/errors#okm2116): An `UPDATE` policy with no `SELECT` policy for the same role matches zero rows and is OKM2116.
+- [OKM1923](/docs/reference/errors#okm1923): A role the login is not a member of is OKM1923 (42501).
+- [OKM1823](/docs/reference/errors#okm1823): A security definer function used from a policy without a pinned `search_path` is OKM1823.
+- [OKM2112](/docs/reference/errors#okm2112): A definer that reads a forced table can see no rows, reported as OKM2112.
+- [OKM1925](/docs/reference/errors#okm1925): A policy cycle, including a policy that reads its own table, is OKM1925 when the schema builds.
+- [OKM2110](/docs/reference/errors#okm2110): A policy filter column that is not the first column of an index is OKM2110.
+- [OKM2111](/docs/reference/errors#okm2111): A policy expression this page rejects as the wrong shape is OKM2111.
+- [OKM2113](/docs/reference/errors#okm2113): A role that owns the tables, is a superuser, or has `BYPASSRLS` is OKM2113.
+- [OKM2114](/docs/reference/errors#okm2114): A `to` role that is not in the roles config is OKM2114.
+- [OKM1926](/docs/reference/errors#okm1926): A policy shape this page does not list is OKM1926.
 
 ## Version [feature="policies.table"]
 
 <SupportPhrase />.
-
-## Gotchas
-
-The refused shapes and the limits are in the sections above.
-
-## Related
-
-The next page in the group is the usual follow-up. [I want to…](/docs/start/i-want-to) lists the jobs.

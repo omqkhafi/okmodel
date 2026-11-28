@@ -72,4 +72,4 @@ const rows = await status();
 
 `provision(target, cwd?)` installs the head snapshot on an empty configured target, the same rules as `okm migrate apply` on an empty database. A non-empty target is OKM1851. It returns the same text apply prints for that run.
 
-`baseline(target, cwd?)` records the head snapshot as applied history without schema changes, the same as [`okm migrate baseline`](/docs/reference/cli/migrate#migrate-baseline). `default` is the `database` target. A live catalog that differs from the head is OKM1858. A target that already has OKModel history is OKM1857.
+`baseline(target, cwd?)` records the head snapshot as applied history without schema changes, the same as [`okm migrate baseline`](/docs/reference/cli/migrate#migrate-baseline). `default` is the `database` target. A live catalog that differs from the head is OKM1858. For `baseline()`, a target that already has OKModel history is OKM1857.
