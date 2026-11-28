@@ -2134,11 +2134,14 @@ export type WatchStats = {
  *
  * `await using` calls `stop`. `run` waits for the current pass, including the
  * first one. `state` is `poll` until a delivery self-test succeeds.
+ * `stop` from outside waits for the handler already running. `stop` from that
+ * handler or its `onError` returns once the watch is marked stopped.
  */
 export type WatchSubscription = {
   readonly state: WatchState;
   readonly stats: WatchStats;
   run(): Promise<void>;
+  /** Stops the watch. From outside, waits for the current handler. */
   stop(): Promise<void>;
 } & IfAsyncDisposable<typeof Symbol>;
 

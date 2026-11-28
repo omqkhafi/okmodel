@@ -39,9 +39,9 @@ export async function seen(url: string): Promise<number> {
 }
 ```
 
-`const updates = db.orders.watch(...)` returns the handle immediately. `await using` calls `stop()`. `updates.state` is `"push"`, `"poll"`, or `"stopped"`. `updates.stats` counts runs, errors, wakes, and queries. `await updates.run()` settles the read already running, or starts one. `await updates.stop()` marks the watch stopped and waits until the handler already running has finished. After that await, no handler, `onError`, or query from that watch runs. A handler that throws still settles `stop()`; the error goes to `onError`.
+`const updates = db.orders.watch(...)` returns the handle immediately. `await using` calls `stop()`. `updates.state` is `"push"`, `"poll"`, or `"stopped"`. `updates.stats` counts runs, errors, wakes, and queries. `await updates.run()` settles the read already running, or starts one. `await updates.stop()` from outside the handler marks the watch stopped and waits until that handler has finished. After that await, no handler, `onError`, or query from that watch runs. The same call from inside that handler, or from its `onError`, marks the watch stopped and returns without waiting for the handler. The handler finishes, and nothing from that watch runs after it. A runtime without `AsyncLocalStorage` cannot tell those two callers apart, so `stop()` keeps waiting. Abort the `signal` option from inside the handler there. A handler that throws still settles `stop()` from outside; the error goes to `onError`.
 
-The handler runs one at a time. Wakes that arrive while it is running become one more run after it finishes. A thrown handler goes to `onError` and the process stays up. The next run tries again.
+The handler runs one at a time. Wakes that arrive while it is running become one more run after it finishes, unless `stop()` already marked the watch stopped. A thrown handler goes to `onError` and the process stays up. The next run tries again while the watch is still open.
 
 ## Live read [feature="watch.liveRead"]
 
