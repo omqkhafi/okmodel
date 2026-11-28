@@ -8,6 +8,7 @@
 import { open } from "../../adapters/pg/postgresjs.js";
 import { normalizeRoles } from "../../dialects/pg/role/config.js";
 import { OkmError } from "../../contracts/error.js";
+import { formatLiveEventTriggers, readEventTriggers } from "./event-check.js";
 import type { MigrateConfig } from "./config.js";
 
 /** One grant row. */
@@ -41,6 +42,8 @@ export async function accessReport(
     readonly and: readonly string[];
     readonly warnings: readonly string[];
   }[];
+  /** Live event triggers. Undeclared rows say `unmanaged`. */
+  readonly eventTriggers: string;
 }> {
   if (config.roles === undefined) {
     throw new OkmError(
@@ -150,6 +153,7 @@ export async function accessReport(
         .map((row) => String(row[0] ?? ""))
         .filter((name) => name.length > 0 && !named.has(name)),
       policies: await policyPart(pool, tableName, roleName),
+      eventTriggers: formatLiveEventTriggers(await readEventTriggers(url), new Set()).trim(),
     };
   } finally {
     await pool.close();

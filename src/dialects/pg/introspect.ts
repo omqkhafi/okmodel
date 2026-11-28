@@ -23,6 +23,7 @@ import {
   grantObject,
   roleObject,
 } from "../../contracts/catalog/privilege.js";
+import { eventTriggerObject } from "../../contracts/catalog/event-trigger.js";
 import { functionObject, triggerObject } from "../../contracts/catalog/routine.js";
 import { routineControl } from "./fn/control.js";
 import {
@@ -221,6 +222,7 @@ export async function introspectSchema(
     policies,
     comments,
     ranges,
+    eventTriggers,
   ] = await Promise.all([
     runner.query(TABLES, params),
     runner.query(COLUMNS, params),
@@ -239,6 +241,7 @@ export async function introspectSchema(
     runner.query(POLICIES, params),
     runner.query(COMMENTS, params),
     runner.query(RANGES, params),
+    runner.query(EVENT_TRIGGERS, params),
   ]);
   const objects: CatalogObject[] = [];
   const parents = new Map<string, ObjectRef>();
@@ -611,6 +614,8 @@ export async function introspectSchema(
     const updateOf = list(text(row, "update_of"));
     const when = unwrapTriggerWhen(text(row, "predicate"));
     const argTypes = splitTypes(text(row, "arg_types"));
+    const oldTable = text(row, "old_table");
+    const newTable = text(row, "new_table");
     objects.push(
       triggerObject({
         parent: { namespace, name: text(row, "parent") },
@@ -625,7 +630,35 @@ export async function introspectSchema(
         },
         ...(updateOf.length > 0 ? { updateOf } : {}),
         ...(when.length > 0 ? { when } : {}),
+        ...(oldTable.length > 0 || newTable.length > 0
+          ? {
+              referencing: {
+                ...(oldTable.length > 0 ? { old: oldTable } : {}),
+                ...(newTable.length > 0 ? { new: newTable } : {}),
+              },
+            }
+          : {}),
         provenance,
+      }),
+    );
+  }
+  for (const row of eventTriggers) {
+    const tags = text(row, "tags").length === 0 ? [] : text(row, "tags").split("|");
+    const comment = text(row, "comment");
+    const enabled = eventEnabled(text(row, "enabled"));
+    objects.push(
+      eventTriggerObject({
+        name: text(row, "name"),
+        event: eventName(text(row, "event")),
+        enabled,
+        calls: {
+          namespace: referencedNamespace(text(row, "function_schema"), concrete, namespace),
+          name: text(row, "function"),
+          argTypes: [],
+        },
+        ...(tags.length > 0 ? { tags } : {}),
+        provenance,
+        ...(comment.length > 0 ? { comment } : {}),
       }),
     );
   }
@@ -1342,6 +1375,29 @@ function triggerTiming(bits: number): TriggerTiming {
   if ((bits & 64) !== 0) return "instead";
   if ((bits & 2) !== 0) return "before";
   return "after";
+}
+
+function eventName(
+  value: string,
+): "ddl_command_start" | "ddl_command_end" | "sql_drop" | "table_rewrite" {
+  if (
+    value === "ddl_command_start" ||
+    value === "ddl_command_end" ||
+    value === "sql_drop" ||
+    value === "table_rewrite"
+  ) {
+    return value;
+  }
+  throw new OkmError("OKM1931", `Event trigger event ${value} is not supported.`, {
+    fix: { summary: "Drop that event trigger, or keep it out of this schema." },
+  });
+}
+
+function eventEnabled(value: string): "origin" | "disabled" | "replica" | "always" {
+  if (value === "D") return "disabled";
+  if (value === "R") return "replica";
+  if (value === "A") return "always";
+  return "origin";
 }
 
 function triggerEvents(bits: number): TriggerEvent[] {
@@ -2765,7 +2821,9 @@ const TRIGGERS = `
       select coalesce(string_agg(a.attname, ',' order by cols.ord), '')
       from unnest(t.tgattr) with ordinality as cols(attnum, ord)
       join pg_attribute a on a.attrelid = t.tgrelid and a.attnum = cols.attnum
-    ) as update_of
+    ) as update_of,
+    coalesce(t.tgoldtable::text, '') as old_table,
+    coalesce(t.tgnewtable::text, '') as new_table
   from pg_trigger t
   join pg_class c on c.oid = t.tgrelid
   join pg_namespace n on n.oid = c.relnamespace
@@ -2774,6 +2832,19 @@ const TRIGGERS = `
   where n.nspname = $1
     and not t.tgisinternal
     and ${CHILD}
+`;
+
+const EVENT_TRIGGERS = `
+  select e.evtname as name, e.evtevent as event, e.evtenabled as enabled,
+    coalesce(array_to_string(e.evttags, '|'), '') as tags,
+    p.proname as function, n.nspname as function_schema,
+    coalesce(d.description, '') as comment
+  from pg_event_trigger e
+  join pg_proc p on p.oid = e.evtfoid
+  join pg_namespace n on n.oid = p.pronamespace
+  left join pg_description d on d.objoid = e.oid and d.classoid = 'pg_event_trigger'::regclass
+  where $1::text is not null
+  order by e.evtname
 `;
 
 const VIEWS = `

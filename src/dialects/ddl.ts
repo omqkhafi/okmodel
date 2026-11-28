@@ -14,6 +14,7 @@ import type {
   CatalogObject,
   ColumnObject,
   ConstraintObject,
+  EventTriggerObject,
   ExtensionObject,
   FunctionObject,
   IndexObject,
@@ -269,6 +270,12 @@ const KIND_SQL: Readonly<Record<StepKind, RegExp>> = {
   "replace-function": /^create or replace (?:function|procedure)\b/,
   "create-trigger": /^create trigger\b/,
   "drop-trigger": /^drop trigger\b/,
+  "create-event-trigger": /^create event trigger\b/,
+  "drop-event-trigger": /^drop event trigger\b/,
+  "alter-event-trigger": /^alter event trigger\b.*\b(?:enable|disable)\b/,
+  "rename-event-trigger": /^alter event trigger\b.*\brename to\b/,
+  "alter-owner": /^alter (?:function|event trigger|table|schema)\b.*\bowner to\b/,
+  "create-schema": /^create schema\b/,
   "create-view": /^create view\b/,
   "drop-view": /^drop view\b/,
   "replace-view": /^create or replace view\b/,
@@ -646,6 +653,40 @@ export type LogicalChange =
   | {
       readonly op: "drop-trigger";
       readonly object: TriggerObject;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "create-event-trigger";
+      readonly object: EventTriggerObject;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "drop-event-trigger";
+      readonly object: EventTriggerObject;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "alter-event-trigger";
+      readonly name: string;
+      readonly enabled: "origin" | "disabled" | "replica" | "always";
+      readonly schema: string;
+    }
+  | {
+      readonly op: "rename-event-trigger";
+      readonly from: string;
+      readonly to: string;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "alter-owner";
+      readonly kind: "function" | "event trigger";
+      readonly sql: string;
+      readonly owner: string;
+      readonly schema: string;
+    }
+  | {
+      readonly op: "create-schema";
+      readonly name: string;
       readonly schema: string;
     }
   | {

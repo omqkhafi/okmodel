@@ -1190,6 +1190,15 @@
     "docs": "docs/errors/OKM1929.md"
   },
   {
+    "code": "OKM1931",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "An event trigger is not valid here: the function is the wrong shape, the event is login or a shared object, enableRls disagrees with rls: false, a role key is missing, a transition table is not allowed, or a session guard needs a direct URL.",
+    "fix": "Import okmodel/event, fix the function or the tag, or use a direct URL for the step.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1931.md"
+  },
+  {
     "code": "OKM1928",
     "kind": "invalid",
     "category": "input",
@@ -2360,6 +2369,28 @@
     ]
   },
   {
+    "code": "OKM2129",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "An event trigger lists a command tag that its event never sees. sql_drop does not see a create. table_rewrite sees ALTER TABLE only.",
+    "fix": "Remove the tag, or move the trigger to ddl_command_end.",
+    "retryable": false,
+    "safeAlternatives": [
+      {
+        "text": "Use a tag the event can see.",
+        "docs": "docs/errors/OKM2129.md#page"
+      }
+    ],
+    "docs": "docs/errors/OKM2129.md",
+    "escapeHatches": [
+      {
+        "name": "ignore",
+        "requiresHumanReason": true,
+        "docs": "docs/errors/OKM2129.md#escape"
+      }
+    ]
+  },
+  {
     "code": "OKM2121",
     "kind": "invalid",
     "category": "input",
@@ -2664,6 +2695,15 @@
     "fix": "Let the trigger assign the next number, or stop writing the number by hand.",
     "retryable": false,
     "docs": "docs/errors/OKM2207.md"
+  },
+  {
+    "code": "OKM2209",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "Creating an event trigger needs a superuser, or a host role that can create one. A plain role gets 42501. Neon grants this to neon_superuser. Supabase grants it to postgres. Another host has to say which role can create one.",
+    "fix": "Connect as that role for okm check and okm apply, or ask the provider which role can create an event trigger.",
+    "retryable": false,
+    "docs": "docs/errors/OKM2209.md"
   },
   {
     "code": "OKM2300",

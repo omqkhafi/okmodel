@@ -83,6 +83,7 @@
   "/docs/schema/composite-types",
   "/docs/schema/defaults",
   "/docs/schema/enums-arrays-picklists",
+  "/docs/schema/event-triggers",
   "/docs/schema/extensions",
   "/docs/schema/functions",
   "/docs/schema/indexes",

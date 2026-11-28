@@ -5,9 +5,10 @@
   },
   "declarations": {
     ".": "1ad8bfc73ecec8570ceeb3312664c76945e66a622f2c61c9c3593addd93a330f",
+    "./event": "aced2ea5ee1020e92ea77cb23fb2551b948b9d0c9597b12dc7cafe7c2f5b1cc1",
     "./expr": "09109c0d87c034a3dd43c5c6347c64a6295d0ebdda99684f321a0ee0d0a05443",
     "./ext": "cf96e3c3f7ef289db7eab24758ea39617f9f040e59710a15506cae886c43f3b2",
-    "./fn": "c2bb10e75cc29d886abeb5359a275b9753bbdcf865292bb4738d99061581bc4c",
+    "./fn": "e00aef75523852786429046fbe01b25ad9426878d9fea90cada8d48d9b6a42ef",
     "./ids": "8bccd86806fc0bdf259041310ae95e0160f251bb477a717dfac5a0b8d8fa617a",
     "./internal": "4146646ee31a876434e76510e5491d6d231353c8122be08c087771792c5a366d",
     "./migrate": "e5fa2b360cec3899f600ca1f0354f8739ed4091779e0d0972443a131805a9d78",
@@ -45,6 +46,10 @@
     ".": {
       "import": "./dist/contracts/index.js",
       "types": "./dist/contracts/index.d.ts"
+    },
+    "./event": {
+      "import": "./dist/dialects/pg/event/index.js",
+      "types": "./dist/dialects/pg/event/index.d.ts"
     },
     "./expr": {
       "import": "./dist/dialects/pg/expr/index.js",

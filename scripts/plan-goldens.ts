@@ -20,6 +20,9 @@ import { defaultPrivilegeObject, roleObject } from "../src/contracts/catalog/pri
 import { sha256 } from "../src/contracts/sha256.js";
 import type { DdlStep } from "../src/dialects/ddl.js";
 import { schemaDeclarations } from "../src/dialects/pg/declarations.js";
+import "../src/dialects/pg/event/index.js";
+import { auditDdl } from "../src/dialects/pg/event/index.js";
+import { eventTriggerType, fn, trigger } from "../src/dialects/pg/fn/index.js";
 import { schema, sql, t, table as defineTable } from "../src/dialects/pg/index.js";
 import { sequence as series } from "../src/dialects/pg/seq/index.js";
 import { formatPlanJson } from "../src/tooling/migrate/plan-json.js";
@@ -357,6 +360,79 @@ function coverageRequests(): readonly PlanRequest[] {
       }).catalog,
       name: "create-range",
     },
+    (() => {
+      const log = fn("log_ddl", {
+        returns: eventTriggerType,
+        language: "plpgsql",
+        body: "begin end",
+      });
+      const on = schema({
+        tables: [],
+        functions: [log],
+        triggers: [trigger("log_ddl", { event: "ddl_command_end", calls: log, enabled: true })],
+      }).catalog;
+      return { before: catalog([]), after: on, name: "create-event-trigger" };
+    })(),
+    (() => {
+      const log = fn("log_ddl", {
+        returns: eventTriggerType,
+        language: "plpgsql",
+        body: "begin end",
+      });
+      const on = schema({
+        tables: [],
+        functions: [log],
+        triggers: [trigger("log_ddl", { event: "ddl_command_end", calls: log, enabled: true })],
+      }).catalog;
+      return { before: on, after: catalog([]), name: "drop-event-trigger" };
+    })(),
+    (() => {
+      const log = fn("log_ddl", {
+        returns: eventTriggerType,
+        language: "plpgsql",
+        body: "begin end",
+      });
+      const on = schema({
+        tables: [],
+        functions: [log],
+        triggers: [trigger("log_ddl", { event: "ddl_command_end", calls: log, enabled: true })],
+      }).catalog;
+      const off = schema({
+        tables: [],
+        functions: [log],
+        triggers: [trigger("log_ddl", { event: "ddl_command_end", calls: log, enabled: false })],
+      }).catalog;
+      return { before: on, after: off, name: "alter-event-trigger" };
+    })(),
+    (() => {
+      const log = fn("log_ddl", {
+        returns: eventTriggerType,
+        language: "plpgsql",
+        body: "begin end",
+      });
+      const before = schema({
+        tables: [],
+        functions: [log],
+        triggers: [trigger("log_ddl", { event: "ddl_command_end", calls: log, enabled: true })],
+      }).catalog;
+      const after = schema({
+        tables: [],
+        functions: [log],
+        triggers: [trigger("log_ddl_2", { event: "ddl_command_end", calls: log, enabled: true })],
+      }).catalog;
+      return { before, after, name: "rename-event-trigger" };
+    })(),
+    (() => {
+      const audit = auditDdl();
+      return {
+        before: catalog([]),
+        after: schema({
+          tables: [defineTable("notes", { id: t.identity() }), audit.transactions, audit.commands],
+          triggers: [audit],
+        }).catalog,
+        name: "audit-ddl",
+      };
+    })(),
   ];
 }
 

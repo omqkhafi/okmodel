@@ -788,6 +788,13 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     fix: "Import okmodel/session/role and call bindSessionRoles() before sessionSettings(..., { roles }).",
   },
   {
+    code: "OKM1931",
+    title: "Event trigger",
+    summary:
+      "An event trigger is not valid here: the function is the wrong shape, the event is login or a shared object, enableRls disagrees with rls: false, a role key is missing, a transition table is not allowed, or a session guard needs a direct URL.",
+    fix: "Import okmodel/event, fix the function or the tag, or use a direct URL for the step.",
+  },
+  {
     code: "OKM1928",
     title: "Virtual column fill",
     summary:
@@ -1394,6 +1401,14 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
       "okm doctor found a counter row behind the highest number stored for that scope and period. A value written by hand can leave it there.",
     fix: "Let the trigger assign the next number, or stop writing the number by hand.",
     since: "0.10",
+  },
+  {
+    code: "OKM2209",
+    title: "Event trigger privilege",
+    summary:
+      "Creating an event trigger needs a superuser, or a host role that can create one. A plain role gets 42501. Neon grants this to neon_superuser. Supabase grants it to postgres. Another host has to say which role can create one.",
+    fix: "Connect as that role for okm check and okm apply, or ask the provider which role can create an event trigger.",
+    since: "0.11",
   },
   {
     code: "OKM2300",

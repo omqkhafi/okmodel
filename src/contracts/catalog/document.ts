@@ -28,6 +28,7 @@ import { domainType, enumType, isDomain } from "./enum.js";
 import { isRange, rangeType } from "./range.js";
 import { extensionObject } from "./extension.js";
 import { defaultPrivilegeObject, grantObject, roleObject } from "./privilege.js";
+import { eventTriggerObject } from "./event-trigger.js";
 import { functionObject, retargetFunction, triggerObject } from "./routine.js";
 import { policyObject } from "./policy.js";
 import { materializedViewIndex, materializedViewObject, viewObject } from "./view.js";
@@ -424,6 +425,7 @@ function rewriteRenamedObject(
     case "role":
     case "grant":
     case "defaultPrivilege":
+    case "eventTrigger":
       return retargeted(object, dependencies);
     case "policy":
       return rewritePolicyColumn(object, change, dependencies);
@@ -898,7 +900,13 @@ function rewriteTableName(
       dependencies,
       ...(object.definition.updateOf !== undefined ? { updateOf: object.definition.updateOf } : {}),
       ...(object.definition.when !== undefined ? { when: object.definition.when } : {}),
+      ...(object.definition.referencing !== undefined
+        ? { referencing: object.definition.referencing }
+        : {}),
     });
+  }
+  if (object.kind === "eventTrigger") {
+    return { ...object, dependencies: dependencies.map((target) => ({ target })) };
   }
   if (object.kind === "policy") {
     const parent = movedParent(object.identity.parent, change);
@@ -1285,6 +1293,22 @@ function definitionToJson(object: CatalogObject): Json {
         timing: definition.timing,
         ...(definition.updateOf !== undefined ? { updateOf: [...definition.updateOf] } : {}),
         ...(definition.when !== undefined ? { when: definition.when } : {}),
+        ...(definition.referencing !== undefined
+          ? { referencing: { ...definition.referencing } }
+          : {}),
+      };
+    }
+    case "eventTrigger": {
+      const definition = object.definition;
+      return {
+        calls: {
+          argTypes: [...definition.calls.argTypes],
+          name: definition.calls.name,
+          namespace: namespaceToJson(definition.calls.namespace),
+        },
+        enabled: definition.enabled,
+        event: definition.event,
+        ...(definition.tags !== undefined ? { tags: [...definition.tags] } : {}),
       };
     }
     case "view":
@@ -1403,6 +1427,8 @@ function parseBuilt(
       return parseFunction(identity, definition, owner, provenance, dependencies);
     case "trigger":
       return parseTrigger(identity, definition, owner, provenance, dependencies);
+    case "eventTrigger":
+      return parseEventTrigger(identity, definition, owner, provenance, dependencies);
     case "view":
     case "materializedView":
       return parseView(kind, identity, definition, owner, provenance, dependencies);
@@ -1842,6 +1868,7 @@ function parseFunction(
       "raises",
       "returns",
       "routine",
+      "ownedBy",
       "searchPath",
       "security",
       "volatility",
@@ -1876,6 +1903,9 @@ function parseFunction(
     ...(definition.raises !== undefined ? { raises: parseRaises(definition.raises) } : {}),
     ...(definition.searchPath !== undefined
       ? { searchPath: requireString(definition.searchPath, "search path") }
+      : {}),
+    ...(definition.ownedBy !== undefined
+      ? { ownedBy: requireString(definition.ownedBy, "function owner") }
       : {}),
   });
 }
@@ -1948,7 +1978,7 @@ function parseTrigger(
   }
   rejectUnknown(
     definition,
-    ["calls", "events", "level", "timing", "updateOf", "when"],
+    ["calls", "events", "level", "referencing", "timing", "updateOf", "when"],
     "trigger definition",
   );
   const timing = requireString(definition.timing, "trigger timing");
@@ -1979,6 +2009,73 @@ function parseTrigger(
       ? { updateOf: requireStrings(definition.updateOf, "update of") }
       : {}),
     ...(definition.when !== undefined ? { when: requireString(definition.when, "when") } : {}),
+    ...(definition.referencing !== undefined
+      ? { referencing: parseReferencing(definition.referencing) }
+      : {}),
+  });
+}
+
+function parseReferencing(value: unknown): { readonly old?: string; readonly new?: string } {
+  const record = requireRecord(value, "referencing");
+  rejectUnknown(record, ["new", "old"], "referencing");
+  const old = record.old === undefined ? undefined : requireString(record.old, "old table");
+  const next = record.new === undefined ? undefined : requireString(record.new, "new table");
+  return {
+    ...(old !== undefined ? { old } : {}),
+    ...(next !== undefined ? { new: next } : {}),
+  };
+}
+
+function parseEventTrigger(
+  identity: ObjectIdentity,
+  definition: Record<string, unknown>,
+  owner: Owner,
+  provenance: Provenance,
+  dependencies: readonly ObjectIdentity[],
+): CatalogObject {
+  if (identity.kind !== "eventTrigger") {
+    catalogError("OKM1020", `Event trigger identity is ${identity.kind}.`);
+  }
+  rejectUnknown(definition, ["calls", "enabled", "event", "ownedBy", "tags"], "event trigger");
+  const calls = requireRecord(definition.calls, "event trigger call");
+  rejectUnknown(calls, ["argTypes", "name", "namespace"], "event trigger call");
+  const event = requireString(definition.event, "event");
+  if (
+    event !== "ddl_command_start" &&
+    event !== "ddl_command_end" &&
+    event !== "sql_drop" &&
+    event !== "table_rewrite"
+  ) {
+    catalogError("OKM1020", `Event ${event} is not supported.`);
+  }
+  const enabled =
+    definition.enabled === undefined ? "origin" : requireString(definition.enabled, "enabled");
+  if (
+    enabled !== "origin" &&
+    enabled !== "disabled" &&
+    enabled !== "replica" &&
+    enabled !== "always"
+  ) {
+    catalogError("OKM1020", `Event trigger enabled ${enabled} is not supported.`);
+  }
+  return eventTriggerObject({
+    name: identity.name,
+    event,
+    enabled,
+    calls: {
+      namespace: parseNamespace(calls.namespace),
+      name: requireString(calls.name, "event trigger function"),
+      argTypes: requireStrings(calls.argTypes, "event trigger arguments"),
+    },
+    owner,
+    provenance,
+    dependencies,
+    ...(definition.tags !== undefined
+      ? { tags: requireStrings(definition.tags, "event trigger tags") }
+      : {}),
+    ...(definition.ownedBy !== undefined
+      ? { ownedBy: requireString(definition.ownedBy, "event trigger owner") }
+      : {}),
   });
 }
 
@@ -2245,6 +2342,7 @@ function parseIdentity(value: unknown): ObjectIdentity {
       };
     case "role":
     case "extension":
+    case "eventTrigger":
       rejectUnknown(record, ["kind", "name"], "identity");
       return { kind, name: requireString(record.name, "name") };
     default:
@@ -2622,6 +2720,7 @@ function isBuiltKind(kind: string): kind is Exclude<CatalogObject["kind"], "poli
     kind === "extension" ||
     kind === "function" ||
     kind === "trigger" ||
+    kind === "eventTrigger" ||
     kind === "view" ||
     kind === "materializedView" ||
     kind === "role" ||

@@ -132,6 +132,7 @@ function plainIdentityKey(identity: ObjectIdentity): string | undefined {
       return anchoredIdentityKey(identity.kind, identity.name, identity.parent);
     case "role":
     case "extension":
+    case "eventTrigger":
       if (!isPlainJsonText(identity.name)) {
         return undefined;
       }
@@ -265,6 +266,7 @@ export function identityToJson(identity: ObjectIdentity): Json {
       return defaultPrivilegeIdentityJson(identity);
     case "role":
     case "extension":
+    case "eventTrigger":
       return { kind: identity.kind, name: identity.name };
     default:
       return assertNever(identity);

@@ -30,6 +30,7 @@ export const OBJECT_KINDS = [
   "type",
   "function",
   "trigger",
+  "eventTrigger",
   "policy",
   "extension",
   "role",
@@ -81,6 +82,7 @@ export const KIND_OPERATIONS: { readonly [K in ObjectKind]: readonly ObjectOpera
   type: ["create", "alter", "drop"],
   function: ["create", "replace", "drop", "recreateWithDependents"],
   trigger: ["create", "drop", "recreateWithDependents"],
+  eventTrigger: ["create", "alter", "drop", "recreateWithDependents"],
   policy: ["create", "alter", "drop"],
   extension: ["create", "alter", "drop"],
   role: ["create", "alter"],
@@ -197,6 +199,16 @@ export type ExtensionIdentity = {
 };
 
 /**
+ * Event-trigger identity.
+ *
+ * The name is unique in the database. It is not anchored to a table or a schema.
+ */
+export type EventTriggerIdentity = {
+  readonly kind: "eventTrigger";
+  readonly name: string;
+};
+
+/**
  * Canonical extension record.
  *
  * `version` is an exact pin (`1.6`) or a floor (`>=0.7`). Absent means
@@ -218,7 +230,8 @@ export type ObjectIdentity =
   | GrantIdentity
   | DefaultPrivilegeIdentity
   | RoleIdentity
-  | ExtensionIdentity;
+  | ExtensionIdentity
+  | EventTriggerIdentity;
 
 /**
  * Where an object, a query, or a rule came from.
@@ -669,6 +682,13 @@ export type FunctionDefinition = {
   readonly security: FunctionSecurity;
   readonly body: string;
   readonly searchPath?: string;
+  /**
+   * Role that owns the function after create.
+   *
+   * Absent means the role that runs the statement. A later change of this
+   * field is not a body change.
+   */
+  readonly ownedBy?: string;
   readonly atomic?: true;
   /** Set only for a procedure. Absent means a function, so existing hashes stay. */
   readonly routine?: "procedure";
@@ -686,6 +706,18 @@ export type TriggerEvent = "insert" | "update" | "delete" | "truncate";
 
 /** One trigger level. */
 export type TriggerLevel = "row" | "statement";
+
+/**
+ * Transition tables on a statement-level trigger.
+ *
+ * `old` is the name for the rows the statement removed or replaced.
+ * `new` is the name for the rows it inserted or wrote. Absent means the
+ * trigger has no transition tables.
+ */
+export type TriggerReferencing = {
+  readonly old?: string;
+  readonly new?: string;
+};
 
 /** The function a trigger calls. Argument types keep an overload distinct. */
 export type TriggerCall = {
@@ -707,7 +739,48 @@ export type TriggerDefinition = {
   readonly calls: TriggerCall;
   readonly updateOf?: readonly string[];
   readonly when?: string;
+  /** Transition tables. Absent means the trigger does not name them. */
+  readonly referencing?: TriggerReferencing;
 };
+
+/** One event-trigger event. `login` is refused. */
+export type EventTriggerEvent =
+  | "ddl_command_start"
+  | "ddl_command_end"
+  | "sql_drop"
+  | "table_rewrite";
+
+/**
+ * When an event trigger fires.
+ *
+ * `origin` is PostgreSQL's `O` (the default ENABLE). `disabled` is `D`.
+ * `replica` is `R`. `always` is `A`.
+ */
+export type EventTriggerEnabled = "origin" | "disabled" | "replica" | "always";
+
+/**
+ * Event-trigger definition.
+ *
+ * There is no `OR REPLACE`. A change of event, tags, or function is a drop
+ * and a create. `enabled` is `ALTER EVENT TRIGGER`. `ownedBy` is set on
+ * create and is not a definition change.
+ */
+export type EventTriggerDefinition = {
+  readonly event: EventTriggerEvent;
+  /** Command tags, uppercase. Absent means every tag the event accepts. */
+  readonly tags?: readonly string[];
+  readonly enabled: EventTriggerEnabled;
+  readonly calls: TriggerCall;
+  /** Role that owns the event trigger after create. */
+  readonly ownedBy?: string;
+};
+
+/** An event trigger. Identity is the database-wide name. */
+export type EventTriggerObject = CatalogEnvelope<
+  "eventTrigger",
+  EventTriggerIdentity,
+  EventTriggerDefinition
+>;
 
 /** A function. Identity is `(schema, name, argTypes[])`. */
 export type FunctionObject = CatalogEnvelope<"function", FunctionIdentity, FunctionDefinition>;
@@ -874,6 +947,7 @@ export type CatalogObject =
   | ExtensionObject
   | FunctionObject
   | TriggerObject
+  | EventTriggerObject
   | ViewObject
   | MaterializedViewObject
   | RoleObject

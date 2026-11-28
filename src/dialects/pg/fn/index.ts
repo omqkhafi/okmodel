@@ -39,6 +39,7 @@ import type { Window } from "../ops/window.js";
 import type { AnyTable, SqlText } from "../table.js";
 import { formatType, sqlOf, type ColumnState } from "../column.js";
 import type { Names } from "../casing.js";
+import { readEventCompiler, type EventTriggerOptions } from "../event/slot.js";
 import { compileBody, type CompiledBody } from "./body.js";
 
 /**
@@ -62,6 +63,11 @@ export const voidType: RoutineType = {
 /** `returns: triggerType` for a trigger function. */
 export const triggerType: RoutineType = {
   state: { baseType: "trigger", dims: 0, decode: (wire) => wire },
+};
+
+/** `returns: eventTriggerType` for an event-trigger function. */
+export const eventTriggerType: RoutineType = {
+  state: { baseType: "event_trigger", dims: 0, decode: (wire) => wire },
 };
 
 /** `IN`, `OUT`, or `INOUT`. Absent means `IN`. */
@@ -165,7 +171,7 @@ export type ProcedureQuery = Record<
 export type FunctionOptions = {
   readonly kind?: "function";
   readonly arguments?: readonly FunctionArgumentInput[];
-  readonly returns: RoutineType;
+  readonly returns: RoutineType | "event_trigger";
   readonly language: FunctionLanguage;
   readonly volatility?: FunctionVolatility;
   /** A procedure option. A function cannot set it. */
@@ -311,8 +317,8 @@ export type Routine = {
   contribute(peers: unknown, built: unknown): readonly CatalogObject[];
 };
 
-/** Options for {@link trigger}. */
-export type TriggerOptions = {
+/** Options for a trigger on a table. */
+export type TableTriggerOptions = {
   readonly on: AnyTable;
   readonly timing: TriggerTiming;
   readonly events: readonly TriggerEvent[];
@@ -320,10 +326,20 @@ export type TriggerOptions = {
   /** `UPDATE OF` columns. SQL names. Each one is a column dependency. */
   readonly updateOf?: readonly string[];
   readonly when?: SqlText | string;
+  /**
+   * Transition tables. Statement level, `after`, one event, and no `updateOf`.
+   *
+   * `insert` names `new`. `delete` names `old`. `update` names either.
+   */
+  readonly referencing?: { readonly old?: string; readonly new?: string };
   readonly calls: Routine;
   /** Comment on the trigger. Absent means unmanaged. */
   readonly comment?: string;
+  readonly event?: never;
 };
+
+/** Options for {@link trigger}. An `event` makes it an event trigger. */
+export type TriggerOptions = TableTriggerOptions | EventTriggerOptions;
 
 /**
  * One declared trigger.
@@ -357,6 +373,10 @@ export function fn<const A extends readonly FunctionArgumentInput[], const R ext
   name: string,
   options: FunctionOptions & { readonly arguments?: A; readonly returns: R },
 ): Routine & FnCaller<A, R>;
+export function fn(
+  name: string,
+  options: FunctionOptions & { readonly returns: "event_trigger" },
+): Routine;
 export function fn<const A extends readonly FunctionArgumentInput[]>(
   name: string,
   options: ProcedureOptions & { readonly arguments?: A },
@@ -411,7 +431,8 @@ export function fn(
     language === "plpgsql" &&
     options.dependsOn === undefined &&
     early?.atomic !== true &&
-    typeof options.body !== "function"
+    typeof options.body !== "function" &&
+    returnsSql !== "event_trigger"
   ) {
     missingDepends(name);
   }
@@ -458,7 +479,8 @@ export function fn(
       language === "plpgsql" &&
       options.dependsOn === undefined &&
       compiled.dependsOn.length === 0 &&
-      !compiled.atomic
+      !compiled.atomic &&
+      returnsSql !== "event_trigger"
     ) {
       missingDepends(name);
     }
@@ -600,7 +622,9 @@ type BoundArgument = {
   readonly decode: (wire: string) => unknown;
 };
 
-function requiredReturns(options: FunctionOptions | ProcedureOptions): RoutineType {
+function requiredReturns(
+  options: FunctionOptions | ProcedureOptions,
+): RoutineType | "event_trigger" {
   if (options.kind === "procedure" || options.returns === undefined) {
     throw new OkmError("OKM1020", "A function needs returns.", {
       fix: { summary: "Pass a column builder, such as t.text(), voidType, or triggerType." },
@@ -636,13 +660,18 @@ function readArgument(fnName: string, argument: FunctionArgumentInput): BoundArg
 function readType(
   fnName: string,
   role: string,
-  type: RoutineType,
+  type: RoutineType | "event_trigger",
 ): { readonly sql: string; readonly state: ColumnState<unknown> } {
+  if (type === "event_trigger") {
+    return { sql: "event_trigger", state: eventTriggerType.state as ColumnState<unknown> };
+  }
   if (typeof type === "string") {
     throw new OkmError(
       "OKM1020",
       `Function ${fnName} ${role} needs a column builder, such as t.text(), not a string.`,
-      { fix: { summary: "Pass t.text(), t.integer(), voidType, or triggerType." } },
+      {
+        fix: { summary: "Pass t.text(), t.integer(), voidType, triggerType, or eventTriggerType." },
+      },
     );
   }
   const state = type?.state;
@@ -902,6 +931,23 @@ function isHandle(value: unknown): value is { readonly name: string } {
  * @returns The definition object `schema({ triggers })` stores
  */
 export function trigger(name: string, options: TriggerOptions): TriggerDeclaration {
+  if (isEventTrigger(options)) {
+    const compiler = readEventCompiler();
+    if (compiler === undefined) {
+      throw new OkmError(
+        "OKM1931",
+        `Event trigger ${name} needs okmodel/event. Import it before schema().`,
+        { fix: { summary: 'Add import "okmodel/event" in the file that calls schema().' } },
+      );
+    }
+    return compiler.declaration(name, {
+      event: options.event,
+      calls: options.calls,
+      ...(options.tags !== undefined ? { tags: options.tags } : {}),
+      ...(options.enabled !== undefined ? { enabled: options.enabled } : {}),
+      ...(options.comment !== undefined ? { comment: options.comment } : {}),
+    });
+  }
   return {
     name,
     contribute(peers, built) {
@@ -928,6 +974,9 @@ export function trigger(name: string, options: TriggerOptions): TriggerDeclarati
             { fix: { summary: "Name a column of the table the trigger is on." } },
           );
         }
+      }
+      if (options.referencing !== undefined) {
+        assertReferencing(name, options, tablePartitioned(built, parent.name));
       }
       const when = options.when === undefined ? undefined : bodyText(options.when);
       for (const column of whenColumnNames(when)) {
@@ -960,12 +1009,67 @@ export function trigger(name: string, options: TriggerOptions): TriggerDeclarati
           calls,
           ...(options.updateOf !== undefined ? { updateOf: options.updateOf } : {}),
           ...(when !== undefined ? { when } : {}),
+          ...(options.referencing !== undefined ? { referencing: options.referencing } : {}),
           provenance: { origin: "file", name },
           ...(options.comment !== undefined ? { comment: options.comment } : {}),
         }),
       ];
     },
   };
+}
+
+function isEventTrigger(options: TriggerOptions): options is EventTriggerOptions {
+  return "event" in options && options.event !== undefined;
+}
+
+function assertReferencing(name: string, options: TableTriggerOptions, partitioned: boolean): void {
+  const referencing = options.referencing;
+  if (referencing === undefined) return;
+  if (options.timing !== "after" || options.level !== "statement" || options.events.length !== 1) {
+    throw new OkmError(
+      "OKM1931",
+      `Trigger ${name} transition tables need timing after, statement level, and one event.`,
+      { fix: { summary: "Use after, for each statement, and a single event." } },
+    );
+  }
+  if (options.updateOf !== undefined) {
+    throw new OkmError("OKM1931", `Trigger ${name} transition tables cannot use updateOf.`, {
+      fix: { summary: "Remove updateOf. A transition table sees the whole statement." },
+    });
+  }
+  if (partitioned && options.level === "statement") {
+    throw new OkmError(
+      "OKM1931",
+      `Trigger ${name} names transition tables on a partitioned table. PostgreSQL refuses them there. Use a statement-level trigger without referencing, or a plain table.`,
+      { fix: { summary: "Remove referencing from the partitioned table." } },
+    );
+  }
+  const event = options.events[0];
+  const old = referencing.old !== undefined;
+  const next = referencing.new !== undefined;
+  if (!old && !next) {
+    throw new OkmError("OKM1931", `Trigger ${name} referencing needs old or new.`, {
+      fix: { summary: "Name the transition table." },
+    });
+  }
+  if (event === "truncate" || (event === "insert" && old) || (event === "delete" && next)) {
+    throw new OkmError("OKM1931", `Trigger ${name} ${event} cannot use that transition table.`, {
+      fix: {
+        summary:
+          "insert names new, delete names old, and update names either. truncate names neither.",
+      },
+    });
+  }
+}
+
+function tablePartitioned(built: unknown, table: string): boolean {
+  if (!Array.isArray(built)) return false;
+  for (const object of built) {
+    if (!isRecord(object) || object.kind !== "table" || !isRecord(object.identity)) continue;
+    if (object.identity.name !== table) continue;
+    return isRecord(object.definition) && object.definition.partition !== undefined;
+  }
+  return false;
 }
 
 function bodyText(body: SqlText | string): string {

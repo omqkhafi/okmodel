@@ -31,6 +31,7 @@ import { OkmError } from "../../contracts/error.js";
 import "../../dialects/pg/policy.js";
 import { policyObject } from "../../contracts/catalog/policy.js";
 import { normalizeRoles } from "../../dialects/pg/role/config.js";
+import { resolveRoleTokens } from "../../dialects/pg/event/tags.js";
 import { assertProjectWarnings } from "../../runtime/warnings/config.js";
 import { missingPostgres, tagOutcome } from "../cli/outcome.js";
 import { cliNote } from "../cli/notices.js";
@@ -966,6 +967,49 @@ function resolvePolicyRoles(source: Catalog, roles: RolesInput): Catalog {
   return changed ? catalog(objects) : source;
 }
 
+function resolveEventRoles(source: Catalog, roles: RolesInput | undefined): Catalog {
+  const names = new Map(
+    roles === undefined ? [] : normalizeRoles(roles).map((entry) => [entry.key, entry.name]),
+  );
+  let changed = false;
+  const objects = source.objects.map((object) => {
+    if (object.kind === "function") {
+      const body = object.definition.body.includes("{okm_role:")
+        ? resolveRoleTokens(object.definition.body, names, `function ${object.identity.name}`)
+        : object.definition.body;
+      const ownedBy =
+        object.definition.ownedBy !== undefined && object.definition.ownedBy.includes("okm_role:")
+          ? resolveRoleTokens(object.definition.ownedBy, names, `function ${object.identity.name}`)
+          : object.definition.ownedBy;
+      if (body === object.definition.body && ownedBy === object.definition.ownedBy) return object;
+      changed = true;
+      return {
+        ...object,
+        definition: {
+          ...object.definition,
+          body,
+          ...(ownedBy !== undefined ? { ownedBy } : {}),
+        },
+      };
+    }
+    if (object.kind !== "eventTrigger" || object.definition.ownedBy === undefined) return object;
+    if (!object.definition.ownedBy.includes("okm_role:")) return object;
+    changed = true;
+    return {
+      ...object,
+      definition: {
+        ...object.definition,
+        ownedBy: resolveRoleTokens(
+          object.definition.ownedBy,
+          names,
+          `event trigger ${object.identity.name}`,
+        ),
+      },
+    };
+  });
+  return changed ? catalog(objects) : source;
+}
+
 function withRoles(built: Built, config: MigrateConfig, cwd: string): Built {
   const marks = ownershipMarks(built);
   const stamped = marks.size === 0 ? built.catalog : stampOwnership(built.catalog, marks);
@@ -983,7 +1027,8 @@ function withRoles(built: Built, config: MigrateConfig, cwd: string): Built {
   if ((grants.size > 0 || catalogRememberedGrants(placed)) && roles === undefined) {
     throw grantsNeedRoles("the schema");
   }
-  const withPolicies = roles === undefined ? placed : resolvePolicyRoles(placed, roles);
+  const resolved = resolveEventRoles(placed, roles);
+  const withPolicies = roles === undefined ? resolved : resolvePolicyRoles(resolved, roles);
   const catalog =
     roles === undefined
       ? withPolicies

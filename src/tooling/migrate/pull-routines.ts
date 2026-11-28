@@ -14,6 +14,7 @@ import { viewColumnField } from "../../dialects/pg/view/compile.js";
 import type {
   Catalog,
   CatalogObject,
+  EventTriggerObject,
   FunctionObject,
   IndexObject,
   MaterializedViewObject,
@@ -68,6 +69,13 @@ export type PlannedTrigger = {
   readonly calls: string;
 };
 
+/** An event trigger the schema file will declare as `trigger({ event })`. */
+export type PlannedEvent = {
+  readonly object: EventTriggerObject;
+  readonly binding: string;
+  readonly calls: string;
+};
+
 /** A view or materialized view the schema file will declare. */
 export type PlannedView = {
   readonly object: ViewObject | MaterializedViewObject;
@@ -86,6 +94,7 @@ export type PlannedView = {
 export type RoutinePlan = {
   readonly functions: readonly PlannedFunction[];
   readonly triggers: readonly PlannedTrigger[];
+  readonly events: readonly PlannedEvent[];
   readonly views: readonly PlannedView[];
   readonly skipped: readonly RoutineSkip[];
   /** Identity key to edges added for the scratch order only. */
@@ -227,6 +236,31 @@ export function planRoutines(
     plannedTriggers.push({ object, binding, on: tableBinding, calls: call.binding });
   }
 
+  const plannedEvents: PlannedEvent[] = [];
+  const events = source.objects.filter(
+    (object): object is EventTriggerObject => object.kind === "eventTrigger",
+  );
+  for (const object of [...events].sort((left, right) =>
+    compare(left.identity.name, right.identity.name),
+  )) {
+    const callKey = identityKey({
+      kind: "function",
+      namespace: object.definition.calls.namespace,
+      name: object.definition.calls.name,
+      argTypes: object.definition.calls.argTypes,
+    });
+    const call = pulledFunctions.get(callKey);
+    if (call === undefined) {
+      skipped.push(skip(object, object.identity.name, "the function was not pulled", ""));
+      continue;
+    }
+    plannedEvents.push({
+      object,
+      binding: freshBinding(object.identity.name, used),
+      calls: call.binding,
+    });
+  }
+
   const indexes = source.objects.filter((object): object is IndexObject => object.kind === "index");
   const plannedViews: PlannedView[] = [];
   for (const object of [...views].sort((left, right) =>
@@ -285,6 +319,7 @@ export function planRoutines(
   return {
     functions: plannedFunctions,
     triggers: plannedTriggers,
+    events: plannedEvents,
     views: plannedViews,
     skipped,
     orderEdges,
@@ -306,10 +341,10 @@ export function renderRoutines(
   verdicts: ReadonlyMap<string, RoutineVerdict>,
 ): RenderedRoutines {
   const imports: string[] = [];
-  if (plan.functions.length > 0 || plan.triggers.length > 0) {
+  if (plan.functions.length > 0 || plan.triggers.length > 0 || plan.events.length > 0) {
     const names = [];
     if (plan.functions.length > 0) names.push("fn");
-    if (plan.triggers.length > 0) names.push("trigger");
+    if (plan.triggers.length > 0 || plan.events.length > 0) names.push("trigger");
     if (
       plan.functions.some(
         (item) =>
@@ -322,8 +357,12 @@ export function renderRoutines(
     if (plan.functions.some((item) => item.object.definition.returns === "trigger")) {
       names.push("triggerType");
     }
+    if (plan.functions.some((item) => item.object.definition.returns === "event_trigger")) {
+      names.push("eventTriggerType");
+    }
     imports.push(`import { ${names.join(", ")} } from "okmodel/fn";`);
   }
+  if (plan.events.length > 0) imports.push('import "okmodel/event";');
   if (plan.views.length > 0) {
     const hasView = plan.views.some((item) => item.object.kind === "view");
     const hasMat = plan.views.some((item) => item.object.kind === "materializedView");
@@ -343,6 +382,11 @@ export function renderRoutines(
     lines.push(triggerSource(item));
     lines.push("");
   }
+  for (const item of plan.events) {
+    lines.push(commentFor(verdicts.get(identityKey(item.object.identity)), "trigger"));
+    lines.push(eventSource(item));
+    lines.push("");
+  }
   for (const item of plan.views) {
     lines.push(
       commentFor(
@@ -357,7 +401,7 @@ export function renderRoutines(
     imports,
     body: lines.join("\n"),
     functions: plan.functions.map((item) => item.binding),
-    triggers: plan.triggers.map((item) => item.binding),
+    triggers: [...plan.triggers, ...plan.events].map((item) => item.binding),
     views: plan.views.map((item) => item.binding),
     needsIndex: plan.views.some((item) => item.indexes.length > 0),
   };
@@ -536,6 +580,7 @@ function defaultValue(sql: string): string | undefined {
 function routineTypeExpr(dataType: string): string {
   if (dataType === "void") return "voidType";
   if (dataType === "trigger") return "triggerType";
+  if (dataType === "event_trigger") return "eventTriggerType";
   if (dataType === "integer" || dataType === "int4") return "t.integer()";
   if (dataType === "bigint" || dataType === "int8") return "t.bigint()";
   if (dataType === "text") return "t.text()";
@@ -558,9 +603,30 @@ function triggerSource(item: PlannedTrigger): string {
       ? `updateOf: [${definition.updateOf.map((column) => JSON.stringify(column)).join(", ")}]`
       : "",
     definition.when !== undefined ? `when: ${JSON.stringify(definition.when)}` : "",
+    definition.referencing !== undefined
+      ? `referencing: ${JSON.stringify(definition.referencing)}`
+      : "",
     `calls: ${item.calls}`,
   ].filter((field) => field.length > 0);
   return `const ${item.binding} = trigger(${JSON.stringify(item.object.identity.name)}, {\n  ${fields.join(",\n  ")},\n});`;
+}
+
+function eventSource(item: PlannedEvent): string {
+  const definition = item.object.definition;
+  const fields = [
+    `event: ${JSON.stringify(definition.event)}`,
+    definition.tags !== undefined
+      ? `tags: [${definition.tags.map((tag) => JSON.stringify(tag)).join(", ")}]`
+      : "",
+    definition.enabled !== "origin" ? `enabled: ${enabledSource(definition.enabled)}` : "",
+    `calls: ${item.calls}`,
+  ].filter((field) => field.length > 0);
+  return `const ${item.binding} = trigger(${JSON.stringify(item.object.identity.name)}, {\n  ${fields.join(",\n  ")},\n});`;
+}
+
+function enabledSource(enabled: "disabled" | "replica" | "always"): string {
+  if (enabled === "disabled") return "false";
+  return JSON.stringify(enabled);
 }
 
 function viewSource(item: PlannedView): string {

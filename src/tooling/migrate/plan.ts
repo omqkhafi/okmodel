@@ -49,6 +49,7 @@ import type {
   CatalogObject,
   ColumnObject,
   ConstraintObject,
+  EventTriggerObject,
   FunctionObject,
   IndexObject,
   MaterializedViewObject,
@@ -366,6 +367,7 @@ export function planMigration(
     readonly columns: readonly { readonly from: string; readonly to: string }[];
   }[] = [];
   const alters: { readonly before: ColumnObject; readonly after: ColumnObject }[] = [];
+  const eventEnables: EventTriggerObject[] = [];
   const policyAlters: PolicyObject[] = [];
   const deferrable: ConstraintObject[] = [];
   const ungenerate: { readonly before: ColumnObject; readonly after: ColumnObject }[] = [];
@@ -393,6 +395,14 @@ export function planMigration(
     if (previous === undefined || sameDefinition(previous, item.object, extensionSchemas)) continue;
     if (handsOff(item.object) || childOfHandsOff(item.object, afterBy)) continue;
     if (previous.kind === "extension" && item.object.kind === "extension") continue;
+    if (previous.kind === "eventTrigger" && item.object.kind === "eventTrigger") {
+      if (eventBodySame(previous, item.object)) {
+        if (previous.definition.enabled !== item.object.definition.enabled) {
+          eventEnables.push(item.object);
+        }
+        continue;
+      }
+    }
     if (previous.kind === "role" && item.object.kind === "role") continue;
     if (
       previous.kind === "function" &&
@@ -504,8 +514,16 @@ export function planMigration(
     if (dropKeys.has(key)) recreated.add(key);
   }
   const recreatedIds = [...recreated];
+  const eventRenames = pairEventRenames(beforeBy, afterBy, dropKeys, createKeys);
   const steps: PlanStep[] = [];
   steps.push(...renameSteps(request.before, renames, schema, dialect));
+  for (const rename of eventRenames) {
+    steps.push(
+      ...take(
+        dialect.lower({ op: "rename-event-trigger", from: rename.from, to: rename.to, schema }),
+      ),
+    );
+  }
   steps.push(
     ...takeOptional(
       dialect.lower({
@@ -604,6 +622,13 @@ export function planMigration(
     if (!dropKeys.has(key) || deferred.has(key)) continue;
     steps.push(...take(dialect.lower({ op: "drop-policy", object, schema })));
   }
+  // Event triggers drop first. The function they call cannot go while they exist.
+  for (const object of reverse) {
+    if (object.kind !== "eventTrigger") continue;
+    const key = identityKey(object.identity);
+    if (!dropKeys.has(key) || deferred.has(key)) continue;
+    steps.push(...take(dialect.lower({ op: "drop-event-trigger", object, schema })));
+  }
   // Triggers drop before functions even when the table drop would remove them.
   // View indexes, then views, drop before the tables they read. Never CASCADE.
   for (const object of reverse) if (object.kind === "trigger") emitDrop(object);
@@ -621,6 +646,7 @@ export function planMigration(
   for (const object of reverse) {
     if (
       object.kind === "trigger" ||
+      object.kind === "eventTrigger" ||
       object.kind === "function" ||
       object.kind === "view" ||
       object.kind === "materializedView" ||
@@ -722,6 +748,7 @@ export function planMigration(
       object.kind === "extension" ||
       object.kind === "function" ||
       object.kind === "trigger" ||
+      object.kind === "eventTrigger" ||
       object.kind === "view" ||
       object.kind === "materializedView" ||
       object.kind === "policy" ||
@@ -859,6 +886,25 @@ export function planMigration(
     if (!createKeys.has(key) || emitted.has(key)) continue;
     emitted.add(key);
     steps.push(...take(dialect.lower({ op: "create-policy", object, schema })));
+  }
+  for (const object of eventEnables) {
+    steps.push(
+      ...take(
+        dialect.lower({
+          op: "alter-event-trigger",
+          name: object.identity.name,
+          enabled: object.definition.enabled,
+          schema,
+        }),
+      ),
+    );
+  }
+  for (const object of creationOrder(request.after)) {
+    if (object.kind !== "eventTrigger") continue;
+    const key = identityKey(object.identity);
+    if (!createKeys.has(key) || emitted.has(key)) continue;
+    emitted.add(key);
+    steps.push(...take(dialect.lower({ op: "create-event-trigger", object, schema })));
   }
   for (const object of creationOrder(request.after)) {
     if (object.kind !== "index" || !ownedByView(object)) continue;
@@ -1894,7 +1940,13 @@ function recreateRoutineDependents(
   }
   if (recreated.size === 0) return;
   for (const item of afterList) {
-    if (item.object.kind !== "trigger" && item.object.kind !== "function") continue;
+    if (
+      item.object.kind !== "trigger" &&
+      item.object.kind !== "eventTrigger" &&
+      item.object.kind !== "function"
+    ) {
+      continue;
+    }
     const hit = item.object.dependencies.some((edge) => recreated.has(identityKey(edge.target)));
     if (!hit) continue;
     dropKeys.add(item.key);
@@ -1912,6 +1964,7 @@ function refuseRoutineDrops(
     if (dropKeys.has(key)) continue;
     if (
       after.kind !== "trigger" &&
+      after.kind !== "eventTrigger" &&
       after.kind !== "function" &&
       after.kind !== "view" &&
       after.kind !== "materializedView"
@@ -2841,6 +2894,40 @@ function sameDefinition(
  * @param schemas - Install schemas of each extension, from both catalogs
  * @returns The definition, with type names in the long spelling
  */
+function eventBodySame(before: EventTriggerObject, after: EventTriggerObject): boolean {
+  const left = forComparison(before, new Map());
+  const right = forComparison(after, new Map());
+  const { enabled: _left, ...leftBody } = left as { enabled: string };
+  const { enabled: _right, ...rightBody } = right as { enabled: string };
+  return JSON.stringify(leftBody) === JSON.stringify(rightBody);
+}
+
+function pairEventRenames(
+  beforeBy: ReadonlyMap<string, CatalogObject>,
+  afterBy: ReadonlyMap<string, CatalogObject>,
+  dropKeys: Set<string>,
+  createKeys: Set<string>,
+): readonly { readonly from: string; readonly to: string }[] {
+  const drops: EventTriggerObject[] = [];
+  const creates: EventTriggerObject[] = [];
+  for (const [key, object] of beforeBy) {
+    if (object.kind !== "eventTrigger" || !dropKeys.has(key) || createKeys.has(key)) continue;
+    drops.push(object);
+  }
+  for (const [key, object] of afterBy) {
+    if (object.kind !== "eventTrigger" || !createKeys.has(key) || dropKeys.has(key)) continue;
+    creates.push(object);
+  }
+  if (drops.length !== 1 || creates.length !== 1) return [];
+  const from = drops[0];
+  const to = creates[0];
+  if (from === undefined || to === undefined || !eventBodySame(from, to)) return [];
+  if (from.definition.enabled !== to.definition.enabled) return [];
+  dropKeys.delete(identityKey(from.identity));
+  createKeys.delete(identityKey(to.identity));
+  return [{ from: from.identity.name, to: to.identity.name }];
+}
+
 function forComparison(
   object: CatalogObject,
   schemas: ReadonlyMap<string, readonly string[]>,
@@ -2860,7 +2947,7 @@ function forComparison(
     case "view":
       return { ...object.definition, columns: canonicalColumns(object.definition.columns) };
     case "function": {
-      const { raises: _raises, ...definition } = object.definition;
+      const { raises: _raises, ownedBy: _ownedBy, ...definition } = object.definition;
       return {
         ...definition,
         returns: canonicalTypeName(definition.returns),
@@ -2878,6 +2965,13 @@ function forComparison(
           argTypes: object.definition.calls.argTypes.map((typeName) => canonicalTypeName(typeName)),
         },
       };
+    case "eventTrigger": {
+      const { ownedBy: _ownedBy, tags, ...definition } = object.definition;
+      return {
+        ...definition,
+        ...(tags !== undefined ? { tags: [...tags].sort() } : {}),
+      };
+    }
     case "type":
       if (isDomain(object.definition)) {
         return { ...object.definition, base: canonicalTypeName(object.definition.base) };
@@ -3138,6 +3232,8 @@ function dropKind(object: CatalogObject): StepKind | undefined {
       return "drop-function";
     case "trigger":
       return "drop-trigger";
+    case "eventTrigger":
+      return "drop-event-trigger";
     case "view":
       return "drop-view";
     case "materializedView":

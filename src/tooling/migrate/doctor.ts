@@ -15,6 +15,7 @@
 
 import { open } from "../../adapters/pg/postgresjs.js";
 import { OkmError } from "../../contracts/error.js";
+import { formatLiveEventTriggers, readEventTriggers } from "./event-check.js";
 import { tagOutcome } from "../cli/outcome.js";
 import type { CatalogObject } from "../../contracts/catalog/types.js";
 import { assertRoleHealth } from "../../dialects/pg/role/check.js";
@@ -100,7 +101,19 @@ export async function doctorProject(
       await finishQuiet(() => pool.close());
     }
   }
-  return `${emulation}${notice}${formatTriggers(objects)}`;
+  let events = formatDeclaredEventTriggers(objects);
+  if (targets.length === 1 || (targets.length > 1 && flags?.target !== undefined)) {
+    const target = selectTarget(opened.config, flags?.target);
+    const declared = new Set(
+      objects.flatMap((object) => (object.kind === "eventTrigger" ? [object.identity.name] : [])),
+    );
+    try {
+      events = formatLiveEventTriggers(await readEventTriggers(target.url), declared);
+    } catch {
+      events = formatDeclaredEventTriggers(objects);
+    }
+  }
+  return `${emulation}${notice}${formatTriggers(objects)}${events}`;
 }
 
 /**
@@ -123,4 +136,15 @@ export function formatTriggers(objects: readonly CatalogObject[]): string {
     .sort((left, right) => (left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0))
     .map(([table, names]) => `${table}: ${[...names].sort().join(", ")}`);
   return `${lines.join("\n")}\n`;
+}
+
+function formatDeclaredEventTriggers(objects: readonly CatalogObject[]): string {
+  const lines = objects.flatMap((object) => {
+    if (object.kind !== "eventTrigger") return [];
+    const tags = object.definition.tags?.join(", ") ?? object.definition.event;
+    return [
+      `event trigger ${object.identity.name} declared ${tags} calls ${object.definition.calls.name}`,
+    ];
+  });
+  return lines.length === 0 ? "" : `${lines.join("\n")}\n`;
 }

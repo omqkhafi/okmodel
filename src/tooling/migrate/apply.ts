@@ -817,6 +817,7 @@ async function pushTarget(request: PushRequest): Promise<ApplyReport> {
           target: request.target,
           protected: request.protected,
           allowProtected: request.allowProtected === true,
+          allowBlocking: request.allowBlocking === true,
           ...(request.protection !== undefined ? { protection: request.protection } : {}),
         },
         units,

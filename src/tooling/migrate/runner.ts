@@ -87,6 +87,8 @@ export type RunPolicy = {
   readonly target: string;
   readonly protected: boolean;
   readonly allowProtected?: boolean;
+  /** `--allow-blocking`. Arms `okm.allow_rewrite` on a rewrite step. */
+  readonly allowBlocking?: boolean;
   readonly protection?: ProtectionMatch;
 };
 
@@ -446,6 +448,7 @@ async function runUnit(
         if (run.beforeStatements !== undefined) await run.beforeStatements(connection, unit);
         for (const item of unit.steps) {
           current = item.index;
+          await armGuard(connection, item, run, true);
           await executePlanStep(connection, item, run, session);
         }
         if (
@@ -464,7 +467,8 @@ async function runUnit(
       }
     });
   } catch (error) {
-    throw failStep(unit, current, error);
+    const named = await eventTriggerNote(connection, error);
+    throw failStep(unit, current, named === undefined ? error : withNote(error, named));
   }
 }
 
@@ -497,26 +501,39 @@ async function runCommitted(
   session: RunSession,
   lock: LockRun,
 ): Promise<void> {
+  const setting = guardSetting(item, run);
+  if (setting !== undefined && run.directPid === undefined) {
+    throw new OkmError(
+      "OKM1931",
+      `Migration ${unit.migrationId} step ${String(item.index + 1)} needs ${setting} for this session, and the URL is not a proven direct connection. A pooler can hand that setting to another client. Use a direct URL.`,
+      { fix: { summary: "Run this step on a direct URL, not a pooler." } },
+    );
+  }
   if (run.directPid === undefined) throw outsideTransaction(unit, item.index, run.poolerReason);
-  const step = committedOf(unit, item);
-  await resumeCommittedStep(
-    step,
-    postgresStepJournal(connection),
-    postgresStepEngine(
-      connection,
+  if (setting !== undefined) await setGuard(connection, setting, "true", false);
+  try {
+    const step = committedOf(unit, item);
+    await resumeCommittedStep(
+      step,
+      postgresStepJournal(connection),
+      postgresStepEngine(
+        connection,
+        {
+          kind: step.kind,
+          sql: item.step.sql,
+          ...(item.step.probe !== undefined ? { probe: item.step.probe } : {}),
+        },
+        () => executePlanStep(connection, item, run, session),
+      ),
       {
-        kind: step.kind,
-        sql: item.step.sql,
-        ...(item.step.probe !== undefined ? { probe: item.step.probe } : {}),
+        wait: lock.waiter(`${unit.migrationId} step ${String(item.index + 1)}`),
+        ...(run.failAt !== undefined ? { failAt: run.failAt } : {}),
+        wrap: (error) => failStep(unit, item.index, error),
       },
-      () => executePlanStep(connection, item, run, session),
-    ),
-    {
-      wait: lock.waiter(`${unit.migrationId} step ${String(item.index + 1)}`),
-      ...(run.failAt !== undefined ? { failAt: run.failAt } : {}),
-      wrap: (error) => failStep(unit, item.index, error),
-    },
-  );
+    );
+  } finally {
+    if (setting !== undefined) await resetGuard(connection, setting);
+  }
 }
 
 function committedOf(unit: RunnableUnit, item: RunnableStep): CommittedStep {
@@ -858,6 +875,98 @@ export async function assertSchemaUsageLanded(
       summary: `Make the migration role the owner of schema ${schema}. ALTER SCHEMA ${quoteIdent(schema)} OWNER TO <migration role>.`,
     },
   });
+}
+
+function guardSetting(
+  item: RunnableStep,
+  run: TargetRun,
+): "okm.allow_drop" | "okm.allow_rewrite" | undefined {
+  const kind = item.step.kind ?? "";
+  const sql = item.step.sql.trimStart().toLowerCase();
+  if (
+    run.policy.allowProtected === true &&
+    kind !== "drop-event-trigger" &&
+    (kind.startsWith("drop-") || sql.startsWith("drop "))
+  ) {
+    return "okm.allow_drop";
+  }
+  if (item.step.weight === "rewrite" && run.policy.allowBlocking === true)
+    return "okm.allow_rewrite";
+  return undefined;
+}
+
+async function armGuard(
+  connection: DriverConnection,
+  item: RunnableStep,
+  run: TargetRun,
+  local: boolean,
+): Promise<void> {
+  const setting = guardSetting(item, run);
+  if (setting === undefined) return;
+  await setGuard(connection, setting, "true", local);
+}
+
+async function setGuard(
+  connection: DriverConnection,
+  setting: string,
+  value: string,
+  local: boolean,
+): Promise<void> {
+  await connection.execute("select set_config($1, $2, $3::boolean)", [
+    setting,
+    value,
+    local ? "true" : "false",
+  ]);
+}
+
+async function resetGuard(connection: DriverConnection, setting: string): Promise<void> {
+  await setGuard(connection, setting, "", false);
+  const read = await connection.execute("select current_setting($1, true)", [setting]);
+  const value = read.rows[0]?.[0];
+  if (value === "true") {
+    throw new OkmError(
+      "OKM1931",
+      `${setting} was set for a step outside a transaction and did not reset.`,
+      {
+        fix: {
+          summary: "Run the step on a direct URL and confirm the session can set the value back.",
+        },
+      },
+    );
+  }
+}
+
+async function eventTriggerNote(
+  connection: DriverConnection,
+  error: unknown,
+): Promise<string | undefined> {
+  const message = error instanceof Error ? error.message : "";
+  const state = Reflect.get(error as object, "sqlstate") ?? Reflect.get(error as object, "code");
+  if (state !== "P0001" && state !== "42501" && !message.includes("okm_guard")) return undefined;
+  const listed = await connection.execute(
+    `select e.evtname, coalesce(array_to_string(e.evttags, ', '), ''), p.proname
+     from pg_event_trigger e
+     join pg_proc p on p.oid = e.evtfoid
+     where e.evtenabled <> 'D'
+     order by e.evtname`,
+  );
+  if (listed.rows.length === 0) return undefined;
+  const lines = listed.rows.map((row) => {
+    const name = String(row[0]);
+    const tags = String(row[1]);
+    const fn = String(row[2]);
+    return `${name} calls ${fn}${tags.length > 0 ? ` on ${tags}` : ""}. Disable it with ALTER EVENT TRIGGER ${name} DISABLE or drop it with DROP EVENT TRIGGER ${name}.`;
+  });
+  return lines.join(" ");
+}
+
+function withNote(error: unknown, note: string): Error {
+  if (error instanceof Error) {
+    const next = new Error(`${error.message} Enabled event triggers: ${note}`);
+    next.cause = error;
+    return next;
+  }
+  return new Error(note);
 }
 
 function outsideTransaction(

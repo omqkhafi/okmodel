@@ -1,0 +1,131 @@
+---
+title: "Event triggers"
+description: "Database-wide DDL triggers. Import okmodel/event before schema()."
+---
+
+An event trigger fires for DDL in the whole database, not for one table. Declare it with `trigger()` from `okmodel/fn` and set `event`. Import `okmodel/event` in the same file before `schema()`. There is no `eventTrigger()` builder.
+
+`event` is `ddl_command_start`, `ddl_command_end`, `sql_drop`, or `table_rewrite`. `login` is refused (OKM1931). A mistake in a login trigger locks every session out, including the session that would drop it, and PostgreSQL BUG #19488 skips login triggers on a standby.
+
+The function is plpgsql, has no arguments, and returns `eventTriggerType` (or the string `"event_trigger"`). Anything else is OKM1931. PostgreSQL reports 42P13 for arguments and 42P17 for the return type.
+
+```ts title="log-ddl.ts"
+import { fn, trigger, eventTriggerType } from "okmodel/fn";
+import { schema, sql } from "okmodel/pg";
+import "okmodel/event";
+
+const logIt = fn("log_ddl", {
+  returns: eventTriggerType,
+  language: "plpgsql",
+  body: sql`begin
+  raise notice '%', tg_tag;
+end`,
+});
+
+const logDdl = trigger("log_ddl_end", {
+  event: "ddl_command_end",
+  tags: ["CREATE TABLE", "ALTER TABLE"],
+  calls: logIt,
+  enabled: "always",
+});
+
+export const db = schema({ tables: [], functions: [logIt], triggers: [logDdl] });
+```
+
+`tags` are command tags. Lower case is stored as upper case. A tag that can never fire for the event, such as `sql_drop` with `CREATE TABLE`, is warning OKM2129. A tag on a role, a database, or a tablespace is OKM1931. PostgreSQL reports 42601 for a tag it does not know and 0A000 for a shared object. `okm check` tries the tags in a transaction and rolls that transaction back.
+
+`enabled` is `true` (the default, catalog `O`), `false` (`D`), `"replica"` (`R`), or `"always"` (`A`). `true` is `ENABLE`. `false` is `DISABLE`. The other two are `ENABLE REPLICA` and `ENABLE ALWAYS`.
+
+Names are unique in the database. PostgreSQL fires event triggers in alphabetical order of those names. There is no `OR REPLACE`. Changing the event, the tags, or the function drops the trigger and creates it again in one transaction. Changing `enabled` is `ALTER EVENT TRIGGER`. A rename of one trigger, with the same event, tags, function, and enabled mode, is `RENAME`. Event triggers are created last in a plan and dropped first. The function cannot be dropped while the trigger still calls it (2BP01).
+
+`ddl_command_start` runs before the command. It cannot see the new object: `pg_event_trigger_ddl_commands()` is for `ddl_command_end`. A function that raises at `ddl_command_end` rolls the DDL back with the transaction.
+
+### Presets
+
+The presets live in `okmodel/event`. They are not a second list. Put them in `schema({ triggers })`.
+
+`guardDdl({ block: "manual", allow: ["migration"] })` is the boundary. A session whose `session_user` is not a member of an `allow` role cannot run DDL. Membership is `pg_has_role(session_user, role, 'usage')` or `'set'` on PostgreSQL 16 and later, and `'member'` on 15. `SET ROLE` does not bypass it, because the check reads `session_user`. A superuser passes. `schemas` limits the end-of-command form to those schemas. The start form cannot see the schema, so it still refuses every non-member.
+
+`guardDdl({ block: ["drops", "rewrites"] })` is a belt, not a boundary. It refuses `DROP` and `table_rewrite` unless `okm.allow_drop` or `okm.allow_rewrite` is `'true'`. Any session can set those values. Real protection is `manual` plus privileges. `okm apply` sets the value for one step, with `set_config(..., true)`, only after `--allow-protected` for a drop or `--allow-blocking` for a rewrite. A step that cannot run inside a transaction, such as `CREATE INDEX CONCURRENTLY`, uses the session form only when the URL is a proven direct connection, then resets it and checks the reset. A pooler is refused (OKM1931): the next client on that server connection would inherit the setting.
+
+`DROP EVENT TRIGGER` is never blocked. If a guard is wrong, that statement still removes it.
+
+`enableRls({ schemas: ["public"] })` runs at `ddl_command_end` for `CREATE TABLE`, `CREATE TABLE AS`, and `SELECT INTO`. It runs `ENABLE ROW LEVEL SECURITY` and does not force it. Extension objects and temporary tables are skipped. Tables in those schemas default `rls` to true. `rls: false` there is OKM1931.
+
+`auditDdl()` creates `audit.ddl_tx` and `audit.ddl_command` when you pass `transactions` and `commands` to `schema({ tables })`. The migration role owns them. A security definer function writes them. Its `search_path` is pinned, and `EXECUTE` is revoked from `PUBLIC`. No other role gets a write grant. `reporting` gets `SELECT` when `roles.reporting` is configured. The function records successful commands only. A refused command rolls back, so it writes no row. Temporary tables and extension objects are skipped. Original drops are recorded, and a cascade is flagged. Columns are the transaction id, the time, the command tag, the object type and identity, the schema, `session_user`, `application_name`, the client address, and `current_query()`. `okm.application_user`, when set, is stored too. The client supplies that value. It is not proof of who ran the command.
+
+There is no `keep` option. Nothing in this package schedules deletion. A retention recipe, once `pg_cron` is installed by hand:
+
+```sql
+select cron.schedule('okm-audit-keep', '0 3 * * *', $$delete from audit.ddl_command where txid in (select txid from audit.ddl_tx where at < now() - interval '180 days')$$);
+```
+
+`notifyDdl({ channel: "schema_changed", tags: ["ALTER TABLE"] })` calls `pg_notify` after DDL. The payload is JSON with `tag` and `object`, cut at 8000 bytes. A listener has to use a direct connection. `LISTEN` does not work through a transaction pooler.
+
+PostgREST reloads its schema cache on `NOTIFY pgrst, 'reload schema'` ([schema cache](https://docs.postgrest.org/en/stable/references/schema_cache.html)). That payload is the words `reload schema`, not the tag and object `notifyDdl` sends. Use a function whose body is that `NOTIFY` when PostgREST should reload:
+
+```sql
+NOTIFY pgrst, 'reload schema';
+```
+
+### Privilege
+
+Creating an event trigger needs a superuser, or a role the host has granted. A plain role gets 42501, reported as OKM2209. `okm check` prints what is required and what it found. Neon grants this to `neon_superuser`. Supabase grants it to `postgres`. Another host has to say which role can create one.
+
+When `okm apply` fails because an event trigger raised, the message names the enabled event triggers, their tags, and their function, and it prints `ALTER EVENT TRIGGER name DISABLE` and `DROP EVENT TRIGGER name`.
+
+`okm doctor` and `okm access` list every event trigger. One that the schema does not declare is labelled `unmanaged`, with the tags it watches. The commands do not drop it.
+
+`okm pull` writes `trigger({ event })` and the function as `sql`. It does not recognize a preset. The next plan compares the generated text. A round trip that changes nothing is zero steps. Comments on event triggers use the same `comment` option as other objects.
+
+### Transition tables
+
+`referencing` names transition tables for one statement-level `after` trigger. One event. No `updateOf`. `insert` names `new`. `delete` names `old`. `update` names either. `truncate` names neither. A partitioned table cannot have them. Row-level transition tables are not SQL. Partition children and inheritance children are statement-level when PostgreSQL allows the trigger at all. This schema has no child-table declaration, so a child is not detected here.
+
+```ts title="referencing.ts"
+import { fn, trigger, triggerType } from "okmodel/fn";
+import { schema, sql, table, t } from "okmodel/pg";
+
+const notes = table("notes", { id: t.identity() });
+
+const auditRows = fn("audit_rows", {
+  returns: triggerType,
+  language: "plpgsql",
+  body: sql`begin return null; end`,
+});
+
+export default schema({
+  tables: [notes],
+  functions: [auditRows],
+  triggers: [
+    trigger("note_audit", {
+      on: notes,
+      timing: "after",
+      events: ["insert"],
+      level: "statement",
+      referencing: { new: "new_rows" },
+      calls: auditRows,
+    }),
+  ],
+});
+```
+
+The function reads `new_rows` as a table.
+
+### Restore and recovery
+
+`pg_restore` of a dump that contains the guard is not blocked by that guard: the guard is not installed until the dump creates it. A guard that is already on the target, and is missing from the dump, blocks `pg_restore --clean`. Restore as a superuser with event triggers off:
+
+```sh
+PGOPTIONS='-c event_triggers=off' pg_restore --clean -d "$DIRECT_URL" dump.backup
+```
+
+Then drop or replace the guard. `DROP EVENT TRIGGER` stays available when event triggers are on, because the guards return immediately for that tag.
+
+### Rewrite reasons
+
+`table_rewrite` sets `pg_event_trigger_table_rewrite_reason()`. The bits are 1 persistence, 2 default, 4 column type, and 8 access method.
+
+### Outbox privileges
+
+A trigger that inserts into an outbox table needs `INSERT` on that table when it is `security invoker`. A `security definer` function does not: it runs as its owner. If that owner is not a superuser and the outbox table uses `FORCE ROW LEVEL SECURITY`, the owner still needs an `INSERT` policy. The audit function is a definer and the audit tables do not force row security, so the owner can write.

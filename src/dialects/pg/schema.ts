@@ -39,6 +39,7 @@ import {
 } from "../../contracts/generator.js";
 import { compileColumn, type CompilableColumn } from "./compile.js";
 import { readPolicyCompiler } from "./policy-slot.js";
+import { declaredRlsSchemas, readEventCompiler } from "./event/slot.js";
 import {
   ColumnBuilder,
   compositeMark,
@@ -791,6 +792,19 @@ export function schema<const TTables extends readonly AnyTable[]>(
             objects,
           );
         }
+        const rlsSchemas = declaredRlsSchemas(config.triggers);
+        if (rlsSchemas !== undefined) {
+          refuseDisabledRls(config.tables, rlsSchemas);
+          const events = readEventCompiler();
+          if (events === undefined) {
+            throw new OkmError(
+              "OKM1931",
+              "Import okmodel/event before schema() when a trigger uses enableRls.",
+              { fix: { summary: "Import okmodel/event in the file that calls schema()." } },
+            );
+          }
+          events.stampRls(objects, rlsSchemas);
+        }
         document = catalog(objects);
       }
       return document;
@@ -807,6 +821,36 @@ export function schema<const TTables extends readonly AnyTable[]>(
     ...(clientHooks !== undefined ? { hooks: clientHooks } : {}),
     ...(config.validation !== undefined ? { validation: config.validation } : {}),
   } as unknown as BuiltSchema<TTables>;
+}
+
+/**
+ * `rls: false` in a schema `enableRls` covers is OKM1931.
+ *
+ * The policy compiler omits row security when it is off, so the catalog
+ * object cannot tell an explicit false from a default. The table options
+ * still can. Tables declared here live in `public` until a later placement.
+ *
+ * @param tables - Tables passed to `schema()`
+ * @param schemas - Schema names the preset covers
+ */
+function refuseDisabledRls(tables: readonly AnyTable[], schemas: readonly string[]): void {
+  if (!schemas.includes("public")) return;
+  for (const item of tables) {
+    const options = item.options as { readonly rls?: unknown } | undefined;
+    const rls = options?.rls;
+    const off =
+      rls === false ||
+      (typeof rls === "object" &&
+        rls !== null &&
+        "enable" in rls &&
+        (rls as { readonly enable?: unknown }).enable === false);
+    if (!off) continue;
+    throw new OkmError(
+      "OKM1931",
+      `Table ${item.name} sets rls: false, and enableRls covers schema public.`,
+      { fix: { summary: "Remove rls: false, or take the table's schema out of enableRls." } },
+    );
+  }
 }
 
 function tablesWantPolicies(tables: readonly AnyTable[]): boolean {

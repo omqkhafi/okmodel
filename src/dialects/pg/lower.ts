@@ -33,9 +33,12 @@ import { ddlStep } from "../ddl-step.js";
 import { classOf, type StepKind } from "../step-class.js";
 import {
   alterColumnSql,
+  alterEventTriggerSql,
   createObjectSql,
   createTableSql,
   dropObjectSql,
+  ownerSql,
+  renameEventTriggerSql,
   definerRevokeSql,
   functionSql,
   policyAlterPlan,
@@ -123,19 +126,34 @@ function lowerChange(change: LogicalChange): readonly DdlStep[] {
     case "drop-table":
     case "drop-column":
     case "drop-constraint":
-      return dropRelation(change.object, change.schema, dropKind(change.op));
+      return dropRelation(change.object, homeOf(change.object, change.schema), dropKind(change.op));
     case "comment":
-      return commentChange(change.object, change.schema, change.text);
-    case "create-table":
+      return commentChange(change.object, homeOf(change.object, change.schema), change.text);
+    case "create-table": {
+      const schema = homeOf(change.table, change.schema);
+      const owner =
+        change.table.provenance.name === "auditDdl" ? auditOwner(change.catalog) : undefined;
       return [
+        ...schemaStep(schema, change.schema, owner),
         ddlStep(
-          createTableSql(change.table, change.catalog, change.schema),
+          createTableSql(change.table, change.catalog, schema),
           "create-table",
           "ddl",
           ACCESS,
         ),
-        ...foldedComments(change.table, change.catalog, change.schema),
+        ...(owner === undefined
+          ? []
+          : [
+              ddlStep(
+                ownerSql("table", qualify(schema, change.table.identity.name), owner),
+                "alter-owner",
+                "ddl",
+                ACCESS,
+              ),
+            ]),
+        ...foldedComments(change.table, change.catalog, schema),
       ];
+    }
     case "add-column":
       return withObjectComment(
         addColumn(change.column, change.schema, change.tableIsNew),
@@ -178,18 +196,27 @@ function lowerChange(change: LogicalChange): readonly DdlStep[] {
       return moveExtension(change.name, change.schema);
     case "update-extension":
       return updateExtension(change.name, change.version);
-    case "create-function":
-      return withDefinerRevoke(
-        withObjectComment(
-          createRoutine(change.object, change.schema, "create-function"),
+    case "create-function": {
+      const schema = homeOf(change.object, change.schema);
+      return [
+        ...schemaStep(schema, change.schema),
+        ...withOwner(
+          withDefinerRevoke(
+            withObjectComment(
+              createRoutine(change.object, schema, "create-function"),
+              change.object,
+              schema,
+            ),
+            change.object,
+            schema,
+          ),
           change.object,
-          change.schema,
+          schema,
         ),
-        change.object,
-        change.schema,
-      );
+      ];
+    }
     case "drop-function":
-      return dropRoutine(change.object, change.schema, "drop-function");
+      return dropRoutine(change.object, homeOf(change.object, change.schema), "drop-function");
     case "replace-function":
       return withDefinerRevoke(
         withObjectComment(
@@ -208,6 +235,77 @@ function lowerChange(change: LogicalChange): readonly DdlStep[] {
       );
     case "drop-trigger":
       return dropRoutine(change.object, change.schema, "drop-trigger");
+    case "create-event-trigger":
+      return withObjectComment(
+        [
+          ...withEventOwner(
+            [
+              ddlStep(
+                createObjectSql(change.object, change.schema) ?? "",
+                "create-event-trigger",
+                "ddl",
+                ACCESS,
+              ),
+              ...(change.object.definition.enabled === "origin"
+                ? []
+                : [
+                    ddlStep(
+                      alterEventTriggerSql(
+                        change.object.identity.name,
+                        change.object.definition.enabled,
+                      ),
+                      "alter-event-trigger",
+                      "ddl",
+                      ACCESS,
+                    ),
+                  ]),
+            ],
+            change.object,
+          ),
+        ],
+        change.object,
+        change.schema,
+      );
+    case "drop-event-trigger":
+      return [
+        ddlStep(
+          dropObjectSql(change.object, change.schema) ?? "",
+          "drop-event-trigger",
+          "ddl",
+          ACCESS,
+        ),
+      ];
+    case "alter-event-trigger":
+      return [
+        ddlStep(
+          alterEventTriggerSql(change.name, change.enabled),
+          "alter-event-trigger",
+          "ddl",
+          ACCESS,
+        ),
+      ];
+    case "rename-event-trigger":
+      return [
+        ddlStep(
+          renameEventTriggerSql(change.from, change.to),
+          "rename-event-trigger",
+          "ddl",
+          ACCESS,
+        ),
+      ];
+    case "alter-owner":
+      return [
+        ddlStep(ownerSql(change.kind, change.sql, change.owner), "alter-owner", "ddl", ACCESS),
+      ];
+    case "create-schema":
+      return [
+        ddlStep(
+          `create schema if not exists ${quoteIdent(change.name)}`,
+          "create-schema",
+          "ddl",
+          ACCESS,
+        ),
+      ];
     case "create-view":
       return withObjectComment(
         createRoutine(change.object, change.schema, "create-view"),
@@ -373,6 +471,84 @@ function lowerChange(change: LogicalChange): readonly DdlStep[] {
   }
 }
 
+function auditOwner(source: { readonly objects: readonly CatalogObject[] }): string | undefined {
+  const found = source.objects.find(
+    (object) => object.kind === "function" && object.identity.name === "okm_audit_ddl",
+  );
+  if (found === undefined || found.kind !== "function") return undefined;
+  const owner = found.definition.ownedBy;
+  if (owner === undefined || owner.includes("{okm_role:")) return undefined;
+  return owner;
+}
+
+function homeOf(object: CatalogObject, fallback: string): string {
+  if (object.provenance.name !== "auditDdl") return fallback;
+  if ("namespace" in object.identity && object.identity.namespace.form === "static") {
+    return object.identity.namespace.name;
+  }
+  if ("parent" in object.identity && object.identity.parent.namespace.form === "static") {
+    return object.identity.parent.namespace.name;
+  }
+  return fallback;
+}
+
+function schemaStep(schema: string, fallback: string, owner?: string): readonly DdlStep[] {
+  if (schema === fallback) return [];
+  const steps = [
+    ddlStep(`create schema if not exists ${quoteIdent(schema)}`, "create-schema", "ddl", ACCESS),
+  ];
+  if (owner !== undefined) {
+    steps.push(
+      ddlStep(
+        `alter schema ${quoteIdent(schema)} owner to ${quoteIdent(owner)}`,
+        "alter-owner",
+        "ddl",
+        ACCESS,
+      ),
+    );
+  }
+  return steps;
+}
+
+function withOwner(
+  steps: readonly DdlStep[],
+  object: FunctionObject,
+  schema: string,
+): readonly DdlStep[] {
+  const owner = object.definition.ownedBy;
+  if (owner === undefined) return steps;
+  if (owner.includes("{okm_role:")) {
+    throw new OkmError(
+      "OKM1931",
+      `Function ${object.identity.name} still names a roles key. Configure roles before planning.`,
+      { fix: { summary: "Add the role to okmodel.config.ts." } },
+    );
+  }
+  const sql = `${qualify(schema, object.identity.name)}(${object.identity.argTypes.join(", ")})`;
+  return [...steps, ddlStep(ownerSql("function", sql, owner), "alter-owner", "ddl", ACCESS)];
+}
+
+function withEventOwner(steps: readonly DdlStep[], object: CatalogObject): readonly DdlStep[] {
+  if (object.kind !== "eventTrigger" || object.definition.ownedBy === undefined) return steps;
+  const owner = object.definition.ownedBy;
+  if (owner.includes("{okm_role:")) {
+    throw new OkmError(
+      "OKM1931",
+      `Event trigger ${object.identity.name} still names a roles key.`,
+      { fix: { summary: "Add the role to okmodel.config.ts." } },
+    );
+  }
+  return [
+    ...steps,
+    ddlStep(
+      ownerSql("event trigger", quoteIdent(object.identity.name), owner),
+      "alter-owner",
+      "ddl",
+      ACCESS,
+    ),
+  ];
+}
+
 function withObjectComment(
   steps: readonly DdlStep[],
   object: CatalogObject,
@@ -449,6 +625,8 @@ function commentTarget(object: CatalogObject, schema: string): string | undefine
       return `${object.definition.routine === "procedure" ? "procedure" : "function"} ${qualify(schema, object.identity.name)}(${object.identity.argTypes.join(", ")})`;
     case "trigger":
       return `trigger ${quoteIdent(object.identity.name)} on ${qualify(schema, object.identity.parent.name)}`;
+    case "eventTrigger":
+      return `event trigger ${quoteIdent(object.identity.name)}`;
     case "sequence":
       return `sequence ${qualify(schema, object.identity.name)}`;
     case "type":
