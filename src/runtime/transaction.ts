@@ -458,7 +458,7 @@ async function nested(
  * The session of the client a transaction (or a savepoint) hands out.
  *
  * Its pool is a facade over the reserved connection. `extras` are the methods only
- * this client has: `afterCommit` and `advisoryLock`.
+ * this client has: `afterCommit`, `advisoryLock`, and `notify`.
  */
 function held(session: Session, frame: Frame, after: After[], depth: number): Session {
   const base = session.pool;
@@ -507,6 +507,17 @@ function held(session: Session, frame: Frame, after: After[], depth: number): Se
           }
           frame.check();
           after.push(callback);
+        },
+        async notify(channel: string) {
+          if (
+            typeof channel !== "string" ||
+            channel.length === 0 ||
+            new TextEncoder().encode(channel).length > 63
+          ) {
+            fail("OKM1121", "A watch channel must be 1 to 63 bytes.");
+          }
+          frame.check();
+          await pool.execute("select pg_notify($1, '')", [channel]);
         },
         async advisoryLock(key: string | number | bigint, options?: CallOptions) {
           const [text, wire] = lockKey(key);

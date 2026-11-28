@@ -200,6 +200,7 @@ function note(used: Set<string>, object: CatalogObject): void {
       if (definition.raises !== undefined && definition.raises.length > 0) used.add("fn.raises");
     }
     if (definition.security === "definer") used.add("fn.definerRevoke");
+    if (object.identity.name.startsWith("okm_watch_")) used.add("watch.wake");
   }
   if (
     (object.kind === "view" || object.kind === "materializedView" || object.kind === "sequence") &&

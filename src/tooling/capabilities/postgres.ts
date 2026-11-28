@@ -134,6 +134,10 @@ export const POSTGRES_FEATURES = {
   "lock.skip": native("a plain update does not claim, and lock: skip is one statement"),
   "lock.advisory": native("proof:lock.advisory"),
   "listen.notify": native("proof:listen.notify", { gate: "listen" }),
+  "watch.wake": native("proof:watch.wake"),
+  "watch.liveRead": native("proof:watch.liveRead"),
+  "watch.signal": native("proof:watch.signal"),
+  "watch.until": native("proof:watch.until"),
   "steps.resumable": native(
     "concurrent index create and drop run outside the transaction, and validate stays in it",
   ),

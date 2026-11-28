@@ -28,6 +28,7 @@ import type {
 import { compositeMark, rangeMark } from "./column-mark.js";
 import { clearTypeGrants, rememberTypeGrant } from "./composite-mark.js";
 import { refuseTemporal } from "./floor.js";
+import { watchObjects } from "./watch-ddl.js";
 import { holdGenerated } from "./generated-hold.js";
 import { definition } from "./misuse.js";
 import { declaredRlsSchemas, readEventCompiler } from "./event/slot.js";
@@ -151,6 +152,7 @@ export function compileCatalog(input: CatalogCompileInput): Catalog {
     events.stampRls(objects, rlsSchemas);
   }
   refusePartitionForeignKeys(objects);
+  objects.push(...watchObjects(input));
   return catalog(objects);
 }
 

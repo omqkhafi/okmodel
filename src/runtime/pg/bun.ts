@@ -9,7 +9,7 @@
 import type { DriverPool } from "../../contracts/driver.js";
 import type { QuerySchema } from "../../dialects/pg/model.js";
 import { markClientPool, open, type BunSqlConfig } from "../../adapters/pg/bunsql.js";
-import { createClient } from "../client.js";
+import { createClient, withListenUrl } from "../client.js";
 import type { RoutedClient, TopologyInput, TopologyOptions } from "../topology.js";
 import type { SessionContext } from "../session/index.js";
 import type { Bounded, ConnectOptions, Connected, Limits, NoLimits } from "../types.js";
@@ -86,7 +86,7 @@ export function connect<
         ssl: options.ssl,
       } as BunSqlConfig);
   if (!isPool(target)) markClientPool(pool);
-  return createClient(options.schema, pool, options, owned);
+  return createClient(options.schema, pool, withListenUrl(options, target), owned);
 }
 
 function isPool(target: BunSqlTarget | TopologyInput): target is DriverPool {

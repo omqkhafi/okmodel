@@ -86,4 +86,8 @@ export type CatalogCompileInput = {
   readonly schemaTraits: readonly Trait[] | undefined;
   readonly extra: { readonly gist: boolean };
   readonly foreignKeys: readonly ConstraintInput[];
+  /** Tenant field names, in key order. Absent when the schema has no tenancy. */
+  readonly tenancyFields?: readonly string[];
+  /** True for a path table, which has no tenant column of its own. */
+  readonly isPath?: (table: string) => boolean;
 };

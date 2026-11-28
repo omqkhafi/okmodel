@@ -123,6 +123,7 @@ const SPEC_CODES = [
   "OKM1931",
   "OKM1932",
   "OKM1933",
+  "OKM1934",
   "OKM1928",
   "OKM1926",
   "OKM1923",
@@ -245,6 +246,7 @@ const SPEC_CODES = [
   "OKM2209",
   "OKM2210",
   "OKM2211",
+  "OKM2212",
   "OKM2300",
 ] as const;
 

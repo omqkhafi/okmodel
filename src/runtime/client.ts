@@ -108,6 +108,12 @@ export type Session = {
   /** SQL role for `SET LOCAL ROLE` on each unit. Absent when the session declares none. */
   readonly role?: string;
   /**
+   * Direct URL for the `watch` listen socket.
+   *
+   * Absent when the caller passed a pool and no `listenUrl`. `watch` polls then.
+   */
+  readonly listenUrl?: string;
+  /**
    * Shared close. `for()` and `unscoped()` reuse the same promise.
    *
    * `early` is set when `close()` runs before `connected` settles (QA-M5).
@@ -174,6 +180,7 @@ export function createClient<
     readonly requireMeta?: boolean | undefined;
     readonly generators?: IdGenerators | undefined;
     readonly session?: C | undefined;
+    readonly listenUrl?: string | undefined;
   },
   ownsPool?: boolean,
 ): Connected<S, C> {
@@ -227,6 +234,7 @@ export function createClient<
         ? schema.hooks
         : [...(schema.hooks ?? []), options.session.hook],
     ...(options.session?.role !== undefined ? { role: options.session.role } : {}),
+    ...(options.listenUrl !== undefined ? { listenUrl: options.listenUrl } : {}),
     closing,
   };
   return openClient(session) as unknown as Connected<S, C>;
@@ -280,6 +288,8 @@ export function openClient<S extends QuerySchema>(session: Session): Connected<S
     connected: session.connected,
     capabilities: session.pool.capabilities,
     tx: (...args: unknown[]) => import("./transaction.js").then((mod) => mod.tx(session, args)),
+    watch: (channel: unknown, handler: unknown, options?: unknown) =>
+      watchCall(session, undefined, [channel, handler, options]),
     batch: (ops: unknown, options?: object) => batchHandle(session, ops, options),
     ...session.tx?.extras,
   };
@@ -397,6 +407,11 @@ function tableApi(
     }
   }
   // A preset records the call. The presets module runs it when the handle is used.
+  if (session.schema.model[table]?.watch !== undefined) {
+    api.watch = (...args: unknown[]) => watchCall(session, table, args);
+    api.until = (...args: unknown[]) =>
+      import("./watch.js").then((mod) => mod.tableUntil(session, table, args));
+  }
   for (const name in session.schema.model[table]?.presets as object) {
     api[name] = (...args: unknown[]) => tableApi(session, table, view, [uses, name, args]);
   }
@@ -541,6 +556,143 @@ function rejectedRead(error: unknown): Promise<unknown> & Record<string, unknown
       };
     },
   }) as unknown as Promise<unknown> & Record<string, unknown>;
+}
+
+/**
+ * Runs `find` on the session the caller holds.
+ *
+ * Live read uses this so tenancy, policies, and limits stay on the one path.
+ *
+ * @param session - The client session, including scope
+ * @param table - Table name
+ * @param options - `find` options
+ * @returns The decoded rows
+ */
+export function runRead(session: Session, table: string, options: object): Promise<unknown> {
+  return start(session, "find", table, options, {});
+}
+
+/**
+ * Copies a string connect target onto `listenUrl` when the caller did not set one.
+ *
+ * A pool target keeps the caller's `listenUrl` only. PGlite passes its data
+ * directory and does not call this.
+ *
+ * @param options - Connect options
+ * @param target - URL, pool, or topology
+ * @returns Options that name the listen URL when one is known
+ */
+export function withListenUrl<T extends { listenUrl?: string }>(options: T, target: unknown): T {
+  if (options.listenUrl !== undefined || typeof target !== "string") return options;
+  return { ...options, listenUrl: target };
+}
+
+/** A notification from the dedicated listen connection. */
+export type ListenNotify = (channel: string, payload: string) => void;
+
+/** The socket `watch` heartbeats. */
+export type ListenSocket = {
+  listen(channel: string): Promise<void>;
+  query(text: string, timeoutMs: number): Promise<void>;
+  close(): Promise<void>;
+};
+
+type OpenListen = (
+  url: string,
+  onNotify: ListenNotify,
+  onLost: (error: unknown) => void,
+) => Promise<ListenSocket>;
+
+const listenDrivers = new Map<number, OpenListen>();
+const listenPending = new Map<number, Promise<void>>();
+
+/**
+ * Registers the listen opener for a push driver.
+ *
+ * postgres.js registers kind `1`. node-postgres registers kind `2`.
+ *
+ * @param kind - Driver mark
+ * @param open - Opens the dedicated connection
+ */
+export function registerListenDriver(kind: number, open: OpenListen): void {
+  listenDrivers.set(kind, open);
+}
+
+/**
+ * Starts loading a listen opener.
+ *
+ * The connect entry passes a dynamic import, so the opener stays off the
+ * startup graph. {@link openRegisteredListen} waits for it.
+ *
+ * @param kind - Driver mark
+ * @param load - Loads the opener
+ */
+export function armListen(kind: number, load: () => Promise<OpenListen>): void {
+  const work = load().then((open) => {
+    listenDrivers.set(kind, open);
+  });
+  listenPending.set(kind, work);
+}
+
+/**
+ * Opens a listen connection the driver module registered.
+ *
+ * @param kind - Driver mark
+ * @param url - Direct Postgres URL
+ * @param onNotify - Called for each notification
+ * @param onLost - Called when the socket errors or closes
+ * @returns The socket
+ */
+export async function openRegisteredListen(
+  kind: number,
+  url: string,
+  onNotify: ListenNotify,
+  onLost: (error: unknown) => void,
+): Promise<ListenSocket> {
+  let open = listenDrivers.get(kind);
+  if (open === undefined) {
+    const wait = listenPending.get(kind);
+    if (wait !== undefined) {
+      await wait;
+      open = listenDrivers.get(kind);
+    }
+  }
+  if (open === undefined) throw new Error("this driver does not keep a listen connection");
+  return open(url, onNotify, onLost);
+}
+
+function watchCall(
+  session: Session,
+  table: string | undefined,
+  args: readonly unknown[],
+): import("./types.js").WatchSubscription {
+  let live: import("./types.js").WatchSubscription | undefined;
+  let stopped = false;
+  const ready: Promise<import("./types.js").WatchSubscription | undefined> =
+    import("./watch.js").then((mod) => {
+      const opened = mod.startWatch(session, table, args);
+      if (stopped) return opened.stop().then(() => undefined);
+      live = opened;
+      return opened;
+    });
+  ready.catch(() => undefined);
+  const stop = async (): Promise<void> => {
+    stopped = true;
+    const opened = live ?? (await ready);
+    await opened?.stop();
+  };
+  const handle = {
+    get state() {
+      return live?.state ?? "poll";
+    },
+    get stats() {
+      return live?.stats ?? { runs: 0, errors: 0, wakes: 0, queries: 0 };
+    },
+    run: () => ready.then((opened) => opened?.run() ?? Promise.resolve()),
+    stop,
+  };
+  attachAsyncDispose(handle, stop);
+  return handle as import("./types.js").WatchSubscription;
 }
 
 function start(

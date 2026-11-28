@@ -15,7 +15,9 @@ import { isGeneratedCompositeCheck } from "../../dialects/pg/composite.js";
 import { isDomain } from "../../contracts/catalog/enum.js";
 import { identityKey } from "../../contracts/catalog/identity.js";
 import { deterministicName } from "../../contracts/catalog/identifier.js";
+import { catalog } from "../../contracts/catalog/build.js";
 import { renderCatalog } from "../../dialects/pg/ddl.js";
+import { isWatchFunctionName, isWatchTriggerName } from "../../dialects/pg/watch-ddl.js";
 import { suggestEvery } from "../../dialects/pg/partition-compile.js";
 import type {
   Catalog,
@@ -206,6 +208,7 @@ export function emitPull(
     if (object.kind === "sequence") sequences.set(object.identity.name, object);
   }
 
+  const watched = watchTables(source);
   for (const table of tables) {
     const exportName = freshIdent(
       declaredIdent(table.provenance.source, table.identity.name, casing),
@@ -233,6 +236,7 @@ export function emitPull(
       casing,
       renames,
       sequences,
+      watched.has(table.identity.name),
     );
     if (planned === undefined) continue;
     if (planned.identitySequence !== undefined) identitySequences.add(planned.identitySequence);
@@ -273,7 +277,7 @@ export function emitPull(
     sequenceCalls.push(sequenceObjectCall(object));
   }
 
-  const plan = review?.plan ?? planRoutines(source, tableExports);
+  const plan = review?.plan ?? planRoutines(withoutWatch(source, watched), tableExports);
   for (const item of plan.skipped) skipped.push(item);
   for (const object of source.objects) {
     if (!isDeferred(object.kind)) continue;
@@ -472,6 +476,7 @@ function planTable(
   casing: Casing | undefined,
   renames: string[],
   sequences: ReadonlyMap<string, SequenceObject>,
+  watch: boolean,
 ): PlannedTable | undefined {
   const bag = byParent.get(table.identity.name) ?? {
     columns: [],
@@ -810,6 +815,7 @@ function planTable(
     options.push(...policyLines);
     needsSql = true;
   }
+  if (watch) options.push("    watch: true,");
 
   for (const sequence of bag.sequences) {
     const owned =
@@ -2088,4 +2094,50 @@ function boundOption(bound: PartitionBound): string {
   if (bound.kind === "hash")
     return `{ modulus: ${String(bound.modulus)}, remainder: ${String(bound.remainder)} }`;
   return `{ from: ${JSON.stringify(bound.from)}, to: ${JSON.stringify(bound.to)} }`;
+}
+
+/**
+ * Tables whose statement triggers are the watch triggers.
+ *
+ * @param source - Introspected catalog
+ * @returns SQL table names
+ */
+function watchTables(source: Catalog): Set<string> {
+  const names = new Set<string>();
+  for (const object of source.objects) {
+    if (object.kind !== "trigger" || !isWatchTriggerName(object.identity.name)) continue;
+    if (!isWatchFunctionName(object.definition.calls.name)) continue;
+    names.add(object.identity.parent.name);
+  }
+  return names;
+}
+
+/**
+ * Drops watch functions and triggers so pull does not write them as `fn()`.
+ *
+ * @param source - Introspected catalog
+ * @param tables - Tables from {@link watchTables}
+ * @returns A catalog the routine planner can read
+ */
+function withoutWatch(source: Catalog, tables: ReadonlySet<string>): Catalog {
+  if (tables.size === 0) return source;
+  const functions = new Set<string>();
+  for (const object of source.objects) {
+    if (object.kind !== "trigger" || !tables.has(object.identity.parent.name)) continue;
+    if (!isWatchTriggerName(object.identity.name)) continue;
+    functions.add(object.definition.calls.name);
+  }
+  return catalog(
+    source.objects.filter((object) => {
+      if (
+        object.kind === "trigger" &&
+        tables.has(object.identity.parent.name) &&
+        isWatchTriggerName(object.identity.name)
+      ) {
+        return false;
+      }
+      if (object.kind === "function" && functions.has(object.identity.name)) return false;
+      return true;
+    }),
+  );
 }

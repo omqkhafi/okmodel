@@ -703,6 +703,14 @@ export function schema<const TTables extends readonly AnyTable[]>(
     schemaTraits,
     extra,
     foreignKeys,
+    ...(tenancy === undefined
+      ? {}
+      : {
+          tenancyFields: tenancy.keys !== undefined ? tenancy.keys : [tenancy.key],
+          ...(tenancy.isPath === undefined
+            ? {}
+            : { isPath: (table: string): boolean => tenancy.isPath?.(table) === true }),
+        }),
   };
   const built = {
     get catalog(): Catalog {
@@ -1807,8 +1815,28 @@ function tableModel(
     ...(item.provenance.source !== undefined ? { source: item.provenance.source } : {}),
     ...(item.archive !== undefined ? { archive: item.archive } : {}),
     ...(item.presets !== undefined ? { presets: item.presets } : {}),
+    ...watchModel(item, scopeFields),
     ...partitionKeyOf(item.options?.partition),
   };
+}
+
+function watchModel(
+  item: Prepared,
+  scopeFields: readonly string[] | undefined,
+): { readonly watch: { readonly push: boolean; readonly tenant?: readonly string[] } } | undefined {
+  const declared = (item.options as { readonly watch?: unknown } | undefined)?.watch;
+  if (declared === undefined) return undefined;
+  const push = declared === true || (declared as { readonly push?: unknown }).push !== false;
+  const tenancy = (
+    item.options as { readonly tenancy?: { readonly kind?: string; readonly via?: string } }
+  ).tenancy;
+  if (scopeFields === undefined || tenancy?.kind === "global" || tenancy?.via !== undefined) {
+    return { watch: { push } };
+  }
+  const tenant = scopeFields.filter((field) =>
+    item.columns.some((column) => column.field === field),
+  );
+  return tenant.length > 0 ? { watch: { push, tenant } } : { watch: { push } };
 }
 
 function partitionKeyOf(

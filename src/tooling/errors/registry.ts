@@ -810,6 +810,14 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
     since: "0.11",
   },
   {
+    code: "OKM1934",
+    title: "Watch push required",
+    summary:
+      "watch was started with push: required, and this URL cannot deliver notifications. The driver has no listen socket, LISTEN failed, or the delivery self-test received nothing. The subscription stopped.",
+    fix: "Use a direct URL, or connect({ listenUrl }) when the application URL is pooled. Omit push: required to poll.",
+    since: "0.11",
+  },
+  {
     code: "OKM1928",
     title: "Virtual column fill",
     summary:
@@ -1439,6 +1447,14 @@ export const ERROR_DOCS: readonly ErrorDoc[] = [
       "A migration has a contract step, and at least one database does not have the previous expand migration. An unreachable database counts as missing. Nothing was applied.",
     fix: "Apply the expand migration to every target first, including ones this attempt could not reach. Each protected target still stops on its own.",
     escapeHatches: [hatch("OKM2211", "--allow-protected")],
+    since: "0.11",
+  },
+  {
+    code: "OKM2212",
+    title: "Notification queue",
+    summary:
+      "pg_notification_queue_usage() is at least one half. A full queue drops NOTIFY. watch keeps reading on its timer, and the warning is the queue.",
+    fix: "Slow the writers, set watch push: false on a hot table, or raise throttle so commits are not waiting on the notification queue.",
     since: "0.11",
   },
   {

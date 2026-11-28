@@ -17,7 +17,7 @@ import type {
   Notice,
   WireValue,
 } from "../../contracts/driver.js";
-import { PGLITE_CAPABILITIES } from "../capabilities.js";
+import { markPushDriver, PGLITE_CAPABILITIES } from "../capabilities.js";
 import { driverErrors, rejectCancelled, rejectClosed, rejectTimedOut } from "../failure.js";
 import type { BatchSession } from "./batch.js";
 import { nextTransactionDepth, runCall, type Watch } from "./call.js";
@@ -172,6 +172,7 @@ export async function open(config: PgliteConfig = {}): Promise<DriverPool> {
       await (await starting).db.close();
     },
   };
+  markPushDriver(pool, 3);
   return Object.assign(pool, { prepareExtensions });
 }
 

@@ -360,6 +360,13 @@ export type TableOptions<TColumns> = {
   readonly tenancy?:
     | { readonly kind: "global"; readonly reason: string }
     | { readonly via: string };
+  /**
+   * Wakes `db.<table>.watch` from statement-level triggers.
+   *
+   * `true` installs the triggers. `{ push: false }` keeps the methods and
+   * installs nothing. `feed` is not part of this version.
+   */
+  readonly watch?: true | { readonly push: false };
   readonly computed?: unknown;
   /**
    * Named, typed refinements called as `tasks.pending()`.
@@ -634,6 +641,7 @@ const TABLE_KNOWN = new Set([
   "unique",
   "validate",
   "validation",
+  "watch",
 ]);
 
 /**
@@ -690,6 +698,7 @@ export function table<
     definition(withLocation("table() needs a name.", source));
   }
   if (options !== undefined) rejectLater(options, TABLE_KNOWN, TABLE_LATER, `Table ${name}`);
+  if (options?.watch !== undefined) checkWatch(name, options.watch);
   remember(name, columns);
   return {
     name,
@@ -703,6 +712,30 @@ export function table<
     ...(options !== undefined ? { options } : {}),
     ...(source !== undefined ? { source } : {}),
   } as unknown as Table<TName, TColumns, Readonly<Record<string, RelationCall>>, string>;
+}
+
+/**
+ * Refuses a `watch` value this version does not accept.
+ *
+ * `feed` is reserved for a later version. Any other shape is OKM1060.
+ *
+ * @param name - Table name, for the message
+ * @param watch - The option the caller passed
+ */
+function checkWatch(name: string, watch: unknown): void {
+  if (watch === true) return;
+  if (typeof watch !== "object" || watch === null || Array.isArray(watch)) {
+    definition(`Table ${name} watch accepts true or { push: false }.`);
+  }
+  for (const key of Object.keys(watch)) {
+    if (key === "feed") {
+      unavailable(`Table ${name} watch.feed is not available yet. It arrives in a later version.`);
+    }
+    if (key !== "push") definition(`Table ${name} watch accepts true or { push: false }.`);
+  }
+  if ((watch as { readonly push?: unknown }).push !== false) {
+    definition(`Table ${name} watch accepts true or { push: false }.`);
+  }
 }
 
 /**
@@ -752,7 +785,12 @@ type DeclaredTable<TName extends string, TColumns, TOptions> = Table<
   PresetFlag<TOptions> &
   OmitFlag<TOptions> &
   GlobalFlag<TOptions> &
-  PathFlag<TOptions>;
+  PathFlag<TOptions> &
+  WatchFlag<TOptions>;
+
+type WatchFlag<TOptions> = TOptions extends { readonly watch: true | { readonly push: false } }
+  ? { readonly "~watch": true }
+  : unknown;
 
 type ArchiveFlag<TOptions> = TOptions extends { readonly traits: infer TTraits }
   ? HasArchive<TTraits>

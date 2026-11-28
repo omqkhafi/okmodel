@@ -2118,6 +2118,89 @@ type DefaultPage<
 export interface TableExtras<S extends QuerySchema, K extends keyof S["~byName"] & string> {}
 
 /** Methods on one table. */
+/** `watch` connection mode. `poll` is the floor; `push` means the self-test delivered. */
+export type WatchState = "push" | "poll" | "stopped";
+
+/** Counts for one subscription. */
+export type WatchStats = {
+  readonly runs: number;
+  readonly errors: number;
+  readonly wakes: number;
+  readonly queries: number;
+};
+
+/**
+ * A running `watch`.
+ *
+ * `await using` calls `stop`. `run` waits for the current pass, including the
+ * first one. `state` is `poll` until a delivery self-test succeeds.
+ */
+export type WatchSubscription = {
+  readonly state: WatchState;
+  readonly stats: WatchStats;
+  run(): Promise<void>;
+  stop(): Promise<void>;
+} & IfAsyncDisposable<typeof Symbol>;
+
+/** Limits and failure policy for one subscription. `every` cannot be disabled. */
+export type WatchOptions = {
+  /** Maximum lag. Default 30s. Minimum 1s. */
+  readonly every?: number | string;
+  /** Minimum gap between runs. Default 0. */
+  readonly throttle?: number | string;
+  /** Stops the subscription when it aborts. */
+  readonly signal?: AbortSignal;
+  /** Receives handler failures. They do not escape the subscription. */
+  readonly onError?: (error: unknown) => void;
+  /** Fail instead of polling when this URL cannot deliver notifications. */
+  readonly push?: "required";
+};
+
+/** `watch` and `until` on a table that sets `watch`. */
+export type WatchOps<S extends QuerySchema, K extends keyof S["~byName"] & string> = {
+  /** Runs `handler` at start, on wake, after reconnect, and at least every `every`. */
+  watch(handler: () => unknown): WatchSubscription;
+  /** Same as {@link WatchOps.watch}, with limits after the function. */
+  watch(handler: () => unknown, options: WatchOptions): WatchSubscription;
+  /** Same as {@link WatchOps.watch}, with limits before the function. */
+  watch(options: WatchOptions, handler: () => unknown): WatchSubscription;
+  /**
+   * Runs `find(query)` and calls `handler` when the rows change.
+   *
+   * The options are the same as `find`. Identical queries in one process share
+   * one read per wake.
+   */
+  watch(
+    query: FindOptions<S, K>,
+    handler: (rows: readonly ResultRow<S, K, FindOptions<S, K>>[]) => unknown,
+  ): WatchSubscription;
+  /** Live read with {@link WatchOptions}. */
+  watch(
+    query: FindOptions<S, K>,
+    options: WatchOptions,
+    handler: (rows: readonly ResultRow<S, K, FindOptions<S, K>>[]) => unknown,
+  ): WatchSubscription;
+  /**
+   * Resolves with the first row `find(query)` returns.
+   *
+   * `timeout` is required. The error kind is `timeout`.
+   */
+  until(
+    query: FindOptions<S, K>,
+    options: { readonly timeout: number | string; readonly signal?: AbortSignal },
+  ): Promise<ResultRow<S, K, FindOptions<S, K>>>;
+};
+
+/** `db.watch(channel)` on a client, a scoped client, and a transaction. */
+export type SignalWatch = {
+  /**
+   * Runs `handler` when `notify(channel)` commits, and at least every `every`.
+   *
+   * The payload is ignored. The channel is a string of at most 63 bytes.
+   */
+  watch(channel: string, handler: () => unknown, options?: WatchOptions): WatchSubscription;
+};
+
 export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & string, L = unknown> = {
   /**
    * Reads with `computed`: aggregates of a `many` or `manyThrough` relation,
@@ -2638,7 +2721,8 @@ export type TableApi<S extends QuerySchema, K extends keyof S["~byName"] & strin
    * in the related table is `not_found`, and nothing is written.
    */
   sync(id: unknown, relation: string, ids: readonly unknown[], options?: SyncOptions): SyncHandle;
-} & (S["~byName"][K] extends { readonly "~archive": true } ? ArchiveOps<S, K, L> : unknown) &
+} & (S["~byName"][K] extends { readonly "~watch": true } ? WatchOps<S, K> : unknown) &
+  (S["~byName"][K] extends { readonly "~archive": true } ? ArchiveOps<S, K, L> : unknown) &
   PresetApi<S, K, L> &
   TableExtras<S, K>;
 
@@ -2780,7 +2864,15 @@ export type TxClient<S extends QuerySchema, Root extends boolean = false> = {
    * A string is hashed; a number or bigint is the key itself.
    */
   advisoryLock(key: string | number | bigint, options?: CallOptions): Promise<void>;
-} & TxApi<S, Root>;
+  /**
+   * `pg_notify` on this transaction.
+   *
+   * The payload is empty. A rollback sends nothing. The channel is a string
+   * of at most 63 bytes.
+   */
+  notify(channel: string): Promise<void>;
+} & TxApi<S, Root> &
+  SignalWatch;
 
 /** A view field: its column name in camel case, as the client publishes it. */
 type CamelName<N extends string> = N extends `_${infer Rest}`
@@ -2899,6 +2991,7 @@ type ScopedClient<S extends QuerySchema, C = undefined> = {
   /** The adapter's frozen capability flags. */
   readonly capabilities: DriverCapabilities;
 } & TxApi<S, false> &
+  SignalWatch &
   ViewsClient<S> &
   (C extends undefined ? unknown : SessionMethods<C, S, false>) &
   IfAsyncDisposable<typeof Symbol>;
@@ -2950,6 +3043,7 @@ export type Connected<S extends QuerySchema, C = undefined> = {
   /** The adapter's frozen capability flags. */
   readonly capabilities: DriverCapabilities;
 } & TxApi<S, true> &
+  SignalWatch &
   ScopeMethods<S, C> &
   ViewsClient<S> &
   (C extends undefined ? unknown : SessionMethods<C, S, true>) &
@@ -2968,6 +3062,12 @@ export type CatalogArtifact = {
 /** `connect` options shared by the Postgres drivers. */
 export type ConnectOptions<S extends QuerySchema, C = undefined, D extends Limits = Limits> = {
   readonly schema: S;
+  /**
+   * Direct URL for `LISTEN` when `schema` connects through a pooler.
+   *
+   * Absent, `watch` uses the URL passed to `connect` when that target is a string.
+   */
+  readonly listenUrl?: string;
   /**
    * Transaction-local session settings from `okmodel/session`.
    *
