@@ -5,7 +5,9 @@
 
 import { expect, test } from "bun:test";
 
+import { POSTGRES_VERSIONS } from "../packages/harness/src/version.js";
 import { OkmError } from "../src/contracts/error.js";
+import { POSTGRES_FLOOR } from "../src/dialects/pg/floor.js";
 import { parseCli } from "../src/tooling/cli/parse.js";
 import { COMMANDS } from "../src/tooling/cli/spec.js";
 import { errorDoc } from "../src/tooling/errors/registry.js";
@@ -170,21 +172,29 @@ test("timeouts: apply's own lock_timeout is the one reported, and zero warns", (
   expect(zero[1]).toMatchObject({ severity: "warn", code: "OKM2201" });
 });
 
-test("server: 15 to 19 is tested, and a newer major is accepted", () => {
-  expect(serverFinding(17, undefined).severity).toBe("ok");
-  expect(serverFinding(15, undefined).severity).toBe("ok");
-  expect(serverFinding(18, undefined).severity).toBe("ok");
-  expect(serverFinding(19, undefined).severity).toBe("ok");
-  expect(serverFinding(14, undefined)).toMatchObject({ severity: "fail", code: "OKM1803" });
-  expect(serverFinding(14, undefined).summary).toContain("below the supported window 15-19");
-  for (const major of [20, 25]) {
+test("server: tested majors are accepted, and a newer major is not a warning", () => {
+  const newest = Number(POSTGRES_VERSIONS[POSTGRES_VERSIONS.length - 1]);
+  if (!Number.isInteger(newest)) throw new Error("tested majors are empty");
+  for (const version of POSTGRES_VERSIONS) {
+    expect(serverFinding(Number(version), undefined).severity).toBe("ok");
+  }
+  expect(serverFinding(POSTGRES_FLOOR - 1, undefined)).toMatchObject({
+    severity: "fail",
+    code: "OKM1803",
+  });
+  expect(serverFinding(POSTGRES_FLOOR - 1, undefined).summary).toContain(
+    `below the supported window ${String(POSTGRES_FLOOR)}-${String(newest)}`,
+  );
+  for (const major of [newest + 1, newest + 6]) {
     const finding = serverFinding(major, undefined);
     expect(finding.severity).toBe("ok");
-    expect(finding.summary).toContain(`newer than the tested range 15 to 19; accepted`);
+    expect(finding.summary).toContain(
+      `newer than the tested range ${String(POSTGRES_FLOOR)} to ${String(newest)}; accepted`,
+    );
   }
-  const floor = serverFinding(15, {
+  const floor = serverFinding(POSTGRES_FLOOR, {
     code: "OKM1802",
-    message: "The server is PostgreSQL 15.",
+    message: `The server is PostgreSQL ${String(POSTGRES_FLOOR)}.`,
     fix: "Upgrade.",
   });
   expect(floor).toMatchObject({ severity: "fail", code: "OKM1802" });

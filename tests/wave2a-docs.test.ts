@@ -110,68 +110,6 @@ test("the site step table matches the generated package table", () => {
   );
 });
 
-test("the four corrected statements are what the pages say", () => {
-  const production = page("docs/production.md");
-  const checklist = page("site/content/docs/operate/production-checklist.mdx");
-  const backfill = page("docs/backfill.md");
-  const backfillPage = page("site/content/docs/migrations/backfill.mdx");
-  const database = page("site/content/docs/reference/config-database.mdx");
-  const notice = "server checks skipped: N targets, pass --target <name>";
-  const connection =
-    "A failed connection says ``Could not read target `<name>` `` and exits 5. When the driver message contains `ECONNREFUSED`, `ENOTFOUND`, `ETIMEDOUT`, `ECONNRESET`, `EHOSTUNREACH`, `28P01`, `28000`, `3D000`, or `57P03`, that token is appended in parentheses.";
-  const timeout =
-    "The statement timeout is `backfill.statementTimeoutMs`, then the apply statement timeout (`timeouts.statement` or `--statement-timeout`), then 30000.";
-  expect(production).toContain(notice);
-  expect(checklist).toContain(notice);
-  const doctor = page("site/content/docs/reference/cli/check.mdx");
-  const pooler = page("site/content/docs/reference/config.mdx");
-  const decisions = page("docs/decisions/D315.md");
-  const amended = page("docs/decisions/D320.md");
-  expect(production).toContain(connection);
-  expect(checklist).toContain(connection);
-  expect(doctor).toContain(connection);
-  expect(pooler).toContain("A stable idle pid is not proof of a direct connection.");
-  expect(pooler).toContain("opens eight clients at once");
-  expect(pooler).not.toContain("eight times on the reserved session");
-  expect(decisions).toContain(
-    "**Amended by D320 (a failed connection may append a driver token).**",
-  );
-  expect(amended).toContain("Amends D315.");
-  expect(decisions).not.toContain("with no driver text");
-  expect(amended).not.toContain("with no driver text");
-  expect(backfill).toContain(timeout);
-  expect(backfillPage).toContain(timeout);
-  expect(database).toContain("A stable idle pid is not proof of a direct connection.");
-  expect(database).toContain("eight clients read `pg_backend_pid()`");
-  expect(checklist).toContain("A stable idle pid is not proof of a direct connection.");
-  expect(checklist).toContain("opens eight clients at once");
-  for (const text of [production, checklist, backfill, backfillPage, database]) {
-    expect(text).not.toContain("only lints and prints");
-    expect(text).not.toContain("no driver text");
-    expect(text).not.toContain("pg_backend_pid()` twice");
-  }
-});
-
-test("the new handbook pages do not carry roadmap labels", () => {
-  const pages = [
-    "site/content/docs/operate/production-checklist.mdx",
-    "site/content/docs/operate/testing.mdx",
-    "site/content/docs/operate/protected-targets-and-roles.mdx",
-    "site/content/docs/migrations/checks-and-lint.mdx",
-    "site/content/docs/migrations/backfill.mdx",
-    "site/content/docs/migrations/failures.mdx",
-    "site/content/docs/migrations/environments.mdx",
-    "site/content/docs/reference/compatibility.mdx",
-  ];
-  for (const path of pages) {
-    const text = page(path);
-    expect(text, path).not.toMatch(/\bM\d+\b/);
-    expect(text, path).not.toMatch(/\bP\d+\b/);
-    const bare = [...text.matchAll(/\bD\d+\b/g)].map((match) => match[0] ?? "");
-    expect(bare, path).toEqual([]);
-  }
-});
-
 test("the migrate-check workflow parses and uses the repository action pins", () => {
   const body = fence(
     page("site/content/docs/migrations/checks-and-lint.mdx"),

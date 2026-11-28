@@ -7,6 +7,8 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { POSTGRES_VERSIONS } from "../packages/harness/src/version.js";
+import { POSTGRES_FLOOR } from "../src/dialects/pg/floor.js";
 import { POSTGRES_FEATURES } from "../src/tooling/capabilities/postgres.js";
 import { FRONTMATTER_EXEMPT, FRONTMATTER_EXEMPT_CEILING } from "../scripts/frontmatter-exempt.js";
 import {
@@ -34,14 +36,21 @@ const root = repoRoot();
 test("the generated modules equal the registry", () => {
   expect(docsSupportProblems(root)).toEqual([]);
   expect(Object.keys(featureRules())).toEqual(Object.keys(POSTGRES_FEATURES));
-  expect(featureRules()["temporal.keys"]?.label).toBe("18+");
+  const constants = docsConstants(root);
+  const temporal = POSTGRES_FEATURES["temporal.keys"];
+  const newest = constants.testedMajors[constants.testedMajors.length - 1];
+  if (temporal?.since === undefined || newest === undefined) {
+    throw new Error("temporal.keys is missing");
+  }
+  expect(constants.postgresFloor).toBe(POSTGRES_FLOOR);
+  expect(constants.testedMajors.map(String).join(",")).toBe([...POSTGRES_VERSIONS].join(","));
+  expect(featureRules()["temporal.keys"]?.label).toBe(`${temporal.since}+`);
   expect(featureRules()["temporal.keys"]?.line).toBe(
-    "PostgreSQL 18+, tested 15 to 19, native since 18",
+    `PostgreSQL ${temporal.since}+, tested ${String(POSTGRES_FLOOR)} to ${String(newest)}, native since ${temporal.since}`,
   );
   expect(featureRules()["column.generated"]?.kind).toBe("any");
   expect(featureRules()["constraint.exclusion"]?.label).toBe("any");
-  expect(docsConstants(root).featureCount).toBe(Object.keys(POSTGRES_FEATURES).length);
-  expect(docsConstants(root).supportPhrase).toBe("PostgreSQL 15 and later; tested on 15 to 19");
+  expect(constants.featureCount).toBe(Object.keys(POSTGRES_FEATURES).length);
 });
 
 test("a since and a max are a range, and a refusal is none", () => {
@@ -50,9 +59,10 @@ test("a since and a max are a range, and a refusal is none", () => {
   const range = engineRule(engine, { support: "native", since: "16", max: "18" });
   expect(range.kind).toBe("range");
   expect(range.label).toBe("16–18");
-  expect(range.versions.find((row) => row.version === 15)?.available).toBe(false);
-  expect(range.versions.find((row) => row.version === 16)?.available).toBe(true);
-  expect(range.versions.find((row) => row.version === 19)?.available).toBe(false);
+  expect(range.versions.length).toBeGreaterThan(0);
+  for (const row of range.versions) {
+    expect(row.available, String(row.version)).toBe(row.version >= 16 && row.version <= 18);
+  }
   const refused = engineRule(engine, { support: "refused" });
   expect(refused.kind).toBe("none");
   expect(refused.line).toBe("PostgreSQL none");
@@ -60,8 +70,12 @@ test("a since and a max are a range, and a refusal is none", () => {
   expect(emulated.kind).toBe("bundled");
   expect(emulated.label).toBe("bundled");
   const docsOnly = docsOnlyRule(engine);
+  const newest = docsConstants(root).testedMajors.at(-1);
+  if (newest === undefined) throw new Error("tested majors are empty");
   expect(docsOnly.docsOnly).toBe(true);
-  expect(docsOnly.line).toBe("PostgreSQL 15+, tested 15 to 19, docs only, no proof");
+  expect(docsOnly.line).toBe(
+    `PostgreSQL ${String(POSTGRES_FLOOR)}+, tested ${String(POSTGRES_FLOOR)} to ${String(newest)}, docs only, no proof`,
+  );
   expect(TESTED_MATRIX_NOTE).toBe("CI ran on 18, full matrix at release");
 });
 

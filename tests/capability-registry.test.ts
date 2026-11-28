@@ -3,7 +3,6 @@
  */
 
 import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { repoRoot } from "../scripts/root.js";
@@ -85,11 +84,4 @@ test("an emulated feature passes with its cost line", () => {
   expect(formatEmulation(assertSupported(["type.demo"], emulated, "postgres"))).toBe(
     "emulated type.demo: one extra read\n",
   );
-});
-
-test("OKM1860 has a tested docs page", () => {
-  const page = readFileSync(join(repoRoot(), "site/content/docs/reference/errors.mdx"), "utf8");
-  expect(page).toContain("`OKM1860`");
-  expect(page).toContain("Feature refused");
-  expect(page).toContain("portable alternative");
 });

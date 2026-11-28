@@ -5,51 +5,26 @@
 import { expect, test } from "bun:test";
 
 import { markdownNegotiation, markdownTwinPath } from "./markdown-negotiate";
+import { source } from "./source";
 
-test("a docs path negotiates to its markdown twin", () => {
-  expect(markdownTwinPath("/docs/start")).toBe("/llms.mdx/docs/start.md");
-  expect(markdownTwinPath("/docs/concepts/how-okmodel-works")).toBe(
-    "/llms.mdx/docs/concepts/how-okmodel-works.md",
-  );
-  expect(markdownTwinPath("/docs")).toBe("/llms.mdx/docs/index.md");
-  expect(markdownTwinPath("/docs/reference/config")).toBe("/llms.mdx/docs/reference/config.md");
-  expect(markdownTwinPath("/docs/reference/config-database")).toBe(
-    "/llms.mdx/docs/reference/config-database.md",
-  );
-  expect(markdownTwinPath("/docs/schema/tables")).toBe("/llms.mdx/docs/schema/tables.md");
-  expect(markdownTwinPath("/docs/schema/the-schema")).toBe("/llms.mdx/docs/schema/the-schema.md");
-  expect(markdownTwinPath("/docs/schema/codecs-and-row-types")).toBe(
-    "/llms.mdx/docs/schema/codecs-and-row-types.md",
-  );
-  expect(markdownTwinPath("/docs/queries")).toBe("/llms.mdx/docs/queries.md");
-  expect(markdownTwinPath("/docs/queries/read-rows")).toBe("/llms.mdx/docs/queries/read-rows.md");
-  expect(markdownTwinPath("/docs/queries/write-rows")).toBe("/llms.mdx/docs/queries/write-rows.md");
-  expect(markdownTwinPath("/docs/queries/shape-results")).toBe("/llms.mdx/docs/queries/shape-results.md");
-  expect(markdownTwinPath("/docs/queries/search-and-trees")).toBe(
-    "/llms.mdx/docs/queries/search-and-trees.md",
-  );
-  expect(markdownTwinPath("/docs/queries/where-operators")).toBe(
-    "/llms.mdx/docs/queries/where-operators.md",
-  );
-  expect(markdownTwinPath("/docs/queries/transactions")).toBe(
-    "/llms.mdx/docs/queries/transactions.md",
-  );
-  expect(markdownTwinPath("/docs/queries/typed-raw-sql")).toBe("/llms.mdx/docs/queries/typed-raw-sql.md");
-  expect(markdownTwinPath("/docs/operate/connect")).toBe("/llms.mdx/docs/operate/connect.md");
-  expect(markdownTwinPath("/docs/migrations/from-drizzle")).toBe(
-    "/llms.mdx/docs/migrations/from-drizzle.md",
-  );
-  expect(markdownTwinPath("/docs/ai/skills")).toBe("/llms.mdx/docs/ai/skills.md");
+test("every handbook page negotiates to its markdown twin", () => {
+  const pages = source.getPages();
+  expect(pages.length).toBeGreaterThan(0);
+  for (const page of pages) {
+    const twin = page.url === "/docs" ? "/llms.mdx/docs/index.md" : `/llms.mdx${page.url}.md`;
+    expect(markdownTwinPath(page.url), page.url).toBe(twin);
+  }
   expect(markdownTwinPath("/")).toBe("/llms.mdx/home");
   expect(markdownTwinPath("/changelog")).toBe("/llms.mdx/releases");
 
-  const request = new Request("https://okm.omqkhafi.dev/docs/start", {
+  const sample = pages.find((page) => page.url === "/docs/start") ?? pages[0];
+  if (sample === undefined) throw new Error("the handbook has no pages");
+  const pathname = markdownTwinPath(sample.url);
+  if (pathname === undefined) throw new Error(`no twin for ${sample.url}`);
+  const request = new Request(`https://okm.omqkhafi.dev${sample.url}`, {
     headers: { accept: "text/markdown" },
   });
-  expect(markdownNegotiation(request)).toEqual({
-    kind: "rewrite",
-    pathname: "/llms.mdx/docs/start.md",
-  });
+  expect(markdownNegotiation(request)).toEqual({ kind: "rewrite", pathname });
 });
 
 test("an unknown docs path has no twin so Accept: text/markdown 404s", () => {
