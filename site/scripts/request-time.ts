@@ -16,7 +16,13 @@ import { fileURLToPath } from "node:url";
 export const SITE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** Entry files, relative to `site/`, that Next runs at request time. */
-export const REQUEST_TIME_ENTRIES = ["proxy.ts", "app/api/search/route.ts"] as const;
+export const REQUEST_TIME_ENTRIES = [
+  "proxy.ts",
+  "app/api/search/route.ts",
+  "app/api/markdown-not-found/route.ts",
+  "app/search/page.tsx",
+  "app/missing/[[...path]]/route.ts",
+] as const;
 
 /** Site files that read the repository. */
 const FORBIDDEN_FILES = new Set(["lib/repo.ts", "lib/markdown-source.ts"]);

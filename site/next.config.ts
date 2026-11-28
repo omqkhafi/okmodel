@@ -44,6 +44,9 @@ const config: NextConfig = {
   async redirects() {
     return [...DOCS_REDIRECTS];
   },
+  async rewrites() {
+    return [{ source: "/llms-:name.txt", destination: "/api/agent-files/:name" }];
+  },
   // Own lockfile: keep Turbopack rooted here so `next` resolves from site/node_modules.
   turbopack: {
     root: siteDir,

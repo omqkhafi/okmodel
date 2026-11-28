@@ -1,7 +1,7 @@
 /**
  * "I want to…" tasks.
  *
- * One list. The handbook page is {@link renderTaskPage}. Later search and
+ * One list. The handbook page is {@link renderTaskPage}. Search synonyms and
  * `llms-core.txt` read this module. A task href is a handbook path, plus an
  * anchor when the sentence points at a heading.
  */

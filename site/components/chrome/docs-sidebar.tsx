@@ -345,21 +345,34 @@ function VersionRow() {
   );
 }
 
-/** Search row. Opens the search dialog. */
+/** Search row. The form works without JavaScript. The button opens the dialog. */
 function SearchRow() {
   const { setOpenSearch } = useSearchContext();
   return (
-    <button
-      type="button"
-      onClick={() => setOpenSearch(true)}
-      className="group/search flex w-full items-center gap-2 border-b border-fd-foreground/5 px-3.5 py-2 text-xs text-fd-muted-foreground transition-colors hover:bg-fd-foreground/3 hover:text-fd-foreground/80"
-    >
-      <SearchIcon className="size-3.5 shrink-0 opacity-55" />
-      <span className="truncate text-xs">Search</span>
-      <kbd className="ml-auto inline-flex shrink-0 items-center gap-0.5 rounded border border-fd-foreground/10 px-1.5 py-0.5 font-mono text-[10px] text-fd-muted-foreground">
-        <span className="text-[11px]">&#8984;</span>K
-      </kbd>
-    </button>
+    <form action="/search" method="get" className="flex items-center gap-2 border-b border-fd-foreground/5 px-3.5 py-2">
+      <label htmlFor="docs-search" className="sr-only">
+        Search
+      </label>
+      <SearchIcon className="size-3.5 shrink-0 text-fd-muted-foreground opacity-55" />
+      <input
+        id="docs-search"
+        name="q"
+        type="search"
+        placeholder="Search"
+        className="w-full bg-transparent text-xs text-fd-foreground outline-none placeholder:text-fd-muted-foreground"
+      />
+      <button type="submit" className="text-xs text-fd-muted-foreground hover:text-fd-foreground">
+        Search
+      </button>
+      <button
+        type="button"
+        aria-label="Open search"
+        onClick={() => setOpenSearch(true)}
+        className="text-[10px] text-fd-muted-foreground"
+      >
+        <kbd className="rounded border border-fd-foreground/10 px-1.5 py-0.5 font-mono">&#8984;K</kbd>
+      </button>
+    </form>
   );
 }
 

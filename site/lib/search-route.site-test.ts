@@ -1,48 +1,66 @@
 /**
- * `GET /api/search` returns query hits. The static index stays on the server.
+ * `GET /api/search` returns the documented JSON. The static index stays on
+ * the server.
  */
 
 import { expect, test } from "bun:test";
-import { createFromSource } from "fumadocs-core/search/server";
 
 import { GET } from "../app/api/search/route";
-import { source } from "./source";
+import { searchIndexJson } from "./search-docs";
 
-test("a query returns hits and a much smaller body than the index", async () => {
-  const index = await createFromSource(source).staticGET();
-  const indexBytes = Buffer.byteLength(await index.text());
-  expect(indexBytes).toBeGreaterThan(500_000);
+test("a query returns the documented hit shape", async () => {
+  const indexBytes = Buffer.byteLength(searchIndexJson());
+  expect(indexBytes).toBeGreaterThan(10_000);
 
   const extensions = await ask("extensions");
   const trigger = await ask("trigger");
   expect(extensions.bytes).toBeLessThan(indexBytes / 10);
   expect(trigger.bytes).toBeLessThan(indexBytes / 10);
-  expect(extensions.hits.length).toBeGreaterThan(0);
-  expect(trigger.hits.length).toBeGreaterThan(0);
-  expect(extensions.hits.every(isHit)).toBe(true);
-  expect(trigger.hits.every(isHit)).toBe(true);
-  expect(extensions.hits.some((hit) => hit.url.includes("extension"))).toBe(true);
-  expect(trigger.hits.some((hit) => hit.url.includes("trigger"))).toBe(true);
+  expect(extensions.body.query).toBe("extensions");
+  expect(extensions.body.results.length).toBeGreaterThan(0);
+  expect(trigger.body.results.length).toBeGreaterThan(0);
+  expect(extensions.body.results.every(isHit)).toBe(true);
+  expect(trigger.body.results.every(isHit)).toBe(true);
+  expect(extensions.body.results.some((hit) => hit.url.includes("extension"))).toBe(true);
+  expect(trigger.body.results.some((hit) => hit.url.includes("trigger"))).toBe(true);
+  console.log(`search index bytes ${String(indexBytes)}`);
 }, 60_000);
 
 test("an empty query and a query with no matches return an empty list", async () => {
   const missing = await ask("");
   const blank = await ask(undefined);
   const none = await ask("qxqxqxqxqx");
-  expect(missing.hits).toEqual([]);
-  expect(blank.hits).toEqual([]);
-  expect(none.hits).toEqual([]);
+  expect(missing.body.results).toEqual([]);
+  expect(blank.body.results).toEqual([]);
+  expect(none.body.results).toEqual([]);
   expect(missing.status).toBe(200);
   expect(none.status).toBe(200);
 }, 60_000);
 
-/**
- * One search hit the dialog can open.
- */
+test("the search handler's median of 20 warm calls stays a report", async () => {
+  await ask("tables");
+  const samples: number[] = [];
+  for (let index = 0; index < 20; index += 1) {
+    const started = performance.now();
+    const response = await ask("OKM1101");
+    samples.push(performance.now() - started);
+    expect(response.status).toBe(200);
+    expect(response.body.results[0]?.url).toContain("/docs/reference/errors");
+  }
+  const sorted = samples.slice().sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const median = sorted.length % 2 === 0 ? ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2 : (sorted[mid] ?? 0);
+  console.log(`search median ms ${median.toFixed(2)} of 20`);
+}, 60_000);
+
+/** One documented hit. */
 interface Hit {
+  readonly title: string;
   readonly url: string;
-  readonly content?: string;
-  readonly title?: string;
+  readonly markdown: string;
+  readonly summary: string;
+  readonly section: string;
+  readonly chip: string;
 }
 
 /**
@@ -53,25 +71,39 @@ interface Hit {
 async function ask(query: string | undefined): Promise<{
   readonly status: number;
   readonly bytes: number;
-  readonly hits: readonly Hit[];
+  readonly body: { readonly query: string; readonly results: readonly Hit[] };
 }> {
   const url = new URL("http://localhost/api/search");
   if (query !== undefined) url.searchParams.set("query", query);
   const response = await GET(new Request(url));
   const text = await response.text();
   const parsed: unknown = JSON.parse(text);
-  if (!Array.isArray(parsed)) {
-    throw new Error(`expected a list, got ${text.slice(0, 80)}`);
+  if (typeof parsed !== "object" || parsed === null || !("results" in parsed) || !Array.isArray(parsed.results)) {
+    throw new Error(`expected { results }, got ${text.slice(0, 80)}`);
   }
-  return { status: response.status, bytes: Buffer.byteLength(text), hits: parsed as Hit[] };
+  return {
+    status: response.status,
+    bytes: Buffer.byteLength(text),
+    body: parsed as { query: string; results: Hit[] },
+  };
 }
 
 /**
- * A hit has a URL and a title or excerpt.
+ * A hit has the documented fields.
  *
  * @param hit - One JSON element
  */
 function isHit(hit: Hit): boolean {
-  const label = hit.content ?? hit.title;
-  return typeof hit.url === "string" && hit.url.length > 0 && typeof label === "string" && label.length > 0;
+  return (
+    typeof hit.title === "string" &&
+    hit.title.length > 0 &&
+    typeof hit.url === "string" &&
+    hit.url.startsWith("/docs") &&
+    typeof hit.markdown === "string" &&
+    hit.markdown.includes("/llms.mdx/docs/") &&
+    typeof hit.summary === "string" &&
+    typeof hit.section === "string" &&
+    hit.section.length > 0 &&
+    typeof hit.chip === "string"
+  );
 }

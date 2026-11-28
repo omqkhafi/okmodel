@@ -5,8 +5,9 @@
 
 import { isChromeInspectorProbe } from "@/lib/chrome-inspector";
 import { DISCOVERY_LINK, markdownAlternateLink } from "@/lib/discovery-links";
+import { isDocsRedirect } from "@/lib/docs-redirects";
+import { docsPageExists } from "@/lib/handbook-pages";
 import { markdownNegotiation, markdownTwinPath } from "@/lib/markdown-negotiate";
-import { markdownNotFoundResponse } from "@/lib/not-found-markdown";
 import { buildRobotsTxt } from "@/lib/robots-txt";
 import { type NextRequest, NextResponse } from "next/server";
 
@@ -35,24 +36,64 @@ export function proxy(request: NextRequest): NextResponse | Response {
   }
 
   const action = markdownNegotiation(request);
-  if (action.kind === "pass") {
-    const response = NextResponse.next();
-    stampAlternate(response, request.nextUrl.pathname);
-    return response;
+  if (action.kind === "not-found") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/api/markdown-not-found";
+    url.searchParams.set("path", request.nextUrl.pathname);
+    return NextResponse.rewrite(url);
   }
 
-  if (action.kind === "not-found") {
-    const body = markdownNotFoundResponse();
-    return new NextResponse(body.body, {
-      status: 404,
-      headers: body.headers,
-    });
+  if (action.kind === "pass" && !isServedHtmlPath(request.nextUrl.pathname)) {
+    const url = request.nextUrl.clone();
+    url.pathname = `/missing${request.nextUrl.pathname}`;
+    url.search = "";
+    return NextResponse.rewrite(url);
   }
+
+  if (action.kind === "pass") return passThrough(request);
 
   const url = request.nextUrl.clone();
   url.pathname = action.pathname;
   const response = NextResponse.rewrite(url);
   response.headers.set("Vary", "Accept");
+  stampAlternate(response, request.nextUrl.pathname);
+  return response;
+}
+
+/**
+ * Paths the App Router serves as HTML. Anything else is rewritten to the
+ * suggestion 404. `/docs` is checked against the bundled page list.
+ *
+ * @param pathname - Request pathname
+ */
+function isServedHtmlPath(pathname: string): boolean {
+  const path = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+  if (
+    path === "/" ||
+    path === "/search" ||
+    path === "/changelog" ||
+    path === "/sitemap.xml" ||
+    path === "/robots.txt" ||
+    path === "/webmcp.js" ||
+    path === "/icon.svg" ||
+    path === "/favicon.ico" ||
+    path === "/missing"
+  ) {
+    return true;
+  }
+  if (path.startsWith("/changelog/") || path.startsWith("/.well-known/") || path.startsWith("/missing")) return true;
+  if (isDocsRedirect(path)) return true;
+  if (path === "/docs" || path.startsWith("/docs/")) return docsPageExists(path);
+  return false;
+}
+
+/**
+ * Continue to the App Router.
+ *
+ * @param request - Incoming request
+ */
+function passThrough(request: NextRequest): NextResponse {
+  const response = NextResponse.next();
   stampAlternate(response, request.nextUrl.pathname);
   return response;
 }

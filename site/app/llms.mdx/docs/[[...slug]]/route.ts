@@ -1,4 +1,5 @@
 import { markdownResponse } from "@/lib/markdown-response";
+import { markdownPathForSlugs } from "@/lib/markdown-url";
 import { markdownNotFoundResponse } from "@/lib/not-found-markdown";
 import { getPageSourceMarkdown } from "@/lib/page-markdown";
 import { getPageMarkdownUrl, resolveMarkdownPage, source } from "@/lib/source";
@@ -24,7 +25,11 @@ export async function GET(_req: Request, { params }: RouteContext<"/llms.mdx/doc
   const page = resolveMarkdownPage(slug);
   if (!page) return markdownNotFoundResponse();
 
-  return markdownResponse(await getPageSourceMarkdown(page));
+  const markdown = await getPageSourceMarkdown(page);
+  const twin = markdownPathForSlugs(page.slugs);
+  const response = markdownResponse(markdown);
+  response.headers.append("Link", `<${twin}>; rel="alternate"; type="text/markdown"`);
+  return response;
 }
 
 export function generateStaticParams() {

@@ -3,9 +3,10 @@
  */
 
 import { HERO_HEADLINE_LINES, HERO_SUBHEAD } from "./hero-copy";
+import { absoluteDocsUrl, markdownPathForHref } from "./markdown-url";
 import { readRootPackage } from "./package-meta";
 import { markdownResponse } from "./markdown-response";
-import { SITE_NAME } from "./site-identity";
+import { SITE_NAME, SITE_ORIGIN } from "./site-identity";
 
 /**
  * Markdown body for `/` when Accept prefers markdown.
@@ -22,13 +23,13 @@ ${HERO_SUBHEAD}
 ${install}
 \`\`\`
 
-- [Introduction](/docs/start)
-- [Installation](/docs/start/installation)
-- [First schema](/docs/start/first-schema)
-- [Project structure](/docs/start/project-structure)
-- [Documentation](/docs)
-- [llms.txt](/llms.txt)
-- [Changelog](/changelog)
+- [Introduction](${absoluteDocsUrl(markdownPathForHref("/docs/start"))})
+- [Installation](${absoluteDocsUrl(markdownPathForHref("/docs/start/installation"))})
+- [First schema](${absoluteDocsUrl(markdownPathForHref("/docs/start/first-schema"))})
+- [Project structure](${absoluteDocsUrl(markdownPathForHref("/docs/start/project-structure"))})
+- [Documentation](${absoluteDocsUrl(markdownPathForHref("/docs"))})
+- [llms.txt](${SITE_ORIGIN}/llms.txt)
+- [Changelog](${SITE_ORIGIN}/changelog)
 `;
 }
 

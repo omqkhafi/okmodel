@@ -13,7 +13,9 @@ import {
   errorCodeRows,
   ERROR_CODE_INDEX_BEGIN,
   ERROR_CODE_INDEX_END,
+  renderErrorFixesModule,
 } from "./error-codes";
+import { ERROR_FIXES } from "./generated/error-fixes";
 import { siteRoot } from "./repo";
 
 const pagePath = join(siteRoot(), "content/docs/reference/errors.mdx");
@@ -22,6 +24,16 @@ test("the Errors page index matches ERROR_DOCS", () => {
   const rows = errorCodeRows();
   expect(rows.map((row) => row.code)).toEqual(ERROR_DOCS.map((doc) => doc.code));
   expect(errorCodeIndexMatches(readFileSync(pagePath, "utf8"))).toBe(true);
+});
+
+test("the generated fix list matches ERROR_DOCS", () => {
+  expect(ERROR_FIXES.map((row) => row.code)).toEqual(ERROR_DOCS.map((doc) => doc.code));
+  for (const doc of ERROR_DOCS) {
+    const row = ERROR_FIXES.find((item) => item.code === doc.code);
+    expect(row?.fix, doc.code).toBe(doc.fix);
+  }
+  const path = join(siteRoot(), "lib/generated/error-fixes.ts");
+  expect(readFileSync(path, "utf8")).toBe(renderErrorFixesModule());
 });
 
 test("every registry code has an anchor on the Errors page", () => {
