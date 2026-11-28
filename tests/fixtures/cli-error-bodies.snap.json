@@ -1226,6 +1226,24 @@
     "docs": "docs/errors/OKM1934.md"
   },
   {
+    "code": "OKM1935",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A watch feed cursor is behind the oldest retained change. The consumer did not skip ahead. The subscription stays open and the next pass tries again.",
+    "fix": "Pass onResync and rebuild from the table, or raise keep so the cursor is still inside the retained window.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1935.md"
+  },
+  {
+    "code": "OKM1936",
+    "kind": "invalid",
+    "category": "input",
+    "summary": "A watch feed handler asked for its transaction on a URL the pooler signal calls pooled. The cursor was not moved. A feed without that transaction still delivers changes.",
+    "fix": "Use a direct or session connection for the handler transaction, or omit the second handler argument.",
+    "retryable": false,
+    "docs": "docs/errors/OKM1936.md"
+  },
+  {
     "code": "OKM1928",
     "kind": "invalid",
     "category": "input",

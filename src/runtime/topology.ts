@@ -448,6 +448,7 @@ export async function connectTopology<
       generators: options.generators,
       session: options.session,
       listenUrl: options.listenUrl ?? primaryUrl,
+      targetUrl: primaryUrl,
     };
     const router = routePool(handle);
     const client = createClient(options.schema, router, { ownsPool: true, ...shared });

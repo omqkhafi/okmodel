@@ -29,6 +29,7 @@ import {
   type ClientGenerator,
 } from "../../contracts/generator.js";
 import { loadCatalogCompiler, loadCompileExclusion } from "./catalog-load.js";
+import { parseKeep } from "./watch-keep.js";
 import { rememberSchemaFacts } from "./constraint-index.js";
 import type { HeldCheck } from "./catalog-draft.js";
 import {
@@ -1823,20 +1824,34 @@ function tableModel(
 function watchModel(
   item: Prepared,
   scopeFields: readonly string[] | undefined,
-): { readonly watch: { readonly push: boolean; readonly tenant?: readonly string[] } } | undefined {
+):
+  | {
+      readonly watch: {
+        readonly push: boolean;
+        readonly tenant?: readonly string[];
+        readonly feed?: { readonly keepMs: number };
+      };
+    }
+  | undefined {
   const declared = (item.options as { readonly watch?: unknown } | undefined)?.watch;
   if (declared === undefined) return undefined;
   const push = declared === true || (declared as { readonly push?: unknown }).push !== false;
+  const keep =
+    declared === true || typeof declared !== "object" || declared === null
+      ? undefined
+      : parseKeep((declared as { readonly feed?: { readonly keep?: unknown } }).feed?.keep);
+  const feed = keep === undefined ? undefined : { keepMs: keep.ms };
+  const base = { push, ...(feed !== undefined ? { feed } : {}) };
   const tenancy = (
     item.options as { readonly tenancy?: { readonly kind?: string; readonly via?: string } }
   ).tenancy;
   if (scopeFields === undefined || tenancy?.kind === "global" || tenancy?.via !== undefined) {
-    return { watch: { push } };
+    return { watch: base };
   }
   const tenant = scopeFields.filter((field) =>
     item.columns.some((column) => column.field === field),
   );
-  return tenant.length > 0 ? { watch: { push, tenant } } : { watch: { push } };
+  return tenant.length > 0 ? { watch: { ...base, tenant } } : { watch: base };
 }
 
 function partitionKeyOf(

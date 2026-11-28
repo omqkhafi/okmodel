@@ -138,6 +138,7 @@ export const POSTGRES_FEATURES = {
   "watch.liveRead": native("proof:watch.liveRead"),
   "watch.signal": native("proof:watch.signal"),
   "watch.until": native("proof:watch.until"),
+  "watch.feed": native("proof:watch.feed"),
   "steps.resumable": native(
     "concurrent index create and drop run outside the transaction, and validate stays in it",
   ),

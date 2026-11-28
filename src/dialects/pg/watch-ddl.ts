@@ -7,6 +7,9 @@
  * tenant function branches on `TG_OP` and notifies `''` for truncate before it
  * reads a transition table. A table with no tenant column uses the same four
  * triggers and a body that only notifies. `push: false` emits nothing.
+ * `watch.feed` keeps those four triggers, always with transition tables, and
+ * inserts one row per key into `okm_changes`. The managed tables are emitted
+ * once per schema.
  *
  * The payload is `''` (wake every listener) or a JSON array of distinct tenant
  * keys. It is never row data. A payload longer than {@link WATCH_PAYLOAD_MAX}
@@ -15,10 +18,18 @@
 
 import { fitIdentifier } from "../../contracts/catalog/identifier.js";
 import { functionObject, triggerObject } from "../../contracts/catalog/routine.js";
-import type { CatalogObject } from "../../contracts/catalog/types.js";
+import type { CatalogObject, Provenance } from "../../contracts/catalog/types.js";
 import type { CatalogCompileInput } from "./catalog-draft.js";
 import { quoteIdent } from "./ddl.js";
+import { definition } from "./misuse.js";
 import { WATCH_PAYLOAD_MAX, watchChannel } from "./watch-channel.js";
+import {
+  feedFunctionBody,
+  feedKeepComment,
+  managedFeedObjects,
+  type FeedKey,
+} from "./watch-feed-ddl.js";
+import { parseKeep } from "./watch-keep.js";
 
 const TRIGGER_INSERT = "okm_watch_insert";
 const TRIGGER_UPDATE = "okm_watch_update";
@@ -61,13 +72,22 @@ export function isWatchFunctionName(name: string): boolean {
  */
 export function watchObjects(input: CatalogCompileInput): CatalogObject[] {
   const objects: CatalogObject[] = [];
+  let feedProvenance: Provenance | undefined;
   for (const item of input.prepared) {
     const declared = readWatch(item);
-    if (declared === undefined || declared.push === false) continue;
+    if (declared === undefined || (declared.push === false && declared.keep === undefined))
+      continue;
     const channel = watchChannel(item.sqlName);
     const tenant = tenantColumns(item, input);
     const name = fitIdentifier(`okm_watch_${item.sqlName}`);
     const provenance = item.provenance;
+    const keep = declared.keep;
+    const keys = keep === undefined ? [] : keyColumns(item);
+    if (keep !== undefined && keys.length === 0) {
+      definition(`Table ${item.tsName} watch.feed needs a primary key.`);
+    }
+    if (keep !== undefined) feedProvenance ??= provenance;
+    const feed = keep !== undefined;
     objects.push(
       functionObject({
         namespace: item.parent.namespace,
@@ -76,7 +96,26 @@ export function watchObjects(input: CatalogCompileInput): CatalogObject[] {
         language: "plpgsql",
         volatility: "volatile",
         security: "invoker",
-        body: tenant === undefined ? plainBody(channel) : tenantBody(channel, tenant),
+        body:
+          keep === undefined
+            ? tenant === undefined
+              ? plainBody(channel)
+              : tenantBody(channel, tenant)
+            : feedFunctionBody({
+                rel: item.sqlName,
+                channel,
+                keys,
+                tenant,
+                push: declared.push,
+              }),
+        ...(keep === undefined ? {} : { comment: feedKeepComment(keep.text) }),
+        ...(feed
+          ? {
+              dependencies: [
+                { kind: "table" as const, namespace: item.parent.namespace, name: "okm_changes" },
+              ],
+            }
+          : {}),
         provenance,
       }),
     );
@@ -85,6 +124,7 @@ export function watchObjects(input: CatalogCompileInput): CatalogObject[] {
       name,
       argTypes: [] as readonly string[],
     };
+    const referencing = feed || tenant !== undefined;
     objects.push(
       triggerObject({
         parent: item.parent,
@@ -93,7 +133,7 @@ export function watchObjects(input: CatalogCompileInput): CatalogObject[] {
         events: ["insert"],
         level: "statement",
         calls: call,
-        ...(tenant === undefined ? {} : { referencing: { new: "okm_new" } }),
+        ...(referencing ? { referencing: { new: "okm_new" } } : {}),
         provenance,
       }),
       triggerObject({
@@ -103,7 +143,7 @@ export function watchObjects(input: CatalogCompileInput): CatalogObject[] {
         events: ["update"],
         level: "statement",
         calls: call,
-        ...(tenant === undefined ? {} : { referencing: { old: "okm_old", new: "okm_new" } }),
+        ...(referencing ? { referencing: { old: "okm_old", new: "okm_new" } } : {}),
         provenance,
       }),
       triggerObject({
@@ -113,7 +153,7 @@ export function watchObjects(input: CatalogCompileInput): CatalogObject[] {
         events: ["delete"],
         level: "statement",
         calls: call,
-        ...(tenant === undefined ? {} : { referencing: { old: "okm_old" } }),
+        ...(referencing ? { referencing: { old: "okm_old" } } : {}),
         provenance,
       }),
       triggerObject({
@@ -127,17 +167,35 @@ export function watchObjects(input: CatalogCompileInput): CatalogObject[] {
       }),
     );
   }
+  if (feedProvenance !== undefined) {
+    objects.push(...managedFeedObjects(input.namespace, feedProvenance));
+  }
   return objects;
 }
 
-function readWatch(item: WatchTable): { readonly push: boolean } | undefined {
+function readWatch(
+  item: WatchTable,
+):
+  | { readonly push: boolean; readonly keep?: { readonly text: string; readonly ms: number } }
+  | undefined {
   const watch = (item.options as { readonly watch?: unknown } | undefined)?.watch;
   if (watch === undefined) return undefined;
   if (watch === true) return { push: true };
-  if (typeof watch === "object" && watch !== null && (watch as { push?: unknown }).push === false) {
-    return { push: false };
-  }
-  return { push: true };
+  if (typeof watch !== "object" || watch === null) return { push: true };
+  const record = watch as { readonly push?: unknown; readonly feed?: { readonly keep?: unknown } };
+  const push = record.push !== false;
+  const keep = record.feed === undefined ? undefined : parseKeep(record.feed.keep);
+  if (!push && keep === undefined) return { push: false };
+  return keep === undefined ? { push } : { push, keep };
+}
+
+function keyColumns(item: WatchTable): FeedKey[] {
+  const columns = item.primaryKey?.columns ?? [];
+  const fields = [...item.byField.entries()];
+  return columns.map((sql) => {
+    const field = fields.find(([, column]) => column.sqlName === sql)?.[0] ?? sql;
+    return { field, sql };
+  });
 }
 
 function tenantColumns(

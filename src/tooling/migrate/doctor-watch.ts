@@ -29,7 +29,10 @@ export async function watchDoctorText(url: string): Promise<string> {
       ? `watch: push works on this URL (${report.reason}).`
       : `watch: push does not work on this URL (${report.reason}).`;
     const warning = queueWarning(report.queue);
-    return warning === undefined ? `${line}\n` : `${line}\n${warning}\n`;
+    const { feedDoctorText } = await import("../../runtime/watch-feed.js");
+    const feed = await feedDoctorText(pool);
+    const head = warning === undefined ? `${line}\n` : `${line}\n${warning}\n`;
+    return `${head}${feed}`;
   } finally {
     await finishQuiet(() => pool.close());
   }

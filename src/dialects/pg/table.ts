@@ -18,6 +18,7 @@ import {
 } from "./column.js";
 import { openFilters } from "./filters.js";
 import { definition, unavailable } from "./misuse.js";
+import { parseKeep } from "./watch-keep.js";
 import { type RelationCall } from "./relations.js";
 import type { PresetMap } from "./preset.js";
 import {
@@ -364,9 +365,15 @@ export type TableOptions<TColumns> = {
    * Wakes `db.<table>.watch` from statement-level triggers.
    *
    * `true` installs the triggers. `{ push: false }` keeps the methods and
-   * installs nothing. `feed` is not part of this version.
+   * installs nothing. `{ feed: { keep } }` also stores a durable change feed.
+   * `keep` is a duration (`"7d"`, `"12h"`, or a number of milliseconds).
    */
-  readonly watch?: true | { readonly push: false };
+  readonly watch?:
+    | true
+    | {
+        readonly push?: false;
+        readonly feed?: { readonly keep: number | string };
+      };
   readonly computed?: unknown;
   /**
    * Named, typed refinements called as `tasks.pending()`.
@@ -717,7 +724,8 @@ export function table<
 /**
  * Refuses a `watch` value this version does not accept.
  *
- * `feed` is reserved for a later version. Any other shape is OKM1060.
+ * `feed` requires `keep`. Any other shape is OKM1060. A duration `keep`
+ * cannot parse is OKM1060 as well.
  *
  * @param name - Table name, for the message
  * @param watch - The option the caller passed
@@ -725,16 +733,32 @@ export function table<
 function checkWatch(name: string, watch: unknown): void {
   if (watch === true) return;
   if (typeof watch !== "object" || watch === null || Array.isArray(watch)) {
-    definition(`Table ${name} watch accepts true or { push: false }.`);
+    definition(`Table ${name} watch accepts true, { push: false }, or { feed: { keep } }.`);
   }
-  for (const key of Object.keys(watch)) {
-    if (key === "feed") {
-      unavailable(`Table ${name} watch.feed is not available yet. It arrives in a later version.`);
+  const record = watch as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
+    if (key !== "push" && key !== "feed") {
+      definition(`Table ${name} watch accepts true, { push: false }, or { feed: { keep } }.`);
     }
-    if (key !== "push") definition(`Table ${name} watch accepts true or { push: false }.`);
   }
-  if ((watch as { readonly push?: unknown }).push !== false) {
-    definition(`Table ${name} watch accepts true or { push: false }.`);
+  if (record.push !== undefined && record.push !== false) {
+    definition(`Table ${name} watch push accepts false.`);
+  }
+  if (record.feed === undefined) {
+    if (record.push !== false) {
+      definition(`Table ${name} watch accepts true, { push: false }, or { feed: { keep } }.`);
+    }
+    return;
+  }
+  if (typeof record.feed !== "object" || record.feed === null || Array.isArray(record.feed)) {
+    definition(`Table ${name} watch.feed accepts { keep }.`);
+  }
+  const feed = record.feed as Record<string, unknown>;
+  for (const key of Object.keys(feed)) {
+    if (key !== "keep") definition(`Table ${name} watch.feed accepts { keep }.`);
+  }
+  if (parseKeep(feed.keep) === undefined) {
+    definition(`Table ${name} watch.feed.keep must be a duration, for example "7d".`);
   }
 }
 
@@ -788,7 +812,11 @@ type DeclaredTable<TName extends string, TColumns, TOptions> = Table<
   PathFlag<TOptions> &
   WatchFlag<TOptions>;
 
-type WatchFlag<TOptions> = TOptions extends { readonly watch: true | { readonly push: false } }
+type WatchFlag<TOptions> = TOptions extends {
+  readonly watch:
+    | true
+    | { readonly push?: false; readonly feed?: { readonly keep: number | string } };
+}
   ? { readonly "~watch": true }
   : unknown;
 

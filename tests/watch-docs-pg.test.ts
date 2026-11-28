@@ -26,6 +26,8 @@ const imports: readonly (readonly [string, string])[] = [
 type Example = {
   readonly app?: { readonly catalog: Catalog };
   readonly seen?: (url: string) => Promise<number>;
+  readonly indexed?: (url: string) => Promise<number>;
+  readonly noted?: (url: string) => Promise<number>;
 };
 
 postgresTest(gate, "the watch page reads the inserted row", async () => {
@@ -41,6 +43,44 @@ postgresTest(gate, "the watch page reads the inserted row", async () => {
       await sql.unsafe(statement);
     }
     expect(await example.seen(database.url)).toBe(1);
+  } finally {
+    await sql.end({ timeout: 5 });
+    await database.close();
+  }
+});
+
+postgresTest(gate, "the watch page indexes the inserted product", async () => {
+  const page = readFileSync(join(root, "site/content/docs/queries/watch.mdx"), "utf8");
+  const example = await load(fence(page, "feed.ts"));
+  if (example.app === undefined || example.indexed === undefined) {
+    throw new Error("feed.ts exports app and indexed");
+  }
+  const database = await createIsolatedDatabase();
+  const sql = openPostgres(database.url);
+  try {
+    for (const statement of renderCatalog(example.app.catalog, "public")) {
+      await sql.unsafe(statement);
+    }
+    expect(await example.indexed(database.url)).toBe(1);
+  } finally {
+    await sql.end({ timeout: 5 });
+    await database.close();
+  }
+});
+
+postgresTest(gate, "the watch page commits the feed cursor with the handler", async () => {
+  const page = readFileSync(join(root, "site/content/docs/queries/watch.mdx"), "utf8");
+  const example = await load(fence(page, "feed-tx.ts"));
+  if (example.app === undefined || example.noted === undefined) {
+    throw new Error("feed-tx.ts exports app and noted");
+  }
+  const database = await createIsolatedDatabase();
+  const sql = openPostgres(database.url);
+  try {
+    for (const statement of renderCatalog(example.app.catalog, "public")) {
+      await sql.unsafe(statement);
+    }
+    expect(await example.noted(database.url)).toBe(1);
   } finally {
     await sql.end({ timeout: 5 });
     await database.close();

@@ -2159,8 +2159,50 @@ export type WatchOptions = {
   readonly push?: "required";
 };
 
+/** One durable change. `key` uses the table's field names. `truncate` has an empty key. */
+export type FeedChange = {
+  readonly op: "insert" | "update" | "delete" | "truncate";
+  readonly key: Readonly<Record<string, unknown>>;
+  /** Tenant key of the statement. Absent on a truncate and on a table with no tenant column. */
+  readonly tenant?: string;
+};
+
+/**
+ * Why a feed cursor can no longer read the changes it skipped.
+ *
+ * `cursor` and `floor` are decimal sequence text.
+ */
+export type FeedResync = {
+  readonly table: string;
+  readonly feed: string;
+  readonly cursor: string;
+  readonly floor: string;
+};
+
+/**
+ * A feed subscription.
+ *
+ * `feed` is the consumer name. It is unique per table. `onResync` runs when
+ * the cursor is behind the oldest retained change. The default throws OKM1935.
+ */
+export type FeedWatchOptions = WatchOptions & {
+  readonly feed: string;
+  readonly onResync?: (info: FeedResync) => unknown;
+};
+
 /** `watch` and `until` on a table that sets `watch`. */
 export type WatchOps<S extends QuerySchema, K extends keyof S["~byName"] & string> = {
+  /**
+   * Reads the durable change feed for `options.feed`.
+   *
+   * The handler receives keys, not row images. Pass a second parameter when
+   * the cursor must commit with the handler's writes. That transaction is
+   * refused on a proven transaction pooler.
+   */
+  watch(
+    options: FeedWatchOptions,
+    handler: (changes: readonly FeedChange[], ctx: { readonly tx: Connected<S> }) => unknown,
+  ): WatchSubscription;
   /** Runs `handler` at start, on wake, after reconnect, and at least every `every`. */
   watch(handler: () => unknown): WatchSubscription;
   /** Same as {@link WatchOps.watch}, with limits after the function. */
